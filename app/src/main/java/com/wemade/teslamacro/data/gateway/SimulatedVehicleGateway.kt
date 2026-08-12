@@ -46,6 +46,7 @@ class SimulatedVehicleGateway : VehicleGateway {
             batteryLevelPercent = 72,
             isCharging = false,
             chargeLimitPercent = 80,
+            chargingAmps = 16,
             rangeKm = 340f,
             isChargePortOpen = false,
             speedKph = 0f,

@@ -101,6 +101,9 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 .takeIf { it > 0L }
                 ?.let { (System.currentTimeMillis() - it) / 1000 },
             batteryPercent = effective.batteryLevelPercent,
+            isCharging = effective.isCharging,
+            chargeLimitPercent = effective.chargeLimitPercent,
+            chargingAmps = effective.chargingAmps,
             automationEnabled = settings.automationEnabled,
             runningMacroCount = container.runner.running.value.size,
         )

@@ -49,6 +49,8 @@ data class VehicleSnapshot(
     val batteryLevelPercent: Int? = null,
     val isCharging: Boolean? = null,
     val chargeLimitPercent: Int? = null,
+    /** 충전 전류 설정값(A). 충전 화면 슬라이더의 현재 위치가 된다 */
+    val chargingAmps: Int? = null,
     val rangeKm: Float? = null,
     val isChargePortOpen: Boolean? = null,
     val speedKph: Float? = null,

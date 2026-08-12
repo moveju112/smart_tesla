@@ -14,8 +14,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 68
-        versionName = "0.7.2"
+        versionCode = 69
+        versionName = "0.7.3"
     }
 
     // 음성 인식 네이티브 라이브러리가 ABI마다 10MB씩 붙는다.

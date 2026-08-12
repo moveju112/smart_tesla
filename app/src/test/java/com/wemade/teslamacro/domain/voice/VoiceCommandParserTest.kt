@@ -208,6 +208,60 @@ class VoiceCommandParserTest {
 
     // ---- 매크로 ----
 
+    // ---- 충전 ----
+
+    @Test
+    fun `충전 시작과 중지`() {
+        assertEquals(
+            VehicleCommand.SetCharging(start = true),
+            (parser.parse("충전 시작해줘") as VoiceIntent.RunCommand).command,
+        )
+        assertEquals(
+            VehicleCommand.SetCharging(start = false),
+            (parser.parse("충전 멈춰") as VoiceIntent.RunCommand).command,
+        )
+    }
+
+    @Test
+    fun `충전 전류를 숫자로 지정한다`() {
+        assertEquals(
+            VehicleCommand.SetChargingAmps(16),
+            (parser.parse("충전 16암페어로 해줘") as VoiceIntent.RunCommand).command,
+        )
+    }
+
+    @Test
+    fun `충전 한도를 퍼센트로 지정한다`() {
+        assertEquals(
+            VehicleCommand.SetChargeLimit(80),
+            (parser.parse("충전 한도 80퍼센트로") as VoiceIntent.RunCommand).command,
+        )
+        assertEquals(
+            VehicleCommand.SetChargeLimit(90),
+            (parser.parse("충전 90프로까지 해줘") as VoiceIntent.RunCommand).command,
+        )
+    }
+
+    @Test
+    fun `범위 밖 충전 값은 무시한다`() {
+        // 3A(과소)·200%(과대)는 명령이 되면 안 된다
+        assertTrue(parser.parse("충전 3암페어로") !is VoiceIntent.RunCommand)
+        assertTrue(parser.parse("충전 한도 200퍼센트") !is VoiceIntent.RunCommand)
+    }
+
+    @Test
+    fun `충전구 열기는 충전 시작과 안 섞인다`() {
+        assertEquals(
+            VehicleCommand.SetChargePort(open = true),
+            (parser.parse("충전구 열어줘") as VoiceIntent.RunCommand).command,
+        )
+    }
+
+    @Test
+    fun `충전 몇 퍼센트냐는 질문은 명령이 아니다`() {
+        assertTrue(parser.parse("충전 몇 퍼센트야") is VoiceIntent.Ask)
+    }
+
     @Test
     fun `매크로 이름을 부르면 그 매크로가 실행된다`() {
         val intent = parser.parse("여름 탑승 쿨링 실행")

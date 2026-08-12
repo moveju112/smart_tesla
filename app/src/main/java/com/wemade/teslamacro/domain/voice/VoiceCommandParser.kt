@@ -81,6 +81,9 @@ class VoiceCommandParser(private val macros: () -> List<MacroRule> = { emptyList
         // normalize는 소수점을 지우므로 ("21.5도"→"215도") 원문에서 뽑는다
         absoluteTemp(spoken)?.let { return it }
 
+        // 2.5 "충전 16암페어", "한도 80퍼센트" — 역시 원문에서 숫자를 뽑는다
+        chargeIntent(text, spoken)?.let { return it }
+
         // 3. "낮춰/높여" 같은 상대 조절 — 고정 문구보다 먼저 봐야 "온도"가 켜기로 새지 않는다
         relativeIntent(text, spoken)?.let { return it }
 
@@ -119,6 +122,28 @@ class VoiceCommandParser(private val macros: () -> List<MacroRule> = { emptyList
             ?.groupValues?.get(1)?.toDoubleOrNull() ?: return null
         if (degrees !in 15.0..28.0) return null
         return VoiceIntent.RunCommand(VehicleCommand.SetTemperature(degrees), spoken)
+    }
+
+    /**
+     * "충전 16암페어로", "충전 한도 80퍼센트" — 숫자는 정밀 인식(구글)만 만든다.
+     * "충전 몇 퍼센트야" 같은 질문은 숫자가 없어 여기 안 걸리고 질의로 넘어간다.
+     */
+    private fun chargeIntent(text: String, spoken: String): VoiceIntent? {
+        if (!text.contains("충전") && !text.contains("한도") && !text.contains("암페어")) return null
+
+        Regex("(\\d{1,2})\\s*(암페어|암페아|[aA])").find(spoken)?.let { match ->
+            val amps = match.groupValues[1].toIntOrNull() ?: return@let
+            if (amps in 5..48) {
+                return VoiceIntent.RunCommand(VehicleCommand.SetChargingAmps(amps), spoken)
+            }
+        }
+        Regex("(\\d{2,3})\\s*(퍼센트|프로|%)").find(spoken)?.let { match ->
+            val percent = match.groupValues[1].toIntOrNull() ?: return@let
+            if (percent in 50..100) {
+                return VoiceIntent.RunCommand(VehicleCommand.SetChargeLimit(percent), spoken)
+            }
+        }
+        return null
     }
 
     /** "통풍 낮춰줘", "에어컨 온도 높여줘" — 방향과 대상만 정하고 값 계산은 실행 측에 넘긴다 */
@@ -189,7 +214,7 @@ class VoiceCommandParser(private val macros: () -> List<MacroRule> = { emptyList
             "열어", "열어줘", "닫아", "닫아줘", "켜", "켜줘", "꺼", "꺼줘", "틀어", "실행",
             // 파서 동사 목록(OPEN/CLOSE/ON/OFF)에는 있는데 여기 빠지면
             // 상시 대기 인식기가 그 낱말을 아예 못 적는다 — 두 목록을 같이 관리한다
-            "오픈", "클로즈", "오프", "정지", "중지",
+            "오픈", "클로즈", "오프", "정지", "중지", "시작", "멈춰",
             // 한 글자 낱말(일·이·삼·온)은 넣지 않는다 — 잡음을 빨아들여 전체 인식을 망친다.
             // 단계 지정은 상시 대기에서는 "세게/약하게/최대"로만 받는다 (실차 사고 사례)
             "세게", "약하게", "최대",
@@ -284,6 +309,13 @@ class VoiceCommandParser(private val macros: () -> List<MacroRule> = { emptyList
             },
             Phrase(any = listOf("충전구", "충전포트"), verbs = CLOSE) {
                 VehicleCommand.SetChargePort(open = false)
+            },
+            // 충전구(열어/닫아)와 동사가 달라 순서만 지키면 안 섞인다
+            Phrase(any = listOf("충전"), verbs = ON + listOf("시작")) {
+                VehicleCommand.SetCharging(start = true)
+            },
+            Phrase(any = listOf("충전"), verbs = OFF + listOf("멈춰", "그만")) {
+                VehicleCommand.SetCharging(start = false)
             },
             Phrase(any = listOf("라이트", "비상등", "불빛"), verbs = ON + OPEN) {
                 VehicleCommand.FlashLights

@@ -143,6 +143,9 @@ fun DashboardScreen(
                             },
                         )
                     }
+
+                    SectionHeader("충전")
+                    ChargeCard(state, onCommand)
                 },
             )
         }
@@ -358,6 +361,117 @@ private fun ClimateCard(
             )
             Text("28℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
         }
+    }
+}
+
+// ---- 충전 ----
+
+/**
+ * 충전 시작/중지 + 한도(%) + 전류(A) 슬라이더.
+ * 값은 차가 보고한 설정값에서 시작하고, 손을 떼는 순간 한 번만 전송한다 (공조 슬라이더와 같은 규칙).
+ */
+@Composable
+private fun ChargeCard(
+    state: DashboardUiState,
+    onCommand: (VehicleCommand) -> Unit,
+) {
+    TCard {
+        var draftLimit by remember(state.chargeLimitPercent) {
+            mutableStateOf(state.chargeLimitPercent ?: 80)
+        }
+        var draftAmps by remember(state.chargingAmps) {
+            mutableStateOf(state.chargingAmps ?: 32)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = when (state.isCharging) {
+                        true -> "충전 중"
+                        false -> "충전 안 함"
+                        null -> "상태 확인 중"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (state.isCharging == true) T.Ink else T.InkFaint,
+                )
+                Text(
+                    text = "한도 ${draftLimit}% · 전류 ${draftAmps}A",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkFaint,
+                )
+            }
+            TButton(
+                text = if (state.isCharging == true) "중지" else "시작",
+                tone = if (state.isCharging == true) ButtonTone.Secondary else ButtonTone.Primary,
+                fillWidth = false,
+                enabled = state.isReady,
+                onClick = { onCommand(VehicleCommand.SetCharging(state.isCharging != true)) },
+            )
+        }
+
+        Spacer(Modifier.height(Space.sm))
+        LabeledSlider(
+            label = "한도",
+            valueText = "${draftLimit}%",
+            value = draftLimit.toFloat(),
+            range = 50f..100f,
+            // 5% 단위 — 차가 받는 최소 단위보다 촘촘할 이유가 없다
+            onChange = { draftLimit = ((it / 5).roundToInt() * 5) },
+            onCommit = { onCommand(VehicleCommand.SetChargeLimit(draftLimit)) },
+            enabled = state.isReady,
+        )
+        LabeledSlider(
+            label = "전류",
+            valueText = "${draftAmps}A",
+            value = draftAmps.toFloat(),
+            range = 5f..48f,
+            onChange = { draftAmps = it.roundToInt() },
+            onCommit = { onCommand(VehicleCommand.SetChargingAmps(draftAmps)) },
+            enabled = state.isReady,
+        )
+    }
+}
+
+/** 이름 + 값 + 슬라이더 한 줄. 충전 카드 전용의 얇은 배치 */
+@Composable
+private fun LabeledSlider(
+    label: String,
+    valueText: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onChange: (Float) -> Unit,
+    onCommit: () -> Unit,
+    enabled: Boolean,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = T.InkFaint,
+            modifier = Modifier.width(32.dp),
+        )
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            onValueChangeFinished = onCommit,
+            valueRange = range,
+            enabled = enabled,
+            colors = SliderDefaults.colors(
+                thumbColor = T.Electric,
+                activeTrackColor = T.Electric,
+                inactiveTrackColor = T.Slate,
+            ),
+            modifier = Modifier.weight(1f).padding(horizontal = Space.sm),
+        )
+        Text(
+            text = valueText,
+            style = MaterialTheme.typography.labelSmall,
+            color = T.InkMuted,
+            modifier = Modifier.width(44.dp),
+        )
     }
 }
 
@@ -585,6 +699,10 @@ data class DashboardUiState(
     /** 마지막으로 차량 상태를 읽은 뒤 흐른 초. 못 읽었으면 null */
     val secondsSinceReading: Long? = null,
     val batteryPercent: Int? = null,
+    /** 충전 상태. 못 읽었으면 null — 카드가 "확인 중"으로 보인다 */
+    val isCharging: Boolean? = null,
+    val chargeLimitPercent: Int? = null,
+    val chargingAmps: Int? = null,
     val automationEnabled: Boolean = true,
     val runningMacroCount: Int = 0,
 ) {

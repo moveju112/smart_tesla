@@ -207,6 +207,7 @@ class StatePoller(
         batteryLevelPercent = incoming.batteryLevelPercent ?: base.batteryLevelPercent,
         isCharging = incoming.isCharging ?: base.isCharging,
         chargeLimitPercent = incoming.chargeLimitPercent ?: base.chargeLimitPercent,
+        chargingAmps = incoming.chargingAmps ?: base.chargingAmps,
         rangeKm = incoming.rangeKm ?: base.rangeKm,
         isChargePortOpen = incoming.isChargePortOpen ?: base.isChargePortOpen,
         speedKph = incoming.speedKph ?: base.speedKph,

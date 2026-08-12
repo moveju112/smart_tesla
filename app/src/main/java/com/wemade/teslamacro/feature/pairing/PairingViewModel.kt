@@ -188,7 +188,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
         }
         val cleaned = address.trim().uppercase()
         if (!Regex("([0-9A-F]{2}:){5}[0-9A-F]{2}").matches(cleaned)) {
-            _uiState.update { it.copy(isError = true, message = "주소 형식이 올바르지 않아요 (예 0C:4B:EE:4F:BD:E2)") }
+            _uiState.update { it.copy(isError = true, message = "주소 형식이 올바르지 않아요 (예 AA:BB:CC:11:22:33)") }
             return
         }
 

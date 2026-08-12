@@ -430,7 +430,7 @@ private fun DirectConnectPanel(busy: Boolean, onConnect: (String) -> Unit) {
         OutlinedTextField(
             value = address,
             onValueChange = { address = it.uppercase() },
-            label = { Text("BLE 주소 (예 0C:4B:EE:4F:BD:E2)") },
+            label = { Text("BLE 주소 (예 AA:BB:CC:11:22:33)") },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = T.Electric,

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.location.Geocoder
 import android.net.Uri
 import android.provider.Settings
+import com.wemade.teslamacro.domain.macro.GeoPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -47,6 +48,11 @@ class NaverNavigator(private val context: Context) {
                 throw throwable
             }.map { }
         }
+
+    /** 주소를 좌표로. "출발지 근처" 조건이 주소 입력으로 위치를 찍을 때도 쓴다 */
+    suspend fun geocodePoint(address: String): GeoPoint? = withContext(Dispatchers.IO) {
+        geocode(address)?.let { GeoPoint(it.latitude, it.longitude) }
+    }
 
     // 최신 API(콜백식)는 33+ 전용이라, 모든 버전에서 도는 동기식을 그대로 쓴다
     @Suppress("DEPRECATION")

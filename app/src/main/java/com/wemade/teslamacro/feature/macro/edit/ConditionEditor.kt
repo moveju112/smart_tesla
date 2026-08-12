@@ -9,17 +9,20 @@ import androidx.compose.foundation.layout.height
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.wemade.teslamacro.data.location.TabletLocation
+import com.wemade.teslamacro.data.nav.NaverNavigator
 import com.wemade.teslamacro.domain.macro.Condition
 import com.wemade.teslamacro.service.MacroService
 import kotlinx.coroutines.launch
@@ -128,7 +131,7 @@ fun ConditionCard(
 /**
  * "출발지 근처" 조건 편집.
  *
- * 주소 입력 없이 그 자리에서 버튼 한 번으로 현재 GPS 좌표를 저장하는 방식이다.
+ * 위치를 찍는 방법 2가지 — 그 자리에서 현재 GPS 저장, 또는 주소 입력.
  * 위치 권한이 없으면 먼저 요청하고, 승인되는 즉시 이어서 읽는다.
  */
 @Composable
@@ -139,6 +142,7 @@ private fun NearLocationEditor(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
+    var address by rememberSaveable { mutableStateOf("") }
 
     // 1. 현재 위치 읽어서 조건에 저장
     val capture: () -> Unit = {
@@ -153,11 +157,12 @@ private fun NearLocationEditor(
             }
         }
     }
-    // 2. 권한 승인 직후 감시 서비스를 다시 승격시킨다 — 백그라운드 위치 읽기가 그때부터 열린다
+    // 2. 권한 승인 직후 감시 서비스를 다시 승격시킨다 — 백그라운드 위치 읽기가 그때부터 열린다.
+    //    FINE만 요청하면 "대략적인 위치"를 고른 사용자가 영영 거부로 나온다 — 둘 다 요청한다
     val permission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        if (results.values.any { it }) {
             MacroService.start(context)
             capture()
         } else {
@@ -170,7 +175,7 @@ private fun NearLocationEditor(
             text = if (condition.latitude != null) {
                 "위치 저장됨 — 이 근처에서 발동했을 때만 실행해요"
             } else {
-                "아직 위치가 없어요. 원하는 출발지(예: 집 주차장)에서 아래 버튼을 눌러 주세요"
+                "위치를 지정해 주세요 — 그 자리에서 저장하거나 주소로 찍을 수 있어요"
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (condition.latitude != null) T.InkMuted else T.Warn,
@@ -185,7 +190,34 @@ private fun NearLocationEditor(
             tone = ButtonTone.Secondary,
         ) {
             if (TabletLocation(context).hasPermission()) capture()
-            else permission.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            else permission.launch(
+                arrayOf(
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                )
+            )
+        }
+        Spacer(Modifier.height(Space.md))
+        // 현장에 안 가도 되는 두 번째 방법 — 주소를 좌표로 바꿔 저장한다
+        OutlinedTextField(
+            value = address,
+            onValueChange = { address = it },
+            label = { Text("또는 주소로 지정 (예: 성남시 분당구 판교역로 152)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(Space.sm))
+        TButton("주소 위치로 저장", ButtonTone.Secondary, enabled = address.isNotBlank()) {
+            status = "주소 확인 중…"
+            scope.launch {
+                val point = NaverNavigator(context).geocodePoint(address)
+                if (point == null) {
+                    status = "주소를 좌표로 못 바꿨어요. 도로명 주소로 다시 시도해 주세요"
+                } else {
+                    status = null
+                    onChange(condition.copy(latitude = point.latitude, longitude = point.longitude))
+                }
+            }
         }
         Spacer(Modifier.height(Space.md))
         Text("허용 반경", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)

@@ -5,20 +5,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.Motion
@@ -46,7 +50,7 @@ fun PickerSheet(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             // 뒤 배경을 덮어 바깥 탭으로 닫는다
@@ -54,10 +58,12 @@ fun PickerSheet(
             .clickable(indication = null, interactionSource = remembered()) { onDismiss() },
         contentAlignment = Alignment.Center,
     ) {
+        // 짧은 목록이 화면 85%를 강제로 채우면 아래가 텅 빈다 — 내용만큼만 차지하게 상한만 건다
+        val panelMaxHeight = maxHeight * 0.85f
         Column(
             modifier = Modifier
                 .widthIn(max = 560.dp)
-                .fillMaxHeight(0.85f)
+                .heightIn(max = panelMaxHeight)
                 .padding(Space.lg)
                 .background(T.Carbon, RoundedCornerShape(Radius.card))
                 // 패널 안 탭이 닫기로 새어나가지 않게 막는다
@@ -110,8 +116,30 @@ fun <T> PickerList(
     modifier: Modifier = Modifier,
     row: @Composable (T) -> Unit,
 ) {
-    LazyColumn(modifier = modifier.heightIn(max = 520.dp)) {
-        items(items) { item -> row(item) }
+    val state = rememberLazyListState()
+    Box(modifier = modifier) {
+        LazyColumn(state = state, modifier = Modifier.heightIn(max = 520.dp)) {
+            items(items) { item -> row(item) }
+        }
+        // 아래에 더 있는데 잘려 보이지 않으면 스크롤할 생각을 못 한다 — 하단을 흐려서 알린다
+        if (state.canScrollForward) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .background(
+                        Brush.verticalGradient(listOf(Color.Transparent, T.Carbon))
+                    ),
+                contentAlignment = Alignment.BottomCenter,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = "아래로 스크롤",
+                    tint = T.InkFaint,
+                )
+            }
+        }
     }
 }
 

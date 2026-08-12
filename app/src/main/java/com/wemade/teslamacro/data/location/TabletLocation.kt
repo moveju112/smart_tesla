@@ -39,10 +39,17 @@ class TabletLocation(private val context: Context) {
         }.getOrNull()
     }
 
-    /** 위치 권한이 있는지. 편집 화면의 저장 버튼도 이걸로 먼저 확인한다 */
-    fun hasPermission(): Boolean =
-        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
+    /**
+     * 위치 권한이 있는지. 편집 화면의 저장 버튼도 이걸로 먼저 확인한다.
+     * 안드로이드 12+에서 "대략적인 위치"만 허용하면 FINE은 거부되고 COARSE만 온다 —
+     * 둘 중 하나만 있어도 동작해야 한다.
+     */
+    fun hasPermission(): Boolean = hasFine() || granted(Manifest.permission.ACCESS_COARSE_LOCATION)
+
+    private fun hasFine(): Boolean = granted(Manifest.permission.ACCESS_FINE_LOCATION)
+
+    private fun granted(permission: String): Boolean =
+        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     /** 켜져 있는 프로바이더들의 마지막 위치 중 가장 최신 것 */
     @SuppressLint("MissingPermission")
@@ -77,10 +84,12 @@ class TabletLocation(private val context: Context) {
             }
         }
 
-    /** GPS 우선, 없으면 기지국/와이파이 측위 */
+    /** GPS 우선, 없으면 기지국/와이파이 측위. 대략 권한(COARSE)만 있으면 GPS는 못 쓴다 */
     private fun pickProvider(manager: LocationManager): String? =
-        listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-            .firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        buildList {
+            if (hasFine()) add(LocationManager.GPS_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+        }.firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
 
     private fun ageMillis(location: Location): Long =
         System.currentTimeMillis() - location.time

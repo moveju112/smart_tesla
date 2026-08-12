@@ -58,8 +58,11 @@ class MacroService : LifecycleService() {
             return
         }
         val base = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        val hasLocation = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
+        // "대략적인 위치"만 허용한 경우 FINE은 거부 상태다 — 둘 중 하나면 충분하다
+        val hasLocation = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ).any { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
         try {
             startForeground(
                 NOTIFICATION_ID,

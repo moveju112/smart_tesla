@@ -13,4 +13,9 @@
 3. **산출물 확인** — `app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`
    - universal APK는 없다 (ABI split, `app/build.gradle.kts:24`). 실기기는 arm64
 4. **전달** — APK 파일명을 `SmartTesla-<versionName>-arm64.apk`로 바꿔 사용자에게 전달
-5. **실차 검증 대기** — BLE 기능 변경이면 사용자 실차 테스트 결과(DiagLog 덤프)를 받기 전까지 "미확인"으로 취급 ([BLE_RULES.md](../BLE_RULES.md) 실차 사실 표 갱신)
+5. **커밋 + 푸시** — 빌드가 나올 때마다 소스를 GitHub에 올린다 (사용자 상시 허가, 2026-08-10)
+   ```bash
+   git add -A && git commit -m "<versionName> — <한 줄 변경 요약>" && git push
+   ```
+   - 원격: https://github.com/moveju112/smart_tesla.git · 실 VIN이 diff에 없는지 커밋 전 확인
+6. **실차 검증 대기** — BLE 기능 변경이면 사용자 실차 테스트 결과(DiagLog 덤프)를 받기 전까지 "미확인"으로 취급 ([BLE_RULES.md](../BLE_RULES.md) 실차 사실 표 갱신)

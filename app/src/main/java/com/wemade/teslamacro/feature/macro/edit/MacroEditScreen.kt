@@ -1,6 +1,21 @@
 package com.wemade.teslamacro.feature.macro.edit
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import com.wemade.teslamacro.ui.component.Hairline
+import com.wemade.teslamacro.ui.theme.Motion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,9 +108,18 @@ fun MacroEditScreen(
             .padding(if (compact) Space.md else Space.lg),
     ) {
 
-        // 상단: 취소 + 진행 표시
+        // 상단: 닫기(X) + 진행 표시 — 루틴 앱 관례대로 취소는 좌상단 아이콘 하나로
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TButton("취소", ButtonTone.Ghost, fillWidth = false, onClick = onCancel)
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "닫기",
+                tint = T.InkMuted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .clickable(onClick = onCancel)
+                    .padding(Space.sm)
+                    .size(24.dp),
+            )
             Spacer(Modifier.weight(1f))
             Text(
                 text = "${step + 1} / ${STEPS.size}",
@@ -122,35 +146,51 @@ fun MacroEditScreen(
         }
         Spacer(Modifier.height(Space.lg))
 
-        // 본문 — 현재 페이지만
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(modifier = Modifier.widthIn(max = 680.dp)) {
-                Text(STEPS[step].title, style = MaterialTheme.typography.headlineMedium, color = T.Ink)
-                Text(
-                    text = STEPS[step].subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkFaint,
-                    modifier = Modifier.padding(top = Space.xs),
-                )
-                Spacer(Modifier.height(Space.lg))
-
-                when (step) {
-                    0 -> StepTriggers(draft, onChange) { picker = OpenPicker.TRIGGER }
-                    1 -> StepConditions(draft, onChange) { picker = OpenPicker.CONDITION }
-                    2 -> StepActions(
-                        draft = draft,
-                        onChange = onChange,
-                        onPickAction = { picker = OpenPicker.ACTION },
-                        onPickWaitUntil = { picker = OpenPicker.WAIT_UNTIL },
+        // 본문 — 현재 페이지만. 페이지가 옆으로 밀려 들어와 "넘어간다"는 감각을 준다
+        AnimatedContent(
+            targetState = step,
+            modifier = Modifier.weight(1f),
+            transitionSpec = {
+                val forward = targetState > initialState
+                val enter = slideInHorizontally(Motion.standard()) { full ->
+                    if (forward) full / 3 else -full / 3
+                } + fadeIn(Motion.quick())
+                val exit = slideOutHorizontally(Motion.standard()) { full ->
+                    if (forward) -full / 3 else full / 3
+                } + fadeOut(Motion.quick())
+                enter togetherWith exit
+            },
+            label = "wizardStep",
+        ) { current ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Column(modifier = Modifier.widthIn(max = 680.dp)) {
+                    Text(STEPS[current].title, style = MaterialTheme.typography.headlineMedium, color = T.Ink)
+                    Text(
+                        text = STEPS[current].subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = T.InkFaint,
+                        modifier = Modifier.padding(top = Space.xs),
                     )
-                    else -> StepFinish(draft, onChange, onDelete)
+                    Spacer(Modifier.height(Space.lg))
+
+                    when (current) {
+                        0 -> StepTriggers(draft, onChange) { picker = OpenPicker.TRIGGER }
+                        1 -> StepConditions(draft, onChange) { picker = OpenPicker.CONDITION }
+                        2 -> StepActions(
+                            draft = draft,
+                            onChange = onChange,
+                            onPickAction = { picker = OpenPicker.ACTION },
+                            onPickWaitUntil = { picker = OpenPicker.WAIT_UNTIL },
+                        )
+                        else -> StepFinish(draft, onChange, onDelete)
+                    }
+                    Spacer(Modifier.height(Space.xxl))
                 }
-                Spacer(Modifier.height(Space.xxl))
             }
         }
 
@@ -168,16 +208,21 @@ fun MacroEditScreen(
             step == 2 -> "실행할 동작을 하나 이상 쌓아야 다음으로 갈 수 있어요"
             else -> draft.blockReason
         }
+        // 하단 고정 CTA 바 — 본문과 구분선으로 나눠 루틴 앱처럼 "항상 여기" 느낌을 준다
+        Hairline()
         blockHint?.let {
             Text(
                 text = it,
                 style = MaterialTheme.typography.bodySmall,
                 color = T.Warn,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(bottom = Space.xs),
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        Row(
+            modifier = Modifier.padding(top = Space.sm + Space.xs),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
             if (step > 0) {
                 TButton("이전", ButtonTone.Secondary, modifier = Modifier.weight(1f)) { step-- }
             }
@@ -253,7 +298,7 @@ private fun StepTriggers(
                 onRemove = { onChange(draft.removeTrigger(index)) },
             )
         }
-        TButton("언제 추가", ButtonTone.Secondary, onClick = onAdd)
+        TButton("언제 추가", ButtonTone.Secondary, icon = Icons.Rounded.Add, onClick = onAdd)
     }
 }
 
@@ -279,7 +324,7 @@ private fun StepConditions(
                 onRemove = { onChange(draft.removeCondition(index)) },
             )
         }
-        TButton("조건 추가", ButtonTone.Secondary, onClick = onAdd)
+        TButton("조건 추가", ButtonTone.Secondary, icon = Icons.Rounded.Add, onClick = onAdd)
     }
 }
 
@@ -311,7 +356,7 @@ private fun StepActions(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), onClick = onPickAction)
+            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), icon = Icons.Rounded.Add, onClick = onPickAction)
             TButton("시간 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f)) {
                 onChange(draft.addAction(ActionStep.Wait(60)))
             }

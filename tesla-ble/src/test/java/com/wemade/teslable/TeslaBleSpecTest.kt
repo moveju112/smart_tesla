@@ -1,0 +1,77 @@
+package com.wemade.teslable
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TeslaBleSpecTest {
+
+    /** 공식 문서에 박혀 있는 유일한 정답 벡터. 여기가 틀리면 차를 영원히 못 찾는다 */
+    @Test
+    fun `공식 예시 VIN이 문서와 같은 광고 이름을 만든다`() {
+        assertEquals("S1a87a5a75f3df858C", TeslaBleSpec.bleLocalName("5YJS0000000000000"))
+    }
+
+    @Test
+    fun `소문자 VIN도 같은 결과를 낸다`() {
+        assertEquals(
+            TeslaBleSpec.bleLocalName("5YJS0000000000000"),
+            TeslaBleSpec.bleLocalName("  5yjs0000000000000  "),
+        )
+    }
+
+    @Test
+    fun `잘못된 VIN은 거른다`() {
+        assertFalse(TeslaBleSpec.isValidVin("5YJS000000000000"))   // 16자
+        assertFalse(TeslaBleSpec.isValidVin("5YJS00000000000000")) // 18자
+        assertFalse(TeslaBleSpec.isValidVin("5YJI0000000000000"))  // I 금지
+        assertTrue(TeslaBleSpec.isValidVin("5YJS0000000000000"))
+    }
+}
+
+class BleFramingTest {
+
+    @Test
+    fun `길이 헤더를 붙이고 청크로 자른다`() {
+        val chunks = BleFraming.frame(byteArrayOf(1, 2, 3, 4), chunkSize = 3)
+        // [0,4,1,2] [3,4] — 헤더 2바이트 + 본문 4바이트 = 6바이트를 3씩
+        assertEquals(2, chunks.size)
+        assertArrayEquals(byteArrayOf(0, 4, 1), chunks[0])
+        assertArrayEquals(byteArrayOf(2, 3, 4), chunks[1])
+    }
+
+    @Test
+    fun `쪼개진 청크를 원래 메시지로 되돌린다`() {
+        val payload = ByteArray(300) { (it % 251).toByte() }
+        val reassembler = BleFraming.Reassembler()
+
+        var restored: ByteArray? = null
+        BleFraming.frame(payload, chunkSize = 20).forEach { chunk ->
+            reassembler.push(chunk)?.let { restored = it }
+        }
+
+        assertArrayEquals(payload, restored)
+    }
+
+    @Test
+    fun `한 청크에 두 메시지가 붙어 와도 순서대로 뱉는다`() {
+        val reassembler = BleFraming.Reassembler()
+        val merged = BleFraming.frame(byteArrayOf(9), 100).first() +
+            BleFraming.frame(byteArrayOf(8), 100).first()
+
+        // 첫 push에서 첫 메시지가 완성되고, 나머지는 버퍼에 남는다
+        assertArrayEquals(byteArrayOf(9), reassembler.push(merged))
+        assertArrayEquals(byteArrayOf(8), reassembler.push(ByteArray(0)))
+    }
+
+    @Test
+    fun `비정상 길이 헤더는 버퍼를 비우고 무시한다`() {
+        val reassembler = BleFraming.Reassembler()
+        assertNull(reassembler.push(byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 1, 2)))
+        // 버퍼가 비워졌으므로 이어지는 정상 메시지는 정상 파싱된다
+        assertArrayEquals(byteArrayOf(7), reassembler.push(BleFraming.frame(byteArrayOf(7), 100).first()))
+    }
+}

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  런처 아이콘 길게 누르기 · 홈 화면 바로가기 · 어시스턴트에서 이름으로 호출된다.
+  차 앞에서 앱을 열지 않고 한 번에 실행하는 통로다.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="open_frunk"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_frunk_short"
+        android:shortcutLongLabel="@string/shortcut_frunk_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.wemade.teslamacro"
+            android:targetClass="com.wemade.teslamacro.service.QuickActionActivity">
+            <extra
+                android:name="action"
+                android:value="open_frunk" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="open_trunk"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_trunk_short"
+        android:shortcutLongLabel="@string/shortcut_trunk_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.wemade.teslamacro"
+            android:targetClass="com.wemade.teslamacro.service.QuickActionActivity">
+            <extra
+                android:name="action"
+                android:value="open_trunk" />
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="vent_windows"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_vent_short"
+        android:shortcutLongLabel="@string/shortcut_vent_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.wemade.teslamacro"
+            android:targetClass="com.wemade.teslamacro.service.QuickActionActivity">
+            <extra
+                android:name="action"
+                android:value="vent_windows" />
+        </intent>
+    </shortcut>
+
+</shortcuts>

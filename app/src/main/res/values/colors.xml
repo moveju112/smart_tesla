@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Color.kt의 T.Void와 같은 값. 앱 시작 순간 흰 화면 깜빡임을 없앤다 -->
+    <color name="void_background">#0B0D0F</color>
+    <color name="electric">#3E6AE1</color>
+</resources>

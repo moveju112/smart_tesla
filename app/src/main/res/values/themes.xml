@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose가 실제 테마를 그리므로 여기는 첫 프레임 배경만 맞춘다 -->
+    <style name="Theme.TeslaMacro" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/void_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

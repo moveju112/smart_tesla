@@ -1,0 +1,79 @@
+package com.wemade.teslamacro.feature.settings
+
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
+import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.voice.VoiceModelState
+import com.wemade.teslamacro.di.AppContainer
+import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class SettingsViewModel(private val container: AppContainer) : ViewModel() {
+
+    /** 시뮬레이터일 때만 값이 있다 */
+    private val simulator: SimulatedVehicleGateway? =
+        container.gateway as? SimulatedVehicleGateway
+
+    val simulatedState: StateFlow<VehicleSnapshot>? = simulator?.current
+
+    fun setSimulatedInsideTemp(celsius: Double) = simulator?.setInsideTemp(celsius)
+    fun setSimulatedOutsideTemp(celsius: Double) = simulator?.setOutsideTemp(celsius)
+    fun simulateBoarding() = simulator?.simulateBoarding()
+    fun simulateLeaving() = simulator?.simulateLeaving()
+
+    val settings: StateFlow<AppSettings> = container.settingsStore.settings.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = AppSettings(),
+    )
+
+    fun setAutomationEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
+    }
+
+    fun setIdlePollSeconds(seconds: Int) {
+        viewModelScope.launch { container.settingsStore.setIdlePollSeconds(seconds) }
+    }
+
+    fun setActivePollSeconds(seconds: Int) {
+        viewModelScope.launch { container.settingsStore.setActivePollSeconds(seconds) }
+    }
+
+    // ---- 음성 ----
+
+    val voiceModel: StateFlow<VoiceModelState> = container.voiceModelStore.state
+
+    fun setVoiceAlwaysOn(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setVoiceAlwaysOn(enabled) }
+    }
+
+    /** 사용자가 고른 zip에서 음성 모델을 푼다 */
+    fun installVoiceModel(uri: Uri) {
+        viewModelScope.launch { container.voiceModelStore.installFromZip(uri) }
+    }
+
+    /** 모델을 지우면 상시 대기도 같이 끈다. 켜둔 채로 두면 계속 실패한다 */
+    fun removeVoiceModel() {
+        viewModelScope.launch {
+            container.settingsStore.setVoiceAlwaysOn(false)
+            container.voiceModelStore.remove()
+        }
+    }
+
+    /** 앱에서만 등록을 지운다. 차량 키 목록은 차량 화면에서 직접 지워야 한다 */
+    fun unpair() {
+        viewModelScope.launch {
+            container.gateway.disconnect()
+            container.settingsStore.setVin("")
+            container.settingsStore.setEnrolled(false)
+            // 저장된 차 주소도 함께 지운다. 남겨두면 다른 차 등록 때 엉뚱한 데 붙는다
+            container.settingsStore.setVehicleAddress("")
+        }
+    }
+}

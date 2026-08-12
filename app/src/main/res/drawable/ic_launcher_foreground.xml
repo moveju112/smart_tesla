@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 통풍 아이콘 대용 임시 런처 아이콘. 디자인 확정되면 교체한다 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F4F4F4"
+        android:pathData="M54,30 L58,44 L72,40 L62,50 L74,58 L60,58 L64,72 L54,62 L44,72 L48,58 L34,58 L46,50 L36,40 L50,44 Z" />
+</vector>

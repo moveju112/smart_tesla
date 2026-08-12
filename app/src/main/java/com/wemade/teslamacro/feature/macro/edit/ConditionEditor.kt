@@ -1,0 +1,235 @@
+package com.wemade.teslamacro.feature.macro.edit
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.Trigger
+import com.wemade.teslamacro.domain.macro.describe
+import com.wemade.teslamacro.domain.macro.formatDuration
+import com.wemade.teslamacro.domain.model.Signal
+import com.wemade.teslamacro.domain.model.SignalKind
+import com.wemade.teslamacro.ui.component.ButtonTone
+import com.wemade.teslamacro.ui.component.ChipRow
+import com.wemade.teslamacro.ui.component.NumberStepper
+import com.wemade.teslamacro.ui.component.TButton
+import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.theme.Space
+import com.wemade.teslamacro.ui.theme.T
+
+private val DAY_LABELS = listOf("월", "화", "수", "목", "금", "토", "일")
+
+/** 트리거 카드 — "언제" */
+@Composable
+fun TriggerCard(
+    trigger: Trigger,
+    onChange: (Trigger) -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TCard(modifier = modifier) {
+        CardHeader(describe(trigger), onRemove)
+        Spacer(Modifier.height(Space.md))
+
+        when (trigger) {
+            is Trigger.SignalBecomes -> {
+                ChipRow(
+                    options = listOf(true, false),
+                    selected = trigger.to,
+                    label = { if (it) "발생할 때" else "해제될 때" },
+                    onSelect = { onChange(trigger.copy(to = it)) },
+                )
+            }
+
+            is Trigger.Every -> ChipRow(
+                options = listOf(15, 30, 60, 120, 360),
+                selected = trigger.everyMinutes,
+                label = { formatDuration(it * 60) },
+                onSelect = { onChange(trigger.copy(everyMinutes = it)) },
+            )
+
+            is Trigger.AtTime -> {
+                TimeAndDayEditor(
+                    minutesOfDay = trigger.minutesOfDay,
+                    days = trigger.days,
+                    onMinutesChange = { onChange(trigger.copy(minutesOfDay = it)) },
+                    onDaysChange = { onChange(trigger.copy(days = it)) },
+                )
+            }
+
+            is Trigger.Manual -> Text(
+                text = "자동으로 발동하지 않아요. 음성으로 매크로 이름을 부르거나 " +
+                    "목록에서 \"지금 실행\"을 눌러 주세요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        }
+    }
+}
+
+/** 조건 카드 — "~라면" */
+@Composable
+fun ConditionCard(
+    condition: Condition,
+    onChange: (Condition) -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TCard(modifier = modifier) {
+        CardHeader(describe(condition), onRemove)
+        Spacer(Modifier.height(Space.md))
+
+        when (condition) {
+            is Condition.InRange -> NumericEditor(condition, onChange)
+
+            is Condition.SignalIs -> ChipRow(
+                options = listOf(true, false),
+                selected = condition.value,
+                label = { if (it) "인 상태" else "아닌 상태" },
+                onSelect = { onChange(condition.copy(value = it)) },
+            )
+
+            is Condition.TimeWindow -> Column {
+                Text("시작", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+                HourMinuteStepper(condition.fromMinutes) {
+                    onChange(condition.copy(fromMinutes = it))
+                }
+                Spacer(Modifier.height(Space.sm))
+                Text("종료", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+                HourMinuteStepper(condition.toMinutes) { onChange(condition.copy(toMinutes = it)) }
+            }
+
+            is Condition.OnDays -> DayToggles(condition.days) { onChange(condition.copy(days = it)) }
+        }
+    }
+}
+
+@Composable
+private fun CardHeader(title: String, onRemove: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = T.Ink,
+            modifier = Modifier.weight(1f),
+        )
+        TButton("삭제", ButtonTone.Ghost, fillWidth = false, onClick = onRemove)
+    }
+}
+
+private enum class Comparison(val label: String) { GTE("이상"), LTE("이하") }
+
+@Composable
+private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) -> Unit) {
+    val comparison = if (condition.gte != null) Comparison.GTE else Comparison.LTE
+    val value = condition.gte ?: condition.lte ?: 0.0
+    val range = numericRange(condition.signal)
+
+    Column {
+        ChipRow(
+            options = Comparison.entries,
+            selected = comparison,
+            label = { it.label },
+            onSelect = { onChange(rebuild(condition.signal, it, value)) },
+        )
+        Spacer(Modifier.height(Space.md))
+        NumberStepper(
+            value = value,
+            min = range.first,
+            max = range.second,
+            step = if (condition.signal == Signal.BATTERY_LEVEL) 5.0 else 0.5,
+            unit = condition.signal.unit.orEmpty(),
+            onChange = { onChange(rebuild(condition.signal, comparison, it)) },
+        )
+    }
+}
+
+private fun rebuild(signal: Signal, comparison: Comparison, value: Double) =
+    when (comparison) {
+        Comparison.GTE -> Condition.InRange(signal, gte = value)
+        Comparison.LTE -> Condition.InRange(signal, lte = value)
+    }
+
+@Composable
+private fun TimeAndDayEditor(
+    minutesOfDay: Int,
+    days: Set<Int>,
+    onMinutesChange: (Int) -> Unit,
+    onDaysChange: (Set<Int>) -> Unit,
+) {
+    Column {
+        HourMinuteStepper(minutesOfDay, onMinutesChange)
+        Spacer(Modifier.height(Space.md))
+        Text("요일", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+        Spacer(Modifier.height(Space.sm))
+        DayToggles(days, onDaysChange)
+    }
+}
+
+@Composable
+private fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+        NumberStepper(
+            value = (minutesOfDay / 60).toDouble(),
+            min = 0.0, max = 23.0, step = 1.0, unit = "시",
+            onChange = { onChange(it.toInt() * 60 + minutesOfDay % 60) },
+        )
+        NumberStepper(
+            value = (minutesOfDay % 60).toDouble(),
+            min = 0.0, max = 55.0, step = 5.0, unit = "분",
+            onChange = { onChange((minutesOfDay / 60) * 60 + it.toInt()) },
+        )
+    }
+}
+
+/** 비어 있으면 "매일"이라는 뜻이라 전부 켜진 것처럼 보여준다 */
+@Composable
+private fun DayToggles(days: Set<Int>, onChange: (Set<Int>) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        DAY_LABELS.forEachIndexed { index, label ->
+            val day = index + 1
+            val selected = days.isEmpty() || day in days
+            TButton(
+                text = label,
+                tone = if (selected) ButtonTone.Primary else ButtonTone.Secondary,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    val explicit = days.ifEmpty { (1..7).toSet() }
+                    val updated = if (day in explicit) explicit - day else explicit + day
+                    onChange(if (updated.size == 7) emptySet() else updated)
+                },
+            )
+        }
+    }
+}
+
+/** 신호별로 현실적인 조절 범위를 준다. 배터리를 -40까지 내릴 이유가 없다 */
+private fun numericRange(signal: Signal): Pair<Double, Double> = when (signal) {
+    Signal.BATTERY_LEVEL -> 0.0 to 100.0
+    else -> -20.0 to 60.0
+}
+
+/** 신호를 고르면 종류에 맞는 기본 조건을 만든다 */
+fun defaultConditionFor(signal: Signal): Condition = when (signal.kind) {
+    SignalKind.NUMBER -> Condition.InRange(signal, gte = defaultThreshold(signal))
+    SignalKind.BOOLEAN -> Condition.SignalIs(signal, value = true)
+}
+
+private fun defaultThreshold(signal: Signal): Double = when (signal) {
+    Signal.INSIDE_TEMP -> 27.0     // 통풍 자동화의 기본 임계값
+    Signal.OUTSIDE_TEMP -> 30.0
+    Signal.BATTERY_LEVEL -> 20.0
+    else -> 0.0
+}

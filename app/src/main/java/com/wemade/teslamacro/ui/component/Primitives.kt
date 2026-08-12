@@ -1,0 +1,270 @@
+package com.wemade.teslamacro.ui.component
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.wemade.teslamacro.ui.theme.Elevation
+import com.wemade.teslamacro.ui.theme.Grad
+import com.wemade.teslamacro.ui.theme.Motion
+import com.wemade.teslamacro.ui.theme.Radius
+import com.wemade.teslamacro.ui.theme.Space
+import com.wemade.teslamacro.ui.theme.T
+
+enum class ButtonTone { Primary, Secondary, Ghost, Danger }
+
+/**
+ * 부드러운 그림자. 검은 배경에서도 은은하게 층을 만든다.
+ * spot/ambient를 검정으로 두고 clip=false로 카드 밖으로 번지게 한다.
+ */
+fun Modifier.softShadow(elevation: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp) =
+    this.shadow(
+        elevation = elevation,
+        shape = RoundedCornerShape(radius),
+        clip = false,
+        ambientColor = Color.Black,
+        spotColor = Color.Black,
+    )
+
+/**
+ * 공용 버튼.
+ * - Primary: 파란 그라데이션 + 파란 글로우로 "누르고 싶은" 버튼
+ * - Secondary/Ghost: 카드 위에서 한 겹 밝은 면 + 얇은 테두리
+ * 누르면 살짝 작아지며(0.97) 즉각적인 촉감을 준다.
+ */
+@Composable
+fun TButton(
+    text: String,
+    tone: ButtonTone = ButtonTone.Primary,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    fillWidth: Boolean = true,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** 카드 안 보조 액션용 소형(36dp). 주 동작 버튼은 기본(52dp)을 유지한다 */
+    small: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = Motion.quick(),
+        label = "buttonPress",
+    )
+
+    // 채움 배경 — Primary는 파랑, Danger는 빨강, 나머지는 옅은 회색 면
+    val fillBrush: Brush? = when {
+        !enabled -> null
+        tone == ButtonTone.Primary -> if (pressed) Grad.primaryPressed else Grad.primary
+        else -> null
+    }
+    val fillColor: Color = when {
+        !enabled -> Color.Transparent
+        tone == ButtonTone.Danger -> if (pressed) T.Danger.copy(alpha = 0.85f) else T.Danger
+        tone == ButtonTone.Secondary -> if (pressed) T.Hairline else T.Slate
+        tone == ButtonTone.Ghost && pressed -> T.Slate
+        else -> Color.Transparent
+    }
+
+    val content = when {
+        !enabled -> T.InkFaint
+        tone == ButtonTone.Ghost -> T.InkMuted
+        tone == ButtonTone.Secondary -> T.Ink
+        else -> Color.White
+    }
+
+    val borderColor = when {
+        !enabled -> T.Hairline.copy(alpha = 0.5f)
+        tone == ButtonTone.Secondary || tone == ButtonTone.Ghost -> T.Hairline
+        else -> Color.Transparent
+    }
+
+    val shape = RoundedCornerShape(Radius.button)
+
+    Box(
+        modifier = modifier
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+            .scale(press)
+            // 토스 버튼은 평평하다. 글로우/그림자를 쓰지 않는다
+            .clip(shape)
+            .then(if (fillBrush != null) Modifier.background(fillBrush) else Modifier.background(fillColor))
+            .border(1.dp, borderColor, shape)
+            .defaultMinSize(minHeight = if (small) 36.dp else 52.dp)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(
+                horizontal = if (small) Space.sm + Space.xs else Space.md,
+                vertical = if (small) 0.dp else Space.sm,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.xs + 2.dp),
+        ) {
+            // 이모지 대신 벡터 아이콘. 폰트 따라 모양이 달라지는 이모지는 쓰지 않는다
+            if (icon != null) {
+                androidx.compose.material3.Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = content,
+                    modifier = Modifier.size(if (small) 14.dp else 18.dp),
+                )
+            }
+            Text(
+                text = text,
+                style = if (small) MaterialTheme.typography.labelMedium
+                else MaterialTheme.typography.labelLarge,
+                color = content,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * 카드 표면. 위→아래 미세 그라데이션 + 부드러운 그림자 + 안쪽 상단 하이라이트로
+ * "떠 있는 유리판" 느낌을 준다. 납작한 단색 회색과 가장 크게 갈리는 지점.
+ */
+@Composable
+fun TCard(
+    modifier: Modifier = Modifier,
+    outlined: Boolean = false,
+    /** 카드 전체를 탭 대상으로 만든다 (목록 카드 탭 = 상세/편집 패턴) */
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(Radius.card)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            // 흰 카드 + 아주 얕은 그림자. 옅은 회색 배경과의 대비로 뜬다
+            .softShadow(Elevation.card, Radius.card)
+            .clip(shape)
+            .background(T.Graphite, shape)
+            // outlined일 때만 테두리. 평소엔 그림자만으로 충분하다
+            .then(if (outlined) Modifier.border(1.dp, T.Hairline, shape) else Modifier)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(Space.lg),
+        content = content,
+    )
+}
+
+/** 섹션 제목. 작은 대문자식 자간으로 상용 앱의 절제된 헤더 느낌 */
+@Composable
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = Space.lg, bottom = Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        // 토스 섹션 제목은 흐린 소문자가 아니라 또렷한 굵은 진회색이다
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = T.Ink,
+        )
+        trailing?.invoke()
+    }
+}
+
+/**
+ * 상태 배지. 옅은 색 면 + 색 점(또는 아이콘) + 라벨. 연결·매크로 상태처럼 한 단어 정보에 쓴다.
+ * 테두리는 두지 않는다 — 토스 배지는 면 하나로 끝난다. 이모지 대신 [icon]을 쓴다.
+ */
+@Composable
+fun StatusPill(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    showDot: Boolean = true,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(color.copy(alpha = 0.10f))
+            .padding(horizontal = Space.sm + Space.xs, vertical = Space.xs + 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.xs + 1.dp),
+    ) {
+        if (icon != null) {
+            androidx.compose.material3.Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(14.dp),
+            )
+        } else if (showDot) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .drawBehind { drawRect(color) }
+            )
+        }
+        CompositionLocalProvider(LocalContentColor provides color) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+            )
+        }
+    }
+}
+
+/** 얇은 구분선 */
+@Composable
+fun Hairline(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(T.Hairline)
+            .alpha(0.8f)
+    )
+}

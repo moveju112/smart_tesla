@@ -36,12 +36,16 @@ import com.wemade.teslamacro.domain.model.SignalKind
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.ChipRow
 import com.wemade.teslamacro.ui.component.NumberStepper
+import com.wemade.teslamacro.ui.component.rememberOnResume
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
 private val DAY_LABELS = listOf("월", "화", "수", "목", "금", "토", "일")
+
+/** 위치 권한 거부 안내 — 복귀 시 자동으로 지우기 위해 상수로 비교한다 */
+private const val PERMISSION_MISSING = "위치 권한이 없어 저장할 수 없어요"
 
 /** 트리거 카드 — "언제" */
 @Composable
@@ -146,6 +150,12 @@ private fun NearLocationEditor(
     var status by remember { mutableStateOf<String?>(null) }
     var address by rememberSaveable { mutableStateOf("") }
 
+    // 설정 앱에서 권한을 허용하고 돌아오면 "권한 없음" 문구가 바로 사라지게 복귀마다 다시 읽는다
+    val hasLocationPermission = rememberOnResume { TabletLocation(context).hasPermission() }
+    LaunchedEffect(hasLocationPermission) {
+        if (hasLocationPermission && status == PERMISSION_MISSING) status = null
+    }
+
     // 저장된 좌표를 주소로 되돌려 보여준다 — 어디가 찍혔는지 눈으로 확인시킨다
     var savedAddress by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(condition.latitude, condition.longitude) {
@@ -178,7 +188,7 @@ private fun NearLocationEditor(
             MacroService.start(context)
             capture()
         } else {
-            status = "위치 권한이 없어 저장할 수 없어요"
+            status = PERMISSION_MISSING
         }
     }
 
@@ -211,7 +221,7 @@ private fun NearLocationEditor(
             text = if (condition.latitude != null) "현재 위치로 다시 저장" else "현재 위치를 출발지로 저장",
             tone = ButtonTone.Secondary,
         ) {
-            if (TabletLocation(context).hasPermission()) capture()
+            if (hasLocationPermission || TabletLocation(context).hasPermission()) capture()
             else permission.launch(
                 arrayOf(
                     android.Manifest.permission.ACCESS_FINE_LOCATION,

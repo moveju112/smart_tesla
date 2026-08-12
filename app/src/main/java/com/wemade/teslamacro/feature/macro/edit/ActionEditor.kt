@@ -28,6 +28,7 @@ import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.ChipRow
 import com.wemade.teslamacro.ui.component.NumberStepper
+import com.wemade.teslamacro.ui.component.rememberOnResume
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
@@ -197,8 +198,10 @@ private fun parameterEditor(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            // 백그라운드에서 지도를 띄우려면 이 권한이 필수다. 여기서 바로 받는다
-            if (!Settings.canDrawOverlays(context)) {
+            // 백그라운드에서 지도를 띄우려면 이 권한이 필수다. 여기서 바로 받는다.
+            // 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
+            val hasOverlay = rememberOnResume { Settings.canDrawOverlays(context) }
+            if (!hasOverlay) {
                 Spacer(Modifier.height(Space.sm))
                 Text(
                     text = "자동으로 지도를 띄우려면 \"다른 앱 위에 표시\" 권한이 필요해요.",

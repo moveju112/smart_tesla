@@ -45,6 +45,41 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setActivePollSeconds(seconds) }
     }
 
+    // ---- 업데이트 ----
+
+    /** null = 아직 확인 안 함 */
+    val update = MutableStateFlow<UpdateState?>(null)
+
+    /**
+     * GitHub 최신 릴리스와 현재 버전을 비교한다.
+     * 실패해도 릴리스 페이지 링크로 안내할 수 있게 상태만 남긴다.
+     */
+    fun checkUpdate() {
+        update.value = UpdateState.Checking
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            update.value = runCatching {
+                val body = java.net.URL(RELEASE_API).readText()
+                val json = kotlinx.serialization.json.Json.parseToJsonElement(body)
+                    .let { it as kotlinx.serialization.json.JsonObject }
+                val tag = json["tag_name"]
+                    ?.let { (it as kotlinx.serialization.json.JsonPrimitive).content }
+                    .orEmpty()
+                val apkUrl = (json["assets"] as? kotlinx.serialization.json.JsonArray)
+                    ?.firstNotNullOfOrNull { asset ->
+                        val obj = asset as kotlinx.serialization.json.JsonObject
+                        (obj["browser_download_url"] as? kotlinx.serialization.json.JsonPrimitive)
+                            ?.content?.takeIf { it.endsWith(".apk") }
+                    }
+                val latest = tag.removePrefix("v")
+                if (latest.isNotBlank() && latest != com.wemade.teslamacro.BuildConfig.VERSION_NAME) {
+                    UpdateState.Available(latest, apkUrl ?: RELEASE_PAGE)
+                } else {
+                    UpdateState.UpToDate
+                }
+            }.getOrElse { UpdateState.Failed }
+        }
+    }
+
     // ---- 음성 ----
 
     val voiceModel: StateFlow<VoiceModelState> = container.voiceModelStore.state
@@ -76,4 +111,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             container.settingsStore.setVehicleAddress("")
         }
     }
+
+    private companion object {
+        const val RELEASE_API =
+            "https://api.github.com/repos/moveju112/smart_tesla/releases/latest"
+        const val RELEASE_PAGE =
+            "https://github.com/moveju112/smart_tesla/releases/latest"
+    }
+}
+
+/** 업데이트 확인 결과 */
+sealed interface UpdateState {
+    data object Checking : UpdateState
+    data object UpToDate : UpdateState
+    data object Failed : UpdateState
+
+    /** 새 버전이 있다. [apkUrl]을 브라우저로 열면 바로 내려받는다 */
+    data class Available(val version: String, val apkUrl: String) : UpdateState
 }

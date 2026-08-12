@@ -19,6 +19,9 @@
     <!-- 매크로가 백그라운드에서 네이버 지도를 띄우려면 필요하다 (설정에서 사용자가 허용) -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- GitHub 릴리스에서 새 버전 확인용. 차량 제어(BLE)는 인터넷을 쓰지 않는다 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <queries>
         <package android:name="com.teslamotors.tesla" />
         <intent>

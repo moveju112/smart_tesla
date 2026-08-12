@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.voice.VoiceModelState
@@ -52,6 +53,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     simulator: SimulatorControls? = null,
     voice: VoiceControls? = null,
+    update: UpdateState? = null,
+    onCheckUpdate: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -157,7 +160,61 @@ fun SettingsScreen(
             }
         }
 
+        SectionHeader("업데이트")
+        UpdatePanel(update = update, onCheck = onCheckUpdate)
+
         Spacer(Modifier.height(Space.xxl))
+    }
+}
+
+/** 현재 버전 표시 + GitHub 최신 릴리스 확인/다운로드 */
+@Composable
+private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit) {
+    val context = LocalContext.current
+    TCard {
+        LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = when (update) {
+                    null -> "새 버전이 나왔는지 확인해 보세요."
+                    is UpdateState.Checking -> "확인 중…"
+                    is UpdateState.UpToDate -> "최신 버전이에요."
+                    is UpdateState.Failed -> "확인에 실패했어요. 인터넷 연결을 봐주세요."
+                    is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = when (update) {
+                    is UpdateState.Failed -> T.Warn
+                    is UpdateState.Available -> T.Ink
+                    else -> T.InkFaint
+                },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Space.md))
+            if (update is UpdateState.Available) {
+                // 브라우저가 APK를 바로 내려받는다. 받은 뒤 알림에서 설치
+                TButton("다운로드", fillWidth = false, small = true) {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(update.apkUrl),
+                        )
+                    )
+                }
+            } else {
+                TButton(
+                    text = "업데이트 확인",
+                    tone = ButtonTone.Secondary,
+                    fillWidth = false,
+                    small = true,
+                    enabled = update !is UpdateState.Checking,
+                    onClick = onCheck,
+                )
+            }
+        }
     }
 }
 

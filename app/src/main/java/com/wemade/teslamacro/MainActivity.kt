@@ -220,6 +220,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                 Destination.Settings -> {
                     val simulated = settingsViewModel.simulatedState?.collectAsState()?.value
                     val voiceModel by settingsViewModel.voiceModel.collectAsState()
+                    val update by settingsViewModel.update.collectAsState()
 
                     // 음성 모델 zip 고르기. 앱이 직접 내려받지 않으므로 파일을 받아 오는 건 사용자 몫이다
                     val pickModel = rememberLauncherForActivityResult(
@@ -249,6 +250,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onInstall = { pickModel.launch(arrayOf("*/*")) },
                             onRemove = settingsViewModel::removeVoiceModel,
                         ),
+                        update = update,
+                        onCheckUpdate = settingsViewModel::checkUpdate,
                     )
                 }
             }

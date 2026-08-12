@@ -180,6 +180,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onRetryConnect = vm::retryConnect,
                         onDismissError = vm::dismissError,
                         onSeatClimate = vm::setSeatClimate,
+                        onStealthCharging = vm::setStealthCharging,
                     )
                 }
 

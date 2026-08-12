@@ -48,6 +48,11 @@ data class AppSettings(
     val vehicleAddress: String = "",
     /** 차에 지은 별칭. 페어링 목록에서 그대로 읽어 온다 (예 "Tesla Model Y Why") */
     val vehicleName: String = "",
+    /**
+     * 스텔스 충전 — 충전 중 전류를 난수로 흔들어 부하 지문을 흐린다.
+     * 기본 꺼짐. 켜면 충전이 느려지는 대가가 있다 (평균 전류가 내려가고 쉬는 구간이 생김).
+     */
+    val stealthCharging: Boolean = false,
 ) {
     /** 차량을 특정할 수 있는가 (연결 시도 가능) */
     val isPaired: Boolean get() = vin.isNotBlank()
@@ -69,6 +74,7 @@ class SettingsStore(private val context: Context) {
             voiceAlwaysOn = prefs[KeyVoiceAlwaysOn] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
+            stealthCharging = prefs[KeyStealthCharging] ?: false,
         )
     }
 
@@ -80,6 +86,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setVoiceAlwaysOn(enabled: Boolean) = edit { it[KeyVoiceAlwaysOn] = enabled }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
+    suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)
@@ -95,5 +102,6 @@ class SettingsStore(private val context: Context) {
         val KeyVoiceAlwaysOn = booleanPreferencesKey("voice_always_on")
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")
+        val KeyStealthCharging = booleanPreferencesKey("stealth_charging")
     }
 }

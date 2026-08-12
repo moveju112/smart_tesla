@@ -104,6 +104,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             isCharging = effective.isCharging,
             chargeLimitPercent = effective.chargeLimitPercent,
             chargingAmps = effective.chargingAmps,
+            stealthCharging = settings.stealthCharging,
             automationEnabled = settings.automationEnabled,
             runningMacroCount = container.runner.running.value.size,
         )
@@ -117,6 +118,11 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
      * 사용자가 직접 누른 명령.
      * 실행 중인 매크로가 있으면 먼저 멈춘다 — 사람 조작이 항상 우선이다.
      */
+    /** 스텔스 충전 on/off. 실제 전류 조작은 백그라운드 컨트롤러가 한다 */
+    fun setStealthCharging(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setStealthCharging(enabled) }
+    }
+
     fun send(command: VehicleCommand) {
         viewModelScope.launch {
             container.runner.cancelAll()

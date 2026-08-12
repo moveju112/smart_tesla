@@ -60,6 +60,7 @@ import com.wemade.teslamacro.ui.component.StatusPill
 import com.wemade.teslamacro.ui.component.softShadow
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.MetricTextStyle
@@ -83,6 +84,7 @@ fun DashboardScreen(
     onDismissError: () -> Unit,
     modifier: Modifier = Modifier,
     onSeatClimate: (SeatPosition, SeatMode, Level) -> Unit = { _, _, _ -> },
+    onStealthCharging: (Boolean) -> Unit = {},
 ) {
     val compact = LocalPane.current.isCompact
 
@@ -145,7 +147,7 @@ fun DashboardScreen(
                     }
 
                     SectionHeader("충전")
-                    ChargeCard(state, onCommand)
+                    ChargeCard(state, onCommand, onStealthCharging)
                 },
             )
         }
@@ -374,6 +376,7 @@ private fun ClimateCard(
 private fun ChargeCard(
     state: DashboardUiState,
     onCommand: (VehicleCommand) -> Unit,
+    onStealthCharging: (Boolean) -> Unit,
 ) {
     TCard {
         var draftLimit by remember(state.chargeLimitPercent) {
@@ -430,7 +433,22 @@ private fun ChargeCard(
             range = 5f..48f,
             onChange = { draftAmps = it.roundToInt() },
             onCommit = { onCommand(VehicleCommand.SetChargingAmps(draftAmps)) },
-            enabled = state.isReady,
+            enabled = state.isReady && !state.stealthCharging,
+        )
+
+        Spacer(Modifier.height(Space.sm))
+        Hairline()
+        Spacer(Modifier.height(Space.sm))
+        // 스텔스 충전 토글. 켜면 컨트롤러가 전류를 계속 흔들어 수동 전류 조절은 잠근다
+        ToggleRow(
+            title = "스텔스 충전",
+            checked = state.stealthCharging,
+            onCheckedChange = onStealthCharging,
+        )
+        Text(
+            text = "전류를 난수로 흔들어 충전 부하 패턴을 흐려요. 충전이 느려질 수 있어요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
         )
     }
 }
@@ -703,6 +721,7 @@ data class DashboardUiState(
     val isCharging: Boolean? = null,
     val chargeLimitPercent: Int? = null,
     val chargingAmps: Int? = null,
+    val stealthCharging: Boolean = false,
     val automationEnabled: Boolean = true,
     val runningMacroCount: Int = 0,
 ) {

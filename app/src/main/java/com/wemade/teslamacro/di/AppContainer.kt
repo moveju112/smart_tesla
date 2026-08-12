@@ -55,6 +55,8 @@ class AppContainer(private val context: Context) {
         private set
     lateinit var poller: StatePoller
         private set
+    lateinit var stealthCharge: com.wemade.teslamacro.data.charge.StealthChargeController
+        private set
 
     /** VIN 등록 여부에 따라 실차/시뮬레이터를 고른다 */
     suspend fun initialize() {
@@ -73,6 +75,9 @@ class AppContainer(private val context: Context) {
         poller = StatePoller(
             gateway, ruleStore, settingsStore, runner, latestReading,
             locationReader = tabletLocation::read,
+        )
+        stealthCharge = com.wemade.teslamacro.data.charge.StealthChargeController(
+            gateway, poller, settingsStore,
         )
     }
 

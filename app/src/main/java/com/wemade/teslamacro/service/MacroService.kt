@@ -36,6 +36,8 @@ class MacroService : LifecycleService() {
             // 컨테이너 초기화가 끝난 뒤에만 폴링을 시작한다
             app.ready.first { it }
             app.container.poller.start(lifecycleScope)
+            // 스텔스 충전도 같은 서비스 수명에 맞춰 돈다. 안에서 설정·충전 여부를 스스로 게이트한다
+            app.container.stealthCharge.start(lifecycleScope)
         }
     }
 
@@ -76,7 +78,10 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
-        (application as TeslaMacroApplication).container.poller.stop()
+        (application as TeslaMacroApplication).container.let {
+            it.poller.stop()
+            it.stealthCharge.stop()
+        }
         super.onDestroy()
     }
 

@@ -18,6 +18,11 @@ enum class Signal(
     BATTERY_LEVEL("배터리", SignalKind.NUMBER, "%"),
     RANGE("주행 가능 거리", SignalKind.NUMBER, "km"),
     SPEED("속도", SignalKind.NUMBER, "km/h"),
+    /**
+     * 차가 주는 값이 아니라 앱이 잰다 — 탑승이 이어진 시간, 하차 후엔 직전 세션 길이.
+     * "30분 이상 타고 내렸으면 애프터블로우" 같은 지속시간 조건의 재료다
+     */
+    RIDE_MINUTES("탑승 시간", SignalKind.NUMBER, "분"),
 
     USER_PRESENT("운전자 탑승", SignalKind.BOOLEAN),
     CLIMATE_ON("공조 작동", SignalKind.BOOLEAN),
@@ -37,6 +42,7 @@ enum class Signal(
         BATTERY_LEVEL -> snapshot.batteryLevelPercent?.toDouble()
         RANGE -> snapshot.rangeKm?.toDouble()
         SPEED -> snapshot.speedKph?.toDouble()
+        RIDE_MINUTES -> snapshot.rideMinutes
         else -> null
     }
 
@@ -66,7 +72,8 @@ enum class Signal(
             INSIDE_TEMP, OUTSIDE_TEMP, CLIMATE_ON, PRECONDITIONING -> StateCategory.CLIMATE
             BATTERY_LEVEL, CHARGING, RANGE, CHARGE_PORT_OPEN -> StateCategory.CHARGE
             PARKED, DRIVING, SPEED -> StateCategory.DRIVE
-            USER_PRESENT, LOCKED, DOOR_DRIVER_FRONT, DOOR_PASSENGER_FRONT ->
+            // 탑승 시간은 isUserPresent에서 파생되므로 같은 카테고리다
+            USER_PRESENT, LOCKED, DOOR_DRIVER_FRONT, DOOR_PASSENGER_FRONT, RIDE_MINUTES ->
                 StateCategory.BODY_CONTROLLER
         }
 }

@@ -52,6 +52,8 @@ data class VehicleSnapshot(
     val rangeKm: Float? = null,
     val isChargePortOpen: Boolean? = null,
     val speedKph: Float? = null,
+    /** 차가 아니라 폴러가 잰다 — 탑승 중이면 지금까지, 하차 후엔 직전 세션 길이(분) */
+    val rideMinutes: Double? = null,
 ) {
     companion object {
         val Empty = VehicleSnapshot(timestampMillis = 0L)

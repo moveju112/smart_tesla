@@ -55,6 +55,7 @@ class CommandCoverageTest {
             rangeKm = 300f,
             isChargePortOpen = true,
             speedKph = 0f,
+            rideMinutes = 12.0,
         )
         Signal.entries.forEach { signal ->
             val value: Any? = when (signal.kind) {

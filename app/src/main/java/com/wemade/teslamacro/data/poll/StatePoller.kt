@@ -108,7 +108,7 @@ class StatePoller(
             // 3. 카테고리는 하나씩 읽어 병합한다 (한 번에 여러 개는 응답 크기 초과)
             val merged = categories.fold(_snapshot.value) { acc, category ->
                 gateway.read(category).getOrNull()?.let { merge(acc, it) } ?: acc
-            }
+            }.let { withRideMinutes(it) }
             _snapshot.value = merged
 
             // 4. 사건이 보이면 집중 폴링 창을 연다
@@ -135,6 +135,27 @@ class StatePoller(
                 if (isActiveWindow) settings.activePollSeconds else settings.idlePollSeconds
             delay(interval * 1000L)
         }
+    }
+
+    // ---- 탑승 시간 측정 ----
+    // 차가 주는 값이 아니라서 폴러가 직접 잰다.
+    // 앱이 주행 중에 재시작되면 그 시점부터 다시 세므로 실제보다 짧게 나올 수 있다 (감수)
+    private var presentSinceMillis: Long? = null
+    private var lastRideMinutes: Double? = null
+
+    /** 탑승 시작~지금까지, 하차 후엔 직전 세션 길이를 스냅샷에 싣는다 */
+    private fun withRideMinutes(snapshot: VehicleSnapshot): VehicleSnapshot {
+        when (snapshot.isUserPresent) {
+            true -> if (presentSinceMillis == null) presentSinceMillis = now()
+            false -> presentSinceMillis?.let { since ->
+                // 하차 순간: 세션 길이를 고정해 "30분 이상 탔으면" 조건이 이 값을 본다
+                lastRideMinutes = (now() - since) / 60_000.0
+                presentSinceMillis = null
+            }
+            null -> Unit   // 못 읽었으면 판단 보류 — 세션을 끊지 않는다
+        }
+        val riding = presentSinceMillis?.let { (now() - it) / 60_000.0 }
+        return snapshot.copy(rideMinutes = riding ?: lastRideMinutes)
     }
 
     /** 켜져 있는 매크로 중 위치 조건(조건 또는 조건 대기)을 쓰는 게 하나라도 있는지 */

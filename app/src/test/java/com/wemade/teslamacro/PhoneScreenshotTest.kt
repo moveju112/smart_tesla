@@ -100,6 +100,7 @@ class PhoneScreenshotTest {
                     onStopAll = {},
                     onEdit = {},
                     onDuplicate = {},
+                    onDelete = {},
                     onCreate = {},
                 )
             }

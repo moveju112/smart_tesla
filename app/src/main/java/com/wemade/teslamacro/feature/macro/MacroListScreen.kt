@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,6 +73,7 @@ fun MacroListScreen(
     onStopAll: () -> Unit,
     onEdit: (MacroRule) -> Unit,
     onDuplicate: (MacroRule) -> Unit,
+    onDelete: (MacroRule) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -133,6 +135,7 @@ fun MacroListScreen(
                 onRunNow = { onRunNow(rule) },
                 onEdit = { onEdit(rule) },
                 onDuplicate = { onDuplicate(rule) },
+                onDelete = { onDelete(rule) },
             )
         }
 
@@ -163,6 +166,7 @@ private fun MacroCard(
     onRunNow: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     // 카드 자체가 편집 진입점이다. 편집 버튼을 따로 두면 카드가 버튼 창고가 된다
     TCard(outlined = isRunning, onClick = onEdit) {
@@ -256,6 +260,23 @@ private fun MacroCard(
             )
             Spacer(Modifier.width(Space.sm))
             TButton("복제", ButtonTone.Ghost, fillWidth = false, small = true, onClick = onDuplicate)
+            Spacer(Modifier.width(Space.sm))
+            // 삭제는 실수 방지로 두 번 탭 — 다이얼로그까지 띄울 일은 아니다
+            var confirmDelete by remember(rule.id) { mutableStateOf(false) }
+            LaunchedEffect(confirmDelete) {
+                if (confirmDelete) {
+                    delay(3_000)
+                    confirmDelete = false
+                }
+            }
+            TButton(
+                text = if (confirmDelete) "한 번 더 누르면 삭제" else "삭제",
+                tone = if (confirmDelete) ButtonTone.Danger else ButtonTone.Ghost,
+                fillWidth = false,
+                small = true,
+            ) {
+                if (confirmDelete) onDelete() else confirmDelete = true
+            }
             Spacer(Modifier.weight(1f))
             // 카드 탭이 편집으로 간다는 힌트. 버튼 대신 관례적인 꺾쇠 하나
             Icon(

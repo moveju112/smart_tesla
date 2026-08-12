@@ -59,6 +59,11 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** 목록 카드의 삭제 버튼. 편집 화면에 들어가지 않고 바로 지운다 */
+    fun delete(rule: MacroRule) {
+        viewModelScope.launch { container.ruleStore.delete(rule.id) }
+    }
+
     fun deleteDraft() {
         val current = _draft.value ?: return
         viewModelScope.launch {

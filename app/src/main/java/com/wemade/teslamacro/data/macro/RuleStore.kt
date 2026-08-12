@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.SetSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
@@ -21,6 +23,9 @@ import java.io.File
 class RuleStore(context: Context) {
 
     private val file = File(context.filesDir, "macros.json")
+
+    /** 한 번이라도 깔아준 프리셋 id 목록. 지운 프리셋이 재시작마다 부활하는 걸 막는다 */
+    private val seenPresetsFile = File(context.filesDir, "macro_presets_seen.json")
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true   // 앱 업데이트로 필드가 늘어도 옛 파일을 계속 읽는다
@@ -37,14 +42,27 @@ class RuleStore(context: Context) {
         }.getOrNull()
 
         // 업데이트로 새 프리셋이 생겨도 기존 사용자에게 깔린다.
-        // 같은 id는 사용자가 고친 버전을 존중하고, 없는 것만 이어붙인다.
-        // ponytail: 지운 프리셋도 되살아난다 — 거슬리면 "지운 프리셋 id" 기록으로 업그레이드
+        // 같은 id는 사용자가 고친 버전을 존중하고, 한 번도 소개 안 한 것만 이어붙인다 —
+        // 소개했는데 없는 건 사용자가 지운 것이니 되살리지 않는다
+        val seen = runCatching {
+            if (seenPresetsFile.exists()) {
+                json.decodeFromString(presetIdSerializer, seenPresetsFile.readText())
+            } else emptySet()
+        }.getOrDefault(emptySet())
+
         _rules.value = loaded?.let { existing ->
-            val knownIds = existing.map { it.id }.toSet()
+            val knownIds = existing.map { it.id }.toSet() + seen
             val missing = MacroPresets.defaults().filter { it.id !in knownIds }
             if (missing.isEmpty()) existing
             else (existing + missing).also { persist(it) }
         } ?: MacroPresets.defaults().also { persist(it) }
+
+        // 지금 시점의 프리셋 전부를 "소개함"으로 기록한다
+        runCatching {
+            seenPresetsFile.writeText(
+                json.encodeToString(presetIdSerializer, MacroPresets.defaults().map { it.id }.toSet())
+            )
+        }
     }
 
     suspend fun upsert(rule: MacroRule) = mutate { current ->
@@ -70,5 +88,6 @@ class RuleStore(context: Context) {
 
     private companion object {
         val ruleListSerializer = ListSerializer(MacroRule.serializer())
+        val presetIdSerializer = SetSerializer(String.serializer())
     }
 }

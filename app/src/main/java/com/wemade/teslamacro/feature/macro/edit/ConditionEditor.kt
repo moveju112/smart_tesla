@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.wemade.teslamacro.data.location.TabletLocation
 import com.wemade.teslamacro.data.nav.NaverNavigator
 import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.GeoPoint
 import com.wemade.teslamacro.service.MacroService
 import kotlinx.coroutines.launch
 import com.wemade.teslamacro.domain.macro.Trigger
@@ -144,6 +146,16 @@ private fun NearLocationEditor(
     var status by remember { mutableStateOf<String?>(null) }
     var address by rememberSaveable { mutableStateOf("") }
 
+    // 저장된 좌표를 주소로 되돌려 보여준다 — 어디가 찍혔는지 눈으로 확인시킨다
+    var savedAddress by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(condition.latitude, condition.longitude) {
+        val lat = condition.latitude
+        val lng = condition.longitude
+        savedAddress = if (lat != null && lng != null) {
+            NaverNavigator(context).addressOf(GeoPoint(lat, lng))
+        } else null
+    }
+
     // 1. 현재 위치 읽어서 조건에 저장
     val capture: () -> Unit = {
         status = "위치 확인 중… (최대 8초)"
@@ -172,14 +184,24 @@ private fun NearLocationEditor(
 
     Column {
         Text(
-            text = if (condition.latitude != null) {
-                "위치 저장됨 — 이 근처에서 발동했을 때만 실행해요"
-            } else {
-                "위치를 지정해 주세요 — 그 자리에서 저장하거나 주소로 찍을 수 있어요"
+            text = when {
+                condition.latitude == null ->
+                    "위치를 지정해 주세요 — 그 자리에서 저장하거나 주소로 찍을 수 있어요"
+                savedAddress != null ->
+                    "저장 위치: $savedAddress"
+                else ->
+                    "저장 위치: 좌표 %.5f, %.5f".format(condition.latitude, condition.longitude)
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (condition.latitude != null) T.InkMuted else T.Warn,
         )
+        if (condition.latitude != null) {
+            Text(
+                text = "이 근처에서 발동했을 때만 실행해요",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        }
         status?.let {
             Spacer(Modifier.height(Space.xs))
             Text(it, style = MaterialTheme.typography.bodySmall, color = T.Warn)

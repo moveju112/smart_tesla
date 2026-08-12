@@ -123,6 +123,7 @@ class ScreenshotTest {
                 onStopAll = {},
                 onEdit = {},
                 onDuplicate = {},
+                onDelete = {},
                 onCreate = {},
             )
         }
@@ -141,6 +142,7 @@ class ScreenshotTest {
                 onStopAll = {},
                 onEdit = {},
                 onDuplicate = {},
+                onDelete = {},
                 onCreate = {},
             )
         }

@@ -54,6 +54,17 @@ class NaverNavigator(private val context: Context) {
         geocode(address)?.let { GeoPoint(it.latitude, it.longitude) }
     }
 
+    /** 좌표를 사람이 읽는 주소로. 저장한 출발지가 어디인지 확인시켜줄 때 쓴다 */
+    suspend fun addressOf(point: GeoPoint): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            @Suppress("DEPRECATION")
+            Geocoder(context, Locale.KOREA)
+                .getFromLocation(point.latitude, point.longitude, 1)
+                ?.firstOrNull()
+                ?.getAddressLine(0)
+        }.getOrNull()
+    }
+
     // 최신 API(콜백식)는 33+ 전용이라, 모든 버전에서 도는 동기식을 그대로 쓴다
     @Suppress("DEPRECATION")
     private fun geocode(address: String): android.location.Address? = runCatching {

@@ -212,6 +212,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onStopAll = vm::stopAll,
                             onEdit = vm::editMacro,
                             onDuplicate = vm::duplicate,
+                            onDelete = vm::delete,
                             onCreate = vm::createMacro,
                         )
                     }

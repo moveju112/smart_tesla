@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,6 +18,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AcUnit
+import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.Luggage
+import androidx.compose.material.icons.rounded.VerticalAlignBottom
+import androidx.compose.material.icons.rounded.VerticalAlignTop
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -30,6 +40,7 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.VehicleCommand
@@ -42,7 +53,6 @@ import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.IndeterminateBar
 import com.wemade.teslamacro.ui.component.InlineBanner
 import com.wemade.teslamacro.ui.component.LevelSelector
-import com.wemade.teslamacro.ui.component.MetricBlock
 import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.SkeletonBlock
@@ -59,8 +69,11 @@ import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
 /**
- * 제어 화면. "차에 타서 3초 안에 원하는 걸 누른다"가 목표다.
- * 위에서부터 읽는 값 -> 자주 쓰는 조작 -> 가끔 쓰는 조작 순으로 배치한다.
+ * 제어 화면 — 0.7.0 리디자인.
+ *
+ * "차에 타서 3초 안에 원하는 걸 누른다"가 목표.
+ * 세로(폰) 기준: 상태 히어로 → 바로 아래 퀵액션 그리드 → 공조 → 시트.
+ * 이전 버전의 "상태" 카드는 없앴다 — 배터리·잠금은 히어로로, 갱신·자동화는 헤더 캡션으로.
  */
 @Composable
 fun DashboardScreen(
@@ -91,118 +104,22 @@ fun DashboardScreen(
             Spacer(Modifier.height(Space.md))
             InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
 
-            // 넓으면 두 단, 좁으면 한 단으로 이어 붙인다.
+            // 좁으면 한 단 스크롤, 넓으면 좌우 두 단.
             // 폰에서 두 단을 유지하면 세그먼트 버튼이 손가락보다 좁아진다
             TwoPane(
                 compact = compact,
-                modifier = Modifier.fillMaxSize().padding(top = Space.md),
+                modifier = Modifier.fillMaxSize().padding(top = Space.sm),
                 first = {
-                    HeroClimateCard(state)
+                    HeroCard(state)
 
-                    SectionHeader("공조")
-                    TCard {
-                        // 드래그 중에는 화면 값만 바뀌고, 손을 떼는 순간 한 번 전송한다.
-                        // 틱마다 보내면 BLE 직렬 큐가 밀려 마지막 값이 늦게 도착한다
-                        var draftTemp by remember(state.targetTempValue) {
-                            mutableStateOf(state.targetTempValue ?: 22.0)
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (state.isClimateOn) "작동 중" else "꺼짐",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (state.isClimateOn) T.Ink else T.InkFaint,
-                                )
-                                Text(
-                                    text = "목표 ${"%.1f".format(draftTemp)}℃",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = T.InkFaint,
-                                )
-                            }
-                            TButton(
-                                text = if (state.isClimateOn) "끄기" else "켜기",
-                                tone = if (state.isClimateOn) ButtonTone.Secondary
-                                else ButtonTone.Primary,
-                                fillWidth = false,
-                                enabled = state.isReady,
-                                onClick = {
-                                    onCommand(
-                                        if (state.isClimateOn) VehicleCommand.ClimateOff
-                                        else VehicleCommand.ClimateOn
-                                    )
-                                },
-                            )
-                        }
-                        Spacer(Modifier.height(Space.sm))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("15℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
-                            Slider(
-                                value = draftTemp.toFloat(),
-                                // 0.5도 단위로 끊는다 — 차량이 받는 최소 단위다
-                                onValueChange = { draftTemp = (it * 2).roundToInt() / 2.0 },
-                                onValueChangeFinished = {
-                                    onCommand(VehicleCommand.SetTemperature(draftTemp))
-                                },
-                                valueRange = 15f..28f,
-                                enabled = state.isReady,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = T.Electric,
-                                    activeTrackColor = T.Electric,
-                                    inactiveTrackColor = T.Slate,
-                                ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(horizontal = Space.sm),
-                            )
-                            Text("28℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
-                        }
-                    }
-
-                    // 차 앞에서 "지금 잘 돌고 있나"를 판단할 때 보는 값들.
-                    // 마지막 갱신 시각이 안 보이면 멈춘 건지 값이 그대로인 건지 구분이 안 된다
-                    SectionHeader("상태")
-                    TCard {
-                        StatusLine("마지막 갱신", state.lastUpdatedLabel)
-                        StatusLine("배터리", state.batteryLabel)
-                        StatusLine("잠금", if (state.isLocked) "잠김" else "열림")
-                        StatusLine("자동화", state.automationLabel)
-                    }
-
-                    SectionHeader("빠른 동작")
-                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        TButton(
-                            text = if (state.isLocked) "잠금 해제" else "잠금",
-                            tone = ButtonTone.Secondary,
-                            enabled = state.isReady,
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                onCommand(
-                                    if (state.isLocked) VehicleCommand.Unlock
-                                    else VehicleCommand.Lock
-                                )
-                            },
-                        )
-                        TButton(
-                            text = "창문 환기",
-                            tone = ButtonTone.Secondary,
-                            enabled = state.isReady,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onCommand(VehicleCommand.VentWindows) },
-                        )
-                        TButton(
-                            text = "라이트",
-                            tone = ButtonTone.Secondary,
-                            enabled = state.isReady,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onCommand(VehicleCommand.FlashLights) },
-                        )
-                    }
+                    Spacer(Modifier.height(Space.md))
+                    QuickActionGrid(state, onCommand, columns = if (compact) 3 else 2)
                 },
                 second = {
+                    // 넓은 화면에서는 왼단(상태·퀵액션) / 오른단(공조·시트)으로 균형을 맞춘다
+                    SectionHeader("공조")
+                    ClimateCard(state, onCommand)
+
                     SectionHeader("시트")
                     TCard {
                         // 운전석/동승석은 따로. 통풍이냐 열선이냐만 토글 하나로 합친다
@@ -263,6 +180,188 @@ private fun TwoPane(
         }
     }
 }
+
+// ---- 퀵액션 ----
+
+/** 퀵액션 한 칸의 정의 */
+private data class QuickAction(
+    val icon: ImageVector,
+    val label: String,
+    /** 켜짐 상태로 강조할지 (잠금·공조처럼 상태가 있는 것만) */
+    val active: Boolean = false,
+    val command: VehicleCommand,
+)
+
+/**
+ * 자주 쓰는 명령을 아이콘 그리드로.
+ * 세로 화면에서 스크롤 없이 손 닿는 위치에 두는 게 목적이라 히어로 바로 아래에 있다.
+ */
+@Composable
+private fun QuickActionGrid(
+    state: DashboardUiState,
+    onCommand: (VehicleCommand) -> Unit,
+    columns: Int,
+) {
+    val actions = listOf(
+        QuickAction(
+            // 라벨은 "누르면 일어날 일"로 쓴다 — 현재 상태는 아이콘·테두리가 말해준다
+            icon = if (state.isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+            label = if (state.isLocked) "잠금 해제" else "잠그기",
+            active = state.isLocked,
+            command = if (state.isLocked) VehicleCommand.Unlock else VehicleCommand.Lock,
+        ),
+        QuickAction(
+            icon = Icons.Rounded.AcUnit,
+            label = if (state.isClimateOn) "공조 끄기" else "공조 켜기",
+            active = state.isClimateOn,
+            command = if (state.isClimateOn) VehicleCommand.ClimateOff else VehicleCommand.ClimateOn,
+        ),
+        QuickAction(
+            icon = Icons.Rounded.VerticalAlignBottom,
+            label = "창문 환기",
+            command = VehicleCommand.VentWindows,
+        ),
+        QuickAction(
+            icon = Icons.Rounded.VerticalAlignTop,
+            label = "창문 닫기",
+            command = VehicleCommand.CloseWindows,
+        ),
+        QuickAction(
+            icon = Icons.Rounded.Luggage,
+            label = "트렁크",
+            command = VehicleCommand.OpenTrunk,
+        ),
+        QuickAction(
+            icon = Icons.Rounded.DirectionsCar,
+            label = "프렁크",
+            command = VehicleCommand.OpenFrunk,
+        ),
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        actions.chunked(columns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                row.forEach { action ->
+                    QuickActionCell(
+                        action = action,
+                        enabled = state.isReady,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onCommand(action.command) },
+                    )
+                }
+                // 마지막 줄이 모자라면 빈 칸으로 정렬을 지킨다
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** 아이콘 + 라벨 한 칸. 상태가 있으면(잠금·공조) 켜짐 색으로 알려준다 */
+@Composable
+private fun QuickActionCell(
+    action: QuickAction,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(Radius.card)
+    val tint = when {
+        !enabled -> T.InkFaint
+        action.active -> T.Electric
+        else -> T.InkMuted
+    }
+    Column(
+        modifier = modifier
+            .softShadow(Elevation.card, Radius.card)
+            .clip(shape)
+            .background(T.Graphite, shape)
+            // 켜짐 상태는 배경이 아니라 얇은 테두리로 — 면을 칠하면 라이트 미니멀이 깨진다
+            .border(1.dp, if (action.active && enabled) T.Electric.copy(alpha = 0.35f) else Color.Transparent, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = Space.md),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(imageVector = action.icon, contentDescription = action.label, tint = tint, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(Space.xs + 2.dp))
+        Text(
+            text = action.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (enabled) T.InkMuted else T.InkFaint,
+        )
+    }
+}
+
+// ---- 공조 ----
+
+/** 공조 켜기/끄기 + 목표 온도 슬라이더 */
+@Composable
+private fun ClimateCard(
+    state: DashboardUiState,
+    onCommand: (VehicleCommand) -> Unit,
+) {
+    TCard {
+        // 드래그 중에는 화면 값만 바뀌고, 손을 떼는 순간 한 번 전송한다.
+        // 틱마다 보내면 BLE 직렬 큐가 밀려 마지막 값이 늦게 도착한다
+        var draftTemp by remember(state.targetTempValue) {
+            mutableStateOf(state.targetTempValue ?: 22.0)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (state.isClimateOn) "작동 중" else "꺼짐",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (state.isClimateOn) T.Ink else T.InkFaint,
+                )
+                Text(
+                    text = "목표 ${"%.1f".format(draftTemp)}℃",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkFaint,
+                )
+            }
+            TButton(
+                text = if (state.isClimateOn) "끄기" else "켜기",
+                tone = if (state.isClimateOn) ButtonTone.Secondary else ButtonTone.Primary,
+                fillWidth = false,
+                enabled = state.isReady,
+                onClick = {
+                    onCommand(
+                        if (state.isClimateOn) VehicleCommand.ClimateOff
+                        else VehicleCommand.ClimateOn
+                    )
+                },
+            )
+        }
+        Spacer(Modifier.height(Space.sm))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("15℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+            Slider(
+                value = draftTemp.toFloat(),
+                // 0.5도 단위로 끊는다 — 차량이 받는 최소 단위다
+                onValueChange = { draftTemp = (it * 2).roundToInt() / 2.0 },
+                onValueChangeFinished = {
+                    onCommand(VehicleCommand.SetTemperature(draftTemp))
+                },
+                valueRange = 15f..28f,
+                enabled = state.isReady,
+                colors = SliderDefaults.colors(
+                    thumbColor = T.Electric,
+                    activeTrackColor = T.Electric,
+                    inactiveTrackColor = T.Slate,
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = Space.sm),
+            )
+            Text("28℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+        }
+    }
+}
+
+// ---- 시트 ----
 
 /**
  * 좌석 한 자리의 통풍/열선 컨트롤.
@@ -339,27 +438,17 @@ private fun SeatModeToggle(
     }
 }
 
-/** 이름 - 값 한 줄. 상태 카드 안에서만 쓴다 */
-@Composable
-private fun StatusLine(label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
-        Text(value, style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-    }
-}
+// ---- 히어로 ----
 
 /**
- * 제어 화면 상단 히어로. 실내 온도를 크게 앞세우고,
- * 외부·목표 온도와 공조 상태를 아래에 묶는다.
- * 그라데이션 + 그림자로 "떠 있는 대시보드" 느낌을 준다.
+ * 화면 상단 히어로 — 이 차의 "지금"을 한 장으로.
+ * 실내 온도를 크게 앞세우고, 외부·목표·배터리·잠금을 아래 한 줄로 묶는다.
+ * 이전의 "상태" 카드가 여기로 흡수됐다 (같은 값을 두 군데서 보여주지 않는다).
  */
 @Composable
-private fun HeroClimateCard(state: DashboardUiState) {
+private fun HeroCard(state: DashboardUiState) {
     val shape = RoundedCornerShape(Radius.hero)
-    // 실내 온도에 따라 배경 톤을 미세하게 바꾼다 (더우면 난방톤 X, 여기선 냉/중립)
+    // 실내 온도에 따라 배경 톤을 미세하게 바꾼다
     val bg = when {
         !state.isClimateOn -> Grad.hero
         state.insideTempAccent == T.Heat -> Grad.heat
@@ -418,6 +507,7 @@ private fun HeroClimateCard(state: DashboardUiState) {
                 HeroStat("외부", if (state.hasReading) "${state.outsideTemp}℃" else "--", Modifier.weight(1f))
                 HeroStat("목표", "${state.targetTemp}℃", Modifier.weight(1f))
                 HeroStat("배터리", state.batteryLabel, Modifier.weight(1f))
+                HeroStat("잠금", if (state.isLocked) "잠김" else "열림", Modifier.weight(1f))
             }
         }
     }
@@ -433,19 +523,7 @@ private fun HeroStat(label: String, value: String, modifier: Modifier = Modifier
     }
 }
 
-/** 값을 아직 못 읽은 계측 자리 */
-@Composable
-private fun PendingMetric(label: String) {
-    Column {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.sm))
-        SkeletonBlock(width = 116, height = 44)
-    }
-}
+// ---- 헤더 ----
 
 @Composable
 private fun ConnectionHeader(
@@ -463,14 +541,19 @@ private fun ConnectionHeader(
                 style = MaterialTheme.typography.headlineMedium,
                 color = T.Ink,
             )
+            // 연결 상세 + 갱신 시각 + 자동화 상태를 캡션 한 줄로.
+            // 이전 버전의 "상태" 카드에 흩어져 있던 값들이다
             Text(
-                text = state.connectionDetail,
+                text = listOf(
+                    state.connectionDetail,
+                    "갱신 ${state.lastUpdatedLabel}",
+                    "자동화 ${state.automationLabel}",
+                ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // 음성 관련 UI는 설정 탭으로 옮겼다. 헤더엔 연결 상태만 남긴다
             StatusPill(text = state.connectionLabel, color = state.connectionColor)
             if (state.link is LinkState.Failed) {
                 Spacer(Modifier.width(Space.sm))
@@ -551,7 +634,7 @@ data class DashboardUiState(
             pendingCommand != null -> "${pendingCommand.label} 전송 중"
             link is LinkState.Connecting -> "신호 ${link.rssi}dBm"
             link is LinkState.Failed -> link.reason
-            link is LinkState.Ready && isSimulated -> "차량 미등록 — 가상 차량으로 동작 중"
+            link is LinkState.Ready && isSimulated -> "가상 차량"
             link is LinkState.Ready -> "BLE 직결"
             link is LinkState.Scanning -> "차량을 찾는 중"
             else -> "대기 중"

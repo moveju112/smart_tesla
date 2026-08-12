@@ -1,11 +1,14 @@
 package com.wemade.teslamacro.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
@@ -26,13 +29,46 @@ class MacroService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        promote()
 
         val app = application as TeslaMacroApplication
         lifecycleScope.launch {
             // 컨테이너 초기화가 끝난 뒤에만 폴링을 시작한다
             app.ready.first { it }
             app.container.poller.start(lifecycleScope)
+        }
+    }
+
+    /** 위치 권한을 나중에 받아도 start()를 다시 부르면 여기서 타입이 갱신된다 */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        promote()
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * 포그라운드로 승격한다.
+     *
+     * 백그라운드에서 GPS를 읽으려면 서비스 타입에 location이 있어야 하는데,
+     * 위치 권한 없이 location 타입으로 시작하면 시스템이 거부한다.
+     * 그래서 권한이 있을 때만 붙이고, 그래도 거부되면 위치 없이 감시만 계속한다.
+     */
+    private fun promote() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification())
+            return
+        }
+        val base = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        val hasLocation = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        try {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                if (hasLocation) base or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else base,
+            )
+        } catch (e: SecurityException) {
+            // 부팅 직후 등 위치 타입이 막히는 상황 — 매크로 감시가 죽는 것보단 위치를 포기한다
+            startForeground(NOTIFICATION_ID, buildNotification(), base)
         }
     }
 

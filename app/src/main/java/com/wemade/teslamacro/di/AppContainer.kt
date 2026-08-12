@@ -34,6 +34,9 @@ class AppContainer(private val context: Context) {
     /** 매크로의 "지도 안내" 걸음을 처리한다 */
     val navigator = com.wemade.teslamacro.data.nav.NaverNavigator(context)
 
+    /** 매크로의 "출발지 근처" 조건용 태블릿 위치 */
+    val tabletLocation = com.wemade.teslamacro.data.location.TabletLocation(context)
+
     /** 상시 대기용. 기기 안에서만 도는 오프라인 인식 */
     val voiceModelStore = com.wemade.teslamacro.data.voice.VoiceModelStore(context)
     val hotwordListener = com.wemade.teslamacro.data.voice.HotwordListener(voiceModelStore)
@@ -67,7 +70,10 @@ class AppContainer(private val context: Context) {
         )
 
         runner = MacroRunner(gateway, appScope, latestReading, navigator::navigate)
-        poller = StatePoller(gateway, ruleStore, settingsStore, runner, latestReading)
+        poller = StatePoller(
+            gateway, ruleStore, settingsStore, runner, latestReading,
+            locationReader = tabletLocation::read,
+        )
     }
 
     val isSimulated: Boolean get() = gateway.current is SimulatedVehicleGateway

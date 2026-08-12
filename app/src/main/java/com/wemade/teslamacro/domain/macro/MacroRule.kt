@@ -80,6 +80,19 @@ sealed interface Condition {
     /** 특정 요일일 때 */
     @Serializable @SerialName("on_days")
     data class OnDays(val days: Set<Int>) : Condition
+
+    /**
+     * 태블릿 위치가 저장 지점 반경 안일 때.
+     *
+     * "집 주차장에서 탔을 때만 회사 안내"처럼 출발지를 거르는 용도다.
+     * 좌표가 null이면 아직 저장 전 — 절대 충족되지 않는다 (fail-closed).
+     */
+    @Serializable @SerialName("near_location")
+    data class NearLocation(
+        val latitude: Double? = null,
+        val longitude: Double? = null,
+        val radiusMeters: Int = 400,
+    ) : Condition
 }
 
 /** 매크로가 순서대로 실행하는 한 걸음 */
@@ -170,5 +183,6 @@ fun Trigger.signals(): List<Signal> = when (this) {
 fun Condition.signals(): List<Signal> = when (this) {
     is Condition.InRange -> listOf(signal)
     is Condition.SignalIs -> listOf(signal)
-    is Condition.TimeWindow, is Condition.OnDays -> emptyList()
+    // 시간·위치 조건은 차량이 아니라 태블릿에서 온다
+    is Condition.TimeWindow, is Condition.OnDays, is Condition.NearLocation -> emptyList()
 }

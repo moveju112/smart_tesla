@@ -43,6 +43,10 @@ fun describe(condition: Condition): String = when (condition) {
         )
 
     is Condition.OnDays -> "${days(condition.days)}요일"
+
+    is Condition.NearLocation ->
+        if (condition.latitude == null) "출발지 근처 (위치 미저장)"
+        else "저장 위치 반경 ${condition.radiusMeters}m 안"
 }
 
 /**

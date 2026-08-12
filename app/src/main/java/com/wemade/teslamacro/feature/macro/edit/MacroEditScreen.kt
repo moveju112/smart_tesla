@@ -440,6 +440,9 @@ private fun ConditionPicker(
         ConditionChoice("요일", "예: 평일에만") {
             Condition.OnDays(setOf(1, 2, 3, 4, 5))
         },
+        ConditionChoice("출발지 근처", "저장한 위치 반경 안에서만 (예: 집 주차장에서 탔을 때)") {
+            Condition.NearLocation()
+        },
     )
 
     PickerSheet(title = title, onDismiss = onDismiss) {

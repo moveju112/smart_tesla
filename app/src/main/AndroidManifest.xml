@@ -22,6 +22,12 @@
     <!-- GitHub 릴리스에서 새 버전 확인용. 차량 제어(BLE)는 인터넷을 쓰지 않는다 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 매크로 "출발지 근처" 조건용. 위치 조건을 추가할 때만 요청한다 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 백그라운드 폴링 중에도 위치를 읽으려면 감시 서비스에 location 타입이 있어야 한다 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
     <queries>
         <package android:name="com.teslamotors.tesla" />
         <intent>
@@ -82,7 +88,7 @@
         <service
             android:name=".service.MacroService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
 
         <service
             android:name=".service.VoiceService"

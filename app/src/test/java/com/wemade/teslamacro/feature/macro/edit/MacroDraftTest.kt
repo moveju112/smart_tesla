@@ -66,6 +66,36 @@ class MacroDraftTest {
     }
 
     @Test
+    fun `지도 안내만 있는 매크로도 저장할 수 있다`() {
+        // 탑승 → 길안내가 대표 시나리오다. 차량 명령이 없다고 막으면 안 된다
+        val navigateOnly = MacroDraft.blank()
+            .copy(name = "출근 안내")
+            .addTrigger(Trigger.SignalBecomes(Signal.USER_PRESENT, to = true))
+            .addAction(ActionStep.Navigate(destinationName = "회사", address = "성남시 분당구"))
+        assertNull(navigateOnly.blockReason)
+    }
+
+    @Test
+    fun `지도 안내의 주소가 비면 저장할 수 없다`() {
+        val blankAddress = MacroDraft.blank()
+            .copy(name = "출근 안내")
+            .addTrigger(Trigger.SignalBecomes(Signal.USER_PRESENT, to = true))
+            .addAction(ActionStep.Navigate(destinationName = "회사", address = " "))
+        assertNotNull(blankAddress.blockReason)
+    }
+
+    @Test
+    fun `위치 미저장 출발지 조건이 있으면 저장할 수 없다`() {
+        // 좌표 없는 위치 조건은 절대 충족되지 않아 매크로가 영영 안 돈다
+        val unset = validDraft().addCondition(Condition.NearLocation())
+        assertNotNull(unset.blockReason)
+
+        val saved = validDraft()
+            .addCondition(Condition.NearLocation(latitude = 37.0, longitude = 127.0))
+        assertNull(saved.blockReason)
+    }
+
+    @Test
     fun `조건이 없어도 저장할 수 있다`() {
         // 조건은 선택이다. 트리거만으로 무조건 실행하는 매크로도 정상이다
         assertNull(validDraft().blockReason)

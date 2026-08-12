@@ -4,6 +4,9 @@ import com.wemade.teslamacro.data.macro.RuleStore
 import com.wemade.teslamacro.data.settings.SettingsStore
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
+import com.wemade.teslamacro.domain.macro.ActionStep
+import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.GeoPoint
 import com.wemade.teslamacro.domain.macro.MacroEngine
 import com.wemade.teslamacro.domain.macro.MacroRunner
 import com.wemade.teslamacro.domain.macro.Reading
@@ -40,6 +43,8 @@ class StatePoller(
     private val latestReading: MutableStateFlow<Reading?> = MutableStateFlow(null),
     private val engine: MacroEngine = MacroEngine(),
     private val now: () -> Long = System::currentTimeMillis,
+    /** 태블릿 위치. "출발지 근처" 조건을 쓰는 매크로가 있을 때만 호출된다 */
+    private val locationReader: suspend () -> GeoPoint? = { null },
 ) {
     private var job: Job? = null
 
@@ -111,8 +116,10 @@ class StatePoller(
                 activeUntil = now() + settings.activeWindowSeconds * 1000L
             }
 
-            // 5. 매크로 판정 + 실행
-            val current = Reading(merged, TimeContext.of(now()))
+            // 5. 매크로 판정 + 실행.
+            //    GPS는 위치 조건이 실제로 걸려 있을 때만 읽는다 — 매 폴링마다 켜면 배터리를 먹는다
+            val location = if (needsLocation()) locationReader() else null
+            val current = Reading(merged, TimeContext.of(now()), location)
             latestReading.value = current
 
             if (settings.automationEnabled) {
@@ -128,6 +135,16 @@ class StatePoller(
                 if (isActiveWindow) settings.activePollSeconds else settings.idlePollSeconds
             delay(interval * 1000L)
         }
+    }
+
+    /** 켜져 있는 매크로 중 위치 조건(조건 또는 조건 대기)을 쓰는 게 하나라도 있는지 */
+    private fun needsLocation(): Boolean = ruleStore.rules.value.any { rule ->
+        rule.enabled && (
+            rule.conditions.any { it is Condition.NearLocation } ||
+                rule.actions.any {
+                    it is ActionStep.WaitUntil && it.condition is Condition.NearLocation
+                }
+            )
     }
 
     /** 켜져 있는 매크로가 실제로 필요로 하는 카테고리만 읽는다 */

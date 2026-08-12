@@ -66,10 +66,16 @@ class VoiceCommandParser(private val macros: () -> List<MacroRule> = { emptyList
 
         if (text.isBlank()) return VoiceIntent.NotUnderstood(spoken)
 
-        // 1. 매크로 이름이 통째로 불렸으면 그게 최우선이다 (사용자가 직접 지은 이름)
-        macros().firstOrNull { rule ->
-            rule.name.isNotBlank() && text.contains(normalize(rule.name))
-        }?.let { return VoiceIntent.RunMacro(it, spoken) }
+        // 1. 매크로 이름이 통째로 불렸으면 그게 최우선이다 (사용자가 직접 지은 이름).
+        //    - 꺼둔 매크로도 부르면 돈다: 스위치는 "자동 발동"만 끈다 — "지금 실행" 버튼과 같은 결
+        //    - normalize 결과가 비는 이름(이모지·기호만)은 모든 말에 걸리므로 제외
+        //    - 여러 개 걸리면 긴 이름 우선 — "쿨링"과 "쿨링 복사본"이 있으면 부른 쪽이 이긴다
+        //    조건(conditions)은 검사하지 않는다: 이름을 직접 불렀다는 건 "지금 실행" 의지다
+        macros()
+            .filter { normalize(it.name).isNotEmpty() }
+            .filter { text.contains(normalize(it.name)) }
+            .maxByOrNull { normalize(it.name).length }
+            ?.let { return VoiceIntent.RunMacro(it, spoken) }
 
         // 2. "23도로 해줘" — 숫자 온도 지정 (정밀 인식만 숫자를 만든다).
         // normalize는 소수점을 지우므로 ("21.5도"→"215도") 원문에서 뽑는다

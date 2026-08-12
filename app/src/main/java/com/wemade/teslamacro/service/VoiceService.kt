@@ -88,27 +88,25 @@ class VoiceService : LifecycleService() {
                     else "없음 — vosk 단독"
             )
 
-            // 1. 설정 + 연결 상태 + 정밀 인식 여부를 보고 vosk 마이크를 열지 말지 정한다
+            // 1. 설정 + 연결 상태 + 정밀 인식 여부 + 매크로 목록을 보고 vosk 마이크를 연다.
+            //    매크로 목록이 combine에 들어가야 이름을 바꾸는 즉시 어휘가 갱신된다 —
+            //    빼면 "출근 준비"로 개명해도 옛 문법이 남아 그 말을 영영 못 알아듣는다
             combine(
                 container.settingsStore.settings,
                 container.gateway.linkState,
                 preciseMode,
-            ) { settings, link, precise ->
-                settings.voiceAlwaysOn && link is LinkState.Ready && !precise
+                container.ruleStore.rules,
+            ) { settings, link, precise, rules ->
+                val active = settings.voiceAlwaysOn && link is LinkState.Ready && !precise
+                if (!active) null
+                else rules.flatMap { it.name.split(" ") }.filter { it.isNotBlank() }
             }
                 .distinctUntilChanged()
-                .flatMapLatest { active ->
-                    if (!active) {
-                        emptyFlow()
-                    } else {
-                        // 매크로 이름도 들을 수 있게 낱말 목록에 얹는다
-                        val macroWords = container.ruleStore.rules.value
-                            .flatMap { it.name.split(" ") }
-                            .filter { it.isNotBlank() }
-                        container.hotwordListener.listen(
-                            VoiceCommandParser.VOCABULARY + macroWords
-                        )
-                    }
+                .flatMapLatest { macroWords ->
+                    if (macroWords == null) emptyFlow()
+                    else container.hotwordListener.listen(
+                        VoiceCommandParser.VOCABULARY + macroWords
+                    )
                 }
                 .collect { event -> handle(event, parser, app) }
         }
@@ -122,6 +120,9 @@ class VoiceService : LifecycleService() {
         when (event) {
             // 알림은 절대 건드리지 않는다 — 문구가 바뀌는 것 자체가 소음이다. 피드백은 TTS로만
             is VoiceEvent.Heard -> execute(event.candidates, parser, app)
+            // 마이크가 조용히 죽으면 "듣는 중" 알림만 남는다 — 최소한 로그에는 남긴다
+            is VoiceEvent.Failed ->
+                com.wemade.teslable.DiagLog.add("상시 대기 실패: ${event.reason}")
             else -> Unit
         }
     }
@@ -138,22 +139,20 @@ class VoiceService : LifecycleService() {
         app: TeslaMacroApplication,
     ) {
         val spoken = candidates.firstOrNull().orEmpty()
-        if (REQUIRE_WAKE_WORD && candidates.none { parser.hasWakeWord(it) }) return
-
         val now = System.currentTimeMillis()
+        // 직전에 호출어 조각을 들었으면("테슬라 앞" → "열어") 뒷조각은 호출어가 없어도 통과시킨다.
+        // 이 예외가 없으면 이어붙이기가 죽은 코드가 된다 — 뒷조각이 여기서 다 버려지니까
+        val fragmentOpen = fragmentText.isNotBlank() &&
+            now - fragmentAtMillis < FRAGMENT_WINDOW_MILLIS
+        if (REQUIRE_WAKE_WORD && !fragmentOpen && candidates.none { parser.hasWakeWord(it) }) return
+
         if (spoken == lastSpoken && now - lastSpokenAtMillis < REPEAT_GUARD_MILLIS) return
         lastSpoken = spoken
         lastSpokenAtMillis = now
 
         // 문장이 침묵 기준으로 두 조각으로 갈라진다 ("앞" → "열어" — 실차 로그).
         // 직전 조각과 이어붙인 해석을 먼저 시도하고, 안 되면 이번 조각만으로 해석한다
-        val stitched = if (fragmentText.isNotBlank() &&
-            now - fragmentAtMillis < FRAGMENT_WINDOW_MILLIS
-        ) {
-            candidates.map { "$fragmentText $it" }
-        } else {
-            emptyList()
-        }
+        val stitched = if (fragmentOpen) candidates.map { "$fragmentText $it" } else emptyList()
 
         val intent = parser.parseCandidates(stitched + candidates, requireWake = REQUIRE_WAKE_WORD)
 

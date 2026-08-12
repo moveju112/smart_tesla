@@ -216,6 +216,31 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun `꺼둔 매크로도 이름을 부르면 실행된다 - 스위치는 자동 발동만 끈다`() {
+        val disabled = MacroPresets.summerBoarding().copy(enabled = false)
+        val p = VoiceCommandParser { listOf(disabled) }
+        assertTrue(p.parse("여름 탑승 쿨링 실행") is VoiceIntent.RunMacro)
+    }
+
+    @Test
+    fun `이모지 이름 매크로가 모든 명령을 가로채지 않는다`() {
+        // normalize가 지우고 나면 빈 이름 — contains("")는 항상 참이라 전부 걸렸었다
+        val emoji = MacroPresets.summerBoarding().copy(name = "❄️!!!")
+        val p = VoiceCommandParser { listOf(emoji) }
+        val intent = p.parse("트렁크 열어")
+        assertTrue(intent !is VoiceIntent.RunMacro)
+    }
+
+    @Test
+    fun `이름이 겹치면 긴 쪽이 이긴다 - 복사본을 부를 수 있어야 한다`() {
+        val original = MacroPresets.summerBoarding()
+        val copy = original.copy(id = "copy", name = "여름 탑승 쿨링 복사본")
+        val p = VoiceCommandParser { listOf(original, copy) }
+        val intent = p.parse("여름 탑승 쿨링 복사본 실행")
+        assertEquals("여름 탑승 쿨링 복사본", (intent as VoiceIntent.RunMacro).rule.name)
+    }
+
+    @Test
     fun `매크로 이름이 고정 문구보다 우선한다`() {
         // 사용자가 직접 지은 이름을 존중한다
         val intent = parser.parse("폭염 주차 환기")

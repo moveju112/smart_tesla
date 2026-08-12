@@ -198,11 +198,14 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             container.useRealVehicle()
 
             val result = container.gateway.connectDirect(vin, cleaned)
+            // update 람다는 경합 시 재실행된다 — 부수효과(코루틴 기동)는 밖에서 한 번만
+            if (result.isSuccess) {
+                container.scanner.bondedTesla()?.let { t ->
+                    launch { container.settingsStore.setVehicleName(t.name) }
+                }
+            }
             _uiState.update {
                 if (result.isSuccess) {
-                    container.scanner.bondedTesla()?.let { t ->
-                        launch { container.settingsStore.setVehicleName(t.name) }
-                    }
                     it.copy(step = PairingStep.TapCard, isBusy = false,
                         message = "연결됐어요! 이제 앱 키를 등록할게요")
                 } else {

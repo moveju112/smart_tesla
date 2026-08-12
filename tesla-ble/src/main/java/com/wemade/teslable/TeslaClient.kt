@@ -243,15 +243,23 @@ class TeslaClient(
     private suspend fun awaitResponse(
         uuid: ByteArray,
         timeoutMillis: Long = RESPONSE_TIMEOUT_MS,
-    ): UniversalMessage.RoutableMessage? = withTimeoutOrNull(timeoutMillis) {
-        link.incoming
-            .first { bytes ->
-                val parsed = runCatching {
-                    UniversalMessage.RoutableMessage.parseFrom(bytes)
-                }.getOrNull() ?: return@first false
-                matchesRequest(parsed, uuid)
-            }
-            .let { UniversalMessage.RoutableMessage.parseFrom(it) }
+    ): UniversalMessage.RoutableMessage? {
+        val response = withTimeoutOrNull(timeoutMillis) {
+            link.incoming
+                .first { bytes ->
+                    val parsed = runCatching {
+                        UniversalMessage.RoutableMessage.parseFrom(bytes)
+                    }.getOrNull() ?: return@first false
+                    matchesRequest(parsed, uuid)
+                }
+                .let { UniversalMessage.RoutableMessage.parseFrom(it) }
+        }
+        // 타임아웃 직후 뒤늦게 도착하는 응답(실차에서 8.2초 관찰)이 다음 요청의 답으로
+        // 오인되는 걸 막는다. VCSEC 응답엔 request_uuid가 없어 내용으로는 못 가른다.
+        // incoming은 수집자가 없으면 버리는 hot flow라, 여기서 잠깐 기다리면
+        // 지각 응답은 아무도 안 받는 사이에 사라진다. 이 지연은 requestLock 안에서 일어난다
+        if (response == null) kotlinx.coroutines.delay(LATE_RESPONSE_QUARANTINE_MS)
+        return response
     }
 
     private fun matchesRequest(
@@ -273,6 +281,8 @@ class TeslaClient(
 
     private companion object {
         const val RESPONSE_TIMEOUT_MS = 8_000L
+        /** 타임아웃 후 지각 응답을 흘려보내는 격리 시간 */
+        const val LATE_RESPONSE_QUARANTINE_MS = 1_500L
     }
 }
 

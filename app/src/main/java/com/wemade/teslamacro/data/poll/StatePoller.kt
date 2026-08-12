@@ -118,7 +118,7 @@ class StatePoller(
 
             // 5. 매크로 판정 + 실행.
             //    GPS는 위치 조건이 실제로 걸려 있을 때만 읽는다 — 매 폴링마다 켜면 배터리를 먹는다
-            val location = if (needsLocation()) locationReader() else null
+            val location = if (needsLocation()) cachedLocation() else null
             val current = Reading(merged, TimeContext.of(now()), location)
             latestReading.value = current
 
@@ -131,31 +131,36 @@ class StatePoller(
             }
 
             previous = current
+            // 이번 사이클에 사건이 감지돼 창이 열렸으면 바로 짧은 주기로 — 낡은 판정을 쓰면
+            // 문 열림 직후 한 사이클(기본 30초)을 통째로 기다리게 된다
             val interval =
-                if (isActiveWindow) settings.activePollSeconds else settings.idlePollSeconds
+                if (now() < activeUntil) settings.activePollSeconds else settings.idlePollSeconds
             delay(interval * 1000L)
         }
     }
 
-    // ---- 탑승 시간 측정 ----
-    // 차가 주는 값이 아니라서 폴러가 직접 잰다.
     // 앱이 주행 중에 재시작되면 그 시점부터 다시 세므로 실제보다 짧게 나올 수 있다 (감수)
-    private var presentSinceMillis: Long? = null
-    private var lastRideMinutes: Double? = null
+    private val rideMeter = RideSessionMeter(now)
 
     /** 탑승 시작~지금까지, 하차 후엔 직전 세션 길이를 스냅샷에 싣는다 */
-    private fun withRideMinutes(snapshot: VehicleSnapshot): VehicleSnapshot {
-        when (snapshot.isUserPresent) {
-            true -> if (presentSinceMillis == null) presentSinceMillis = now()
-            false -> presentSinceMillis?.let { since ->
-                // 하차 순간: 세션 길이를 고정해 "30분 이상 탔으면" 조건이 이 값을 본다
-                lastRideMinutes = (now() - since) / 60_000.0
-                presentSinceMillis = null
-            }
-            null -> Unit   // 못 읽었으면 판단 보류 — 세션을 끊지 않는다
-        }
-        val riding = presentSinceMillis?.let { (now() - it) / 60_000.0 }
-        return snapshot.copy(rideMinutes = riding ?: lastRideMinutes)
+    private fun withRideMinutes(snapshot: VehicleSnapshot): VehicleSnapshot =
+        snapshot.copy(rideMinutes = rideMeter.update(snapshot.isUserPresent))
+
+    // ---- 위치 캐시 ----
+    // 측위 실패가 8초를 먹는다. 매 사이클 부르면 집중 폴링(2초)이 10초 주기가 돼버려
+    // 성공이든 실패든 60초 동안은 같은 답을 다시 쓴다
+    private var locationCache: GeoPoint? = null
+    private var locationCachedAt = 0L
+
+    private companion object {
+        const val LOCATION_TTL_MS = 60_000L
+    }
+
+    private suspend fun cachedLocation(): GeoPoint? {
+        if (now() - locationCachedAt < LOCATION_TTL_MS) return locationCache
+        locationCache = locationReader()
+        locationCachedAt = now()
+        return locationCache
     }
 
     /** 켜져 있는 매크로 중 위치 조건(조건 또는 조건 대기)을 쓰는 게 하나라도 있는지 */

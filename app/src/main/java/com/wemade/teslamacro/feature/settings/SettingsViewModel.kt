@@ -58,7 +58,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         update.value = UpdateState.Checking
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             update.value = runCatching {
-                val body = java.net.URL(RELEASE_API).readText()
+                // 응답이 안 오면 "확인 중"에 영원히 매달린다 — 연결·읽기 5초씩에 끊는다
+                val connection = java.net.URL(RELEASE_API).openConnection()
+                    as java.net.HttpURLConnection
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
                 val json = kotlinx.serialization.json.Json.parseToJsonElement(body)
                     .let { it as kotlinx.serialization.json.JsonObject }
                 val tag = json["tag_name"]

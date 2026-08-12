@@ -251,6 +251,9 @@ class BleVehicleGateway(
         if (client != null || _linkState.value is LinkState.Ready) {
             com.wemade.teslable.DiagLog.add("링크 끊김 감지 → 재연결 대기로 전환")
             client = null
+            // 죽은 gatt 껍데기를 정리해야 다음 connect()가 붙는다.
+            // 안 닫으면 "이미 연결되어 있다"로 직행이 실패해 재연결 1회차를 통째로 버린다
+            link.close()
             _linkState.value = LinkState.Failed("차량과 연결이 끊어졌어요")
         }
         return false

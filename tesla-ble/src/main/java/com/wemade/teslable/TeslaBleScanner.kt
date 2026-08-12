@@ -77,13 +77,9 @@ class TeslaBleScanner(context: Context) {
      */
     fun scan(vin: String): Flow<DiscoveredVehicle> {
         val targetName = TeslaBleSpec.bleLocalName(vin)
-        // 무필터 스캔과 별개로 하드웨어 필터 스캔도 함께 돌린다.
-        // 일부 제조사(삼성 등)는 무필터 스캔을 조용히 제한하는데, 필터 스캔은 그 제한을 우회한다.
+        // 서비스 UUID 필터는 rawScan이 항상 건다. 여기서는 이름 필터만 추가로 얹는다.
         // 단, 필터 하나에 UUID+이름을 같이 걸면 안 된다(패킷 단위 평가) — 반드시 한 필터 한 조건
         val hardwareFilters = listOf(
-            android.bluetooth.le.ScanFilter.Builder()
-                .setServiceUuid(android.os.ParcelUuid(TeslaBleSpec.SERVICE_UUID))
-                .build(),
             android.bluetooth.le.ScanFilter.Builder()
                 .setDeviceName(targetName)
                 .build(),
@@ -195,16 +191,26 @@ class TeslaBleScanner(context: Context) {
         val extendedCb = callbackFor("ext")
         val filteredCb = callbackFor("filtered")
 
-        DiagLog.add("BLE 스캔 시작 (legacy+ext${if (hardwareFilters.isNotEmpty()) "+filtered" else ""})")
-        // 무필터 스캔: 다 받아서 코드에서 거른다
-        scanner.startScan(null, legacySettings, legacyCb)
+        DiagLog.add("BLE 스캔 시작 (legacy+ext+filtered)")
+        // 무필터 스캔: 다 받아서 코드에서 거른다.
+        // 권한 거부 등으로 터지면 앱이 죽지 않게 감싸고 로그만 남긴다
+        runCatching { scanner.startScan(null, legacySettings, legacyCb) }
+            .onFailure { DiagLog.add("스캔 시작 불가: ${it.message}") }
         runCatching { scanner.startScan(null, extendedSettings, extendedCb) }
             .onFailure { DiagLog.add("확장 스캔 시작 불가: ${it.message}") }
-        // 필터 스캔: 무필터를 제한하는 제조사 스택 우회용. 있을 때만 돌린다
-        if (hardwareFilters.isNotEmpty()) {
-            runCatching { scanner.startScan(hardwareFilters, legacySettings, filteredCb) }
-                .onFailure { DiagLog.add("필터 스캔 시작 불가: ${it.message}") }
+        // 필터 스캔: 무필터를 제한하는 제조사 스택 우회용.
+        // 테슬라 서비스 UUID 필터는 **항상** 건다 — 진단(scanNearby)·연결(게이트웨이) 어느
+        // 경로로 스캔해도 차 광고가 이 경로로는 들어올 기회를 갖게 한다
+        val filters = buildList {
+            add(
+                android.bluetooth.le.ScanFilter.Builder()
+                    .setServiceUuid(android.os.ParcelUuid(TeslaBleSpec.SERVICE_UUID))
+                    .build()
+            )
+            addAll(hardwareFilters)
         }
+        runCatching { scanner.startScan(filters, legacySettings, filteredCb) }
+            .onFailure { DiagLog.add("필터 스캔 시작 불가: ${it.message}") }
 
         awaitClose {
             runCatching { scanner.stopScan(legacyCb) }

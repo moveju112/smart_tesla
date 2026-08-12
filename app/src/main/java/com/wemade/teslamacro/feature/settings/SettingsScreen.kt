@@ -135,6 +135,12 @@ fun SettingsScreen(
                 label = "VIN",
                 value = if (settings.isPaired) settings.vin else "등록된 차량 없음",
             )
+            // 다른 기기(태블릿)에 세팅할 때 이 주소를 그대로 입력하면 된다.
+            // 폰 블루투스 페어링 목록의 테슬라 주소는 음악용이라 이걸 써야 한다
+            if (settings.vehicleAddress.isNotBlank()) {
+                Spacer(Modifier.height(Space.sm))
+                LabelValueRow(label = "BLE 주소 (키 연결용)", value = settings.vehicleAddress)
+            }
             Spacer(Modifier.height(Space.md))
             Hairline()
             Spacer(Modifier.height(Space.md))

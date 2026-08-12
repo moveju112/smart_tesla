@@ -480,6 +480,15 @@ private fun NearbyPanel(
             color = T.InkFaint,
             modifier = Modifier.padding(top = Space.xs),
         )
+        // 실사용 함정: 페어링 목록의 테슬라 주소로 직접 연결을 시도하다 30초 타임아웃만 반복했다
+        Text(
+            text = "주의 — 페어링 목록에 보이는 테슬라는 음악·통화용 주소예요. " +
+                "키 연결용 BLE 주소가 아니라 직접 연결이 안 돼요. " +
+                "기존 기기가 있으면 그 앱의 설정 → 차량 → \"BLE 주소\"를 그대로 입력하세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.Warn,
+            modifier = Modifier.padding(top = Space.xs),
+        )
 
         Spacer(Modifier.height(Space.md))
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

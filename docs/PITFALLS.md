@@ -26,6 +26,10 @@
   - Cause: `useRealVehicle()` 미호출 — 시뮬레이터 게이트웨이가 가짜 성공 반환
   - Fix: 등록 시 실차 게이트웨이 교체 — `app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:74`
 
+- **Symptom:** 페어링된 기기 목록의 테슬라 주소로 직접 연결하면 30초 타임아웃만 반복 (실차 확인 2026-08-13)
+  - Cause: 블루투스 페어링 목록의 테슬라는 **음악·통화용 클래식 BT 주소**다 (uuids에 110B/111E 등 오디오 프로파일). 키 연결용 BLE(VCSEC) 주소는 별개이고 페어링 목록에 안 나온다
+  - Fix: 기존 기기 앱의 설정 → 차량 → "BLE 주소 (키 연결용)"를 옮겨 적는다. 새 기기뿐이면 nRF Connect로 `S<VIN해시>C` 이름을 찾는다
+
 ## 빌드 / 테스트
 
 - **Symptom:** `./gradlew test` 전부 통과인데 UI가 깨져서 나감

@@ -18,6 +18,8 @@ fun describe(trigger: Trigger): String = when (trigger) {
     is Trigger.Every -> "${formatDuration(trigger.everyMinutes * 60)}마다"
 
     is Trigger.Manual -> "호출될 때"
+
+    is Trigger.Always -> "조건이 갖춰질 때"
 }
 
 /** "실내 온도 27℃ 이상" */

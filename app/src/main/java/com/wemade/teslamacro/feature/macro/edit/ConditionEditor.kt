@@ -91,6 +91,13 @@ fun TriggerCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
+
+            is Trigger.Always -> Text(
+                text = "다음 페이지의 조건이 충족되는 \"순간\"마다 실행해요. " +
+                    "조건을 하나 이상 추가해 주세요 (예: 실내 온도 26~28℃ 사이).",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
         }
     }
 }
@@ -281,13 +288,18 @@ private fun CardHeader(title: String, onRemove: () -> Unit) {
     }
 }
 
-private enum class Comparison(val label: String) { GTE("이상"), LTE("이하") }
+private enum class Comparison(val label: String) { GTE("이상"), LTE("이하"), BETWEEN("사이") }
 
 @Composable
 private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) -> Unit) {
-    val comparison = if (condition.gte != null) Comparison.GTE else Comparison.LTE
+    val comparison = when {
+        condition.gte != null && condition.lte != null -> Comparison.BETWEEN
+        condition.gte != null -> Comparison.GTE
+        else -> Comparison.LTE
+    }
     val value = condition.gte ?: condition.lte ?: 0.0
     val range = numericRange(condition.signal)
+    val step = if (condition.signal == Signal.BATTERY_LEVEL) 5.0 else 0.5
 
     Column {
         ChipRow(
@@ -297,14 +309,37 @@ private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) ->
             onSelect = { onChange(rebuild(condition.signal, it, value)) },
         )
         Spacer(Modifier.height(Space.md))
-        NumberStepper(
-            value = value,
-            min = range.first,
-            max = range.second,
-            step = if (condition.signal == Signal.BATTERY_LEVEL) 5.0 else 0.5,
-            unit = condition.signal.unit.orEmpty(),
-            onChange = { onChange(rebuild(condition.signal, comparison, it)) },
-        )
+        if (comparison == Comparison.BETWEEN) {
+            // "26~28도 사이" 같은 구간 조건. 단계별 통풍 조절의 재료다
+            Text("부터", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+            NumberStepper(
+                value = condition.gte ?: range.first,
+                min = range.first,
+                max = range.second,
+                step = step,
+                unit = condition.signal.unit.orEmpty(),
+                onChange = { onChange(condition.copy(gte = it)) },
+            )
+            Spacer(Modifier.height(Space.sm))
+            Text("까지", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+            NumberStepper(
+                value = condition.lte ?: range.second,
+                min = range.first,
+                max = range.second,
+                step = step,
+                unit = condition.signal.unit.orEmpty(),
+                onChange = { onChange(condition.copy(lte = it)) },
+            )
+        } else {
+            NumberStepper(
+                value = value,
+                min = range.first,
+                max = range.second,
+                step = step,
+                unit = condition.signal.unit.orEmpty(),
+                onChange = { onChange(rebuild(condition.signal, comparison, it)) },
+            )
+        }
     }
 }
 
@@ -312,6 +347,8 @@ private fun rebuild(signal: Signal, comparison: Comparison, value: Double) =
     when (comparison) {
         Comparison.GTE -> Condition.InRange(signal, gte = value)
         Comparison.LTE -> Condition.InRange(signal, lte = value)
+        // "사이"로 바꾸는 순간의 기본 구간: 현재 값 ±1
+        Comparison.BETWEEN -> Condition.InRange(signal, gte = value - 1, lte = value + 1)
     }
 
 @Composable

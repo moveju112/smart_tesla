@@ -400,6 +400,11 @@ private fun TriggerPicker(onDismiss: () -> Unit, onPick: (Trigger) -> Unit) {
                         detail = "자동 발동 없음. 음성으로 이름을 부르거나 직접 실행",
                         onClick = { onPick(Trigger.Manual) },
                     )
+                    PickerRow(
+                        label = "조건이 되면 (항상 감시)",
+                        detail = "예: 실내 26~28℃가 \"되는 순간\" 실행. 조건 페이지와 함께 사용",
+                        onClick = { onPick(Trigger.Always) },
+                    )
                 }
             } else {
                 PickerRow(

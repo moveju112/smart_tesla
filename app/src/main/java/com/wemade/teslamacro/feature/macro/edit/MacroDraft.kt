@@ -37,6 +37,9 @@ data class MacroDraft(
             // 위치가 비어 있는 조건은 절대 충족되지 않아 매크로가 영영 안 돈다
             conditions.any { it is Condition.NearLocation && it.latitude == null } ->
                 "\"출발지 근처\" 조건에 현재 위치를 저장해 주세요"
+            // "항상 감시"는 조건의 문턱이 곧 사건이다 — 조건이 없으면 문턱도 없다
+            triggers.any { it is Trigger.Always } && conditions.isEmpty() ->
+                "\"조건이 되면\" 발동은 조건을 하나 이상 추가해야 해요"
             else -> null
         }
 

@@ -36,12 +36,17 @@ class MacroEngine {
         }
 
         // 4. 트리거 하나라도 발생 && 조건 전부 만족
-        rule.triggers.any { fired(it, previous, current) } &&
+        rule.triggers.any { fired(rule, it, previous, current) } &&
             rule.conditions.all { holds(it, current) }
     }
 
     /** 트리거는 "방금 바뀌었나"를 본다. 직전 값이 없으면 판단할 수 없다 */
-    private fun fired(trigger: Trigger, previous: Reading?, current: Reading): Boolean =
+    private fun fired(
+        rule: MacroRule,
+        trigger: Trigger,
+        previous: Reading?,
+        current: Reading,
+    ): Boolean =
         when (trigger) {
 
             is Trigger.SignalBecomes -> {
@@ -67,6 +72,17 @@ class MacroEngine {
 
             // 호출 전용. 폴링 판정으로는 절대 발동하지 않는다 — 음성/직접 실행만
             is Trigger.Manual -> false
+
+            // 조건이 "안 갖춰졌다가 → 갖춰진" 문턱에서만 발동한다.
+            // 매 폴링 발동을 막는 건 트리거/조건 분리 원칙 그대로다 — 문턱이 사건이다.
+            // 직전 값이 없으면(앱 시작 직후) 발동하지 않는다: 이미 조건 안에서 시작해도 침묵
+            is Trigger.Always -> {
+                if (rule.conditions.isEmpty() || previous == null) false
+                else {
+                    val beforeHeld = rule.conditions.all { holds(it, previous) }
+                    !beforeHeld && rule.conditions.all { holds(it, current) }
+                }
+            }
         }
 
     /** 조건은 "지금 그런 상태인가요"만 본다. 대기 해제와 같은 규칙을 쓴다 */

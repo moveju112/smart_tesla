@@ -49,6 +49,16 @@ sealed interface Trigger {
      */
     @Serializable @SerialName("manual")
     data object Manual : Trigger
+
+    /**
+     * 조건이 갖춰지는 순간마다 — "실내 26~28℃가 되면 통풍 3단"처럼 상태 자체가 사건인 매크로용.
+     *
+     * "항상"이라고 해서 폴링마다 발동하는 게 아니다.
+     * **안 갖춰졌다가 → 갖춰진 순간**의 문턱에서만 발동한다 (재발동 억제도 그대로 적용).
+     * 조건 없이는 문턱이 없으므로 조건 1개 이상이 필수다 — 편집 화면이 막는다.
+     */
+    @Serializable @SerialName("conditions_met")
+    data object Always : Trigger
 }
 
 /**
@@ -175,8 +185,9 @@ data class MacroRule(
 /** 트리거가 참조하는 차량 신호 (폴링 계획 수립용) */
 fun Trigger.signals(): List<Signal> = when (this) {
     is Trigger.SignalBecomes -> listOf(signal)
-    // 시간 기반/호출 트리거는 차량을 읽을 필요가 없다
-    is Trigger.AtTime, is Trigger.Every, is Trigger.Manual -> emptyList()
+    // 시간 기반/호출 트리거는 차량을 읽을 필요가 없다.
+    // Always는 조건의 신호가 requiredCategories에 이미 들어간다
+    is Trigger.AtTime, is Trigger.Every, is Trigger.Manual, is Trigger.Always -> emptyList()
 }
 
 /** 조건이 참조하는 차량 신호 */

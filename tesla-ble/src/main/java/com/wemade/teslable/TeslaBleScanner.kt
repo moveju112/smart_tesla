@@ -77,9 +77,20 @@ class TeslaBleScanner(context: Context) {
      */
     fun scan(vin: String): Flow<DiscoveredVehicle> {
         val targetName = TeslaBleSpec.bleLocalName(vin)
+        // 무필터 스캔과 별개로 하드웨어 필터 스캔도 함께 돌린다.
+        // 일부 제조사(삼성 등)는 무필터 스캔을 조용히 제한하는데, 필터 스캔은 그 제한을 우회한다.
+        // 단, 필터 하나에 UUID+이름을 같이 걸면 안 된다(패킷 단위 평가) — 반드시 한 필터 한 조건
+        val hardwareFilters = listOf(
+            android.bluetooth.le.ScanFilter.Builder()
+                .setServiceUuid(android.os.ParcelUuid(TeslaBleSpec.SERVICE_UUID))
+                .build(),
+            android.bluetooth.le.ScanFilter.Builder()
+                .setDeviceName(targetName)
+                .build(),
+        )
         // 이름이 맞으면 확정, 아니어도 테슬라 서비스를 광고하면 후보로 흘린다.
         // 신형 펌웨어가 이름 규칙을 바꿔도 서비스 UUID는 프로토콜이라 못 바꾼다
-        return rawScan { name, hasTeslaService ->
+        return rawScan(hardwareFilters) { name, hasTeslaService ->
             name.equals(targetName, ignoreCase = true) || hasTeslaService
         }
     }
@@ -99,6 +110,7 @@ class TeslaBleScanner(context: Context) {
 
     @SuppressLint("MissingPermission")
     private fun rawScan(
+        hardwareFilters: List<android.bluetooth.le.ScanFilter> = emptyList(),
         accept: (name: String, hasTeslaService: Boolean) -> Boolean,
     ): Flow<DiscoveredVehicle> = callbackFlow {
         val scanner = adapter?.bluetoothLeScanner
@@ -124,8 +136,8 @@ class TeslaBleScanner(context: Context) {
         // 두 스캐너가 공유하므로 동기화한다
         val teslaSeen = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
-        // 두 스캐너의 결과를 한 곳에서 처리한다
-        val handle = { result: ScanResult ->
+        // 모든 스캐너의 결과를 한 곳에서 처리한다
+        val handle = { label: String, result: ScanResult ->
             val record = result.scanRecord
             val hasService = record?.serviceUuids
                 ?.any { it.uuid == TeslaBleSpec.SERVICE_UUID } == true
@@ -136,9 +148,10 @@ class TeslaBleScanner(context: Context) {
                 ?: runCatching { result.device.address }.getOrNull()
 
             if (name != null) {
-                // accept 필터 전에, 테슬라형 광고면 무조건 로그로 남긴다
+                // accept 필터 전에, 테슬라형 광고면 무조건 로그로 남긴다.
+                // 어느 경로(무필터/필터)로 들어왔는지가 스캔 문제 진단의 핵심 증거다
                 if ((isTeslaNamePattern(name) || hasService) && teslaSeen.add(result.device.address)) {
-                    DiagLog.add("★수신 $name · ${result.device.address} · ${result.rssi}dBm" +
+                    DiagLog.add("★수신($label) $name · ${result.device.address} · ${result.rssi}dBm" +
                         (if (hasService) " svc:00000211" else ""))
                 }
 
@@ -171,7 +184,7 @@ class TeslaBleScanner(context: Context) {
         }
 
         fun callbackFor(label: String) = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) { handle(result) }
+            override fun onScanResult(callbackType: Int, result: ScanResult) { handle(label, result) }
             override fun onScanFailed(errorCode: Int) {
                 // 확장 스캔은 기기가 지원 안 하면 실패할 수 있다. 로그만 남기고 계속 간다
                 DiagLog.add("BLE 스캔($label) 실패 code=$errorCode")
@@ -180,16 +193,23 @@ class TeslaBleScanner(context: Context) {
 
         val legacyCb = callbackFor("legacy")
         val extendedCb = callbackFor("ext")
+        val filteredCb = callbackFor("filtered")
 
-        DiagLog.add("BLE 스캔 시작 (legacy+ext)")
-        // 필터를 걸지 않는다. 코드에서 거른다
+        DiagLog.add("BLE 스캔 시작 (legacy+ext${if (hardwareFilters.isNotEmpty()) "+filtered" else ""})")
+        // 무필터 스캔: 다 받아서 코드에서 거른다
         scanner.startScan(null, legacySettings, legacyCb)
         runCatching { scanner.startScan(null, extendedSettings, extendedCb) }
             .onFailure { DiagLog.add("확장 스캔 시작 불가: ${it.message}") }
+        // 필터 스캔: 무필터를 제한하는 제조사 스택 우회용. 있을 때만 돌린다
+        if (hardwareFilters.isNotEmpty()) {
+            runCatching { scanner.startScan(hardwareFilters, legacySettings, filteredCb) }
+                .onFailure { DiagLog.add("필터 스캔 시작 불가: ${it.message}") }
+        }
 
         awaitClose {
             runCatching { scanner.stopScan(legacyCb) }
             runCatching { scanner.stopScan(extendedCb) }
+            runCatching { scanner.stopScan(filteredCb) }
         }
     }
 }

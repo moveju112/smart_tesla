@@ -79,6 +79,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 화면에 앱이 나온 순간(대개 탑승 직후)은 사용자가 최신 값을 기대하는 순간이다.
+        // 깊은 유휴 120초를 기다리지 않고 폴러를 바로 깨운다
+        (application as TeslaMacroApplication).let { app ->
+            if (app.ready.value) app.container.poller.nudge()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

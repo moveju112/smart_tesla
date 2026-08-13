@@ -17,7 +17,8 @@ import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -83,7 +84,10 @@ class StatePoller(
             if (gateway.linkState.value !is LinkState.Ready) {
                 if (settings.isReady) gateway.connect(settings.vin)
                 needFullRead = true   // 다음 연결 때 다시 전체 읽기
-                delay(settings.idlePollSeconds * 1000L)
+                // 붙었으면 바로 읽으러 간다 — 여기서 한 주기를 자면
+                // 연결 후 30초 동안 화면이 비어 있는다 (실차 로그 2026-08-13 15:37)
+                if (gateway.linkState.value is LinkState.Ready) continue
+                sleep(settings.idlePollSeconds * 1000L)
                 continue
             }
 
@@ -171,8 +175,23 @@ class StatePoller(
                 idleSeconds = settings.idlePollSeconds,
             )
             // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지
-            delay((interval * 1000L - (now() - cycleStart)).coerceAtLeast(1_000L))
+            sleep((interval * 1000L - (now() - cycleStart)).coerceAtLeast(1_000L))
         }
+    }
+
+    // ---- 폴러 깨우기 ----
+    // 깊은 유휴(120초) 중에 사용자가 타면 다음 주기까지 화면이 낡아 보인다.
+    // 앱이 전면에 오는 순간(대개 탑승) nudge()로 잠을 끊고 즉시 한 사이클 돈다
+    private val nudges = Channel<Unit>(Channel.CONFLATED)
+
+    /** 자고 있는 폴러를 지금 깨운다. 돌고 있는 중이면 다음 잠만 짧아질 뿐 부작용 없다 */
+    fun nudge() {
+        nudges.trySend(Unit)
+    }
+
+    /** delay 대신 쓰는 잠 — nudge가 오면 즉시 깬다 */
+    private suspend fun sleep(ms: Long) {
+        withTimeoutOrNull(ms) { nudges.receive() }
     }
 
     // 앱이 주행 중에 재시작되면 그 시점부터 다시 세므로 실제보다 짧게 나올 수 있다 (감수)

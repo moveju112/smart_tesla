@@ -26,6 +26,10 @@
   - Cause: `useRealVehicle()` 미호출 — 시뮬레이터 게이트웨이가 가짜 성공 반환
   - Fix: 등록 시 실차 게이트웨이 교체 — `app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:74`
 
+- **Symptom:** 아침에 타보니 데이터 갱신이 멈춰 있고 매크로도 침묵 — VIN 재등록해야 복구 (실차 2026-08-13)
+  - Cause: 좀비 GATT — 밤새 BT 절전 후 GATT는 "연결됨"인데 차는 무응답. `ensureLinked`는 isConnected만 봐서 못 잡고, 재등록은 게이트웨이를 새로 만들어서 우연히 고쳐진 것
+  - Fix: 읽기가 사이클 통째로 3연속 전멸하면 강제 disconnect → 재연결 — `app/src/main/java/com/wemade/teslamacro/data/poll/StatePoller.kt` 워치독 (0.8.2, 실차 미확인)
+
 - **Symptom:** 페어링된 기기 목록의 테슬라 주소로 직접 연결하면 30초 타임아웃만 반복 (실차 확인 2026-08-13)
   - Cause: 블루투스 페어링 목록의 테슬라는 **음악·통화용 클래식 BT 주소**다 (uuids에 110B/111E 등 오디오 프로파일). 키 연결용 BLE(VCSEC) 주소는 별개이고 페어링 목록에 안 나온다
   - Fix: 기존 기기 앱의 설정 → 차량 → "BLE 주소 (키 연결용)"를 옮겨 적는다. 새 기기뿐이면 nRF Connect로 `S<VIN해시>C` 이름을 찾는다

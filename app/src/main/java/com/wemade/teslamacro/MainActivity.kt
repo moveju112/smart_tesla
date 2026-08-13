@@ -61,10 +61,23 @@ import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 class MainActivity : ComponentActivity() {
 
     private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-            // BLE 권한이 있어야 스캔이 되므로, 받은 뒤에 감시 서비스를 올린다
-            if (granted.values.all { it }) MacroService.start(this)
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+            // BLE 권한만 있으면 감시는 올린다 — 마이크(음성)·알림을 거부해도 매크로가 죽으면 안 된다.
+            // 콜백 맵 대신 실제 권한 상태를 다시 본다: 이미 허용된 항목은 맵에 안 실릴 수 있다
+            if (hasBlePermission()) MacroService.start(this)
         }
+
+    /** 감시 서비스의 최소 요건: BLE 스캔·연결 (12 미만은 위치) */
+    private fun hasBlePermission(): Boolean {
+        val required = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        return required.all {
+            checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

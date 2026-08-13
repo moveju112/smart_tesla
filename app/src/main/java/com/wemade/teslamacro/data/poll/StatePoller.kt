@@ -67,6 +67,9 @@ class StatePoller(
         var previous: Reading? = null
         var activeUntil = 0L
         var needFullRead = true   // 연결 직후 한 번은 전부 읽어 대시보드를 채운다
+        // 좀비 GATT 워치독: GATT는 "연결됨"인데 차가 전혀 응답하지 않는 상태(밤샘 BT 절전 후 실차 발생).
+        // isConnected로는 못 잡아서, 읽기가 사이클 통째로 연속 전멸하면 강제로 끊고 다시 붙는다
+        var failStreak = 0
 
         while (isActive) {
             // 주기 계산용 사이클 시작 시각 — 읽기 소요(실패 시 8초 타임아웃 포함)를
@@ -118,10 +121,26 @@ class StatePoller(
             needFullRead = false
 
             // 3. 카테고리는 하나씩 읽어 병합한다 (한 번에 여러 개는 응답 크기 초과)
-            val merged = categories.fold(_snapshot.value) { acc, category ->
-                gateway.read(category).getOrNull()?.let { merge(acc, it) } ?: acc
+            val results = categories.map { gateway.read(it) }
+            val merged = results.fold(_snapshot.value) { acc, result ->
+                result.getOrNull()?.let { merge(acc, it) } ?: acc
             }.let { withRideMinutes(it) }
             _snapshot.value = merged
+
+            // 3-1. 좀비 GATT 워치독 — 한 사이클이 통째로 실패하는 게 이어지면 강제 재접속.
+            //      하나라도 성공했으면 링크는 산 것이다 (빈 차 사이클도 VCSEC는 항상 응답해야 정상)
+            if (results.isNotEmpty() && results.all { it.isFailure }) {
+                failStreak++
+                if (failStreak >= FAIL_STREAK_LIMIT) {
+                    com.wemade.teslable.DiagLog.add(
+                        "읽기 연속 전멸 ${failStreak}회 — 좀비 연결 의심, 강제 재연결"
+                    )
+                    gateway.disconnect()
+                    failStreak = 0
+                }
+            } else {
+                failStreak = 0
+            }
 
             // 4. 사건이 보이면 집중 폴링 창을 연다
             if (isWakeEvent(previous?.snapshot, merged)) {
@@ -171,6 +190,9 @@ class StatePoller(
 
     private companion object {
         const val LOCATION_TTL_MS = 60_000L
+
+        /** 이 횟수만큼 사이클 전멸이 이어지면 좀비 연결로 보고 끊는다 */
+        const val FAIL_STREAK_LIMIT = 3
     }
 
     private suspend fun cachedLocation(): GeoPoint? {

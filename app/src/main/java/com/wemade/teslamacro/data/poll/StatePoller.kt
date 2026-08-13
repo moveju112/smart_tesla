@@ -120,6 +120,13 @@ class StatePoller(
                     StateCategory.CLIMATE,
                     StateCategory.CHARGE,
                 )
+                // 빈 차라도 충전 중이면 CHARGE는 계속 본다 — 안 보면 isCharging이 참으로 동결돼
+                // 충전이 끝나도 스텔스가 밤새 자는 차에 명령을 쏘고, 깊은 유휴도 영영 못 든다.
+                // 충전 중엔 차가 어차피 깨어 있어 추가 비용이 없다
+                _snapshot.value.isCharging == true -> setOf(
+                    StateCategory.BODY_CONTROLLER,
+                    StateCategory.CHARGE,
+                )
                 else -> setOf(StateCategory.BODY_CONTROLLER)
             }
             needFullRead = false

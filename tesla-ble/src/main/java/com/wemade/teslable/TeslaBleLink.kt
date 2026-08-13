@@ -57,7 +57,12 @@ class TeslaBleLink(private val context: Context) {
         timeoutMillis: Long = CONNECT_TIMEOUT_MS,
         autoConnect: Boolean = false,
     ) {
-        check(gatt == null) { "이미 연결되어 있다" }
+        // 끊김 콜백의 정리(close)와 재연결 시도가 경합하면 이전 껍데기가 남아 있을 수 있다.
+        // 예외로 한 사이클을 버리는 대신 여기서 치우고 새로 연다
+        if (gatt != null) {
+            DiagLog.add("이전 GATT 잔재 정리 후 재연결")
+            close()
+        }
         val deferred = CompletableDeferred<Unit>()
         connectResult = deferred
         reassembler.reset()
@@ -116,7 +121,15 @@ class TeslaBleLink(private val context: Context) {
 
     private val callback = object : BluetoothGattCallback() {
 
+        /**
+         * close() 뒤에 도착하는 지각 콜백 차단.
+         * 안 막으면 타임아웃으로 닫은 직후 onServicesDiscovered가 txCharacteristic을
+         * 되살려 isConnected가 참으로 오판된다 (gatt는 이미 null인데)
+         */
+        private fun isStale(source: BluetoothGatt): Boolean = source !== this@TeslaBleLink.gatt
+
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            if (isStale(gatt)) return
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     DiagLog.add("GATT 연결됨 → MTU 협상")
@@ -134,6 +147,7 @@ class TeslaBleLink(private val context: Context) {
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, negotiated: Int, status: Int) {
+            if (isStale(gatt)) return
             // MTU 협상 실패는 치명적이지 않다. 기본값으로 계속 간다
             mtu = if (status == BluetoothGatt.GATT_SUCCESS) negotiated else DEFAULT_MTU
             DiagLog.add("MTU=$mtu → 서비스 탐색")
@@ -141,6 +155,7 @@ class TeslaBleLink(private val context: Context) {
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            if (isStale(gatt)) return
             val service = gatt.getService(TeslaBleSpec.SERVICE_UUID)
             val tx = service?.getCharacteristic(TeslaBleSpec.TX_CHARACTERISTIC_UUID)
             val rx = service?.getCharacteristic(TeslaBleSpec.RX_CHARACTERISTIC_UUID)
@@ -166,6 +181,7 @@ class TeslaBleLink(private val context: Context) {
             descriptor: BluetoothGattDescriptor,
             status: Int,
         ) {
+            if (isStale(gatt)) return
             // CCCD 쓰기가 끝나야 알림이 실제로 열린다. 여기가 연결 완료 지점
             if (descriptor.uuid == TeslaBleSpec.CCCD_UUID) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
@@ -184,6 +200,7 @@ class TeslaBleLink(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
+            if (isStale(gatt)) return
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 writeResult?.complete(Unit)
             } else {
@@ -199,6 +216,7 @@ class TeslaBleLink(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray,
         ) {
+            if (isStale(gatt)) return
             handleIncoming(characteristic, value)
         }
 
@@ -208,6 +226,7 @@ class TeslaBleLink(private val context: Context) {
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
         ) {
+            if (isStale(gatt)) return
             @Suppress("DEPRECATION")
             handleIncoming(characteristic, characteristic.value ?: return)
         }

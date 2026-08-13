@@ -63,6 +63,14 @@ class VoiceService : LifecycleService() {
     private val preciseMode = MutableStateFlow(false)
     private var preciseJob: Job? = null
 
+    /**
+     * 마이크 부활 틱. 내비·전화가 마이크를 뺏어 vosk가 죽으면 조용히 끝이었다 —
+     * 설정이나 연결이 바뀌기 전엔 combine이 재발화하지 않아 상시 대기가 영영 침묵했다.
+     * retryable 실패 시 이 값을 올려 listen 재구독을 강제한다
+     */
+    private val restartTick = MutableStateFlow(0)
+    private var retryJob: Job? = null
+
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun onCreate() {
         super.onCreate()
@@ -96,19 +104,30 @@ class VoiceService : LifecycleService() {
                 container.gateway.linkState,
                 preciseMode,
                 container.ruleStore.rules,
-            ) { settings, link, precise, rules ->
+                restartTick,
+            ) { settings, link, precise, rules, tick ->
                 val active = settings.voiceAlwaysOn && link is LinkState.Ready && !precise
+                // tick을 결과에 실어야 distinctUntilChanged를 뚫고 재구독이 일어난다
                 if (!active) null
-                else rules.flatMap { it.name.split(" ") }.filter { it.isNotBlank() }
+                else rules.flatMap { it.name.split(" ") }.filter { it.isNotBlank() } to tick
             }
                 .distinctUntilChanged()
-                .flatMapLatest { macroWords ->
-                    if (macroWords == null) emptyFlow()
+                .flatMapLatest { keyed ->
+                    if (keyed == null) emptyFlow()
                     else container.hotwordListener.listen(
-                        VoiceCommandParser.VOCABULARY + macroWords
+                        VoiceCommandParser.VOCABULARY + keyed.first
                     )
                 }
                 .collect { event -> handle(event, parser, app) }
+        }
+    }
+
+    /** 마이크 재구독 예약. 이미 예약돼 있으면 중복 예약하지 않는다 */
+    private fun scheduleMicRetry() {
+        if (retryJob?.isActive == true) return
+        retryJob = lifecycleScope.launch {
+            delay(RETRY_DELAY_MS)
+            restartTick.value += 1
         }
     }
 
@@ -120,9 +139,14 @@ class VoiceService : LifecycleService() {
         when (event) {
             // 알림은 절대 건드리지 않는다 — 문구가 바뀌는 것 자체가 소음이다. 피드백은 TTS로만
             is VoiceEvent.Heard -> execute(event.candidates, parser, app)
-            // 마이크가 조용히 죽으면 "듣는 중" 알림만 남는다 — 최소한 로그에는 남긴다
-            is VoiceEvent.Failed ->
-                com.wemade.teslable.DiagLog.add("상시 대기 실패: ${event.reason}")
+            // 마이크가 죽으면 로그를 남기고, 살릴 수 있는 실패면 잠시 뒤 재구독한다
+            is VoiceEvent.Failed -> {
+                com.wemade.teslable.DiagLog.add(
+                    "상시 대기 실패: ${event.reason}" +
+                        if (event.retryable) " — ${RETRY_DELAY_MS / 1000}초 후 재시도" else ""
+                )
+                if (event.retryable) scheduleMicRetry()
+            }
             else -> Unit
         }
     }
@@ -397,6 +421,8 @@ class VoiceService : LifecycleService() {
         private const val RETRY_GAP_MILLIS = 400L
         private const val TONE_VOLUME = 80        // 0~100
         private const val TONE_LENGTH_MILLIS = 120
+        /** 마이크 부활 대기. 내비 음성안내·전화가 마이크를 놓을 시간을 준다 */
+        private const val RETRY_DELAY_MS = 15_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, VoiceService::class.java))

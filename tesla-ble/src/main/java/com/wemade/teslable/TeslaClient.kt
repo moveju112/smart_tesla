@@ -9,6 +9,9 @@ import com.wemade.teslable.crypto.ClientKey
 import com.wemade.teslable.crypto.ClientKeyStore
 import com.wemade.teslable.session.DomainSession
 import com.wemade.teslable.session.SignedRequest
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -136,8 +139,7 @@ class TeslaClient(
             .build()
 
         DiagLog.add("핸드셰이크 시작 (${domain.name})")
-        link.send(request.toByteArray())
-        val response = awaitResponse(uuid)
+        val response = sendAndAwait(request.toByteArray(), uuid)
             ?: run {
                 DiagLog.add("핸드셰이크 응답 없음 (${RESPONSE_TIMEOUT_MS}ms)")
                 throw TeslaProtocolException("차량이 핸드셰이크에 응답하지 않는다")
@@ -171,8 +173,7 @@ class TeslaClient(
             .build()
 
         DiagLog.add("명령 전송 ${domain.name} (${payload.size}B)")
-        link.send(message.toByteArray())
-        val response = awaitResponse(uuid)
+        val response = sendAndAwait(message.toByteArray(), uuid)
             ?: run {
                 DiagLog.add("명령 응답 없음 (${RESPONSE_TIMEOUT_MS}ms)")
                 throw TeslaProtocolException("차량이 응답하지 않는다")
@@ -235,16 +236,22 @@ class TeslaClient(
             .setUuid(ByteString.copyFrom(uuid))
 
     /**
-     * 우리 요청에 대한 응답을 기다린다.
+     * 요청을 보내고 응답을 기다린다.
+     *
+     * **구독을 전송보다 먼저 건다** (UNDISPATCHED) — 전송 직후 도착한 응답이
+     * 구독 등록 전에 hot flow에서 유실되면 멀쩡한 응답을 두고 8초 타임아웃이 난다
+     * (실차 로그 2026-08-13 09:11: 전송 0.1초 뒤 82B 수신, 그런데 타임아웃).
      *
      * VCSEC은 메모리 제약으로 request_uuid를 안 채우는 경우가 있어,
      * 라우팅 주소가 우리 것이면 받아들인다.
      */
-    private suspend fun awaitResponse(
+    private suspend fun sendAndAwait(
+        requestBytes: ByteArray,
         uuid: ByteArray,
         timeoutMillis: Long = RESPONSE_TIMEOUT_MS,
-    ): UniversalMessage.RoutableMessage? {
-        val response = withTimeoutOrNull(timeoutMillis) {
+    ): UniversalMessage.RoutableMessage? = coroutineScope {
+        // UNDISPATCHED: 이 자리에서 collect 등록까지 실행하고 첫 대기 지점에서 멈춘다
+        val waiter = async(start = CoroutineStart.UNDISPATCHED) {
             link.incoming
                 .first { bytes ->
                     val parsed = runCatching {
@@ -254,12 +261,18 @@ class TeslaClient(
                 }
                 .let { UniversalMessage.RoutableMessage.parseFrom(it) }
         }
-        // 타임아웃 직후 뒤늦게 도착하는 응답(실차에서 8.2초 관찰)이 다음 요청의 답으로
-        // 오인되는 걸 막는다. VCSEC 응답엔 request_uuid가 없어 내용으로는 못 가른다.
-        // incoming은 수집자가 없으면 버리는 hot flow라, 여기서 잠깐 기다리면
-        // 지각 응답은 아무도 안 받는 사이에 사라진다. 이 지연은 requestLock 안에서 일어난다
-        if (response == null) kotlinx.coroutines.delay(LATE_RESPONSE_QUARANTINE_MS)
-        return response
+
+        link.send(requestBytes)
+        val response = withTimeoutOrNull(timeoutMillis) { waiter.await() }
+        if (response == null) {
+            waiter.cancel()
+            // 타임아웃 직후 뒤늦게 도착하는 응답(실차에서 8.2초 관찰)이 다음 요청의 답으로
+            // 오인되는 걸 막는다. VCSEC 응답엔 request_uuid가 없어 내용으로는 못 가른다.
+            // incoming은 수집자가 없으면 버리는 hot flow라, 여기서 잠깐 기다리면
+            // 지각 응답은 아무도 안 받는 사이에 사라진다. 이 지연은 requestLock 안에서 일어난다
+            kotlinx.coroutines.delay(LATE_RESPONSE_QUARANTINE_MS)
+        }
+        response
     }
 
     private fun matchesRequest(

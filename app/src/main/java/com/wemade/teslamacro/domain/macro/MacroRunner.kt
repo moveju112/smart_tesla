@@ -102,6 +102,7 @@ class MacroRunner(
     }
 
     private suspend fun execute(rule: MacroRule, startedAt: Long) {
+        val myJob = kotlin.coroutines.coroutineContext[Job]
         _running.update { it + rule.id }
         append(startedAt, rule.name, "시작")
         try {
@@ -115,9 +116,16 @@ class MacroRunner(
             }
             append(now(), rule.name, "완료")
         } finally {
-            _running.update { it - rule.id }
-            _progress.update { it - rule.id }
-            lock.withLock { jobs.remove(rule.id) }
+            // 내 항목일 때만 지운다 — 재발동으로 방금 등록된 새 잡의 항목을
+            // 취소된 이전 잡의 finally가 지우면, 새 잡이 추적을 벗어나
+            // cancelAll(사람 조작 우선)이 못 멈추고 다음 발동과 겹쳐 돈다
+            lock.withLock {
+                if (jobs[rule.id] === myJob) {
+                    jobs.remove(rule.id)
+                    _running.update { it - rule.id }
+                    _progress.update { it - rule.id }
+                }
+            }
         }
     }
 
@@ -201,6 +209,9 @@ class MacroRunner(
 
     private fun append(timestamp: Long, ruleName: String, message: String, isError: Boolean = false) {
         _log.update { (it + MacroLogEntry(timestamp, ruleName, message, isError)).takeLast(maxLogSize) }
+        // 진단 로그에도 미러링 — "매크로가 왜 안 떴지"를 설정의 공유 버튼 한 번으로 조사 가능하게.
+        // 여기 아무것도 없으면 발동 자체가 안 된 것, 실패가 찍혀 있으면 실행은 됐는데 걸음이 죽은 것
+        com.wemade.teslable.DiagLog.add("매크로 [$ruleName] $message")
     }
 
     private companion object {

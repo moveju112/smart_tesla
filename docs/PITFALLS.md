@@ -58,6 +58,15 @@
   - Cause: 평상시 폴링이 VCSEC(차체)만 읽음 — 접속 때 한 번 읽은 값이 계속 표시됨
   - Fix: 탑승 중(isUserPresent)에는 CLIMATE·CHARGE도 갱신 — `app/src/main/java/com/wemade/teslamacro/data/poll/StatePoller.kt` 카테고리 선택. 빈 차는 여전히 VCSEC만 (차 재우기)
 
+## 스텔스 충전
+
+- **Symptom:** 스텔스 충전을 끄거나 충전이 멈췄는데 전류를 계속 흔듦 / 조건이 다시 참이 돼도 재개 안 함
+  - Cause: `runLoop()`이 무한 `delay`에 갇혀 있어, 평범한 `collect`면 on/off 신호의 다음 값을 못 받는다
+  - Fix: `collectLatest`로 수집해 조건이 false로 바뀌면 실행 중이던 `runLoop`을 취소 — `app/src/main/java/com/wemade/teslamacro/data/charge/StealthChargeController.kt:46`
+- **Symptom:** 전류가 한쪽(상한 또는 하한)에 눌러앉거나 정확히 일정 주기로만 바뀜 → 위장 효과 없음
+  - Cause: 평균 복원(MEAN_REVERSION)·간격 난수(randomInterval)를 건드려 파라미터가 깨짐
+  - Fix: 다음 전류는 순수함수 `StealthChargePlan.next()`가 정한다 — 파라미터 변경 시 `StealthChargePlanTest`로 검증 (`app/src/main/java/com/wemade/teslamacro/data/charge/StealthChargePlan.kt`)
+
 ## 문서 드리프트
 
 - **Symptom:** 루트 `ARCHITECTURE.md` 디자인 절(다크 4단계, #3E6AE1, 그림자 0)이 코드와 다름

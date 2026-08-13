@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Luggage
 import androidx.compose.material.icons.rounded.VerticalAlignBottom
 import androidx.compose.material.icons.rounded.VerticalAlignTop
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -129,6 +130,7 @@ fun DashboardScreen(
                             seatLabel = "운전석",
                             climate = state.seatClimate[SeatPosition.FRONT_LEFT] ?: SeatClimate(),
                             enabled = state.isReady,
+                            pending = state.pendingSeat == SeatPosition.FRONT_LEFT,
                             onChange = { mode, level ->
                                 onSeatClimate(SeatPosition.FRONT_LEFT, mode, level)
                             },
@@ -140,6 +142,7 @@ fun DashboardScreen(
                             seatLabel = "동승석",
                             climate = state.seatClimate[SeatPosition.FRONT_RIGHT] ?: SeatClimate(),
                             enabled = state.isReady,
+                            pending = state.pendingSeat == SeatPosition.FRONT_RIGHT,
                             onChange = { mode, level ->
                                 onSeatClimate(SeatPosition.FRONT_RIGHT, mode, level)
                             },
@@ -506,6 +509,7 @@ private fun SeatControl(
     seatLabel: String,
     climate: SeatClimate,
     enabled: Boolean,
+    pending: Boolean = false,
     onChange: (SeatMode, Level) -> Unit,
 ) {
     val accent = if (climate.mode == SeatMode.COOL) T.Cool else T.Heat
@@ -516,7 +520,18 @@ private fun SeatControl(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(seatLabel, style = MaterialTheme.typography.titleSmall, color = T.Ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(seatLabel, style = MaterialTheme.typography.titleSmall, color = T.Ink)
+                // 화면 값은 즉시 바뀌지만 차량 전송은 뒤따라온다 — 그 간극을 스피너로 보여준다
+                if (pending) {
+                    Spacer(Modifier.width(Space.sm))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                        color = accent,
+                    )
+                }
+            }
             SeatModeToggle(
                 mode = climate.mode,
                 enabled = enabled,
@@ -749,6 +764,14 @@ data class DashboardUiState(
         get() = pendingCommand != null ||
             link is LinkState.Scanning ||
             link is LinkState.Connecting
+
+    /** 지금 차량으로 전송 중인 시트 명령의 좌석. 그 좌석 컨트롤에만 스피너를 단다 */
+    val pendingSeat: SeatPosition?
+        get() = when (val command = pendingCommand) {
+            is VehicleCommand.SetSeatCooler -> command.seat
+            is VehicleCommand.SetSeatHeater -> command.seat
+            else -> null
+        }
 
     val connectionLabel: String
         get() = when (link) {

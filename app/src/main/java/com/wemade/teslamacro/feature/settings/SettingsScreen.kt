@@ -121,9 +121,10 @@ fun SettingsScreen(
             )
         }
 
-        // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다
+        // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다.
+        // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 폴링 주기·토글 상태를 알 수 없다
         Spacer(Modifier.height(Space.md))
-        DiagLogPanel()
+        DiagLogPanel(shareExtra = { settingsDump(settings) })
 
         SectionHeader("차량")
         TCard {
@@ -395,3 +396,28 @@ private fun IntervalPicker(
         }
     }
 }
+
+/**
+ * 공유용 설정 덤프 한 장.
+ * 로그만으론 "폴링이 몇 초였는지, 스텔스가 켜져 있었는지"를 알 수 없어 함께 실어 보낸다.
+ * VIN은 개인정보라 앞 3 + 뒤 4만 남기고 가린다.
+ */
+private fun settingsDump(settings: AppSettings): String = buildString {
+    appendLine("[Smart Tesla ${com.wemade.teslamacro.BuildConfig.VERSION_NAME} 설정]")
+    appendLine("차량: ${settings.vehicleName.ifBlank { "-" }} · VIN ${maskVin(settings.vin)}")
+    appendLine("BLE 주소: ${settings.vehicleAddress.ifBlank { "-" }}")
+    appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
+    appendLine(
+        "폴링: 평상시 ${settings.idlePollSeconds}초 · 집중 ${settings.activePollSeconds}초" +
+            " · 집중 지속 ${settings.activeWindowSeconds}초",
+    )
+    append(
+        "매크로 자동 실행=${settings.automationEnabled}" +
+            " · 음성 상시=${settings.voiceAlwaysOn}" +
+            " · 스텔스 충전=${settings.stealthCharging}",
+    )
+}
+
+/** VIN 가리기: 5YJ…0000 꼴. 통째로 내보내지 않는다 */
+private fun maskVin(vin: String): String =
+    if (vin.length < 8) "-" else "${vin.take(3)}…${vin.takeLast(4)}"

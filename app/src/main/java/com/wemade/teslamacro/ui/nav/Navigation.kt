@@ -39,8 +39,8 @@ enum class Destination(val route: String, val label: String, val icon: ImageVect
 }
 
 /**
- * 하단 탭 (폰 세로).
- * 좁은 화면에서 96dp 레일은 본문을 너무 먹는다. 엄지도 하단이 닿기 쉽다.
+ * 하단 탭 (세로 방향 — 폰·태블릿 공통).
+ * 세로에선 96dp 레일이 본문 폭을 너무 먹는다. 메뉴가 3개뿐이라 하단이 낫고 엄지도 닿기 쉽다.
  */
 @Composable
 fun NavBar(
@@ -110,8 +110,8 @@ private fun NavItem(
 }
 
 /**
- * 좌측 세로 내비게이션 (태블릿).
- * 가로가 넓어 하단 탭보다 레일이 낫다. 엄지 도달 범위도 화면 좌측이 유리하다.
+ * 좌측 세로 내비게이션 (가로 방향).
+ * 가로에선 폭이 넉넉해 하단 탭보다 레일이 낫다. 엄지 도달 범위도 화면 좌측이 유리하다.
  */
 @Composable
 fun NavRail(

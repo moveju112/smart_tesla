@@ -69,6 +69,9 @@ class StatePoller(
         var needFullRead = true   // 연결 직후 한 번은 전부 읽어 대시보드를 채운다
 
         while (isActive) {
+            // 주기 계산용 사이클 시작 시각 — 읽기 소요(실패 시 8초 타임아웃 포함)를
+            // 주기에서 빼지 않으면 30초 설정이 31~49초로 들쭉날쭉해진다 (실차 로그 제보)
+            val cycleStart = now()
             val settings = settingsStore.settings.first()
 
             // 1. 연결이 안 됐으면 붙이고 다시 돈다.
@@ -95,7 +98,16 @@ class StatePoller(
                     StateCategory.CHARGE,
                     StateCategory.DRIVE,
                 )
-                isActiveWindow -> requiredCategories()
+                // 집중 창에도 차체는 항상 본다(탑승·잠금 변화 감지가 멈추면 안 된다).
+                // 타고 있으면 공조·배터리도 — 매크로가 안 써도 화면이 멈춰 보이면 안 된다
+                isActiveWindow -> buildSet {
+                    add(StateCategory.BODY_CONTROLLER)
+                    addAll(requiredCategories())
+                    if (_snapshot.value.isUserPresent == true) {
+                        add(StateCategory.CLIMATE)
+                        add(StateCategory.CHARGE)
+                    }
+                }
                 _snapshot.value.isUserPresent == true -> setOf(
                     StateCategory.BODY_CONTROLLER,
                     StateCategory.CLIMATE,
@@ -133,9 +145,14 @@ class StatePoller(
             previous = current
             // 이번 사이클에 사건이 감지돼 창이 열렸으면 바로 짧은 주기로 — 낡은 판정을 쓰면
             // 문 열림 직후 한 사이클(기본 30초)을 통째로 기다리게 된다
-            val interval =
-                if (now() < activeUntil) settings.activePollSeconds else settings.idlePollSeconds
-            delay(interval * 1000L)
+            val interval = nextIntervalSeconds(
+                inActiveWindow = now() < activeUntil,
+                snapshot = merged,
+                activeSeconds = settings.activePollSeconds,
+                idleSeconds = settings.idlePollSeconds,
+            )
+            // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지
+            delay((interval * 1000L - (now() - cycleStart)).coerceAtLeast(1_000L))
         }
     }
 
@@ -212,4 +229,27 @@ class StatePoller(
         isChargePortOpen = incoming.isChargePortOpen ?: base.isChargePortOpen,
         speedKph = incoming.speedKph ?: base.speedKph,
     )
+}
+
+/** 깊은 유휴 주기. 사용자가 평상시를 이보다 길게 잡았으면 그 값을 따른다 */
+internal const val DEEP_IDLE_SECONDS = 120
+
+/**
+ * 다음 폴링까지 몇 초 쉴지 정한다 — 순수 함수라 단위 테스트로 검증한다.
+ *
+ * 우선순위: 집중 창 > 깊은 유휴 > 평상시.
+ * 깊은 유휴 = 잠기고 · 비었고 · 충전도 아님 — 차를 재우기 가장 좋은 상태라 더 아껴 읽는다.
+ * 충전 중은 예외다: 차가 어차피 안 자고, 스텔스 충전·배터리 감시가 신선한 값을 원한다
+ */
+internal fun nextIntervalSeconds(
+    inActiveWindow: Boolean,
+    snapshot: VehicleSnapshot,
+    activeSeconds: Int,
+    idleSeconds: Int,
+): Int = when {
+    inActiveWindow -> activeSeconds
+    snapshot.isLocked == true &&
+        snapshot.isUserPresent != true &&
+        snapshot.isCharging != true -> maxOf(DEEP_IDLE_SECONDS, idleSeconds)
+    else -> idleSeconds
 }

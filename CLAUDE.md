@@ -1,6 +1,6 @@
 # Smart Tesla
 
-차내 태블릿용 안드로이드 앱. 클라우드 없이 BLE로 테슬라를 직접 제어한다(공조/시트/잠금 + 매크로 + 오프라인 음성).
+차내 태블릿용 안드로이드 앱. 클라우드 없이 BLE로 테슬라를 직접 제어한다(공조/시트/잠금/충전 + 매크로 + 오프라인 음성).
 모듈 2개: `:app`(UI/도메인) + `:tesla-ble`(전송 계층).
 
 ## Core Rules
@@ -9,6 +9,7 @@
 - 차량 연결의 정본은 **저장 MAC 직행 + autoConnect=true** — 스캔은 이 폰에서 광고를 못 받는다 (docs/BLE_RULES.md)
 - BLE 요청은 직렬(requestLock)만 — VCSEC 응답엔 request_uuid가 없어 병렬이면 응답이 뒤바뀐다
 - 프로토콜 정답 벡터(루트 ARCHITECTURE.md 목록 + ProtocolVectorTest)는 불변 — 안 맞으면 코드가 틀린 것
+- 새 명령·조건·트리거는 확장 지점 3개로만 (파일 1개 + 분기 1개) — 편집 UI는 `Signal.entries`/`CommandCatalog.all`을 자동 나열 (docs/tasks/ADD_COMMAND.md)
 - 등록 완료 = 카드 태그 후 핸드셰이크 성공. VIN 저장(isPaired) ≠ 키 등록(isEnrolled)
 - UI는 토스식 라이트 미니멀 확정 — 그라데이션/글로우/다크 금지, 값은 `T/Space/Radius/Motion` 토큰만
 - `./gradlew test`에 Paparazzi는 없다 — UI 변경 시 `recordPaparazziDebug` 별도

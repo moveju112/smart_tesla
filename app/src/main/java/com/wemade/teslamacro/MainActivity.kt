@@ -30,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wemade.teslamacro.feature.dashboard.DashboardScreen
@@ -161,11 +163,12 @@ private fun AppRoot(factory: ViewModelFactory) {
         return
     }
 
-    // 좁으면 하단 탭, 넓으면 좌측 레일
-    val compact = LocalPane.current.isCompact
+    // 세로면 하단 탭, 가로면 좌측 레일 — 폭이 아니라 방향으로 가른다.
+    // 차내 태블릿은 세로로 세워도 폭이 600dp를 넘어 레일로 잡혔다. 메뉴가 3개뿐이라 세로에선 레일이 본문 폭만 먹는다
+    val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
 
     ResponsiveScaffold(
-        compact = compact,
+        bottomNav = portrait,
         current = current,
         onSelect = { current = it },
     ) {
@@ -269,12 +272,12 @@ private fun AppRoot(factory: ViewModelFactory) {
  */
 @Composable
 private fun ResponsiveScaffold(
-    compact: Boolean,
+    bottomNav: Boolean,
     current: Destination,
     onSelect: (Destination) -> Unit,
     content: @Composable () -> Unit,
 ) {
-    if (compact) {
+    if (bottomNav) {
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.weight(1f)) { content() }
             NavBar(current = current, onSelect = onSelect)

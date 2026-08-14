@@ -98,7 +98,8 @@ private fun AirflowMark(modifier: Modifier = Modifier) {
                 color = T.Electric.copy(alpha = fade.coerceIn(0f, 1f)),
                 start = Offset(startX.coerceAtLeast(0f), y),
                 end = Offset((startX + length).coerceAtMost(size.width), y),
-                strokeWidth = 3f,
+                // 픽셀 리터럴은 고밀도 화면에서 실처럼 얇아진다 — dp 기준으로 굵기 고정
+                strokeWidth = 3.dp.toPx(),
                 cap = StrokeCap.Round,
             )
         }

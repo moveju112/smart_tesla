@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.ui.theme
 
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -25,6 +26,9 @@ object Radius {
     val card = 18.dp
     val hero = 20.dp
     val pill = 999.dp
+
+    // 트랙(button) 안에 들어가는 세그먼트 칸 — 산술(button - xs) 대신 토큰으로 고정
+    val segment = 10.dp
 }
 
 /**
@@ -42,6 +46,10 @@ object Motion {
     private val Standard = CubicBezierEasing(0.5f, 0f, 0f, 0.75f)
     fun <T> standard() = tween<T>(durationMillis = 330, easing = Standard)
     fun <T> quick() = tween<T>(durationMillis = 160, easing = Standard)
+
+    // 반복(숨쉬기·훑기) 애니메이션 공용 스펙 — 화면마다 tween 리터럴을 만들지 않는다
+    fun <T> breathe(durationMillis: Int) =
+        tween<T>(durationMillis = durationMillis, easing = LinearEasing)
 }
 
 private val TeslaShapes = Shapes(

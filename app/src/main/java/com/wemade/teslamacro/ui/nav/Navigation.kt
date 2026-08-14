@@ -96,7 +96,7 @@ private fun NavItem(
             Icon(
                 imageVector = destination.icon,
                 contentDescription = destination.label,
-                tint = if (selected) T.ElectricBright else T.InkFaint,
+                tint = if (selected) T.Electric else T.InkFaint,
                 modifier = Modifier.size(22.dp),
             )
         }
@@ -134,7 +134,7 @@ fun NavRail(
                 modifier = Modifier
                     .padding(horizontal = Space.sm)
                     .background(
-                        if (selected) T.ElectricFaint else androidx.compose.ui.graphics.Color.Transparent,
+                        if (selected) T.ElectricFaint else Color.Transparent,
                         RoundedCornerShape(Radius.card),
                     )
                     .clickable { onSelect(destination) }
@@ -147,13 +147,12 @@ fun NavRail(
                     tint = if (selected) T.Electric else T.InkFaint,
                     modifier = Modifier.size(24.dp),
                 )
-                Box(modifier = Modifier.padding(top = Space.xs)) {
-                    Text(
-                        text = destination.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) T.Ink else T.InkFaint,
-                    )
-                }
+                Text(
+                    text = destination.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) T.Ink else T.InkFaint,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
             }
         }
     }

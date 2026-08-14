@@ -2,11 +2,12 @@ package com.wemade.teslamacro.ui.component
 
 import android.content.Intent
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,11 +29,14 @@ import com.wemade.teslamacro.ui.theme.T
  * 실차 문제는 개발자가 현장에 없을 때 터진다.
  * 복사(클립보드)와 공유(공유 시트 — 메일·메신저 직행) 두 길을 둔다.
  *
+ * @param title 카드 안 제목. 화면이 SectionHeader를 카드 밖에 둘 때는 null로 끈다
  * @param shareExtra 공유 본문 앞에 붙일 추가 정보(설정 덤프 등). 호출부가 채운다
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiagLogPanel(
     modifier: Modifier = Modifier,
+    title: String? = "진단 로그",
     shareExtra: () -> String = { "" },
 ) {
     val lines by DiagLog.lines.collectAsState()
@@ -40,49 +44,59 @@ fun DiagLogPanel(
     val context = LocalContext.current
 
     TCard(modifier = modifier, outlined = true) {
-        SectionHeader(
-            title = "진단 로그",
-            trailing = {
-                Row {
-                    TButton(
-                        text = "공유",
-                        tone = ButtonTone.Secondary,
-                        fillWidth = false,
-                        enabled = lines.isNotEmpty(),
-                        onClick = {
-                            // 공유 시트로 바로 보낸다 — 복사→메신저→붙여넣기 삼단을 한 번으로
-                            val text = listOf(shareExtra(), DiagLog.dump())
-                                .filter { it.isNotBlank() }
-                                .joinToString("\n\n")
-                            val send = Intent(Intent.ACTION_SEND)
-                                .setType("text/plain")
-                                .putExtra(Intent.EXTRA_TEXT, text)
-                            context.startActivity(Intent.createChooser(send, "진단 로그 보내기"))
-                        },
-                    )
-                    Spacer(Modifier.width(Space.sm))
-                    TButton(
-                        text = "복사",
-                        tone = ButtonTone.Secondary,
-                        fillWidth = false,
-                        enabled = lines.isNotEmpty(),
-                        onClick = { clipboard.setText(AnnotatedString(DiagLog.dump())) },
-                    )
-                    Spacer(Modifier.width(Space.sm))
-                    TButton(
-                        text = "지우기",
-                        tone = ButtonTone.Ghost,
-                        fillWidth = false,
-                        enabled = lines.isNotEmpty(),
-                        onClick = { DiagLog.clear() },
-                    )
-                }
-            },
-        )
+        if (title != null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = T.Ink,
+            )
+            Spacer(Modifier.height(Space.sm))
+        }
+        // 버튼 3개는 제목과 별도 줄 — 좁은 화면에서 제목+버튼이 한 줄에 못 들어가 넘치던 문제.
+        // FlowRow라 그래도 좁으면 버튼끼리도 줄바꿈된다
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            TButton(
+                text = "공유",
+                tone = ButtonTone.Secondary,
+                fillWidth = false,
+                small = true,
+                enabled = lines.isNotEmpty(),
+                onClick = {
+                    // 공유 시트로 바로 보낸다 — 복사→메신저→붙여넣기 삼단을 한 번으로
+                    val text = listOf(shareExtra(), DiagLog.dump())
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n\n")
+                    val send = Intent(Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(Intent.EXTRA_TEXT, text)
+                    context.startActivity(Intent.createChooser(send, "진단 로그 보내기"))
+                },
+            )
+            TButton(
+                text = "복사",
+                tone = ButtonTone.Secondary,
+                fillWidth = false,
+                small = true,
+                enabled = lines.isNotEmpty(),
+                onClick = { clipboard.setText(AnnotatedString(DiagLog.dump())) },
+            )
+            TButton(
+                text = "지우기",
+                tone = ButtonTone.Ghost,
+                fillWidth = false,
+                small = true,
+                enabled = lines.isNotEmpty(),
+                onClick = { DiagLog.clear() },
+            )
+        }
+        Spacer(Modifier.height(Space.md))
 
         if (lines.isEmpty()) {
             Text(
-                text = "아직 기록이 없어요. 차량 찾기를 시도하면 여기에 과정이 남아요.",
+                text = "아직 기록이 없어요.\n차량 찾기를 시도하면 여기에 과정이 남아요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )

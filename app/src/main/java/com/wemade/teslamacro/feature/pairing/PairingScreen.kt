@@ -2,6 +2,8 @@ package com.wemade.teslamacro.feature.pairing
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,7 +51,7 @@ enum class PairingStep(val title: String, val hint: String) {
     ),
     FindVehicle(
         "차량 검색",
-        "블루투스가 닿아야 해요. 차에 탄 상태에서 진행하세요",
+        "블루투스가 닿아야 해요.\n차에 탄 상태에서 진행하세요",
     ),
     TapCard(
         "카드키 태그",
@@ -232,7 +234,7 @@ private fun DetectedVehicleNotice(name: String) {
                 color = T.Ink,
             )
             Text(
-                text = "블루투스에 저장된 이름이에요. 제어를 위해 아래에 VIN을 넣어 주세요.",
+                text = "블루투스에 저장된 이름이에요.\n제어를 위해 아래에 VIN을 넣어 주세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkMuted,
                 modifier = Modifier.padding(top = Space.xs),
@@ -260,7 +262,7 @@ private fun OpenTeslaAppButton(enabled: Boolean) {
             enabled = enabled,
             onClick = {
                 notice = if (TeslaAppLauncher.open(context)) null
-                else "테슬라 앱을 열 수 없어요. 차량 화면에서 확인해 주세요"
+                else "테슬라 앱을 열 수 없어요.\n차량 화면에서 확인해 주세요"
             },
         )
         notice?.let {
@@ -286,7 +288,8 @@ private fun VinPrivacyNotice() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(T.Carbon, RoundedCornerShape(Radius.button))
+            // Carbon(순백)은 흰 카드 위에서 안 보인다 — 옅은 회색 면으로 구분한다
+            .background(T.Slate, RoundedCornerShape(Radius.button))
             .padding(Space.md),
     ) {
         Text(
@@ -314,7 +317,8 @@ private fun NoticeLine(text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
+            // 프라이버시 안내는 읽혀야 의미가 있다 — InkFaint는 대비 미달
+            color = T.InkMuted,
         )
     }
 }
@@ -338,6 +342,7 @@ private fun PrimaryActions(compact: Boolean, content: @Composable () -> Unit) {
  * 넓으면 네 단계를 나란히, 좁으면 점 + 현재 단계 이름만.
  * 좁은 화면에서 칩 4개를 억지로 넣으면 글자가 세로로 쪼개진다.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StepIndicator(current: PairingStep) {
     if (LocalPane.current.isCompact) {
@@ -372,7 +377,8 @@ private fun StepIndicator(current: PairingStep) {
             Text(
                 text = current.hint,
                 style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
+                // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
+                color = T.InkMuted,
                 modifier = Modifier.padding(top = Space.xs),
             )
         }
@@ -380,7 +386,11 @@ private fun StepIndicator(current: PairingStep) {
     }
 
     Column {
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        // 중간 폭 화면에서 칩 4개가 오른쪽으로 넘친다 — 줄바꿈되는 FlowRow로 감싼다
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
             PairingStep.entries.forEach { step ->
                 val isCurrent = step == current
                 val isPast = step.ordinal < current.ordinal
@@ -391,13 +401,16 @@ private fun StepIndicator(current: PairingStep) {
                         isPast -> T.Ok
                         else -> T.InkFaint
                     },
+                    // 옅은 틴트 위 Ok/InkFaint 글자는 대비 미달 — 글자만 진하게 분리
+                    textColor = if (isCurrent) T.Electric else T.InkMuted,
                 )
             }
         }
         Text(
             text = current.hint,
             style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
+            // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
+            color = T.InkMuted,
             modifier = Modifier.padding(top = Space.sm),
         )
     }
@@ -424,7 +437,8 @@ private fun DirectConnectPanel(busy: Boolean, onConnect: (String) -> Unit) {
         Text(
             text = "nRF Connect에서 본 차 주소를 넣으면 스캔 없이 바로 붙어요.",
             style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
+            // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
+            color = T.InkMuted,
             modifier = Modifier.padding(top = Space.xs, bottom = Space.md),
         )
         OutlinedTextField(
@@ -474,36 +488,37 @@ private fun NearbyPanel(
             color = T.Ink,
         )
         Text(
-            text = "주변 기기를 훑거나(★=테슬라), 이미 폰에 페어링된 기기 목록을 봅니다. " +
+            text = "주변 기기를 훑거나(★=테슬라), 이미 폰에 페어링된 기기 목록을 봅니다.\n" +
                 "페어링 목록은 차가 없어도 읽혀요.",
             style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
+            // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
+            color = T.InkMuted,
             modifier = Modifier.padding(top = Space.xs),
         )
         // 실사용 함정: 페어링 목록의 테슬라 주소로 직접 연결을 시도하다 30초 타임아웃만 반복했다
-        Text(
-            text = "주의 — 페어링 목록에 보이는 테슬라는 음악·통화용 주소예요. " +
-                "키 연결용 BLE 주소가 아니라 직접 연결이 안 돼요. " +
+        WarnNotice(
+            label = "주의",
+            body = "페어링 목록에 보이는 테슬라는 음악·통화용 주소예요.\n" +
+                "키 연결용 BLE 주소가 아니라 직접 연결이 안 돼요.\n" +
                 "기존 기기가 있으면 그 앱의 설정 → 차량 → \"BLE 주소\"를 그대로 입력하세요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.Warn,
-            modifier = Modifier.padding(top = Space.xs),
+            modifier = Modifier.padding(top = Space.sm),
         )
 
         Spacer(Modifier.height(Space.md))
         Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            // 좁은 화면에서 두 버튼이 카드 폭을 넘치지 않게 반씩 나눈다
             TButton(
                 text = if (busy) "훑는 중…" else "주변 기기 확인",
                 tone = ButtonTone.Secondary,
-                fillWidth = false,
                 enabled = !busy,
+                modifier = Modifier.weight(1f),
                 onClick = onScan,
             )
             TButton(
                 text = "페어링된 기기",
                 tone = ButtonTone.Secondary,
-                fillWidth = false,
                 enabled = !busy,
+                modifier = Modifier.weight(1f),
                 onClick = onLoadBonded,
             )
         }
@@ -511,22 +526,56 @@ private fun NearbyPanel(
         if (nearby != null) {
             Spacer(Modifier.height(Space.md))
             if (nearby.isEmpty()) {
-                Text(
-                    text = "한 건도 잡히지 않았어요. 스캔 자체가 막힌 상태예요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.Warn,
-                )
+                WarnNotice(body = "한 건도 잡히지 않았어요.\n스캔 자체가 막힌 상태예요.")
             } else {
                 nearby.forEach { device ->
-                    Text(
-                        text = "${if (device.isTesla) "★ " else ""}${device.name}  ·  ${device.rssi}dBm",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (device.isTesla) T.Electric else T.InkMuted,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
+                    Row(modifier = Modifier.padding(top = Space.xs)) {
+                        // ★만 파랑으로 강조하고 이름은 Ink — 파란 소형 텍스트는 대비 미달
+                        if (device.isTesla) {
+                            Text(
+                                text = "★ ",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = T.Electric,
+                            )
+                        }
+                        Text(
+                            text = "${device.name}  ·  ${device.rssi}dBm",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (device.isTesla) T.Ink else T.InkMuted,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * 경고 안내 박스.
+ * 밝은 앰버(T.Warn) 글자는 흰 카드 위에서 안 읽혀서,
+ * 앰버 틴트 면 + 진한 본문(T.Ink)으로 바꿔 보여준다. 라벨만 WarnText.
+ */
+@Composable
+private fun WarnNotice(body: String, modifier: Modifier = Modifier, label: String? = null) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(T.Warn.copy(alpha = 0.12f), RoundedCornerShape(Radius.button))
+            .padding(Space.md),
+    ) {
+        if (label != null) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                color = T.WarnText,
+                modifier = Modifier.padding(bottom = Space.xs),
+            )
+        }
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodySmall,
+            color = T.Ink,
+        )
     }
 }
 

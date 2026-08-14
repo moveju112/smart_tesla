@@ -98,12 +98,12 @@ class VoiceRecognizer(private val context: Context) {
         getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
 
     private fun errorMessage(error: Int): String = when (error) {
-        SpeechRecognizer.ERROR_NO_MATCH -> "못 알아들었어요. 다시 말해 주세요"
+        SpeechRecognizer.ERROR_NO_MATCH -> "못 알아들었어요.\n다시 말해 주세요"
         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "아무 말도 안 들렸어요"
         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "마이크 권한이 없어요"
         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
-            "네트워크 인식에 실패했어요. 오프라인 한국어 인식을 설치해 주세요"
-        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "인식기가 바빠요. 잠시 후 다시 시도해 주세요"
+            "네트워크 인식에 실패했어요.\n오프라인 한국어 인식을 설치해 주세요"
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "인식기가 바빠요.\n잠시 후 다시 시도해 주세요"
         else -> "음성 인식 실패 (code=$error)"
     }
 

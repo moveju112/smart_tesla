@@ -128,7 +128,7 @@ class BleVehicleGateway(
 
                 // (페어링된 클래식 MAC은 핸즈프리 채널이라 제외. 10초만 버렸던 실험이다)
                 probeCandidates(candidates.values)
-                    ?: error("차량을 찾지 못했어요. 차 가까이에서 다시 시도해 주세요")
+                    ?: error("차량을 찾지 못했어요.\n차 가까이에서 다시 시도해 주세요")
             }
 
             // 3. 검증된 주소를 저장한다. 다음 연결은 0단계에서 끝난다

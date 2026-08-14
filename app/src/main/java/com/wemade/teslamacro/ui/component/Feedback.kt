@@ -1,12 +1,10 @@
 package com.wemade.teslamacro.ui.component
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,12 +28,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
@@ -61,7 +59,7 @@ fun IndeterminateBar(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = LinearEasing),
+            animation = Motion.breathe(1200),
             repeatMode = RepeatMode.Restart,
         ),
         label = "sweep",
@@ -111,18 +109,18 @@ fun SkeletonBlock(
         initialValue = 0.25f,
         targetValue = 0.55f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
+            animation = Motion.breathe(900),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "breath",
     )
+    // alpha 모디파이어는 background 뒤에선 효과가 없다 — 색 알파로 숨쉬게 한다
     Box(
         modifier = modifier
             .width(width.dp)
             .height(height.dp)
             .clip(RoundedCornerShape(Radius.button))
-            .background(T.Slate)
-            .alpha(alpha),
+            .background(T.Slate.copy(alpha = alpha)),
     )
 }
 
@@ -197,12 +195,16 @@ fun InlineBanner(
                 color = color,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(Space.sm))
+            Spacer(Modifier.width(Space.xs))
+            // 패딩을 clickable 뒤에 둬서 터치 타깃만 넓힌다 (시각 크기는 유지)
             Text(
                 text = "닫기",
                 style = MaterialTheme.typography.labelSmall,
                 color = color,
-                modifier = Modifier.clickable(onClick = onDismiss),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .clickable(onClick = onDismiss)
+                    .padding(Space.sm),
             )
         }
     }
@@ -218,16 +220,16 @@ fun PulsingDot(modifier: Modifier = Modifier, color: Color = T.Ink) {
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(600, easing = LinearEasing),
+            animation = Motion.breathe(600),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "pulse",
     )
+    // alpha 모디파이어는 background 뒤에선 효과가 없다 — 색 알파로 깜빡이게 한다
     Box(
         modifier = modifier
             .size(8.dp)
             .clip(RoundedCornerShape(Radius.pill))
-            .background(color)
-            .alpha(alpha),
+            .background(color.copy(alpha = alpha)),
     )
 }

@@ -1,21 +1,33 @@
 package com.wemade.teslamacro.feature.macro.edit
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.CommandTemplate
@@ -31,6 +43,7 @@ import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.rememberOnResume
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
@@ -71,9 +84,11 @@ fun ActionCard(
                 color = if (step is ActionStep.Run) T.Ink else T.InkMuted,
                 modifier = Modifier.weight(1f),
             )
-            TButton("▲", ButtonTone.Ghost, fillWidth = false, enabled = index > 0) { onMove(-1) }
-            TButton("▼", ButtonTone.Ghost, fillWidth = false, enabled = index < total - 1) { onMove(1) }
-            TButton("삭제", ButtonTone.Ghost, fillWidth = false, onClick = onRemove)
+            // 글자 글리프(▲▼) 대신 벡터 아이콘 — 접근성 설명과 44dp 터치 타깃을 함께 확보한다
+            CardIconButton(Icons.Rounded.KeyboardArrowUp, "위로", enabled = index > 0) { onMove(-1) }
+            CardIconButton(Icons.Rounded.KeyboardArrowDown, "아래로", enabled = index < total - 1) { onMove(1) }
+            // 삭제는 파괴적 동작 — Danger 색으로 드러낸다
+            CardIconButton(Icons.Rounded.Delete, "삭제", tint = T.Danger, onClick = onRemove)
         }
 
         val editor = parameterEditor(step, template)
@@ -81,6 +96,35 @@ fun ActionCard(
             Spacer(Modifier.height(Space.md))
             editor(onChange)
         }
+    }
+}
+
+/**
+ * 카드 헤더용 아이콘 버튼.
+ * 아이콘은 20dp지만 터치 타깃은 44dp를 보장한다 — 흔들리는 차 안에서 오탭을 줄인다.
+ * ConditionEditor의 카드 헤더도 같은 패턴을 쓴다.
+ */
+@Composable
+internal fun CardIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean = true,
+    tint: Color = T.InkMuted,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(Radius.pill))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) tint else T.InkFaint,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -115,7 +159,7 @@ private fun parameterEditor(
     step is ActionStep.WaitUntil -> { onChange ->
         Column {
             Text(
-                text = "조건이 맞을 때까지 기다려요. 시간이 지나면 포기하고 다음으로 넘어가요.",
+                text = "조건이 맞을 때까지 기다려요.\n시간이 지나면 포기하고 다음으로 넘어가요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -188,6 +232,7 @@ private fun parameterEditor(
                 onValueChange = { onChange(step.copy(destinationName = it)) },
                 label = { Text("목적지 이름 (예: 회사)") },
                 singleLine = true,
+                colors = editorFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(Space.sm))
@@ -196,6 +241,7 @@ private fun parameterEditor(
                 onValueChange = { onChange(step.copy(address = it)) },
                 label = { Text("주소 (예: 성남시 분당구 판교역로 152)") },
                 singleLine = true,
+                colors = editorFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             // 백그라운드에서 지도를 띄우려면 이 권한이 필수다. 여기서 바로 받는다.
@@ -206,7 +252,7 @@ private fun parameterEditor(
                 Text(
                     text = "자동으로 지도를 띄우려면 \"다른 앱 위에 표시\" 권한이 필요해요.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = T.Warn,
+                    color = T.WarnText,
                 )
                 Spacer(Modifier.height(Space.sm))
                 TButton("권한 허용하러 가기", ButtonTone.Secondary, fillWidth = false, small = true) {

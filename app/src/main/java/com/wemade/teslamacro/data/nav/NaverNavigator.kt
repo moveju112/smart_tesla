@@ -26,7 +26,7 @@ class NaverNavigator(private val context: Context) {
         withContext(Dispatchers.IO) {
             runCatching {
                 if (!hasOverlayPermission) {
-                    error("'다른 앱 위에 표시' 권한이 없어요. 매크로 편집에서 허용해 주세요")
+                    error("'다른 앱 위에 표시' 권한이 없어요.\n매크로 편집에서 허용해 주세요")
                 }
                 if (address.isBlank()) error("주소가 비어 있어요")
 

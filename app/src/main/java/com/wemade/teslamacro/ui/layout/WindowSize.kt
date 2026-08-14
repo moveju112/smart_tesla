@@ -40,8 +40,8 @@ enum class Pane {
     }
 }
 
-/** 루트에서 한 번 재서 아래로 내려보낸다. 화면마다 다시 재지 않는다 */
-val LocalPane: ProvidableCompositionLocal<Pane> = compositionLocalOf { Pane.Expanded }
+/** 루트에서 한 번 재서 아래로 내려보낸다. 기본값은 Compact — 좁게 시작해야 넘침이 없다 */
+val LocalPane: ProvidableCompositionLocal<Pane> = compositionLocalOf { Pane.Compact }
 
 /** 화면에서 짧게 쓰기 위한 별칭 */
 val pane: Pane

@@ -63,7 +63,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                     it.copy(
                         step = PairingStep.TapCard,
                         isBusy = false,
-                        message = "차량을 찾았어요. 이제 앱 키를 등록할게요",
+                        message = "차량을 찾았어요.\n이제 앱 키를 등록할게요",
                     )
                 } else {
                     // 실패했을 때만 검색 이름을 덧붙인다.
@@ -133,9 +133,9 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                     nearby = all.take(20),
                     isError = !mine,
                     message = when {
-                        mine -> "내 차를 찾았어요. 다시 찾기를 눌러 주세요"
+                        mine -> "내 차를 찾았어요.\n다시 찾기를 눌러 주세요"
                         all.isEmpty() -> "스캔이 한 건도 잡지 못했어요"
-                        else -> "기기 ${all.size}대를 봤지만 내 차 이름은 없었어요. 로그를 복사해 보내 주세요"
+                        else -> "기기 ${all.size}대를 봤지만 내 차 이름은 없었어요.\n로그를 복사해 보내 주세요"
                     },
                 )
             }
@@ -207,7 +207,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             _uiState.update {
                 if (result.isSuccess) {
                     it.copy(step = PairingStep.TapCard, isBusy = false,
-                        message = "연결됐어요! 이제 앱 키를 등록할게요")
+                        message = "연결됐어요!\n이제 앱 키를 등록할게요")
                 } else {
                     it.copy(isBusy = false, isError = true,
                         message = result.exceptionOrNull()?.message ?: "직접 연결에 실패했어요")
@@ -236,7 +236,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                         NearbyDevice(device.name, 0, device.name.contains("tesla", ignoreCase = true))
                     },
                     isError = true,
-                    message = "페어링된 기기 ${bonded.size}대를 로그에 남겼어요. 복사해서 보내 주세요",
+                    message = "페어링된 기기 ${bonded.size}대를 로그에 남겼어요.\n복사해서 보내 주세요",
                 )
             }
         }
@@ -280,7 +280,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                     container.settingsStore.setEnrolled(true)
                     _uiState.update {
                         it.copy(step = PairingStep.Done, isBusy = false,
-                            message = "등록이 확인됐어요. 이제 매크로가 동작해요")
+                            message = "등록이 확인됐어요.\n이제 매크로가 동작해요")
                     }
                     return@launch
                 }
@@ -288,7 +288,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
 
             _uiState.update {
                 it.copy(isBusy = false, isError = true,
-                    message = "카드키 승인을 확인하지 못했어요. 카드를 다시 대고 한 번 더 시도해 주세요")
+                    message = "카드키 승인을 확인하지 못했어요.\n카드를 다시 대고 한 번 더 시도해 주세요")
             }
         }
     }

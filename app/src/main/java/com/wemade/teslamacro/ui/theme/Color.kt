@@ -1,6 +1,5 @@
 package com.wemade.teslamacro.ui.theme
 
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -22,13 +21,8 @@ object T {
     val Graphite = Color(0xFFFFFFFF)    // 카드 = 순백
     val Slate = Color(0xFFEDF0F3)       // 눌린 상태 / 트랙 / 보조버튼 면
 
-    // 카드 그라데이션 자리 — 이제 평평하게(같은 흰색) 둔다
-    val CardTop = Color(0xFFFFFFFF)
-    val CardBottom = Color(0xFFFFFFFF)
-
     // 경계선
     val Hairline = Color(0xFFE5E8EB)
-    val HairlineSoft = Color(0x00000000)   // 흰 카드엔 안쪽 하이라이트를 안 쓴다
 
     // 텍스트 3단계 (토스 그레이 스케일)
     val Ink = Color(0xFF191F28)
@@ -37,27 +31,20 @@ object T {
 
     // 액센트 — 토스 블루
     val Electric = Color(0xFF3182F6)
-    val ElectricBright = Color(0xFF4B91F7)
     val ElectricPressed = Color(0xFF1B64DA)
     val ElectricFaint = Color(0xFFEAF3FF)   // 옅은 파랑 배경(선택 배지 등)
 
     // 의미색
     val Cool = Color(0xFF3182F6)        // 통풍 / 냉방 (파랑 계열로 통일감)
     val Heat = Color(0xFFFF6B00)        // 열선 / 난방
-    val Warn = Color(0xFFFFB020)
+    val Warn = Color(0xFFFFB020)        // 칩·점·틴트 배경 전용 — 흰 배경 텍스트엔 WarnText를 쓴다
+    val WarnText = Color(0xFFB45309)    // 경고 '텍스트' 전용 — 밝은 앰버(Warn)는 흰 배경에서 안 읽힌다
     val Danger = Color(0xFFF04452)
     val Ok = Color(0xFF12B886)
+
+    // 히어로 배경 단색 — 그라데이션 금지 규칙에 맞춰 틴트 한 색으로 끝낸다
+    val CoolTint = Color(0xFFF4F8FF)    // 냉방 히어로 배경
+    val HeatTint = Color(0xFFFFF6F0)    // 난방 히어로 배경
 }
 
-/**
- * 그라데이션 자리. 토스 스타일에선 거의 안 쓰므로 전부 평평하게(단색에 가깝게) 둔다.
- * 화면 코드가 Grad.*를 참조하고 있어 형태만 유지한다.
- */
-object Grad {
-    val card = Brush.verticalGradient(listOf(T.CardTop, T.CardBottom))
-    val primary = Brush.verticalGradient(listOf(T.Electric, T.Electric))
-    val primaryPressed = Brush.verticalGradient(listOf(T.ElectricPressed, T.ElectricPressed))
-    val hero = Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFFFFFFF)))
-    val cool = Brush.verticalGradient(listOf(Color(0xFFF4F8FF), Color(0xFFFFFFFF)))
-    val heat = Brush.verticalGradient(listOf(Color(0xFFFFF6F0), Color(0xFFFFFFFF)))
-}
+// Grad(그라데이션 브러시 모음)는 마지막 참조가 사라져 삭제했다 — 그라데이션 금지 규칙 완결

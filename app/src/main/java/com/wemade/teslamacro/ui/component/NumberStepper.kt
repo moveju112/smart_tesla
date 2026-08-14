@@ -6,13 +6,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.Radius
@@ -41,35 +47,46 @@ fun NumberStepper(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        StepButton("−", enabled = value > min) {
+        StepButton(Icons.Rounded.Remove, "줄이기", enabled = value > min) {
             onChange(snap((value - step).coerceAtLeast(min), step))
         }
+        // 고정 폭이면 "3600초"나 글꼴 확대 시 잘린다 — 최소 폭만 보장
         Text(
             text = format(value) + unit,
             style = MaterialTheme.typography.titleMedium,
             color = T.Ink,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(76.dp),
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 76.dp),
         )
-        StepButton("+", enabled = value < max) {
+        StepButton(Icons.Rounded.Add, "늘리기", enabled = value < max) {
             onChange(snap((value + step).coerceAtMost(max), step))
         }
     }
 }
 
+// −/+ 한 칸. 텍스트 글리프 대신 벡터 아이콘 — 폰트 따라 모양이 안 변하고 TalkBack에 의미가 읽힌다
 @Composable
-private fun StepButton(symbol: String, enabled: Boolean, onClick: () -> Unit) {
+private fun StepButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
             .size(44.dp)
-            .background(T.Slate, RoundedCornerShape(Radius.button))
+            // clip을 먼저 — 리플이 둥근 모서리 밖으로 번지지 않게
+            .clip(RoundedCornerShape(Radius.button))
+            .background(T.Slate)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = symbol,
-            style = MaterialTheme.typography.titleMedium,
-            color = if (enabled) T.Ink else T.InkFaint,
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) T.Ink else T.InkFaint,
+            modifier = Modifier.size(20.dp),
         )
     }
 }

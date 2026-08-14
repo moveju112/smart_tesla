@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.gateway.LinkState
@@ -65,7 +68,6 @@ import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.MetricTextStyle
-import com.wemade.teslamacro.ui.theme.Grad
 import com.wemade.teslamacro.ui.theme.Elevation
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
@@ -290,11 +292,14 @@ private fun QuickActionCell(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(imageVector = action.icon, contentDescription = action.label, tint = tint, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.height(Space.xs + 2.dp))
+        Spacer(Modifier.height(Space.sm))
         Text(
             text = action.label,
             style = MaterialTheme.typography.labelMedium,
             color = if (enabled) T.InkMuted else T.InkFaint,
+            // 좁은 칸에서 라벨이 2줄로 꺾이면 같은 줄 셀 높이가 제각각 — 한 줄로 고정
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -404,7 +409,8 @@ private fun ChargeCard(
                     color = if (state.isCharging == true) T.Ink else T.InkFaint,
                 )
                 Text(
-                    text = "한도 ${draftLimit}% · 전류 ${draftAmps}A",
+                    // 절 이어쓰기(" · ") 대신 줄 분리 — 난독증 사용자 기준 한 항목 = 한 줄
+                    text = "한도 ${draftLimit}%\n전류 ${draftAmps}A",
                     style = MaterialTheme.typography.bodySmall,
                     color = T.InkFaint,
                 )
@@ -445,13 +451,9 @@ private fun ChargeCard(
         // 스텔스 충전 토글. 켜면 컨트롤러가 전류를 계속 흔들어 수동 전류 조절은 잠근다
         ToggleRow(
             title = "스텔스 충전",
+            subtitle = "전류를 난수로 흔들어 충전 부하 패턴을 흐려요.\n충전이 느려질 수 있어요.",
             checked = state.stealthCharging,
             onCheckedChange = onStealthCharging,
-        )
-        Text(
-            text = "전류를 난수로 흔들어 충전 부하 패턴을 흐려요. 충전이 느려질 수 있어요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
         )
     }
 }
@@ -472,7 +474,8 @@ private fun LabeledSlider(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = T.InkFaint,
-            modifier = Modifier.width(32.dp),
+            // 고정 폭이면 글꼴 확대 시 잘린다 — 최소 폭만 잡고 스스로 늘어나게
+            modifier = Modifier.widthIn(min = 32.dp),
         )
         Slider(
             value = value,
@@ -491,7 +494,8 @@ private fun LabeledSlider(
             text = valueText,
             style = MaterialTheme.typography.labelSmall,
             color = T.InkMuted,
-            modifier = Modifier.width(44.dp),
+            maxLines = 1,
+            modifier = Modifier.widthIn(min = 44.dp),
         )
     }
 }
@@ -551,6 +555,7 @@ private fun SeatControl(
 }
 
 /** 통풍 ↔ 열선 2단 토글. 선택한 쪽이 그 모드 색으로 채워진다 */
+// ponytail: ChipRow로 통합하지 않고 자체 구현 유지 — 모드별 채움색(Cool/Heat)이 ChipRow 규칙과 달라 통합 이득이 없다
 @Composable
 private fun SeatModeToggle(
     mode: SeatMode,
@@ -561,8 +566,8 @@ private fun SeatModeToggle(
         modifier = Modifier
             .clip(RoundedCornerShape(Radius.pill))
             .background(T.Slate)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
         SeatMode.entries.forEach { m ->
             val selected = m == mode
@@ -572,13 +577,20 @@ private fun SeatModeToggle(
                     .clip(RoundedCornerShape(Radius.pill))
                     .background(if (selected) fill else Color.Transparent)
                     .clickable(enabled = enabled) { onSelect(m) }
-                    .padding(horizontal = Space.md, vertical = 6.dp),
+                    // 주행 중 눈 안 떼고 누르는 화면 — 최소 터치 타깃 44dp 확보
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = Space.md, vertical = Space.xs),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = m.label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (selected) Color.White else T.InkMuted,
+                    // 주황(Heat) 위 흰 글자는 대비 미달이라 진회색으로 — 파랑(Cool)은 흰 글자 유지
+                    color = when {
+                        !selected -> T.InkMuted
+                        m == SeatMode.HEAT -> T.Ink
+                        else -> Color.White
+                    },
                 )
             }
         }
@@ -595,11 +607,11 @@ private fun SeatModeToggle(
 @Composable
 private fun HeroCard(state: DashboardUiState) {
     val shape = RoundedCornerShape(Radius.hero)
-    // 실내 온도에 따라 배경 톤을 미세하게 바꾼다
+    // 실내 온도에 따라 배경 톤을 미세하게 바꾼다 — 그라데이션 금지 규칙에 맞춰 단색 틴트만
     val bg = when {
-        !state.isClimateOn -> Grad.hero
-        state.insideTempAccent == T.Heat -> Grad.heat
-        else -> Grad.cool
+        !state.isClimateOn -> T.Graphite
+        state.insideTempAccent == T.Heat -> T.HeatTint
+        else -> T.CoolTint
     }
 
     Box(
@@ -608,7 +620,6 @@ private fun HeroCard(state: DashboardUiState) {
             .softShadow(Elevation.hero, Radius.hero)
             .clip(shape)
             .background(bg, shape)
-            .border(1.dp, T.HairlineSoft, shape)
             .padding(Space.lg),
     ) {
         Column(Modifier.fillMaxWidth()) {
@@ -652,7 +663,8 @@ private fun HeroCard(state: DashboardUiState) {
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 HeroStat("외부", if (state.hasReading) "${state.outsideTemp}℃" else "--", Modifier.weight(1f))
-                HeroStat("목표", "${state.targetTemp}℃", Modifier.weight(1f))
+                // 첫 읽기 전엔 "--℃" 같은 어색한 표기가 되므로 외부와 같은 가드를 건다
+                HeroStat("목표", if (state.hasReading) "${state.targetTemp}℃" else "--", Modifier.weight(1f))
                 HeroStat("배터리", state.batteryLabel, Modifier.weight(1f))
                 HeroStat("잠금", if (state.isLocked) "잠김" else "열림", Modifier.weight(1f))
             }
@@ -682,22 +694,25 @@ private fun ConnectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column {
+        // weight가 없으면 긴 실패 사유가 오른쪽 StatusPill·버튼을 화면 밖으로 밀어낸다
+        Column(modifier = Modifier.weight(1f).padding(end = Space.sm)) {
             Text(
                 text = state.vehicleName,
                 style = MaterialTheme.typography.headlineMedium,
                 color = T.Ink,
             )
-            // 연결 상세 + 갱신 시각 + 자동화 상태를 캡션 한 줄로.
-            // 이전 버전의 "상태" 카드에 흩어져 있던 값들이다
+            // 연결 상세 + 갱신 시각 + 자동화 상태를 캡션으로.
+            // 항목마다 줄을 나눈다 — 난독증 사용자 기준 한 항목 = 한 줄
             Text(
                 text = listOf(
                     state.connectionDetail,
                     "갱신 ${state.lastUpdatedLabel}",
                     "자동화 ${state.automationLabel}",
-                ).joinToString(" · "),
+                ).joinToString("\n"),
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -2,6 +2,7 @@ package com.wemade.teslamacro.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -103,11 +104,18 @@ fun LevelSelector(
                     animationSpec = Motion.quick(),
                     label = "levelBackground",
                 )
+                val cellShape = RoundedCornerShape(Radius.segment)
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .height(44.dp)
-                        .background(background, RoundedCornerShape(Radius.button - Space.xs))
+                        .background(background, cellShape)
+                        // OFF 선택 칸은 흰색 위 흰색이라 테두리 없으면 선택 여부가 안 보인다
+                        .then(
+                            if (enabled && isSelected && level == Level.OFF)
+                                Modifier.border(1.dp, T.Hairline, cellShape)
+                            else Modifier
+                        )
                         .clickable(enabled = enabled) { onSelect(level) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -117,6 +125,8 @@ fun LevelSelector(
                         color = when {
                             !enabled -> T.InkFaint
                             isSelected && level == Level.OFF -> T.Ink
+                            // 주황(열선) 위 흰 글자는 대비 미달 — 어두운 글자로
+                            isSelected && accent == T.Heat -> T.Ink
                             isSelected -> Color.White
                             else -> T.InkMuted
                         },
@@ -152,7 +162,7 @@ fun ToggleRow(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = T.InkFaint,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = Space.xs),
                 )
             }
         }
@@ -161,7 +171,8 @@ fun ToggleRow(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = T.Ink,
+                // 파란 트랙 위 어두운 thumb는 켜짐이 안 보인다 — 토스식 흰 thumb
+                checkedThumbColor = Color.White,
                 checkedTrackColor = T.Electric,
                 checkedBorderColor = Color.Transparent,
                 uncheckedThumbColor = T.InkFaint,

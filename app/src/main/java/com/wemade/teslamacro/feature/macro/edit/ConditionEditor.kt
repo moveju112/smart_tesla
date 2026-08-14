@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -86,14 +88,14 @@ fun TriggerCard(
             }
 
             is Trigger.Manual -> Text(
-                text = "자동으로 발동하지 않아요. 음성으로 매크로 이름을 부르거나 " +
+                text = "자동으로 발동하지 않아요.\n음성으로 매크로 이름을 부르거나 " +
                     "목록에서 \"지금 실행\"을 눌러 주세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
 
             is Trigger.Always -> Text(
-                text = "다음 페이지의 조건이 충족되는 \"순간\"마다 실행해요. " +
+                text = "다음 페이지의 조건이 충족되는 \"순간\"마다 실행해요.\n" +
                     "조건을 하나 이상 추가해 주세요 (예: 실내 온도 26~28℃ 사이).",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
@@ -179,7 +181,7 @@ private fun NearLocationEditor(
         scope.launch {
             val point = TabletLocation(context).read()
             if (point == null) {
-                status = "위치를 읽지 못했어요. 하늘이 보이는 곳에서 다시 시도해 주세요"
+                status = "위치를 읽지 못했어요.\n하늘이 보이는 곳에서 다시 시도해 주세요"
             } else {
                 status = null
                 onChange(condition.copy(latitude = point.latitude, longitude = point.longitude))
@@ -203,14 +205,14 @@ private fun NearLocationEditor(
         Text(
             text = when {
                 condition.latitude == null ->
-                    "위치를 지정해 주세요 — 그 자리에서 저장하거나 주소로 찍을 수 있어요"
+                    "위치를 지정해 주세요.\n그 자리에서 저장하거나 주소로 찍을 수 있어요"
                 savedAddress != null ->
                     "저장 위치: $savedAddress"
                 else ->
                     "저장 위치: 좌표 %.5f, %.5f".format(condition.latitude, condition.longitude)
             },
             style = MaterialTheme.typography.bodySmall,
-            color = if (condition.latitude != null) T.InkMuted else T.Warn,
+            color = if (condition.latitude != null) T.InkMuted else T.WarnText,
         )
         if (condition.latitude != null) {
             Text(
@@ -221,7 +223,7 @@ private fun NearLocationEditor(
         }
         status?.let {
             Spacer(Modifier.height(Space.xs))
-            Text(it, style = MaterialTheme.typography.bodySmall, color = T.Warn)
+            Text(it, style = MaterialTheme.typography.bodySmall, color = T.WarnText)
         }
         Spacer(Modifier.height(Space.md))
         TButton(
@@ -243,6 +245,7 @@ private fun NearLocationEditor(
             onValueChange = { address = it },
             label = { Text("또는 주소로 지정 (예: 성남시 분당구 판교역로 152)") },
             singleLine = true,
+            colors = editorFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(Space.sm))
@@ -251,7 +254,7 @@ private fun NearLocationEditor(
             scope.launch {
                 val point = NaverNavigator(context).geocodePoint(address)
                 if (point == null) {
-                    status = "주소를 좌표로 못 바꿨어요. 도로명 주소로 다시 시도해 주세요"
+                    status = "주소를 좌표로 못 바꿨어요.\n도로명 주소로 다시 시도해 주세요"
                 } else {
                     status = null
                     onChange(condition.copy(latitude = point.latitude, longitude = point.longitude))
@@ -284,7 +287,8 @@ private fun CardHeader(title: String, onRemove: () -> Unit) {
             color = T.Ink,
             modifier = Modifier.weight(1f),
         )
-        TButton("삭제", ButtonTone.Ghost, fillWidth = false, onClick = onRemove)
+        // 삭제는 파괴적 동작 — ActionCard 헤더와 같은 아이콘·Danger 색 패턴으로 통일한다
+        CardIconButton(Icons.Rounded.Delete, "삭제", tint = T.Danger, onClick = onRemove)
     }
 }
 
@@ -372,7 +376,8 @@ private fun TimeAndDayEditor(
 
 @Composable
 private fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+    // 스테퍼 2개를 가로로 두면 좁은 세로 화면에서 "분"이 잘린다 — 세로로 쌓는다
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         NumberStepper(
             value = (minutesOfDay / 60).toDouble(),
             min = 0.0, max = 23.0, step = 1.0, unit = "시",
@@ -397,6 +402,8 @@ private fun DayToggles(days: Set<Int>, onChange: (Set<Int>) -> Unit) {
                 text = label,
                 tone = if (selected) ButtonTone.Primary else ButtonTone.Secondary,
                 modifier = Modifier.weight(1f),
+                // 7개가 한 줄이라 기본 좌우 패딩이면 글자가 먹힌다 — 소형으로 패딩을 줄인다
+                small = true,
                 onClick = {
                     val explicit = days.ifEmpty { (1..7).toSet() }
                     val updated = if (day in explicit) explicit - day else explicit + day

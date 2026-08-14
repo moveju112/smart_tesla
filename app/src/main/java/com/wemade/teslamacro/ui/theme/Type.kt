@@ -46,6 +46,11 @@ val TeslaTypography = Typography(
         fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 16.sp, lineHeight = 20.sp,
         letterSpacing = (-0.2).sp,
     ),
+    // 소형 버튼 라벨 — 미정의 시 Material 기본(12sp·양수 자간)으로 폴백돼 스케일이 어긋난다
+    labelMedium = TextStyle(
+        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 14.sp, lineHeight = 18.sp,
+        letterSpacing = (-0.1).sp,
+    ),
     labelSmall = TextStyle(
         fontFamily = Sans, fontWeight = FontWeight.W500, fontSize = 12.sp, lineHeight = 16.sp,
     ),

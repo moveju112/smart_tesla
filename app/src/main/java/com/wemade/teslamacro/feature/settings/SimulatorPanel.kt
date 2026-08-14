@@ -36,10 +36,11 @@ fun SimulatorPanel(
         Text(
             text = "가상 차량",
             style = MaterialTheme.typography.titleMedium,
-            color = T.Warn,
+            // 밝은 앰버(Warn)는 흰 카드에서 안 읽힌다 — 텍스트는 WarnText
+            color = T.WarnText,
         )
         Text(
-            text = "실제 차량이 아니에요. 매크로가 제대로 발동하는지 여기서 확인할 수 있어요.",
+            text = "실제 차량이 아니에요.\n매크로가 제대로 발동하는지 여기서 확인할 수 있어요.",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )

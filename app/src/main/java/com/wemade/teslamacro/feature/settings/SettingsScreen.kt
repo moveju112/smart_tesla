@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -123,8 +124,9 @@ fun SettingsScreen(
 
         // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다.
         // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 폴링 주기·토글 상태를 알 수 없다
-        Spacer(Modifier.height(Space.md))
-        DiagLogPanel(shareExtra = { settingsDump(settings) })
+        // 제목은 다른 섹션과 같이 카드 밖 SectionHeader로 — 패널 내부 제목은 끈다
+        SectionHeader("진단 로그")
+        DiagLogPanel(title = null, shareExtra = { settingsDump(settings) })
 
         SectionHeader("차량")
         TCard {
@@ -150,7 +152,7 @@ fun SettingsScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = if (settings.isPaired) {
-                        "앱에서만 지워져요. 차량 키는 차량 화면 → 잠금에서 삭제하세요."
+                        "앱에서만 지워져요.\n차량 키는 차량 화면 → 잠금에서 삭제하세요."
                     } else {
                         "등록 전에는 가상 차량으로만 동작해요."
                     },
@@ -189,12 +191,12 @@ private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit) {
                     null -> "새 버전이 나왔는지 확인해 보세요."
                     is UpdateState.Checking -> "확인 중…"
                     is UpdateState.UpToDate -> "최신 버전이에요."
-                    is UpdateState.Failed -> "확인에 실패했어요. 인터넷 연결을 봐주세요."
+                    is UpdateState.Failed -> "확인에 실패했어요.\n인터넷 연결을 봐주세요."
                     is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = when (update) {
-                    is UpdateState.Failed -> T.Warn
+                    is UpdateState.Failed -> T.WarnText
                     is UpdateState.Available -> T.Ink
                     else -> T.InkFaint
                 },
@@ -278,12 +280,12 @@ private fun VoicePanel(
         if (installed) {
             Spacer(Modifier.height(Space.md))
             Text(
-                text = "예) \"테슬라, 트렁크 열어\" · 나만의 명령어는 그 이름으로 매크로를 만드세요.",
+                text = "예) \"테슬라, 트렁크 열어\"\n나만의 명령어는 그 이름으로 매크로를 만드세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkMuted,
             )
             Text(
-                text = "차량에 연결된 동안에만 마이크를 켜요. 들은 말은 기기 밖으로 나가지 않아요.",
+                text = "차량에 연결된 동안에만 마이크를 켜요.\n들은 말은 기기 밖으로 나가지 않아요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
                 modifier = Modifier.padding(top = Space.xs),
@@ -304,14 +306,14 @@ private fun VoicePanel(
                 )
                 Text(
                     text = when (model) {
-                        is VoiceModelState.Installed -> "설치됨 · 인터넷 없이 동작해요"
+                        is VoiceModelState.Installed -> "설치됨\n인터넷 없이 동작해요"
                         is VoiceModelState.Installing -> "설치 중… ${model.megabytes}MB"
                         is VoiceModelState.Failed -> model.reason
                         is VoiceModelState.NotInstalled -> "설치되지 않음"
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (model is VoiceModelState.Failed) T.Warn else T.InkFaint,
-                    modifier = Modifier.padding(top = 2.dp),
+                    color = if (model is VoiceModelState.Failed) T.WarnText else T.InkFaint,
+                    modifier = Modifier.padding(top = Space.xs),
                 )
             }
             Spacer(Modifier.width(Space.md))
@@ -330,7 +332,7 @@ private fun VoicePanel(
         if (!installed && !installing) {
             Spacer(Modifier.height(Space.sm))
             Text(
-                text = "vosk-model-small-ko 압축 파일을 받아 두고 여기서 골라 주세요. " +
+                text = "vosk-model-small-ko 압축 파일을 받아 두고 여기서 골라 주세요.\n" +
                     "약 250MB를 차지하고, 한 번만 하면 돼요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
@@ -374,15 +376,18 @@ private fun IntervalPicker(
             options.forEach { seconds ->
                 val selected = seconds == current
                 val background by animateColorAsState(
-                    targetValue = if (selected) Color.White else Color.Transparent,
+                    targetValue = if (selected) T.Carbon else Color.Transparent,
                     animationSpec = Motion.quick(),
                     label = "intervalBackground",
                 )
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(40.dp)
-                        .background(background, RoundedCornerShape(Radius.button - Space.xs))
+                        // 주행 중 태블릿 조작 — 터치 타깃 최소 48dp 확보
+                        .height(48.dp)
+                        // clip을 clickable 앞에 — 리플이 둥근 모서리 밖으로 번지지 않게
+                        .clip(RoundedCornerShape(Radius.segment))
+                        .background(background)
                         .clickable { onSelect(seconds) },
                     contentAlignment = Alignment.Center,
                 ) {

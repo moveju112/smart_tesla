@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,7 +75,7 @@ private data class WizardStep(val title: String, val subtitle: String)
 
 private val STEPS = listOf(
     WizardStep("언제 실행할까요?", "이 사건이 일어나는 순간 발동해요 (하나라도)"),
-    WizardStep("어떤 조건이면요?", "모두 만족해야 실행해요 · 없으면 무조건 실행"),
+    WizardStep("어떤 조건이면요?", "모두 만족해야 실행해요.\n없으면 무조건 실행해요."),
     WizardStep("무엇을 실행할까요?", "위에서 아래로 순서대로 실행해요"),
     WizardStep("마무리", "이름을 정하면 음성 명령으로도 부를 수 있어요"),
 )
@@ -114,10 +116,11 @@ fun MacroEditScreen(
                 imageVector = Icons.Rounded.Close,
                 contentDescription = "닫기",
                 tint = T.InkMuted,
+                // 흔들리는 차 안에서도 닫히게 패딩으로 터치 타깃 48dp를 확보한다
                 modifier = Modifier
                     .clip(RoundedCornerShape(Radius.pill))
                     .clickable(onClick = onCancel)
-                    .padding(Space.sm)
+                    .padding(Space.sm + Space.xs)
                     .size(24.dp),
             )
             Spacer(Modifier.weight(1f))
@@ -210,17 +213,26 @@ fun MacroEditScreen(
         }
         // 하단 고정 CTA 바 — 본문과 구분선으로 나눠 루틴 앱처럼 "항상 여기" 느낌을 준다
         Hairline()
+        // 힌트·CTA도 본문과 같은 680dp 폭으로 맞춰 넓은 화면에서 좌우 정렬이 어긋나지 않게 한다
         blockHint?.let {
             Text(
                 text = it,
                 style = MaterialTheme.typography.bodySmall,
-                color = T.Warn,
+                color = T.WarnText,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = 680.dp)
+                    .fillMaxWidth()
+                    .padding(top = Space.sm),
             )
         }
         Row(
-            modifier = Modifier.padding(top = Space.sm + Space.xs),
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .widthIn(max = 680.dp)
+                .fillMaxWidth()
+                .padding(top = Space.sm + Space.xs),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             if (step > 0) {
@@ -312,7 +324,7 @@ private fun StepConditions(
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         if (draft.conditions.isEmpty()) {
             Text(
-                text = "조건 없음 — 발동 시점이 오면 항상 실행해요. 이대로 넘어가도 돼요.",
+                text = "조건 없음.\n발동 시점이 오면 항상 실행해요.\n이대로 넘어가도 돼요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -329,6 +341,7 @@ private fun StepConditions(
 }
 
 /** 3/4 — 실행 동작 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StepActions(
     draft: MacroDraft,
@@ -355,12 +368,16 @@ private fun StepActions(
                 onRemove = { onChange(draft.removeAction(index)) },
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), icon = Icons.Rounded.Add, onClick = onPickAction)
-            TButton("시간 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f)) {
+        // 좁은 화면에서 버튼 3개가 짓눌리지 않게 줄바꿈되는 FlowRow로 둔다
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false, icon = Icons.Rounded.Add, onClick = onPickAction)
+            TButton("시간 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false) {
                 onChange(draft.addAction(ActionStep.Wait(60)))
             }
-            TButton("조건 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f), onClick = onPickWaitUntil)
+            TButton("조건 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false, onClick = onPickWaitUntil)
         }
     }
 }
@@ -410,8 +427,9 @@ private fun StepFinish(
     }
 }
 
+/** 편집 화면 입력 필드 공통 색 — ActionEditor·ConditionEditor의 필드도 이 규칙을 공유한다 */
 @Composable
-private fun editorFieldColors() = OutlinedTextFieldDefaults.colors(
+internal fun editorFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = T.Electric,
     unfocusedBorderColor = T.Hairline,
     focusedTextColor = T.Ink,
@@ -442,12 +460,12 @@ private fun TriggerPicker(onDismiss: () -> Unit, onPick: (Trigger) -> Unit) {
                     )
                     PickerRow(
                         label = "호출될 때만",
-                        detail = "자동 발동 없음. 음성으로 이름을 부르거나 직접 실행",
+                        detail = "자동 발동 없음.\n음성으로 이름을 부르거나 직접 실행",
                         onClick = { onPick(Trigger.Manual) },
                     )
                     PickerRow(
                         label = "조건이 되면 (항상 감시)",
-                        detail = "예: 실내 26~28℃가 \"되는 순간\" 실행. 조건 페이지와 함께 사용",
+                        detail = "예: 실내 26~28℃가 \"되는 순간\" 실행.\n조건 페이지와 함께 사용",
                         onClick = { onPick(Trigger.Always) },
                     )
                 }
@@ -517,11 +535,23 @@ private fun ActionPicker(
     PickerSheet(title = "실행할 동작", onDismiss = onDismiss) {
         Column {
             // 차량 명령이 아닌 태블릿 동작. 그룹 밖 최상단에 둔다
-            PickerRow(
-                label = "네이버 지도 안내",
-                detail = "저장한 주소로 길안내를 자동 시작",
-                onClick = onPickNavigate,
-            )
+            // 맨몸 텍스트는 눌리는 항목으로 안 보여서 옅은 면으로 감싸 "버튼"임을 드러낸다
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.button))
+                    .background(T.Slate),
+            ) {
+                PickerRow(
+                    label = "네이버 지도 안내",
+                    detail = "저장한 주소로 길안내를 자동 시작",
+                    onClick = onPickNavigate,
+                    modifier = Modifier.padding(horizontal = Space.md),
+                )
+            }
+            // 구분선으로 아래 그룹 칩과 시각적으로 분리한다
+            Spacer(Modifier.height(Space.md))
+            Hairline()
             Spacer(Modifier.height(Space.md))
             ChipRow(
                 options = CommandGroup.entries,

@@ -27,19 +27,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wemade.teslamacro.ui.theme.Elevation
-import com.wemade.teslamacro.ui.theme.Grad
 import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
@@ -48,7 +45,7 @@ import com.wemade.teslamacro.ui.theme.T
 enum class ButtonTone { Primary, Secondary, Ghost, Danger }
 
 /**
- * 부드러운 그림자. 검은 배경에서도 은은하게 층을 만든다.
+ * 부드러운 그림자. 밝은 회색 배경 위 흰 카드가 살짝 뜨게만 한다.
  * spot/ambient를 검정으로 두고 clip=false로 카드 밖으로 번지게 한다.
  */
 fun Modifier.softShadow(elevation: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp) =
@@ -62,7 +59,7 @@ fun Modifier.softShadow(elevation: androidx.compose.ui.unit.Dp, radius: androidx
 
 /**
  * 공용 버튼.
- * - Primary: 파란 그라데이션 + 파란 글로우로 "누르고 싶은" 버튼
+ * - Primary: 파랑 단색 채움, 그림자 없음 (토스식 평면 버튼)
  * - Secondary/Ghost: 카드 위에서 한 겹 밝은 면 + 얇은 테두리
  * 누르면 살짝 작아지며(0.97) 즉각적인 촉감을 준다.
  */
@@ -86,14 +83,10 @@ fun TButton(
         label = "buttonPress",
     )
 
-    // 채움 배경 — Primary는 파랑, Danger는 빨강, 나머지는 옅은 회색 면
-    val fillBrush: Brush? = when {
-        !enabled -> null
-        tone == ButtonTone.Primary -> if (pressed) Grad.primaryPressed else Grad.primary
-        else -> null
-    }
+    // 채움 배경 — Primary는 파랑, Danger는 빨강, 나머지는 옅은 회색 면 (그라데이션 금지 규칙: 전부 단색)
     val fillColor: Color = when {
         !enabled -> Color.Transparent
+        tone == ButtonTone.Primary -> if (pressed) T.ElectricPressed else T.Electric
         tone == ButtonTone.Danger -> if (pressed) T.Danger.copy(alpha = 0.85f) else T.Danger
         tone == ButtonTone.Secondary -> if (pressed) T.Hairline else T.Slate
         tone == ButtonTone.Ghost && pressed -> T.Slate
@@ -121,9 +114,10 @@ fun TButton(
             .scale(press)
             // 토스 버튼은 평평하다. 글로우/그림자를 쓰지 않는다
             .clip(shape)
-            .then(if (fillBrush != null) Modifier.background(fillBrush) else Modifier.background(fillColor))
+            .background(fillColor)
             .border(1.dp, borderColor, shape)
-            .defaultMinSize(minHeight = if (small) 36.dp else 52.dp)
+            // small도 44dp — 흔들리는 차 안에서 36dp는 자주 빗나간다
+            .defaultMinSize(minHeight = if (small) 44.dp else 52.dp)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
@@ -161,8 +155,8 @@ fun TButton(
 }
 
 /**
- * 카드 표면. 위→아래 미세 그라데이션 + 부드러운 그림자 + 안쪽 상단 하이라이트로
- * "떠 있는 유리판" 느낌을 준다. 납작한 단색 회색과 가장 크게 갈리는 지점.
+ * 카드 표면. 흰 카드 + 얕은 그림자.
+ * 옅은 회색 배경과의 대비만으로 층을 만든다 (그라데이션·하이라이트 없음).
  */
 @Composable
 fun TCard(
@@ -223,6 +217,8 @@ fun StatusPill(
     modifier: Modifier = Modifier,
     showDot: Boolean = true,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** 밝은 상태색(Warn 등)은 옅은 배경 위에서 안 읽힌다 — 글자만 진한 색으로 분리할 때 쓴다 */
+    textColor: Color = color,
 ) {
     Row(
         modifier = modifier
@@ -247,11 +243,11 @@ fun StatusPill(
                     .drawBehind { drawRect(color) }
             )
         }
-        CompositionLocalProvider(LocalContentColor provides color) {
+        CompositionLocalProvider(LocalContentColor provides textColor) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelSmall,
-                color = color,
+                color = textColor,
             )
         }
     }
@@ -260,11 +256,11 @@ fun StatusPill(
 /** 얇은 구분선 */
 @Composable
 fun Hairline(modifier: Modifier = Modifier) {
+    // alpha 모디파이어는 background 뒤에선 효과가 없다 — 색 자체에 알파를 넣는다
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(1.dp)
-            .background(T.Hairline)
-            .alpha(0.8f)
+            .background(T.Hairline.copy(alpha = 0.8f))
     )
 }

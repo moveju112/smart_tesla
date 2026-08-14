@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.feature.macro
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -143,7 +144,7 @@ fun MacroListScreen(
         if (log.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    text = "아직 실행된 매크로가 없어요. 조건이 맞으면 여기에 기록이 쌓여요.",
+                    text = "아직 실행된 매크로가 없어요.\n조건이 맞으면 여기에 기록이 쌓여요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = T.InkFaint,
                 )
@@ -177,10 +178,19 @@ private fun MacroCard(
                         text = rule.name,
                         style = MaterialTheme.typography.titleMedium,
                         color = if (rule.enabled) T.Ink else T.InkFaint,
+                        // 이름이 길어도 실행중 StatusPill이 밀려나지 않게 이름 쪽만 줄인다
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     if (isRunning) {
                         Spacer(Modifier.width(Space.sm))
-                        StatusPill(text = runningLabel(progress), color = T.Electric)
+                        // 옅은 파랑 배경 위 파랑 글자는 대비 미달 — 글자만 진한 파랑으로
+                        StatusPill(
+                            text = runningLabel(progress),
+                            color = T.Electric,
+                            textColor = T.ElectricPressed,
+                        )
                     }
                 }
                 Text(
@@ -196,7 +206,7 @@ private fun MacroCard(
                 checked = rule.enabled,
                 onCheckedChange = onToggle,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = T.Ink,
+                    checkedThumbColor = Color.White,
                     checkedTrackColor = T.Electric,
                     checkedBorderColor = Color.Transparent,
                     uncheckedThumbColor = T.InkFaint,
@@ -212,13 +222,28 @@ private fun MacroCard(
         val visible = if (isRunning) rule.actions.size else minOf(rule.actions.size, MAX_STEP_LINES)
         rule.actions.take(visible).forEachIndexed { index, step ->
             val isCurrent = isRunning && progress?.stepIndex == index
-            Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                Text(
-                    text = if (isCurrent) "▶" else "${index + 1}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isCurrent) T.Electric else T.InkFaint,
-                    modifier = Modifier.width(20.dp),
-                )
+            Row(
+                modifier = Modifier.padding(vertical = Space.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 텍스트 글리프(▶)는 폰트 따라 이모지로 렌더될 수 있어 벡터 아이콘으로
+                if (isCurrent) {
+                    Box(modifier = Modifier.width(stepNumberWidth)) {
+                        Icon(
+                            imageVector = Icons.Rounded.PlayArrow,
+                            contentDescription = null,
+                            tint = T.Electric,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "${index + 1}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = T.InkFaint,
+                        modifier = Modifier.width(stepNumberWidth),
+                    )
+                }
                 Text(
                     text = when (step) {
                         is ActionStep.Run -> step.command.label
@@ -241,7 +266,7 @@ private fun MacroCard(
                 text = "외 ${rule.actions.size - visible}개 동작",
                 style = MaterialTheme.typography.labelSmall,
                 color = T.InkFaint,
-                modifier = Modifier.padding(start = 20.dp, top = 3.dp),
+                modifier = Modifier.padding(start = stepNumberWidth, top = Space.xs),
             )
         }
 
@@ -270,7 +295,8 @@ private fun MacroCard(
                 }
             }
             TButton(
-                text = if (confirmDelete) "한 번 더 누르면 삭제" else "삭제",
+                // Danger 톤 전환이 이미 경고를 전하므로 라벨은 짧게 — 액션 줄이 안 넘치게
+                text = if (confirmDelete) "삭제 확인" else "삭제",
                 tone = if (confirmDelete) ButtonTone.Danger else ButtonTone.Ghost,
                 fillWidth = false,
                 small = true,
@@ -281,9 +307,10 @@ private fun MacroCard(
             // 카드 탭이 편집으로 간다는 힌트. 버튼 대신 관례적인 꺾쇠 하나
             Icon(
                 imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = "편집",
+                // 장식용 — 실제 편집 진입은 카드 클릭이라 TalkBack엔 읽히지 않게 한다
+                contentDescription = null,
                 tint = T.InkFaint,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(stepNumberWidth),
             )
         }
     }
@@ -292,20 +319,31 @@ private fun MacroCard(
 /** 접기 전 보여줄 동작 줄 수 */
 private const val MAX_STEP_LINES = 4
 
+/** 스텝 번호·현재 표시 칼럼 고정 폭 — 토큰 밖 값이라 이름 붙여 한곳에서 관리 */
+private val stepNumberWidth = 20.dp
+
 @Composable
 private fun LogRow(entry: MacroLogEntry) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = Space.xs)) {
         Text(
             text = timeFormat.format(Date(entry.timestampMillis)),
             style = MaterialTheme.typography.labelSmall,
             color = T.InkFaint,
             modifier = Modifier.padding(end = Space.sm),
         )
-        Text(
-            text = "${entry.ruleName} — ${entry.message}",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (entry.isError) T.Danger else T.InkMuted,
-        )
+        // "이름 — 메시지" 이어쓰기 대신 두 줄 — 긴 문장이 한 줄에 흐르지 않게
+        Column {
+            Text(
+                text = entry.ruleName,
+                style = MaterialTheme.typography.labelSmall,
+                color = T.InkFaint,
+            )
+            Text(
+                text = entry.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (entry.isError) T.Danger else T.InkMuted,
+            )
+        }
     }
 }
 

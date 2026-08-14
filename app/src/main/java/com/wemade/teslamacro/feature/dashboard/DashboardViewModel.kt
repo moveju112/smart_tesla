@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wemade.teslamacro.di.AppContainer
 import com.wemade.teslamacro.domain.command.VehicleCommand
+import com.wemade.teslamacro.domain.command.confirmCategory
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatClimate
+import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,8 +32,10 @@ private data class Optimistic(
     val isClimateOn: Boolean? = null,
     val targetTemp: Double? = null,
     val isLocked: Boolean? = null,
-    /** 언제 덮어썼는지. 이 시각 이후에 읽은 값이 오면 낙관 반영을 거둔다 */
-    val appliedAtMillis: Long = 0L,
+    /** 공조 낙관값을 덮어쓴 시각 — 그 뒤에 공조를 실제로 읽었을 때만 거둔다 */
+    val climateAppliedAtMillis: Long = 0L,
+    /** 잠금 낙관값을 덮어쓴 시각 — 차체(VCSEC)를 읽은 뒤에만 거둔다 */
+    val lockAppliedAtMillis: Long = 0L,
 ) {
     val isEmpty: Boolean
         get() = seatCooler.isEmpty() && seatHeater.isEmpty() &&
@@ -61,12 +65,31 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     )
 
     init {
-        // 명령을 보낸 뒤에 읽은 값이 도착하면 그때부터는 차량 값이 진실이다
+        // 명령을 보낸 뒤 "그 카테고리를 실제로 읽은" 값이 도착하면 그때부터는 차량 값이 진실이다.
+        // 전체 타임스탬프로 지우면 매 사이클 도는 차체 읽기가 공조 낙관값을 과거값으로 되돌린다
         viewModelScope.launch {
             container.poller.snapshot.collect { snapshot ->
-                val overlay = optimistic.value
-                if (!overlay.isEmpty && snapshot.timestampMillis > overlay.appliedAtMillis) {
-                    optimistic.value = Optimistic()
+                optimistic.update { overlay ->
+                    if (overlay.isEmpty) return@update overlay
+                    val climateReadAt = snapshot.categoryReadAt[StateCategory.CLIMATE] ?: 0L
+                    // 잠금은 VCSEC 계열(차체/도어) 어느 쪽을 읽어도 확정된다
+                    val lockReadAt = maxOf(
+                        snapshot.categoryReadAt[StateCategory.BODY_CONTROLLER] ?: 0L,
+                        snapshot.categoryReadAt[StateCategory.CLOSURES] ?: 0L,
+                    )
+                    var next = overlay
+                    if (climateReadAt > overlay.climateAppliedAtMillis) {
+                        next = next.copy(
+                            seatCooler = emptyMap(),
+                            seatHeater = emptyMap(),
+                            isClimateOn = null,
+                            targetTemp = null,
+                        )
+                    }
+                    if (lockReadAt > overlay.lockAppliedAtMillis) {
+                        next = next.copy(isLocked = null)
+                    }
+                    next
                 }
             }
         }
@@ -140,6 +163,12 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 revertOptimistic(command)
                 error.value = "${command.label} 실패 — " +
                     (result.exceptionOrNull()?.message ?: "원인 불명")
+            } else {
+                // 3. 성공 — 낙관 시계를 전송 완료 시각으로 미룬다.
+                //    안 하면 전송 중에 시작된 폴링 읽기(명령 전 값)가 낙관 표시를
+                //    옛값으로 조기 해제한다. 그 뒤 결과 카테고리를 즉시 다시 읽어 확정한다
+                bumpOptimisticClock(command)
+                container.poller.focusOn(command.confirmCategory())
             }
         }
     }
@@ -176,15 +205,20 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
 
+            var anySuccess = false
             commands.forEach { command ->
                 pending.value = command
                 val result = container.gateway.send(command)
                 if (result.isFailure) {
                     error.value = "좌석 ${mode.label} 실패 — " +
                         (result.exceptionOrNull()?.message ?: "원인 불명")
+                } else {
+                    anySuccess = true
                 }
             }
             pending.value = null
+            // 하나라도 갔으면 공조를 즉시 다시 읽어 실제 좌석 상태로 확정한다
+            if (anySuccess) container.poller.focusOn(StateCategory.CLIMATE)
         }
     }
 
@@ -208,18 +242,41 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun applyOptimistic(command: VehicleCommand) = optimistic.update { base ->
-        val current = base.copy(appliedAtMillis = System.currentTimeMillis())
+        val now = System.currentTimeMillis()
+        val climate = base.copy(climateAppliedAtMillis = now)
         when (command) {
             is VehicleCommand.SetSeatCooler ->
-                current.copy(seatCooler = current.seatCooler + (command.seat to command.level))
+                climate.copy(seatCooler = climate.seatCooler + (command.seat to command.level))
             is VehicleCommand.SetSeatHeater ->
-                current.copy(seatHeater = current.seatHeater + (command.seat to command.level))
-            is VehicleCommand.ClimateOn -> current.copy(isClimateOn = true)
-            is VehicleCommand.ClimateOff -> current.copy(isClimateOn = false)
-            is VehicleCommand.SetTemperature -> current.copy(targetTemp = command.celsius)
-            is VehicleCommand.Lock -> current.copy(isLocked = true)
-            is VehicleCommand.Unlock -> current.copy(isLocked = false)
-            else -> current   // 화면에 표시되지 않는 명령은 되돌릴 것도 없다
+                climate.copy(seatHeater = climate.seatHeater + (command.seat to command.level))
+            is VehicleCommand.ClimateOn -> climate.copy(isClimateOn = true)
+            is VehicleCommand.ClimateOff -> climate.copy(isClimateOn = false)
+            is VehicleCommand.SetTemperature -> climate.copy(targetTemp = command.celsius)
+            is VehicleCommand.Lock -> base.copy(isLocked = true, lockAppliedAtMillis = now)
+            is VehicleCommand.Unlock -> base.copy(isLocked = false, lockAppliedAtMillis = now)
+            else -> base   // 화면에 표시되지 않는 명령은 되돌릴 것도 없다
+        }
+    }
+
+    /**
+     * 전송 완료 시각으로 낙관 시계만 미룬다 — 값은 건드리지 않는다.
+     * 값까지 재적용하면 연속 명령에서 먼저 끝난 명령이 나중에 누른 낙관값을 되덮는다.
+     */
+    private fun bumpOptimisticClock(command: VehicleCommand) = optimistic.update { base ->
+        val now = System.currentTimeMillis()
+        when (command) {
+            is VehicleCommand.SetSeatCooler,
+            is VehicleCommand.SetSeatHeater,
+            is VehicleCommand.ClimateOn,
+            is VehicleCommand.ClimateOff,
+            is VehicleCommand.SetTemperature,
+            -> base.copy(climateAppliedAtMillis = now)
+
+            is VehicleCommand.Lock,
+            is VehicleCommand.Unlock,
+            -> base.copy(lockAppliedAtMillis = now)
+
+            else -> base   // 낙관 표시가 없는 명령은 미룰 시계도 없다
         }
     }
 

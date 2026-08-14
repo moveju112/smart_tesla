@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.widget.Toast
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.domain.command.VehicleCommand
+import com.wemade.teslamacro.domain.command.confirmCategory
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -43,6 +44,8 @@ class QuickActionActivity : Activity() {
             if (settings.isPaired) app.container.gateway.connect(settings.vin)
 
             val result = app.container.gateway.send(command)
+            // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다
+            if (result.isSuccess) app.container.poller.focusOn(command.confirmCategory())
             toast(
                 if (result.isSuccess) "${command.label} 완료"
                 else "${command.label} 실패 — ${result.exceptionOrNull()?.message}"

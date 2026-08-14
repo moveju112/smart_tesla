@@ -2,6 +2,7 @@ package com.wemade.teslamacro.domain.command
 
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
+import com.wemade.teslamacro.domain.model.StateCategory
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -215,3 +216,30 @@ fun VehicleCommand.requiresPark(): Boolean =
     this is VehicleCommand.OpenFrunk ||
         this is VehicleCommand.OpenTrunk ||
         this is VehicleCommand.CloseTrunk
+
+/**
+ * 명령 결과가 어느 상태 카테고리에 나타나는가.
+ * 명령 성공 직후 폴러가 이 카테고리를 집중해서 읽어, 실제 차량 값이
+ * 다음 정기 주기(최대 120초)를 기다리지 않고 화면에 확정되게 한다.
+ * 나머지(잠금·개폐·미디어 등)는 매 사이클 읽는 차체 상태(VCSEC)로 충분하다.
+ */
+fun VehicleCommand.confirmCategory(): StateCategory = when (this) {
+    is VehicleCommand.ClimateOn,
+    is VehicleCommand.ClimateOff,
+    is VehicleCommand.SetTemperature,
+    is VehicleCommand.SetSeatCooler,
+    is VehicleCommand.SetSeatHeater,
+    is VehicleCommand.SetAutoSeatClimate,
+    is VehicleCommand.SetSteeringWheelHeater,
+    is VehicleCommand.SetClimateKeeper,
+    is VehicleCommand.SetCabinOverheatProtection,
+    -> StateCategory.CLIMATE
+
+    is VehicleCommand.SetChargePort,
+    is VehicleCommand.SetChargeLimit,
+    is VehicleCommand.SetCharging,
+    is VehicleCommand.SetChargingAmps,
+    -> StateCategory.CHARGE
+
+    else -> StateCategory.BODY_CONTROLLER
+}

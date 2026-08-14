@@ -68,6 +68,11 @@ class StatePoller(
         var previous: Reading? = null
         var activeUntil = 0L
         var needFullRead = true   // 연결 직후 한 번은 전부 읽어 대시보드를 채운다
+        // 명령 후 확인 읽기로 요청된 카테고리 — 확인 창(짧게) 동안만 읽는다.
+        // 1회 성공에 바로 끝내면 차량이 명령을 아직 반영하기 전의 정상 응답(옛값)으로
+        // 낙관 표시가 되돌아간 채 재확인이 없다. 창(10초, 2초 주기 4~5회)이 흡수한다
+        var focusCategories = setOf<StateCategory>()
+        var focusUntil = 0L
         // 좀비 GATT 워치독: GATT는 "연결됨"인데 차가 전혀 응답하지 않는 상태(밤샘 BT 절전 후 실차 발생).
         // isConnected로는 못 잡아서, 읽기가 사이클 통째로 연속 전멸하면 강제로 끊고 다시 붙는다
         var failStreak = 0
@@ -125,7 +130,16 @@ class StatePoller(
             //    - 사람이 타고 있음: 공조·배터리도 갱신 — 타고 있는 동안 차는 어차피 안 잔다.
             //      (접속 시 한 번만 읽으면 주행 중 배터리가 화면에서 멈춰 있는다 — 실차 제보)
             //    - 평상시(빈 차): VCSEC만 (차를 재우기 위해)
+            // 2-0. 명령 직후 확인 읽기 — 요청된 카테고리를 집중 창에 태우고 창을 연다.
+            //      안 하면 명령 결과가 다음 정기 주기(최대 120초)까지 화면에 안 나타난다
+            val focusRequested = pendingFocus.getAndSet(emptySet())
+            if (focusRequested.isNotEmpty()) {
+                focusCategories = focusCategories + focusRequested
+                focusUntil = now() + FOCUS_CONFIRM_MS
+                activeUntil = maxOf(activeUntil, now() + settings.activeWindowSeconds * 1000L)
+            }
             val isActiveWindow = now() < activeUntil
+            if (now() >= focusUntil) focusCategories = setOf()
             val categories = when {
                 needFullRead -> setOf(
                     StateCategory.BODY_CONTROLLER,
@@ -138,6 +152,7 @@ class StatePoller(
                 isActiveWindow -> buildSet {
                     add(StateCategory.BODY_CONTROLLER)
                     addAll(requiredCategories())
+                    addAll(focusCategories)
                     if (_snapshot.value.isUserPresent == true) {
                         add(StateCategory.CLIMATE)
                         add(StateCategory.CHARGE)
@@ -160,15 +175,15 @@ class StatePoller(
             needFullRead = false
 
             // 3. 카테고리는 하나씩 읽어 병합한다 (한 번에 여러 개는 응답 크기 초과)
-            val results = categories.map { gateway.read(it) }
-            val merged = results.fold(_snapshot.value) { acc, result ->
-                result.getOrNull()?.let { merge(acc, it) } ?: acc
+            val results = categories.map { it to gateway.read(it) }
+            val merged = results.fold(_snapshot.value) { acc, (category, result) ->
+                result.getOrNull()?.let { merge(acc, category, it) } ?: acc
             }.let { withRideMinutes(it) }
             _snapshot.value = merged
 
             // 3-1. 좀비 GATT 워치독 — 한 사이클이 통째로 실패하는 게 이어지면 강제 재접속.
             //      하나라도 성공했으면 링크는 산 것이다 (빈 차 사이클도 VCSEC는 항상 응답해야 정상)
-            if (results.isNotEmpty() && results.all { it.isFailure }) {
+            if (results.isNotEmpty() && results.all { it.second.isFailure }) {
                 failStreak++
                 if (failStreak >= FAIL_STREAK_LIMIT) {
                     com.wemade.teslable.DiagLog.add(
@@ -232,6 +247,18 @@ class StatePoller(
         nudges.trySend(Unit)
     }
 
+    // ---- 명령 후 확인 읽기 요청 ----
+    // AtomicReference인 이유: UI 스레드의 추가 요청과 폴러의 비우기(getAndSet)가
+    // 경합해도 요청이 유실되지 않는다
+    private val pendingFocus =
+        java.util.concurrent.atomic.AtomicReference<Set<StateCategory>>(emptySet())
+
+    /** 명령 성공 직후 호출 — 해당 카테고리를 집중 폴링에 태우고 폴러를 즉시 깨운다 */
+    fun focusOn(category: StateCategory) {
+        pendingFocus.updateAndGet { it + category }
+        nudge()
+    }
+
     /** delay 대신 쓰는 잠 — nudge가 오면 즉시 깬다 */
     private suspend fun sleep(ms: Long) {
         withTimeoutOrNull(ms) { nudges.receive() }
@@ -255,6 +282,12 @@ class StatePoller(
 
         /** 이 횟수만큼 사이클 전멸이 이어지면 좀비 연결로 보고 끊는다 */
         const val FAIL_STREAK_LIMIT = 3
+
+        /**
+         * 명령 후 확인 읽기 창. 집중 창(기본 300초) 내내 인포테인먼트를 2초마다
+         * 읽으면 차량 수면·배터리에 부담이라, 확인은 이 짧은 창으로 끝낸다
+         */
+        const val FOCUS_CONFIRM_MS = 10_000L
     }
 
     private suspend fun cachedLocation(): GeoPoint? {
@@ -291,8 +324,13 @@ class StatePoller(
     }
 
     /** 카테고리별 부분 응답을 누적 스냅샷에 덮어쓴다. null인 필드는 기존 값을 지키다 */
-    private fun merge(base: VehicleSnapshot, incoming: VehicleSnapshot) = base.copy(
+    private fun merge(
+        base: VehicleSnapshot,
+        category: StateCategory,
+        incoming: VehicleSnapshot,
+    ) = base.copy(
         timestampMillis = incoming.timestampMillis,
+        categoryReadAt = base.categoryReadAt + (category to incoming.timestampMillis),
         insideTempC = incoming.insideTempC ?: base.insideTempC,
         outsideTempC = incoming.outsideTempC ?: base.outsideTempC,
         driverTempSettingC = incoming.driverTempSettingC ?: base.driverTempSettingC,

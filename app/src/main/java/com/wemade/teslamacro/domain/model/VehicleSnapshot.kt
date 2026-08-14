@@ -35,6 +35,12 @@ enum class ShiftState { UNKNOWN, PARK, REVERSE, NEUTRAL, DRIVE }
  */
 data class VehicleSnapshot(
     val timestampMillis: Long,
+    /**
+     * 카테고리별 마지막 실제 읽기 시각.
+     * 낙관 표시(명령 직후 화면 선반영)를 "그 카테고리를 읽은 뒤"에만 거두기 위함 —
+     * 전체 타임스탬프로 지우면 차체만 읽어도 공조 낙관값이 과거값으로 되돌아간다
+     */
+    val categoryReadAt: Map<StateCategory, Long> = emptyMap(),
     val insideTempC: Double? = null,
     val outsideTempC: Double? = null,
     val driverTempSettingC: Double? = null,

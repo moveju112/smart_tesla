@@ -16,6 +16,7 @@ import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.voice.VoiceEvent
 import com.wemade.teslamacro.domain.command.VehicleCommand
+import com.wemade.teslamacro.domain.command.confirmCategory
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatMode
@@ -214,6 +215,9 @@ class VoiceService : LifecycleService() {
                     // 운전 중엔 화면을 못 본다. 차단 사유("P단에서만…")까지 소리로 알려준다
                     if (result.isFailure) {
                         announce(result.exceptionOrNull()?.message ?: "${intent.command.label} 실패")
+                    } else {
+                        // 말로 시킨 것도 화면(태블릿)은 보인다 — 결과를 즉시 다시 읽어 확정한다
+                        app.container.poller.focusOn(intent.command.confirmCategory())
                     }
                 }
             }

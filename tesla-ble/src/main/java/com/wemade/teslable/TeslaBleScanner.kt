@@ -1,6 +1,7 @@
 package com.wemade.teslable
 
 import android.annotation.SuppressLint
+import android.os.Build
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanCallback
@@ -135,8 +136,13 @@ class TeslaBleScanner(context: Context) {
         // 모든 스캐너의 결과를 한 곳에서 처리한다
         val handle = { label: String, result: ScanResult ->
             val record = result.scanRecord
-            val hasService = record?.serviceUuids
-                ?.any { it.uuid == TeslaBleSpec.SERVICE_UUID } == true
+            // 테슬라 서비스 UUID는 세 곳 중 아무 데나 실려 올 수 있다 — 검증된 참고 앱(테파일럿)이
+            // 셋 다 본다. 광고 UUID만 보면 solicitation/service-data로만 광고하는 차를 놓친다
+            val hasService = listOfNotNull(
+                record?.serviceUuids,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) record?.serviceSolicitationUuids else null,
+                record?.serviceData?.keys?.toList(),
+            ).any { uuids -> uuids.any { it.uuid == TeslaBleSpec.SERVICE_UUID } }
 
             // 이름은 광고 패킷에 없을 수 있다. 기기 캐시 이름, 끝내 없으면 주소로 대신한다
             val name = record?.deviceName

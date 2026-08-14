@@ -82,14 +82,42 @@ class StatePoller(
             //    키 등록까지 끝난 차만 — 등록 중인 차를 백그라운드가 건드리면 안 되고,
             //    등록 실패 상태로 집에서 30초마다 스캔을 돌려서도 안 된다
             if (gateway.linkState.value !is LinkState.Ready) {
-                if (settings.isReady) gateway.connect(settings.vin)
                 needFullRead = true   // 다음 연결 때 다시 전체 읽기
-                // 붙었으면 바로 읽으러 간다 — 여기서 한 주기를 자면
-                // 연결 후 30초 동안 화면이 비어 있는다 (실차 로그 2026-08-13 15:37)
-                if (gateway.linkState.value is LinkState.Ready) continue
+                // 연속 실패 백오프: 차가 없는 곳에서 매 주기 30초짜리 연결 대기를
+                // 반복하지 않도록 시도 간격을 0→0→15→30→60초(상한)로 벌린다.
+                // nudge(앱 전면 진입)와 연결 성공이 리셋한다
+                if (settings.isReady && now() >= reconnectHoldUntil) {
+                    // 성패는 connect()의 Result로 판정한다 — linkState는 flatMapLatest를
+                    // 거쳐 비동기로 복제되므로 여기서 읽으면 성공이 실패로 집계될 수 있다
+                    // 붙었으면 바로 읽으러 간다 — 여기서 한 주기를 자면
+                    // 연결 후 30초 동안 화면이 비어 있는다 (실차 로그 2026-08-13 15:37)
+                    if (gateway.connect(settings.vin).isSuccess) {
+                        reconnectStrikes = 0
+                        // Ready가 flatMapLatest를 타고 복제될 때까지 잠깐 기다린다 —
+                        // 안 기다리면 루프 상단 검사가 옛 상태를 보고 connect를 또 부른다
+                        withTimeoutOrNull(2_000L) {
+                            gateway.linkState.first { it is LinkState.Ready }
+                        }
+                        continue
+                    }
+                    reconnectStrikes++
+                    val holdSeconds = when {
+                        reconnectStrikes <= 1 -> 0
+                        reconnectStrikes == 2 -> 15
+                        reconnectStrikes == 3 -> 30
+                        else -> 60
+                    }
+                    reconnectHoldUntil = now() + holdSeconds * 1000L
+                    if (holdSeconds > 0) {
+                        com.wemade.teslable.DiagLog.add(
+                            "재연결 백오프 ${holdSeconds}s (연속 ${reconnectStrikes}회 실패)"
+                        )
+                    }
+                }
                 sleep(settings.idlePollSeconds * 1000L)
                 continue
             }
+            reconnectStrikes = 0
 
             // 2. 카테고리 선택:
             //    - 연결 직후: 전부 (온도·배터리까지 화면에 한 번 채운다)
@@ -191,8 +219,16 @@ class StatePoller(
     // 앱이 전면에 오는 순간(대개 탑승) nudge()로 잠을 끊고 즉시 한 사이클 돈다
     private val nudges = Channel<Unit>(Channel.CONFLATED)
 
+    // ---- 재연결 백오프 상태 ----
+    // 필드인 이유: nudge()가 백오프를 풀어야 한다 (사용자가 앱을 열었으면 즉시 붙어봐야 한다)
+    private var reconnectStrikes = 0
+
+    @Volatile
+    private var reconnectHoldUntil = 0L
+
     /** 자고 있는 폴러를 지금 깨운다. 돌고 있는 중이면 다음 잠만 짧아질 뿐 부작용 없다 */
     fun nudge() {
+        reconnectHoldUntil = 0L   // 사용자가 왔다 — 백오프 무시하고 즉시 시도
         nudges.trySend(Unit)
     }
 

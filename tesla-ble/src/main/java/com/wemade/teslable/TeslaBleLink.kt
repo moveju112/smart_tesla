@@ -7,16 +7,34 @@ import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+
+/**
+ * GATT status 코드에 사람이 읽을 해설을 붙인다 — 실차 로그 진단용.
+ * 코드별 분기는 하지 않는다(검증된 참고 앱도 안 한다). 오직 로그 품질용
+ */
+internal fun gattStatusName(status: Int): String = when (status) {
+    0 -> "0(OK)"
+    8 -> "8(CONN_TIMEOUT·전파이탈)"
+    19 -> "19(REMOTE_TERMINATED·차량측종료)"
+    22 -> "22(LOCAL_HOST_TERMINATED)"
+    62 -> "62(FAILED_ESTABLISH·응답없음)"
+    133 -> "133(GATT_ERROR·스택)"
+    147 -> "147(CONN_TIMEOUT)"
+    else -> "$status"
+}
 
 /**
  * 차량 1대와의 GATT 연결. 바이트만 주고받고 프로토콜 해석은 하지 않는다.
@@ -30,6 +48,28 @@ class TeslaBleLink(private val context: Context) {
     private var gatt: BluetoothGatt? = null
     private var txCharacteristic: BluetoothGattCharacteristic? = null
     private var mtu: Int = DEFAULT_MTU
+
+    /**
+     * 링크 사망 표시(단방향). 끊김 콜백·쓰기 거부·쓰기 완료 타임아웃에서 선다.
+     * GATT 객체와 characteristic이 멀쩡해 보여도 이 플래그가 서면 죽은 링크다.
+     * isConnected가 이걸 봐서, 콜백이 아예 안 오는 "좀비 GATT"도 쓰기 실패 즉시 드러난다
+     */
+    @Volatile
+    private var dead = false
+
+    /**
+     * 사망 처리 공통 지점: 플래그를 세우고 끊김 이벤트를 즉시 방출한다.
+     * 방출 덕에 게이트웨이가 다음 ensureLinked를 기다리지 않고 바로 상태를 내린다.
+     *
+     * [source] 세대 검사: 옛 GATT에서 5초짜리 쓰기 타임아웃이 늦게 터지면
+     * 그 사이 재연결로 태어난 새 링크를 죽여버린다 — 지금 GATT가 아니면 무시한다
+     */
+    private fun markDead(source: BluetoothGatt?) {
+        if (source !== gatt) return
+        if (dead) return
+        dead = true
+        _disconnects.tryEmit(Unit)
+    }
 
     private val reassembler = BleFraming.Reassembler()
     private val opLock = Mutex()
@@ -49,7 +89,7 @@ class TeslaBleLink(private val context: Context) {
     private val _disconnects = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val disconnects: Flow<Unit> = _disconnects.asSharedFlow()
 
-    val isConnected: Boolean get() = txCharacteristic != null
+    val isConnected: Boolean get() = txCharacteristic != null && !dead
 
     /** 연결 -> MTU 협상 -> 서비스 탐색 -> notify 구독까지 마치고 돌아온다 */
     suspend fun connect(
@@ -66,6 +106,7 @@ class TeslaBleLink(private val context: Context) {
         val deferred = CompletableDeferred<Unit>()
         connectResult = deferred
         reassembler.reset()
+        dead = false   // 새 연결의 생사는 새로 판정한다
 
         DiagLog.add("GATT 접속 시도 ${device.address}" + if (autoConnect) " (autoConnect)" else "")
         gatt = device.connectGatt(context, autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
@@ -79,6 +120,8 @@ class TeslaBleLink(private val context: Context) {
 
     /** 페이로드에 길이 헤더를 붙여 청크로 나눠 보낸다 */
     suspend fun send(payload: ByteArray, timeoutMillis: Long = WRITE_TIMEOUT_MS) = opLock.withLock {
+        // 죽은 링크엔 안 쏜다 — ensureLinked를 안 거치는 경로(등록 등)도 여기서 다 막힌다
+        if (dead) error("링크가 죽었다 — 재연결 필요")
         val characteristic = txCharacteristic ?: error("연결되어 있지 않다")
         val activeGatt = gatt ?: error("연결되어 있지 않다")
 
@@ -86,12 +129,20 @@ class TeslaBleLink(private val context: Context) {
         for (chunk in BleFraming.frame(payload, mtu - ATT_HEADER_SIZE)) {
             val deferred = CompletableDeferred<Unit>()
             writeResult = deferred
-            writeChunk(activeGatt, characteristic, chunk)
-            withTimeout(timeoutMillis) { deferred.await() }
+            writeChunkWithRetry(activeGatt, characteristic, chunk)
+            try {
+                withTimeout(timeoutMillis) { deferred.await() }
+            } catch (t: TimeoutCancellationException) {
+                // 완료 콜백이 영영 안 오는 건 스택이 죽은 것 — 살아있는 척을 끝낸다
+                markDead(activeGatt)
+                throw IllegalStateException("쓰기 완료 미수신 ${timeoutMillis}ms — 링크 사망 처리", t)
+            }
         }
     }
 
     fun close() {
+        // disconnect 없이 close만 하면 일부 스택이 링크를 물고 있는다 — 각각 독립 실행
+        runCatching { gatt?.disconnect() }
         runCatching { gatt?.close() }
         gatt = null
         txCharacteristic = null
@@ -99,23 +150,55 @@ class TeslaBleLink(private val context: Context) {
         reassembler.reset()
     }
 
-    // 안드로이드 13에서 쓰기 API가 바뀌어 분기한다
-    private fun writeChunk(
+    /** writeCharacteristic 제출 결과 — 큐에 실림 / 바쁨(재시도 가치 있음) / 그 외 거부 */
+    private enum class WriteAccept { QUEUED, BUSY, REJECTED }
+
+    /**
+     * GATT가 바쁘다고 거부하면 150ms 계단(150/300/450ms)으로 최대 4회 다시 민다.
+     * busy가 아닌 거부는 재시도 가치가 없다 — 즉시 사망 처리. 마지막 거부 뒤엔 기다리지 않는다
+     */
+    private suspend fun writeChunkWithRetry(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
         chunk: ByteArray,
     ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gatt.writeCharacteristic(
+        repeat(WRITE_ATTEMPTS) { attempt ->
+            when (writeChunk(gatt, characteristic, chunk)) {
+                WriteAccept.QUEUED -> return
+                WriteAccept.BUSY ->
+                    if (attempt < WRITE_ATTEMPTS - 1) delay(WRITE_RETRY_STEP_MS * (attempt + 1))
+                WriteAccept.REJECTED -> {
+                    markDead(gatt)
+                    error("writeCharacteristic 거부 (busy 아님)")
+                }
+            }
+        }
+        markDead(gatt)
+        error("writeCharacteristic ${WRITE_ATTEMPTS}회 연속 거부 (GATT busy)")
+    }
+
+    // 안드로이드 13에서 쓰기 API가 바뀌어 분기한다.
+    // 12 이하는 boolean뿐이라 거부 사유를 알 수 없다 — 전부 BUSY로 보고 재시도한다
+    private fun writeChunk(
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
+        chunk: ByteArray,
+    ): WriteAccept {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when (gatt.writeCharacteristic(
                 characteristic,
                 chunk,
                 BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
-            )
+            )) {
+                BluetoothStatusCodes.SUCCESS -> WriteAccept.QUEUED
+                BluetoothStatusCodes.ERROR_GATT_WRITE_REQUEST_BUSY -> WriteAccept.BUSY
+                else -> WriteAccept.REJECTED
+            }
         } else {
             @Suppress("DEPRECATION")
             characteristic.value = chunk
             @Suppress("DEPRECATION")
-            gatt.writeCharacteristic(characteristic)
+            if (gatt.writeCharacteristic(characteristic)) WriteAccept.QUEUED else WriteAccept.BUSY
         }
     }
 
@@ -136,12 +219,12 @@ class TeslaBleLink(private val context: Context) {
                     gatt.requestMtu(PREFERRED_MTU)
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    DiagLog.add("GATT 끊김 (status=$status)")
+                    DiagLog.add("GATT 끊김 (status=${gattStatusName(status)})")
                     txCharacteristic = null
                     connectResult?.completeExceptionally(
-                        IllegalStateException("연결이 끊겼다 (status=$status)")
+                        IllegalStateException("연결이 끊겼다 (status=${gattStatusName(status)})")
                     )
-                    _disconnects.tryEmit(Unit)
+                    markDead(gatt)
                 }
             }
         }
@@ -189,7 +272,7 @@ class TeslaBleLink(private val context: Context) {
                     connectResult?.complete(Unit)
                 } else {
                     connectResult?.completeExceptionally(
-                        IllegalStateException("알림 구독 실패 (status=$status)")
+                        IllegalStateException("알림 구독 실패 (status=${gattStatusName(status)})")
                     )
                 }
             }
@@ -204,8 +287,9 @@ class TeslaBleLink(private val context: Context) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 writeResult?.complete(Unit)
             } else {
+                markDead(gatt)
                 writeResult?.completeExceptionally(
-                    IllegalStateException("쓰기 실패 (status=$status)")
+                    IllegalStateException("쓰기 실패 (status=${gattStatusName(status)})")
                 )
             }
         }
@@ -263,5 +347,7 @@ class TeslaBleLink(private val context: Context) {
         const val ATT_HEADER_SIZE = 3
         const val CONNECT_TIMEOUT_MS = 20_000L
         const val WRITE_TIMEOUT_MS = 5_000L
+        const val WRITE_ATTEMPTS = 4
+        const val WRITE_RETRY_STEP_MS = 150L
     }
 }

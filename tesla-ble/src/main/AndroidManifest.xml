@@ -2,12 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Android 12+ BLE 권한. 위치 추론 안 함을 선언해 위치 권한 요구를 피한다 -->
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation"
-        tools:targetApi="s" />
+    <!--
+      Android 12+ BLE 권한.
+      neverForLocation을 붙이지 않는다 — 일부 기기(삼성 등)에서 이 플래그가 스캔 결과를
+      걸러내 차 광고 콜백이 아예 안 오는 문제가 있다. 검증된 참고 앱(테파일럿)도 이 플래그
+      없이 위치 권한에 기댄다. 스캔은 위치 권한 승인에 묶이지만 앱이 이미 위치를 요청한다.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- 스캔 결과 수신에 필요하다 (12+는 neverForLocation 미사용, 11 이하는 필수) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
     <!-- Android 11 이하 하위 호환 -->
     <uses-permission
@@ -15,10 +20,6 @@
         android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
-        android:maxSdkVersion="30" />
-    <!-- 안드로이드 11 이하는 위치 권한이 없으면 BLE 스캔 결과가 한 건도 안 온다 -->
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="30" />
 
     <uses-feature

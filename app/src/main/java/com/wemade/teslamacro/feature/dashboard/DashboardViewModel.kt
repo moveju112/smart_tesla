@@ -161,7 +161,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
 
             if (result.isFailure) {
                 revertOptimistic(command)
-                error.value = "${command.label} 실패 — " +
+                // 배너도 한 문장 = 한 줄 — 원인은 둘째 줄로
+                error.value = "${command.label} 실패\n" +
                     (result.exceptionOrNull()?.message ?: "원인 불명")
             } else {
                 // 3. 성공 — 낙관 시계를 전송 완료 시각으로 미룬다.
@@ -210,7 +211,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 pending.value = command
                 val result = container.gateway.send(command)
                 if (result.isFailure) {
-                    error.value = "좌석 ${mode.label} 실패 — " +
+                    error.value = "좌석 ${mode.label} 실패\n" +
                         (result.exceptionOrNull()?.message ?: "원인 불명")
                 } else {
                     anySuccess = true

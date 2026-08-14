@@ -334,9 +334,14 @@ private fun ClimateCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (state.isClimateOn) "작동 중" else "꺼짐",
+                    // 읽기 전엔 "꺼짐"이 아니라 확인 중 — 충전 카드와 같은 규칙
+                    text = when {
+                        !state.hasReading -> "상태 확인 중"
+                        state.isClimateOn -> "작동 중"
+                        else -> "꺼짐"
+                    },
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (state.isClimateOn) T.Ink else T.InkFaint,
+                    color = if (state.hasReading && state.isClimateOn) T.Ink else T.InkFaint,
                 )
                 Text(
                     text = "목표 ${"%.1f".format(draftTemp)}℃",
@@ -639,10 +644,15 @@ private fun HeroCard(state: DashboardUiState) {
             ) {
                 Text("실내 온도", style = MaterialTheme.typography.titleSmall, color = T.InkMuted)
                 StatusPill(
-                    text = if (state.isClimateOn) "공조 켜짐" else "공조 꺼짐",
-                    color = if (state.isClimateOn) T.Cool else T.InkFaint,
+                    // 읽기 전 기본값(false)이 "꺼짐"으로 보이면 오보 — 잠금 칸과 같은 가드
+                    text = when {
+                        !state.hasReading -> "확인 중"
+                        state.isClimateOn -> "공조 켜짐"
+                        else -> "공조 꺼짐"
+                    },
+                    color = if (state.hasReading && state.isClimateOn) T.Cool else T.InkFaint,
                     // 옅은 파랑 틴트 위 파랑 글자는 대비 미달 — 진한 파랑으로
-                    textColor = if (state.isClimateOn) T.ElectricPressed else T.InkMuted,
+                    textColor = if (state.hasReading && state.isClimateOn) T.ElectricPressed else T.InkMuted,
                 )
             }
 

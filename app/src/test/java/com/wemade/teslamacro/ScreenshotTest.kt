@@ -94,7 +94,7 @@ class ScreenshotTest {
         snapshot("03-dashboard-error", Destination.Dashboard) {
             DashboardScreen(
                 state = dashboardState(
-                    error = "운전석 통풍 2 실패 — 차량이 응답하지 않는다",
+                    error = "운전석 통풍 2 실패\n차량이 응답하지 않아요",
                 ),
                 onCommand = {},
                 onRetryConnect = {},

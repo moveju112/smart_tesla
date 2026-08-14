@@ -65,6 +65,17 @@ class StatePoller(
     }
 
     private suspend fun loop() = coroutineScope {
+        // 링크가 "살아 있다가" 끊기는 순간 즉시 깨운다 — 안 깨우면 깊은 유휴 잠(최대 120초)을
+        // 다 자고서야 끊김을 알아챈다. 시도 실패로 뜨는 Failed(Ready였던 적 없음)에는
+        // 반응하지 않아 재연결 백오프를 망가뜨리지 않는다
+        launch {
+            var last: LinkState? = null
+            gateway.linkState.collect { state ->
+                if (last is LinkState.Ready && state !is LinkState.Ready) nudge()
+                last = state
+            }
+        }
+
         var previous: Reading? = null
         var activeUntil = 0L
         var needFullRead = true   // 연결 직후 한 번은 전부 읽어 대시보드를 채운다
@@ -106,11 +117,12 @@ class StatePoller(
                         continue
                     }
                     reconnectStrikes++
+                    // 상한 30초 — 60초면 "연결 해제 상태로 탑승 → 1분 넘게 무반응"이 된다.
+                    // 직행(autoConnect) 시도는 스캔이 없어 라디오 비용이 낮으니 촘촘해도 된다
                     val holdSeconds = when {
                         reconnectStrikes <= 1 -> 0
                         reconnectStrikes == 2 -> 15
-                        reconnectStrikes == 3 -> 30
-                        else -> 60
+                        else -> 30
                     }
                     reconnectHoldUntil = now() + holdSeconds * 1000L
                     if (holdSeconds > 0) {
@@ -119,7 +131,12 @@ class StatePoller(
                         )
                     }
                 }
-                sleep(settings.idlePollSeconds * 1000L)
+                // 등록 전엔 느긋하게. 재연결 대기 중엔 백오프가 끝나는 시점까지만 잔다 —
+                // idle 주기(30초)를 통째로 자면 백오프 0초여도 30초 귀머거리가 된다
+                val sleepMs =
+                    if (settings.isReady) (reconnectHoldUntil - now()).coerceAtLeast(1_000L)
+                    else settings.idlePollSeconds * 1000L
+                sleep(sleepMs)
                 continue
             }
             reconnectStrikes = 0
@@ -244,6 +261,8 @@ class StatePoller(
     /** 자고 있는 폴러를 지금 깨운다. 돌고 있는 중이면 다음 잠만 짧아질 뿐 부작용 없다 */
     fun nudge() {
         reconnectHoldUntil = 0L   // 사용자가 왔다 — 백오프 무시하고 즉시 시도
+        // 스트라이크도 리셋 — 안 하면 깨운 뒤 첫 실패가 곧장 30초 무음으로 돌아간다
+        reconnectStrikes = 0
         nudges.trySend(Unit)
     }
 

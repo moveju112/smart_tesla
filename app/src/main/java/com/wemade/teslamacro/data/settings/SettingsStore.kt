@@ -22,8 +22,8 @@ data class AppSettings(
     val idlePollSeconds: Int = 30,
     /** 이벤트 감지 후 집중 폴링 주기 */
     val activePollSeconds: Int = 2,
-    /** 집중 폴링 지속 시간 */
-    val activeWindowSeconds: Int = 300,
+    /** 집중 폴링 지속 시간. 5분(300)은 인포테인먼트에 과해 3분을 기본으로 */
+    val activeWindowSeconds: Int = 180,
     /** 매크로 자동 실행 on/off — 정비·세차 때 통째로 끄는 스위치 */
     val automationEnabled: Boolean = true,
     /**
@@ -68,7 +68,7 @@ class SettingsStore(private val context: Context) {
             vin = prefs[KeyVin] ?: "",
             idlePollSeconds = prefs[KeyIdlePoll] ?: 30,
             activePollSeconds = prefs[KeyActivePoll] ?: 2,
-            activeWindowSeconds = prefs[KeyActiveWindow] ?: 300,
+            activeWindowSeconds = prefs[KeyActiveWindow] ?: 180,
             automationEnabled = prefs[KeyAutomation] ?: true,
             isEnrolled = prefs[KeyEnrolled] ?: false,
             voiceAlwaysOn = prefs[KeyVoiceAlwaysOn] ?: false,
@@ -82,6 +82,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setIdlePollSeconds(seconds: Int) = edit { it[KeyIdlePoll] = seconds }
     suspend fun setActivePollSeconds(seconds: Int) = edit { it[KeyActivePoll] = seconds }
+    suspend fun setActiveWindowSeconds(seconds: Int) = edit { it[KeyActiveWindow] = seconds }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     suspend fun setVoiceAlwaysOn(enabled: Boolean) = edit { it[KeyVoiceAlwaysOn] = enabled }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }

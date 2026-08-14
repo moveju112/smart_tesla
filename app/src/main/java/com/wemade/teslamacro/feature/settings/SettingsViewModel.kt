@@ -45,6 +45,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setActivePollSeconds(seconds) }
     }
 
+    // 집중 폴링을 얼마나 오래 유지할지 — 길수록 반응은 좋지만 차가 늦게 잔다
+    fun setActiveWindowSeconds(seconds: Int) {
+        viewModelScope.launch { container.settingsStore.setActiveWindowSeconds(seconds) }
+    }
+
     // ---- 업데이트 ----
 
     /** null = 아직 확인 안 함 */

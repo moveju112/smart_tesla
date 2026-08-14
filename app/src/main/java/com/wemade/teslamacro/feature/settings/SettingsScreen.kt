@@ -49,6 +49,7 @@ fun SettingsScreen(
     onAutomationChange: (Boolean) -> Unit,
     onIdlePollChange: (Int) -> Unit,
     onActivePollChange: (Int) -> Unit,
+    onActiveWindowChange: (Int) -> Unit,
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
     modifier: Modifier = Modifier,
@@ -102,23 +103,31 @@ fun SettingsScreen(
         SectionHeader("폴링 주기")
         TCard {
             Text(
-                text = "짧을수록 반응이 빠르지만 차가 잠들지 못해 방전이 빨라져요.",
+                text = "짧을수록 반응이 빠르지만 차가 잠들지 못해 방전이 빨라져요.\n잠긴 빈 차는 배터리 보호를 위해 항상 2분 주기로 쉬어요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
             Spacer(Modifier.height(Space.md))
             IntervalPicker(
+                // 10초는 차를 못 재워 방전 위험만 키운다 — 최소 15초
                 label = "평상시 (차체 상태만)",
                 current = settings.idlePollSeconds,
-                options = listOf(10, 30, 60, 120),
+                options = listOf(15, 30, 60, 120),
                 onSelect = onIdlePollChange,
             )
             Spacer(Modifier.height(Space.md))
             IntervalPicker(
                 label = "사건 감지 후 (전체 상태)",
                 current = settings.activePollSeconds,
-                options = listOf(1, 2, 5, 10),
+                options = listOf(1, 2, 5),
                 onSelect = onActivePollChange,
+            )
+            Spacer(Modifier.height(Space.md))
+            IntervalPicker(
+                label = "집중 폴링 유지 시간",
+                current = settings.activeWindowSeconds,
+                options = listOf(60, 180, 300),
+                onSelect = onActiveWindowChange,
             )
         }
 

@@ -131,6 +131,7 @@ class PhoneScreenshotTest {
                     onAutomationChange = {},
                     onIdlePollChange = {},
                     onActivePollChange = {},
+                    onActiveWindowChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     voice = VoiceControls(

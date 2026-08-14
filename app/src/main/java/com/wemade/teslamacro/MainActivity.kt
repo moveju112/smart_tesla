@@ -192,7 +192,13 @@ private fun AppRoot(factory: ViewModelFactory) {
     ResponsiveScaffold(
         bottomNav = portrait,
         current = current,
-        onSelect = { current = it },
+        onSelect = {
+            current = it
+            // 탭 전환도 "최신 값을 기대하는 순간" — 자는 폴러를 깨운다 (요구 시점 읽기)
+            (context.applicationContext as TeslaMacroApplication).let { app ->
+                if (app.ready.value) app.container.poller.nudge()
+            }
+        },
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             when (current) {
@@ -259,6 +265,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
                         onIdlePollChange = settingsViewModel::setIdlePollSeconds,
                         onActivePollChange = settingsViewModel::setActivePollSeconds,
+                        onActiveWindowChange = settingsViewModel::setActiveWindowSeconds,
                         onUnpair = settingsViewModel::unpair,
                         onStartPairing = { skippedPairing = false },
                         simulator = simulated?.let {

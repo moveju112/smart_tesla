@@ -182,6 +182,7 @@ class ScreenshotTest {
                 onAutomationChange = {},
                 onIdlePollChange = {},
                 onActivePollChange = {},
+                onActiveWindowChange = {},
                 onUnpair = {},
                 onStartPairing = {},
                 voice = VoiceControls(
@@ -210,7 +211,7 @@ class ScreenshotTest {
                         state = PairingUiState(
                             step = PairingStep.TapCard,
                             vin = "5YJS0000000000000",
-                            message = "차량을 찾았다. 이제 앱 키를 등록한다",
+                            message = "차량을 찾았어요.\n이제 앱 키를 등록할게요",
                         ),
                         onVinChange = {},
                         onFindVehicle = {},

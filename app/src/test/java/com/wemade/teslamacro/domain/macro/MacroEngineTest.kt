@@ -350,7 +350,7 @@ class MacroEngineTest {
 
     @Test
     fun `조건이 없으면 문장에서도 생략된다`() {
-        assertEquals("매일 18:00 시", describeRule(rule(listOf(Trigger.AtTime(18 * 60)))))
+        assertEquals("매일 18:00에", describeRule(rule(listOf(Trigger.AtTime(18 * 60)))))
     }
 
     @Test

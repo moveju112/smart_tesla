@@ -58,8 +58,17 @@ fun describe(condition: Condition): String = when (condition) {
 fun describeRule(rule: MacroRule): String {
     val whenPart = rule.triggers.joinToString(" 또는 ") { describe(it) }
         .ifEmpty { "트리거 없음" }
+        .let(::withWhenSuffix)
     val ifPart = rule.conditions.joinToString(", ") { describe(it) }
-    return if (ifPart.isEmpty()) "$whenPart 시" else "$whenPart 시, ${ifPart}이면"
+    return if (ifPart.isEmpty()) whenPart else "$whenPart, ${ifPart}이면"
+}
+
+// "열림"엔 "시"를 붙이지만 "…때/…마다"에 또 붙이면 "갖춰질 때 시" 같은 겹말이 된다.
+// 시각(숫자 끝)은 "18:00 시"가 아니라 "18:00에"가 자연스럽다
+private fun withWhenSuffix(whenPart: String): String = when {
+    whenPart.endsWith("때") || whenPart.endsWith("마다") -> whenPart
+    whenPart.last().isDigit() -> "${whenPart}에"
+    else -> "$whenPart 시"
 }
 
 private fun days(days: Set<Int>): String =

@@ -74,6 +74,10 @@ class BleVehicleGateway(
                 return@runCatching
             }
 
+            // 0-1. 백그라운드 재시도는 여기서 끝낸다 — 이 폰 스캔은 차 광고를 못 받아(BLE_RULES)
+            //      아래 12초 스캔이 귀머거리 시간일 뿐이고, allowProbe=false라 후보 검증도 못 쓴다
+            if (!allowProbe && saved.isNotBlank()) error("차량이 보이지 않아요")
+
             // 1. VIN으로 계산한 이름을 잠깐 찾아보고, 그동안 주변 후보도 모아둔다.
             //    규칙대로 광고하는 차(주로 구형)는 여기서 몇 초 만에 끝난다.
             //    신형은 광고 이름이 규칙과 달라 이 단계로는 못 찾는다 (실측 확인)

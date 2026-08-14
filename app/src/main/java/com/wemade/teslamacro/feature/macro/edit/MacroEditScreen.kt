@@ -104,6 +104,16 @@ fun MacroEditScreen(
     val compact = LocalPane.current.isCompact
     val last = step == STEPS.lastIndex
 
+    // 시스템 뒤로가기를 받는다 — 안 받으면 편집 중에 앱이 통째로 꺼진다.
+    // 피커 닫기 → 이전 단계 → 목록 복귀 순으로, 화면의 X·이전 버튼과 같은 감각
+    androidx.activity.compose.BackHandler {
+        when {
+            picker != OpenPicker.NONE -> picker = OpenPicker.NONE
+            step > 0 -> step--
+            else -> onCancel()
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()

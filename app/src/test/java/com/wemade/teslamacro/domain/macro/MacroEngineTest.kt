@@ -86,6 +86,28 @@ class MacroEngineTest {
     }
 
     @Test
+    fun `재시작 직후 이미 타 있으면 탑승 트리거는 1회 발동한다`() {
+        // 직전 값이 없으면(재부팅) 엣지를 못 보지만, 탑승만은 놓치면 안 된다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
+            previous = null,
+            current = reading(userPresent = true),
+        )
+        assertEquals(1, fired.size)
+    }
+
+    @Test
+    fun `재시작 직후 탑승 외 신호는 발동하지 않는다`() {
+        // 예: 문 열림 매크로가 앱 시작만으로 터지면 오발동이다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.DOOR_DRIVER_FRONT, true)))),
+            previous = null,
+            current = reading(doorOpen = true),
+        )
+        assertEquals(0, fired.size)
+    }
+
+    @Test
     fun `트리거는 하나만 맞아도 발동한다`() {
         val multi = rule(
             triggers = listOf(

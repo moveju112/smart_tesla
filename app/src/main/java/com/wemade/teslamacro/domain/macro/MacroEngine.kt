@@ -1,5 +1,7 @@
 package com.wemade.teslamacro.domain.macro
 
+import com.wemade.teslamacro.domain.model.Signal
+
 /**
  * 어떤 매크로를 지금 실행해야 하는지 판정한다.
  *
@@ -67,7 +69,14 @@ class MacroEngine {
             is Trigger.SignalBecomes -> {
                 val now = trigger.signal.booleanOf(current.snapshot)
                 val before = previous?.let { trigger.signal.booleanOf(it.snapshot) }
-                now == trigger.to && before != null && before != trigger.to
+                when {
+                    now != trigger.to -> false
+                    before != null -> before != trigger.to
+                    // 재시작 직후(직전 값 없음)의 "탑승" 트리거는 이미 타 있어도 1회 발동 —
+                    // 태블릿이 밤새 재부팅되면 첫 판정이 곧 탑승 순간인데 엣지만 고집하면 영영 놓친다.
+                    // 탑승 외 신호는 제외: 재시작 오발동(예: 주차 중 앱 시작 → 잠금 명령)이 더 해롭다
+                    else -> trigger.signal == Signal.USER_PRESENT && trigger.to
+                }
             }
 
             // 그 분에 들어서는 순간에만 참. 같은 분에 두 번 폴링해도 한 번만 발동한다

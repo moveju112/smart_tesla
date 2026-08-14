@@ -188,11 +188,13 @@ fun SectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     trailing: @Composable (() -> Unit)? = null,
+    /** 단 맨 위에 오는 헤더는 위 여백을 없애 옆 단과 시작선을 맞춘다 */
+    topPadding: androidx.compose.ui.unit.Dp = Space.lg,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = Space.lg, bottom = Space.sm),
+            .padding(top = topPadding, bottom = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

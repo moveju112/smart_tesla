@@ -119,10 +119,16 @@ fun DashboardScreen(
 
                     Spacer(Modifier.height(Space.md))
                     QuickActionGrid(state, onCommand, columns = if (compact) 3 else 2)
+
+                    // 넓은 화면에선 충전을 왼단에 — 오른단(공조+시트)과 단 길이 균형을 맞춘다
+                    if (!compact) {
+                        SectionHeader("충전")
+                        ChargeCard(state, onCommand, onStealthCharging)
+                    }
                 },
                 second = {
-                    // 넓은 화면에서는 왼단(상태·퀵액션) / 오른단(공조·시트)으로 균형을 맞춘다
-                    SectionHeader("공조")
+                    // 단 맨 위 헤더는 위 여백 0 — 왼단 히어로와 시작선을 맞춘다
+                    SectionHeader("공조", topPadding = if (compact) Space.lg else 0.dp)
                     ClimateCard(state, onCommand)
 
                     SectionHeader("시트")
@@ -151,8 +157,11 @@ fun DashboardScreen(
                         )
                     }
 
-                    SectionHeader("충전")
-                    ChargeCard(state, onCommand, onStealthCharging)
+                    // 좁은 화면에선 원래 순서대로 맨 아래에
+                    if (compact) {
+                        SectionHeader("충전")
+                        ChargeCard(state, onCommand, onStealthCharging)
+                    }
                 },
             )
         }
@@ -668,7 +677,8 @@ private fun HeroCard(state: DashboardUiState) {
                 // 첫 읽기 전엔 "--℃" 같은 어색한 표기가 되므로 외부와 같은 가드를 건다
                 HeroStat("목표", if (state.hasReading) "${state.targetTemp}℃" else "--", Modifier.weight(1f))
                 HeroStat("배터리", state.batteryLabel, Modifier.weight(1f))
-                HeroStat("잠금", if (state.isLocked) "잠김" else "열림", Modifier.weight(1f))
+                // 읽기 전 기본값(false)이 "열림"으로 보이면 오보다 — 다른 칸과 같은 가드
+                HeroStat("잠금", if (state.hasReading) { if (state.isLocked) "잠김" else "열림" } else "--", Modifier.weight(1f))
             }
         }
     }

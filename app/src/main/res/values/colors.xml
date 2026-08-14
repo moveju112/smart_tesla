@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Color.kt의 T.Void와 같은 값. 앱 시작 순간 흰 화면 깜빡임을 없앤다 -->
-    <color name="void_background">#0B0D0F</color>
-    <color name="electric">#3E6AE1</color>
+    <!-- Color.kt의 T.Void와 같은 값. 앱 시작 순간 다크 화면 깜빡임을 없앤다 -->
+    <color name="void_background">#F2F4F6</color>
+    <!-- Color.kt의 T.Electric과 같은 값. 런처 아이콘 배경 -->
+    <color name="launcher_background">#3182F6</color>
 </resources>

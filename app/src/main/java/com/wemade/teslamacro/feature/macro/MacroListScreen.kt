@@ -16,10 +16,15 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -34,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +56,7 @@ import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.StatusPill
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlinx.coroutines.delay
@@ -283,9 +290,9 @@ private fun MacroCard(
                 icon = Icons.Rounded.PlayArrow,
                 onClick = onRunNow,
             )
-            Spacer(Modifier.width(Space.sm))
-            TButton("복제", ButtonTone.Ghost, fillWidth = false, small = true, onClick = onDuplicate)
-            Spacer(Modifier.width(Space.sm))
+            Spacer(Modifier.weight(1f))
+            // 복제·삭제는 부가 동작이라 ⋯ 메뉴로 접는다 — 액션 줄은 "실행" 하나로 단순하게
+            var menuOpen by remember(rule.id) { mutableStateOf(false) }
             // 삭제는 실수 방지로 두 번 탭 — 다이얼로그까지 띄울 일은 아니다
             var confirmDelete by remember(rule.id) { mutableStateOf(false) }
             LaunchedEffect(confirmDelete) {
@@ -294,16 +301,56 @@ private fun MacroCard(
                     confirmDelete = false
                 }
             }
-            TButton(
-                // Danger 톤 전환이 이미 경고를 전하므로 라벨은 짧게 — 액션 줄이 안 넘치게
-                text = if (confirmDelete) "삭제 확인" else "삭제",
-                tone = if (confirmDelete) ButtonTone.Danger else ButtonTone.Ghost,
-                fillWidth = false,
-                small = true,
-            ) {
-                if (confirmDelete) onDelete() else confirmDelete = true
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(Radius.pill))
+                        .clickable { menuOpen = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreHoriz,
+                        contentDescription = "복제·삭제 메뉴",
+                        tint = T.InkMuted,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = {
+                        menuOpen = false
+                        confirmDelete = false
+                    },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("복제", color = T.Ink) },
+                        onClick = {
+                            menuOpen = false
+                            onDuplicate()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (confirmDelete) "삭제 확인" else "삭제",
+                                color = T.Danger,
+                            )
+                        },
+                        onClick = {
+                            // 첫 탭은 라벨만 바꾸고 메뉴를 유지 — 확인 탭에서만 실제 삭제
+                            if (confirmDelete) {
+                                menuOpen = false
+                                confirmDelete = false
+                                onDelete()
+                            } else {
+                                confirmDelete = true
+                            }
+                        },
+                    )
+                }
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(Space.xs))
             // 카드 탭이 편집으로 간다는 힌트. 버튼 대신 관례적인 꺾쇠 하나
             Icon(
                 imageVector = Icons.Rounded.ChevronRight,

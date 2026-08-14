@@ -5,6 +5,7 @@
         <item name="android:windowBackground">@color/void_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- 밝은 배경이라 상태바 아이콘은 어둡게 -->
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>

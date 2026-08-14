@@ -1,11 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 통풍 아이콘 대용 임시 런처 아이콘. 디자인 확정되면 교체한다 -->
+<!-- 런처 아이콘 전경 — 전기차 측면 실루엣 + 번개 볼트.
+     테슬라 상표(T 로고)는 쓰지 않고 "전기차 제어 앱"임을 형태로만 전달한다.
+     바퀴·볼트는 배경색과 같은 파랑으로 뚫어 배경 위에서 아치·볼트로 보이게 한다 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- 차체 (흰색) -->
     <path
-        android:fillColor="#F4F4F4"
-        android:pathData="M54,30 L58,44 L72,40 L62,50 L74,58 L60,58 L64,72 L54,62 L44,72 L48,58 L34,58 L46,50 L36,40 L50,44 Z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,58 C20,52 26,48 34,46 C40,37 66,36 72,44 C80,46 88,52 88,58 L88,62 C88,64.2 86.2,66 84,66 L24,66 C21.8,66 20,64.2 20,62 Z" />
+    <!-- 앞바퀴 아치 + 허브 -->
+    <path
+        android:fillColor="#3182F6"
+        android:pathData="M27.5,64 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M31.5,64 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z" />
+    <!-- 뒷바퀴 아치 + 허브 -->
+    <path
+        android:fillColor="#3182F6"
+        android:pathData="M65.5,64 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M69.5,64 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z" />
+    <!-- 번개 볼트 (차체 위, 배경색) -->
+    <path
+        android:fillColor="#3182F6"
+        android:pathData="M57,42 L46,55 L52,55 L50,64 L61,50 L55,50 Z" />
 </vector>

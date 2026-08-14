@@ -117,13 +117,10 @@ class StatePoller(
                         continue
                     }
                     reconnectStrikes++
-                    // 상한 30초 — 60초면 "연결 해제 상태로 탑승 → 1분 넘게 무반응"이 된다.
-                    // 직행(autoConnect) 시도는 스캔이 없어 라디오 비용이 낮으니 촘촘해도 된다
-                    val holdSeconds = when {
-                        reconnectStrikes <= 1 -> 0
-                        reconnectStrikes == 2 -> 15
-                        else -> 30
-                    }
+                    // 상한 5초 — 차내 상시 전원 태블릿이라 공격적으로 가도 방전 걱정이 없고,
+                    // 직행(autoConnect) 시도는 스캔이 없어 라디오 비용도 낮다.
+                    // 시도 자체가 30초 대기라 실질 청취 점유율은 30/35 ≈ 86%
+                    val holdSeconds = if (reconnectStrikes <= 1) 0 else 5
                     reconnectHoldUntil = now() + holdSeconds * 1000L
                     if (holdSeconds > 0) {
                         com.wemade.teslable.DiagLog.add(

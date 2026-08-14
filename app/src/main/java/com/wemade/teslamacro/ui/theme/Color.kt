@@ -39,8 +39,10 @@ object T {
     val Heat = Color(0xFFFF6B00)        // 열선 / 난방
     val Warn = Color(0xFFFFB020)        // 칩·점·틴트 배경 전용 — 흰 배경 텍스트엔 WarnText를 쓴다
     val WarnText = Color(0xFFB45309)    // 경고 '텍스트' 전용 — 밝은 앰버(Warn)는 흰 배경에서 안 읽힌다
+    val WarnFaint = Color(0xFFFFF6E4)   // 옅은 앰버 배경 (경고 박스) — ElectricFaint의 앰버판
     val Danger = Color(0xFFF04452)
-    val Ok = Color(0xFF12B886)
+    val Ok = Color(0xFF12B886)          // 점·아이콘 전용 — 소형 텍스트엔 OkText
+    val OkText = Color(0xFF067A57)      // 성공 '텍스트' 전용 — 밝은 민트는 옅은 배경에서 안 읽힌다
 
     // 히어로 배경 단색 — 그라데이션 금지 규칙에 맞춰 틴트 한 색으로 끝낸다
     val CoolTint = Color(0xFFF4F8FF)    // 냉방 히어로 배경

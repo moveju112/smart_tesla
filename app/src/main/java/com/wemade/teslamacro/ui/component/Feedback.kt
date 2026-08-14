@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -196,16 +197,20 @@ fun InlineBanner(
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Space.xs))
-            // 패딩을 clickable 뒤에 둬서 터치 타깃만 넓힌다 (시각 크기는 유지)
-            Text(
-                text = "닫기",
-                style = MaterialTheme.typography.labelSmall,
-                color = color,
+            // 시각 크기는 유지하고 터치 타깃만 44dp로 — 차 안 오탭 방지 기준
+            Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(Radius.pill))
                     .clickable(onClick = onDismiss)
-                    .padding(Space.sm),
-            )
+                    .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "닫기",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = color,
+                )
+            }
         }
     }
 }

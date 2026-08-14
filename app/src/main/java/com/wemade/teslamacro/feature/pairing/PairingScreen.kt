@@ -401,8 +401,8 @@ private fun StepIndicator(current: PairingStep) {
                         isPast -> T.Ok
                         else -> T.InkFaint
                     },
-                    // 옅은 틴트 위 Ok/InkFaint 글자는 대비 미달 — 글자만 진하게 분리
-                    textColor = if (isCurrent) T.Electric else T.InkMuted,
+                    // 옅은 틴트 위 밝은 글자는 대비 미달 — 글자만 진하게 분리 (매크로 목록과 동일 규칙)
+                    textColor = if (isCurrent) T.ElectricPressed else T.InkMuted,
                 )
             }
         }
@@ -560,7 +560,7 @@ private fun WarnNotice(body: String, modifier: Modifier = Modifier, label: Strin
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(T.Warn.copy(alpha = 0.12f), RoundedCornerShape(Radius.button))
+            .background(T.WarnFaint, RoundedCornerShape(Radius.button))
             .padding(Space.md),
     ) {
         if (label != null) {

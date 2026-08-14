@@ -57,7 +57,9 @@ class BootReceiver : BroadcastReceiver() {
             NOTIFICATION_ID,
             Notification.Builder(context, CHANNEL_ID)
                 .setContentTitle("음성 대기가 꺼져 있어요")
-                .setContentText("재부팅 후에는 자동으로 켤 수 없어요. 탭해서 다시 켜 주세요")
+                .setContentText("재부팅 후에는 자동으로 켤 수 없어요.\n탭해서 다시 켜 주세요")
+                // 접힌 알림은 첫 줄만 보이므로 펼치면 전체가 보이게 한다
+                .setStyle(Notification.BigTextStyle().bigText("재부팅 후에는 자동으로 켤 수 없어요.\n탭해서 다시 켜 주세요"))
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentIntent(openApp)
                 .setAutoCancel(true)

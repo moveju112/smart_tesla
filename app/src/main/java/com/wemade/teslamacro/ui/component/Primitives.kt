@@ -71,7 +71,7 @@ fun TButton(
     enabled: Boolean = true,
     fillWidth: Boolean = true,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    /** 카드 안 보조 액션용 소형(36dp). 주 동작 버튼은 기본(52dp)을 유지한다 */
+    /** 카드 안 보조 액션용 소형(44dp). 주 동작 버튼은 기본(52dp)을 유지한다 */
     small: Boolean = false,
     onClick: () -> Unit,
 ) {

@@ -632,6 +632,8 @@ private fun HeroCard(state: DashboardUiState) {
                 StatusPill(
                     text = if (state.isClimateOn) "공조 켜짐" else "공조 꺼짐",
                     color = if (state.isClimateOn) T.Cool else T.InkFaint,
+                    // 옅은 파랑 틴트 위 파랑 글자는 대비 미달 — 진한 파랑으로
+                    textColor = if (state.isClimateOn) T.ElectricPressed else T.InkMuted,
                 )
             }
 
@@ -703,9 +705,10 @@ private fun ConnectionHeader(
             )
             // 연결 상세 + 갱신 시각 + 자동화 상태를 캡션으로.
             // 항목마다 줄을 나눈다 — 난독증 사용자 기준 한 항목 = 한 줄
+            // 실패 사유엔 개행이 들어올 수 있어 캡션에선 공백으로 눌러 항목당 1줄을 보장한다
             Text(
                 text = listOf(
-                    state.connectionDetail,
+                    state.connectionDetail.replace('\n', ' '),
                     "갱신 ${state.lastUpdatedLabel}",
                     "자동화 ${state.automationLabel}",
                 ).joinToString("\n"),
@@ -716,7 +719,11 @@ private fun ConnectionHeader(
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusPill(text = state.connectionLabel, color = state.connectionColor)
+            StatusPill(
+                text = state.connectionLabel,
+                color = state.connectionColor,
+                textColor = state.connectionTextColor,
+            )
             if (state.link is LinkState.Failed) {
                 Spacer(Modifier.width(Space.sm))
                 TButton("다시 연결", ButtonTone.Ghost, fillWidth = false, onClick = onRetryConnect)
@@ -800,6 +807,14 @@ data class DashboardUiState(
     val connectionColor: Color
         get() = when (link) {
             is LinkState.Ready -> if (isSimulated) T.Warn else T.Ok
+            is LinkState.Failed -> T.Danger
+            else -> T.InkMuted
+        }
+
+    /** 배지 글자색 — 밝은 상태색(Warn/Ok)은 옅은 틴트 위에서 안 읽혀 진한 색으로 분리한다 */
+    val connectionTextColor: Color
+        get() = when (link) {
+            is LinkState.Ready -> if (isSimulated) T.WarnText else T.OkText
             is LinkState.Failed -> T.Danger
             else -> T.InkMuted
         }

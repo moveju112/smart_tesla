@@ -104,8 +104,9 @@ fun DiagLogPanel(
             Column(Modifier.horizontalScroll(rememberScrollState())) {
                 // 최근 것만 화면에 보인다. 복사는 전체가 담긴다
                 lines.takeLast(VISIBLE_LINES).forEach { line ->
+                    // 에러 메시지에 개행이 섞여도 로그는 한 항목 = 한 줄 (잘림 방지)
                     Text(
-                        text = line,
+                        text = line.replace('\n', ' '),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                         color = T.InkMuted,

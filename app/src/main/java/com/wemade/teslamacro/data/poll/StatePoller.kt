@@ -124,9 +124,11 @@ class StatePoller(
                     // 시도 자체가 30초 대기라 실질 청취 점유율은 30/35 ≈ 86%
                     val holdSeconds = if (reconnectStrikes <= 1) 0 else 5
                     reconnectHoldUntil = now() + holdSeconds * 1000L
-                    if (holdSeconds > 0) {
+                    // 시도마다 적으면 차에서 떨어져 있는 내내 버퍼를 밀어낸다 —
+                    // 백오프 진입 시 1회 + 100회마다 생존 신호만 남긴다
+                    if (reconnectStrikes == 2 || reconnectStrikes % 100 == 0) {
                         com.wemade.teslable.DiagLog.add(
-                            "재연결 백오프 ${holdSeconds}s (연속 ${reconnectStrikes}회 실패)"
+                            "재연결 대기 중 — 연속 ${reconnectStrikes}회 실패, ${holdSeconds}s 간격 재시도"
                         )
                     }
                 }

@@ -99,32 +99,38 @@ class TeslaClient(
         handshake(domain, session)
     }
 
-    /** VCSEC 도메인에 명령을 보낸다 (잠금·트렁크·리모트 시동) */
-    suspend fun sendToVcsec(message: Vcsec.UnsignedMessage): Vcsec.FromVCSECMessage {
-        val raw = execute(UniversalMessage.Domain.DOMAIN_VEHICLE_SECURITY, message.toByteArray())
+    /** VCSEC 도메인에 명령을 보낸다 (잠금·트렁크·리모트 시동). [quiet]는 주기 폴링용 — 전송 로그 생략 */
+    suspend fun sendToVcsec(
+        message: Vcsec.UnsignedMessage,
+        quiet: Boolean = false,
+    ): Vcsec.FromVCSECMessage {
+        val raw = execute(
+            UniversalMessage.Domain.DOMAIN_VEHICLE_SECURITY, message.toByteArray(), quiet,
+        )
         return Vcsec.FromVCSECMessage.parseFrom(raw)
     }
 
-    /** 인포테인먼트 도메인에 명령을 보낸다 (공조·시트·미디어·상태 읽기) */
-    suspend fun sendToInfotainment(actionBytes: ByteArray): ByteArray =
-        execute(UniversalMessage.Domain.DOMAIN_INFOTAINMENT, actionBytes)
+    /** 인포테인먼트 도메인에 명령을 보낸다 (공조·시트·미디어·상태 읽기). [quiet]는 주기 폴링용 */
+    suspend fun sendToInfotainment(actionBytes: ByteArray, quiet: Boolean = false): ByteArray =
+        execute(UniversalMessage.Domain.DOMAIN_INFOTAINMENT, actionBytes, quiet)
 
     /** 세션이 없거나 깨졌으면 다시 세우고 명령을 보낸다 */
     private suspend fun execute(
         domain: UniversalMessage.Domain,
         payload: ByteArray,
+        quiet: Boolean = false,
     ): ByteArray = requestLock.withLock {
         val session = session(domain)
         if (!session.isEstablished) handshake(domain, session)
 
         return@withLock try {
-            transmit(domain, session, payload)
+            transmit(domain, session, payload, quiet)
         } catch (retryable: SessionOutOfSyncException) {
             // 차량이 재부팅하면 epoch이 바뀐다. 한 번만 다시 세우고 재시도한다
             DiagLog.add("세션 어긋남(${retryable.message}) → 재핸드셰이크")
             session.invalidate()
             handshake(domain, session)
-            transmit(domain, session, payload)
+            transmit(domain, session, payload, quiet)
         }
     }
 
@@ -161,6 +167,7 @@ class TeslaClient(
         domain: UniversalMessage.Domain,
         session: DomainSession,
         payload: ByteArray,
+        quiet: Boolean = false,
     ): ByteArray {
         val uuid = ByteArray(16).also(random::nextBytes)
         val flags = 1 shl UniversalMessage.Flags.FLAG_ENCRYPT_RESPONSE.number
@@ -172,7 +179,8 @@ class TeslaClient(
             .setFlags(flags)
             .build()
 
-        DiagLog.add("명령 전송 ${domain.name} (${payload.size}B)")
+        // 주기 폴링(quiet)은 남기지 않는다 — 15초마다 2줄씩 쌓여 300줄 버퍼를 15분에 다 밀어낸다
+        if (!quiet) DiagLog.add("명령 전송 ${domain.name} (${payload.size}B)")
         val response = sendAndAwait(message.toByteArray(), uuid)
             ?: run {
                 DiagLog.add("명령 응답 없음 (${RESPONSE_TIMEOUT_MS}ms)")

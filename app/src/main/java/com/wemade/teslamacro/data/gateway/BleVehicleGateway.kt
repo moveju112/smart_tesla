@@ -63,12 +63,23 @@ class BleVehicleGateway(
 
         runCatching {
             _linkState.value = LinkState.Scanning
-            com.wemade.teslable.DiagLog.add("연결 시작 (검색 이름 ${com.wemade.teslable.TeslaBleSpec.bleLocalName(vin)})")
+            // 백그라운드 재시도는 몇 시간씩 같은 실패를 반복한다 — 직전과 같은 실패가
+            // 이어지는 동안은 시작·실패 로그를 생략해 버퍼(300줄)를 지킨다
+            val repeatAttempt = lastConnectFailure != null
+            if (!repeatAttempt) {
+                com.wemade.teslable.DiagLog.add(
+                    "연결 시작 (검색 이름 ${com.wemade.teslable.TeslaBleSpec.bleLocalName(vin)})"
+                )
+            }
 
             // 0. 전에 검증해 둔 차 주소가 있으면 스캔 없이 바로 붙는다. 제일 빠른 길
             val saved = settingsStore.settings.first().vehicleAddress
-            if (saved.isNotBlank()) com.wemade.teslable.DiagLog.add("저장된 주소로 직행 시도 $saved")
-            if (saved.isNotBlank() && connectSaved(saved)) {
+            if (saved.isNotBlank() && !repeatAttempt) {
+                com.wemade.teslable.DiagLog.add("저장된 주소로 직행 시도 $saved")
+            }
+            if (saved.isNotBlank() && connectSaved(saved, quiet = repeatAttempt)) {
+                lastConnectFailure = null
+                com.wemade.teslable.DiagLog.add("직행 연결 성공 $saved")
                 client = TeslaClient(context, link, vin)
                 _linkState.value = LinkState.Ready
                 return@runCatching
@@ -143,17 +154,27 @@ class BleVehicleGateway(
             client = TeslaClient(context, link, vin)
             _linkState.value = LinkState.Ready
         }.onFailure { throwable ->
-            com.wemade.teslable.DiagLog.add("연결 실패: ${throwable.message}")
+            // 같은 실패가 이어지면 첫 번째만 남긴다 — 원인이 바뀌는 순간은 반드시 남긴다
+            if (throwable.message != lastConnectFailure) {
+                com.wemade.teslable.DiagLog.add("연결 실패: ${throwable.message}")
+            }
+            lastConnectFailure = throwable.message ?: "연결 실패"
             _linkState.value = LinkState.Failed(throwable.message ?: "연결 실패")
             client = null
         }
     }
+
+    // 직전 백그라운드 연결 시도의 실패 사유 — 같은 실패의 반복 로그를 막는 기준.
+    // 성공하거나 사용자가 직접 연결을 시도하면 비운다
+    @Volatile
+    private var lastConnectFailure: String? = null
 
     /**
      * 스캔을 건너뛰고 주어진 주소로 곧바로 붙는다.
      * 테파일럿처럼 주소를 알면 광고를 기다릴 필요가 없다.
      */
     override suspend fun connectDirect(vin: String, address: String): Result<Unit> = connectMutex.withLock {
+        lastConnectFailure = null   // 사용자가 직접 시도했다 — 이번 결과는 조용히 넘기지 않는다
         if (link.isConnected && client != null) return@withLock Result.success(Unit)
         if (!scanner.isBluetoothReady) {
             _linkState.value = LinkState.Failed("블루투스가 꺼져 있어요")
@@ -190,11 +211,18 @@ class BleVehicleGateway(
      * 저장된 주소로 직행. 실패해도 치명적이지 않다 — 스캔 경로가 뒤에 있다.
      * 직접 연결과 같은 autoConnect 방식을 쓴다 — 그래야 최초 성공이 매번 재현된다.
      */
-    private suspend fun connectSaved(address: String): Boolean {
+    private suspend fun connectSaved(address: String, quiet: Boolean = false): Boolean {
         val device = scanner.deviceOf(address) ?: return false
-        val result = runCatching { link.connect(device, DIRECT_TIMEOUT_MS, autoConnect = true) }
+        val result = runCatching {
+            link.connect(device, DIRECT_TIMEOUT_MS, autoConnect = true, quiet = quiet)
+        }
         if (result.isFailure) {
-            com.wemade.teslable.DiagLog.add("직행 실패(${result.exceptionOrNull()?.message}) → 스캔으로 전환")
+            // 반복 재시도(quiet) 중에는 같은 실패를 다시 적지 않는다
+            if (!quiet) {
+                com.wemade.teslable.DiagLog.add(
+                    "직행 실패(${result.exceptionOrNull()?.message}) → 스캔으로 전환"
+                )
+            }
             link.close()
         }
         return result.isSuccess
@@ -321,38 +349,38 @@ class BleVehicleGateway(
 
         return runCatching {
             when (category) {
-                // VCSEC은 차가 자고 있어도 응답한다
+                // VCSEC은 차가 자고 있어도 응답한다. 주기 폴링이라 전송 로그는 생략(quiet)
                 StateCategory.BODY_CONTROLLER, StateCategory.CLOSURES -> {
-                    val response =
-                        active.sendToVcsec(CommandEncoder.encodeBodyControllerStateRequest())
+                    val response = active.sendToVcsec(
+                        CommandEncoder.encodeBodyControllerStateRequest(), quiet = true,
+                    )
                     SnapshotDecoder.fromVcsecStatus(response, now)
                 }
 
                 StateCategory.CLIMATE -> {
                     val bytes = active.sendToInfotainment(
-                        CommandEncoder.encodeClimateStateRequest().toByteArray()
+                        CommandEncoder.encodeClimateStateRequest().toByteArray(), quiet = true,
                     )
                     SnapshotDecoder.fromClimateResponse(bytes, now).also {
-                        com.wemade.teslable.DiagLog.add(
-                            "CLIMATE 파싱 (${bytes.size}B) → 실내=${it.insideTempC} 외부=${it.outsideTempC} 공조=${it.isClimateOn}"
+                        logParsedIfChanged(
+                            category,
+                            "CLIMATE → 실내=${it.insideTempC} 외부=${it.outsideTempC} 공조=${it.isClimateOn}",
                         )
                     }
                 }
 
                 StateCategory.CHARGE -> {
                     val bytes = active.sendToInfotainment(
-                        CommandEncoder.encodeChargeStateRequest().toByteArray()
+                        CommandEncoder.encodeChargeStateRequest().toByteArray(), quiet = true,
                     )
                     SnapshotDecoder.fromChargeResponse(bytes, now).also {
-                        com.wemade.teslable.DiagLog.add(
-                            "CHARGE 파싱 (${bytes.size}B) → 배터리=${it.batteryLevelPercent}"
-                        )
+                        logParsedIfChanged(category, "CHARGE → 배터리=${it.batteryLevelPercent}")
                     }
                 }
 
                 StateCategory.DRIVE -> {
                     val bytes = active.sendToInfotainment(
-                        CommandEncoder.encodeDriveStateRequest().toByteArray()
+                        CommandEncoder.encodeDriveStateRequest().toByteArray(), quiet = true,
                     )
                     SnapshotDecoder.fromDriveResponse(bytes, now)
                 }
@@ -360,6 +388,15 @@ class BleVehicleGateway(
         }.onFailure {
             com.wemade.teslable.DiagLog.add("$category 읽기 실패: ${it.message}")
         }
+    }
+
+    // 파싱 결과는 값이 바뀔 때만 남긴다 — "배터리=99"를 15초마다 반복하면
+    // 300줄 버퍼에서 연결·매크로 로그를 밀어낸다
+    private val lastParsedLog = mutableMapOf<StateCategory, String>()
+    private fun logParsedIfChanged(category: StateCategory, summary: String) {
+        if (lastParsedLog[category] == summary) return
+        lastParsedLog[category] = summary
+        com.wemade.teslable.DiagLog.add(summary)
     }
 
     private companion object {

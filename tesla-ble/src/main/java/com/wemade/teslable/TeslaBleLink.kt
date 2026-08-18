@@ -96,11 +96,13 @@ class TeslaBleLink(private val context: Context) {
         device: BluetoothDevice,
         timeoutMillis: Long = CONNECT_TIMEOUT_MS,
         autoConnect: Boolean = false,
+        /** 반복 재시도용 — 시도 로그를 생략한다 (성공·끊김 로그는 그대로 남는다) */
+        quiet: Boolean = false,
     ) {
         // 끊김 콜백의 정리(close)와 재연결 시도가 경합하면 이전 껍데기가 남아 있을 수 있다.
         // 예외로 한 사이클을 버리는 대신 여기서 치우고 새로 연다
         if (gatt != null) {
-            DiagLog.add("이전 GATT 잔재 정리 후 재연결")
+            if (!quiet) DiagLog.add("이전 GATT 잔재 정리 후 재연결")
             close()
         }
         val deferred = CompletableDeferred<Unit>()
@@ -108,7 +110,9 @@ class TeslaBleLink(private val context: Context) {
         reassembler.reset()
         dead = false   // 새 연결의 생사는 새로 판정한다
 
-        DiagLog.add("GATT 접속 시도 ${device.address}" + if (autoConnect) " (autoConnect)" else "")
+        if (!quiet) {
+            DiagLog.add("GATT 접속 시도 ${device.address}" + if (autoConnect) " (autoConnect)" else "")
+        }
         gatt = device.connectGatt(context, autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
         try {
             withTimeout(timeoutMillis) { deferred.await() }
@@ -319,9 +323,8 @@ class TeslaBleLink(private val context: Context) {
     private fun handleIncoming(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid != TeslaBleSpec.RX_CHARACTERISTIC_UUID) return
         reassembler.push(value)?.let {
-            // 완성된 응답이 실제로 도착하는지 눈으로 본다. 응답 자체가 안 오는지,
-            // 오는데 매칭에서 버려지는지를 가른다
-            DiagLog.add("응답 수신 ${it.size}B")
+            // 프레임별 "응답 수신" 로그는 지웠다 — 차량 상태 방송(41B 등)이 초당 여러 줄
+            // 쌓여 버퍼를 밀어낸다. 응답 유무 진단은 "명령 응답 없음"(타임아웃)이 담당한다
             _incoming.tryEmit(it)
         }
     }

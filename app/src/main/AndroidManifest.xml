@@ -22,6 +22,9 @@
     <!-- GitHub 릴리스에서 새 버전 확인용. 차량 제어(BLE)는 인터넷을 쓰지 않는다 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 원클릭 업데이트: 받은 APK로 설치 화면을 바로 띄운다. 최초 1회 "이 출처 허용"만 필요 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- 매크로 "출발지 근처" 조건용. 위치 조건을 추가할 때만 요청한다 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -95,6 +98,17 @@
             android:name=".service.VoiceService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- 다운로드한 업데이트 APK를 시스템 설치기에 넘기는 통로 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <receiver
             android:name=".service.BootReceiver"

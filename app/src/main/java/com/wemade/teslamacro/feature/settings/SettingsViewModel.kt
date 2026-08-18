@@ -92,6 +92,64 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * 원클릭 업데이트: APK를 앱 캐시로 내려받아 시스템 설치 화면을 바로 띄운다.
+     * 브라우저·알림·파일 앱을 거치지 않는다. 남는 조작은 설치 화면의 "설치" 탭 1번뿐.
+     */
+    fun downloadAndInstall() {
+        // 진행 중 재진입 방지 — 버튼이 비활성이긴 하지만 상태 꼬임을 원천 차단한다
+        val target = update.value as? UpdateState.Available ?: return
+        update.value = UpdateState.Downloading(target.version, percent = 0)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                // 1. 캐시로 다운로드 (진행률 갱신)
+                val file = java.io.File(container.appContext.cacheDir, "update.apk")
+                val connection = java.net.URL(target.apkUrl).openConnection()
+                    as java.net.HttpURLConnection
+                connection.connectTimeout = 10_000
+                connection.readTimeout = 30_000
+                val total = connection.contentLengthLong
+                connection.inputStream.use { input ->
+                    file.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            copied += read
+                            if (total > 0) {
+                                update.value = UpdateState.Downloading(
+                                    target.version,
+                                    percent = (copied * 100 / total).toInt(),
+                                )
+                            }
+                        }
+                    }
+                }
+                // 2. FileProvider URI로 시스템 설치기 호출
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    container.appContext,
+                    "${container.appContext.packageName}.fileprovider",
+                    file,
+                )
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_ACTIVITY_NEW_TASK,
+                    )
+                }
+                container.appContext.startActivity(intent)
+                // 3. 설치를 취소하고 돌아와도 다시 누를 수 있게 "새 버전 있음"으로 되돌린다
+                update.value = target
+            }.getOrElse {
+                // 실패해도 다시 누르면 재시도되도록 상태만 표시한다
+                update.value = target.copy(downloadFailed = true)
+            }
+        }
+    }
+
     // 점 구분 숫자 버전 비교 — 숫자 아닌 접미사("-beta")는 무시하고 자리별 수치로 판정한다
     private fun isNewer(latest: String, current: String): Boolean {
         if (latest.isBlank()) return false
@@ -151,6 +209,14 @@ sealed interface UpdateState {
     data object UpToDate : UpdateState
     data object Failed : UpdateState
 
-    /** 새 버전이 있다. [apkUrl]을 브라우저로 열면 바로 내려받는다 */
-    data class Available(val version: String, val apkUrl: String) : UpdateState
+    /** 새 버전이 있다. 설치 버튼이 [apkUrl]을 앱이 직접 내려받는다 */
+    data class Available(
+        val version: String,
+        val apkUrl: String,
+        /** 직전 다운로드가 실패했다 — 같은 버튼으로 재시도 */
+        val downloadFailed: Boolean = false,
+    ) : UpdateState
+
+    /** APK 내려받는 중. [percent]는 0~100 */
+    data class Downloading(val version: String, val percent: Int) : UpdateState
 }

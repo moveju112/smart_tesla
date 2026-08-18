@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.voice.VoiceModelState
@@ -57,6 +56,7 @@ fun SettingsScreen(
     voice: VoiceControls? = null,
     update: UpdateState? = null,
     onCheckUpdate: () -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -179,16 +179,15 @@ fun SettingsScreen(
         }
 
         SectionHeader("업데이트")
-        UpdatePanel(update = update, onCheck = onCheckUpdate)
+        UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
 
         Spacer(Modifier.height(Space.xxl))
     }
 }
 
-/** 현재 버전 표시 + GitHub 최신 릴리스 확인/다운로드 */
+/** 현재 버전 표시 + GitHub 최신 릴리스 확인/원클릭 설치 */
 @Composable
-private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit) {
-    val context = LocalContext.current
+private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: () -> Unit) {
     TCard {
         LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
         Spacer(Modifier.height(Space.md))
@@ -201,36 +200,37 @@ private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit) {
                     is UpdateState.Checking -> "확인 중…"
                     is UpdateState.UpToDate -> "최신 버전이에요."
                     is UpdateState.Failed -> "확인에 실패했어요.\n인터넷 연결을 봐주세요."
-                    is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
+                    is UpdateState.Available ->
+                        if (update.downloadFailed) "다운로드에 실패했어요.\n다시 눌러 주세요."
+                        else "새 버전 ${update.version}이 있어요!"
+                    is UpdateState.Downloading -> "내려받는 중… ${update.percent}%"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = when (update) {
                     is UpdateState.Failed -> T.WarnText
-                    is UpdateState.Available -> T.Ink
+                    is UpdateState.Available ->
+                        if (update.downloadFailed) T.WarnText else T.Ink
+                    is UpdateState.Downloading -> T.Ink
                     else -> T.InkFaint
                 },
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Space.md))
-            if (update is UpdateState.Available) {
-                // 브라우저가 APK를 바로 내려받는다. 받은 뒤 알림에서 설치
-                TButton("다운로드", fillWidth = false, small = true) {
-                    context.startActivity(
-                        android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse(update.apkUrl),
-                        )
+            when (update) {
+                // 앱이 직접 내려받아 설치 화면까지 띄운다. 남는 조작은 "설치" 탭 1번
+                is UpdateState.Available ->
+                    TButton("설치", fillWidth = false, small = true, onClick = onInstall)
+                is UpdateState.Downloading ->
+                    TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
+                else ->
+                    TButton(
+                        text = "업데이트 확인",
+                        tone = ButtonTone.Secondary,
+                        fillWidth = false,
+                        small = true,
+                        enabled = update !is UpdateState.Checking,
+                        onClick = onCheck,
                     )
-                }
-            } else {
-                TButton(
-                    text = "업데이트 확인",
-                    tone = ButtonTone.Secondary,
-                    fillWidth = false,
-                    small = true,
-                    enabled = update !is UpdateState.Checking,
-                    onClick = onCheck,
-                )
             }
         }
     }

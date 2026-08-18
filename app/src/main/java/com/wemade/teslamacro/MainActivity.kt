@@ -286,6 +286,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         ),
                         update = update,
                         onCheckUpdate = settingsViewModel::checkUpdate,
+                        onDownloadUpdate = settingsViewModel::downloadAndInstall,
                     )
                 }
             }

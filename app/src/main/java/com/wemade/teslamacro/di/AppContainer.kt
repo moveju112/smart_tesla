@@ -25,6 +25,9 @@ class AppContainer(private val context: Context) {
     /** 앱 생애주기 스코프. 서비스가 죽어도 상태는 유지된다 */
     val appScope = CoroutineScope(SupervisorJob()) + Dispatchers.Default
 
+    /** ViewModel에서 파일 저장·인텐트 발사가 필요할 때 쓰는 앱 컨텍스트 */
+    val appContext: Context = context.applicationContext
+
     val settingsStore = SettingsStore(context)
     val seatStore = com.wemade.teslamacro.data.settings.SeatStore(context)
 

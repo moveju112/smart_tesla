@@ -6,6 +6,7 @@ import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.ConditionEvaluator
 import com.wemade.teslamacro.domain.macro.GeoPoint
 import com.wemade.teslamacro.domain.macro.MacroEngine
 import com.wemade.teslamacro.domain.macro.MacroRunner
@@ -235,7 +236,9 @@ class StatePoller(
                     onBlocked = { rule, unmet ->
                         com.wemade.teslable.DiagLog.add(
                             "매크로 [${rule.name}] 보류 — " +
-                                unmet.joinToString(", ") { describe(it) } + " 불충족"
+                                unmet.joinToString(", ") {
+                                    describe(it) + blockedDetail(it, current)
+                                } + " 불충족"
                         )
                     },
                 ).forEach { rule ->
@@ -330,6 +333,17 @@ class StatePoller(
             com.wemade.teslable.DiagLog.add("위치 읽기 실패 — 위치 조건은 불충족으로 처리")
         }
         return locationCache
+    }
+
+    // 위치 조건이 막았을 땐 "얼마나 벗어났는지"까지 남긴다 — 반경 조정 판단의 근거가 된다.
+    // 좌표 원문은 남기지 않는다 (진단 로그는 공유되는 개인정보 통로다)
+    private fun blockedDetail(condition: Condition, reading: Reading): String {
+        if (condition !is Condition.NearLocation) return ""
+        val here = reading.location ?: return " (위치 정보 없음)"
+        val lat = condition.latitude ?: return " (저장 위치 없음)"
+        val lng = condition.longitude ?: return " (저장 위치 없음)"
+        val meters = ConditionEvaluator.distanceMeters(here.latitude, here.longitude, lat, lng)
+        return " (거리 ${meters.toInt()}m / 반경 ${condition.radiusMeters}m)"
     }
 
     /** 켜져 있는 매크로 중 위치 조건(조건 또는 조건 대기)을 쓰는 게 하나라도 있는지 */

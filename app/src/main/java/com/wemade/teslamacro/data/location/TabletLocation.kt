@@ -24,19 +24,42 @@ class TabletLocation(private val context: Context) {
 
     /** 권한이 없거나 측위에 실패하면 null — 조건 평가는 null을 불충족으로 본다 */
     suspend fun read(): GeoPoint? {
-        if (!hasPermission()) return null
+        if (!hasPermission()) {
+            logOutcome("권한없음", "위치 권한 없음 — 위치 조건 사용 불가")
+            return null
+        }
         val manager = context.getSystemService(LocationManager::class.java) ?: return null
 
         return runCatching {
             // 1. 최근 위치가 신선하면 그대로 쓴다 — 지하주차장은 새 측위가 안 된다
             val cached = lastKnown(manager)
-            if (cached != null && ageMillis(cached) < FRESH_MILLIS) return cached.toPoint()
+            if (cached != null && ageMillis(cached) < FRESH_MILLIS) {
+                logOutcome("최근위치", "최근 위치 사용 (${ageMillis(cached) / 60_000}분 전)")
+                return cached.toPoint()
+            }
 
             // 2. 새로 한 번 측위. 실패하면 오래된 최근 위치라도 쓴다 —
             //    차에 거치된 태블릿의 마지막 위치는 대개 차가 있는 곳이다
             val fresh = withTimeoutOrNull(FIX_TIMEOUT_MILLIS) { requestOnce(manager) }
+            when {
+                fresh != null ->
+                    logOutcome("신규", "새 측위 성공 (${fresh.provider}, 정확도 ${fresh.accuracy.toInt()}m)")
+                cached != null ->
+                    logOutcome("대체", "새 측위 실패 → ${ageMillis(cached) / 60_000}분 전 위치로 대체")
+                else ->
+                    logOutcome("실패", "측위 실패 — 사용할 위치 없음")
+            }
             (fresh ?: cached)?.toPoint()
         }.getOrNull()
+    }
+
+    // 같은 결과가 반복될 땐 침묵한다 — 매 측위(주행 중 분당 1회)를 다 남기면
+    // 진단 로그 300줄 버퍼에서 BLE 로그를 밀어낸다. 좌표 원문은 남기지 않는다(개인 위치정보)
+    private var lastOutcomeKey: String? = null
+    private fun logOutcome(key: String, message: String) {
+        if (key == lastOutcomeKey) return
+        lastOutcomeKey = key
+        com.wemade.teslable.DiagLog.add("측위: $message")
     }
 
     /**

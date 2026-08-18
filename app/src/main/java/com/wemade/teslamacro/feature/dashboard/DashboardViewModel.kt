@@ -135,6 +135,9 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             stealthCharging = settings.stealthCharging,
             automationEnabled = settings.automationEnabled,
             runningMacroCount = container.runner.running.value.size,
+            rangeKm = effective.rangeKm?.toInt(),
+            // 열린 문만 추린다. 다 닫혀 있으면 빈 목록 = 화면은 "모두 닫힘"
+            openings = effective.doorOpen.filterValues { it }.keys.map { it.label },
         )
     }.stateIn(
         scope = viewModelScope,

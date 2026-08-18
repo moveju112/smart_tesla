@@ -24,8 +24,9 @@ import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
  * 여기서 값을 손으로 넣으면 실제 앱과 다른 그림이 나와 테스트가 거짓말을 한다.
  */
 @Composable
-fun AppFrame(selected: Destination, content: @Composable () -> Unit) {
-    TeslaMacroTheme {
+fun AppFrame(selected: Destination, dark: Boolean = false, content: @Composable () -> Unit) {
+    // 스냅샷은 시계에 흔들리면 안 된다 — 낮/밤을 자동 판정에 맡기지 않고 못 박는다
+    TeslaMacroTheme(dark = dark) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(T.Void)) {
             val pane = Pane.of(maxWidth)
             CompositionLocalProvider(LocalPane provides pane) {
@@ -47,8 +48,8 @@ fun AppFrame(selected: Destination, content: @Composable () -> Unit) {
 
 /** 내비게이션 없이 화면 전체를 차지하는 배치 (등록·스플래시) */
 @Composable
-fun FullScreenFrame(content: @Composable () -> Unit) {
-    TeslaMacroTheme {
+fun FullScreenFrame(dark: Boolean = false, content: @Composable () -> Unit) {
+    TeslaMacroTheme(dark = dark) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(T.Void)) {
             CompositionLocalProvider(LocalPane provides Pane.of(maxWidth)) {
                 Box(modifier = Modifier.fillMaxSize()) { content() }

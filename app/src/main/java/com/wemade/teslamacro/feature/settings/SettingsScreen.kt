@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.ui.component.ButtonTone
@@ -60,6 +62,7 @@ fun SettingsScreen(
     onCheckUpdate: () -> Unit = {},
     onDownloadUpdate: () -> Unit = {},
 ) {
+    val compact = LocalPane.current.isCompact
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -68,6 +71,11 @@ fun SettingsScreen(
     ) {
         Text("설정", style = MaterialTheme.typography.headlineMedium, color = T.Ink)
 
+        // 가로 태블릿에서 한 칸으로 쌓으면 폭의 절반이 비고 스크롤만 길어진다.
+        // 자주 만지는 것(자동화·폴링)을 왼쪽에, 어쩌다 보는 것(차량·업데이트)을 오른쪽에 둔다
+        TwoColumns(
+            compact = compact,
+            left = {
         // 차량 미등록 상태에서만 나온다. 매크로를 실제로 발동시켜볼 유일한 방법
         if (simulator != null) {
             SectionHeader("시뮬레이터")
@@ -133,6 +141,8 @@ fun SettingsScreen(
             )
         }
 
+            },
+            right = {
         // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다.
         // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 폴링 주기·토글 상태를 알 수 없다
         // 제목은 다른 섹션과 같이 카드 밖 SectionHeader로 — 패널 내부 제목은 끈다
@@ -182,8 +192,27 @@ fun SettingsScreen(
 
         SectionHeader("업데이트")
         UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
+            },
+        )
 
         Spacer(Modifier.height(Space.xxl))
+    }
+}
+
+/** 넓으면 좌우 두 칸, 좁으면 위아래 한 칸. 설정처럼 카드가 줄줄이 쌓이는 화면용 */
+@Composable
+private fun TwoColumns(
+    compact: Boolean,
+    left: @Composable ColumnScope.() -> Unit,
+    right: @Composable ColumnScope.() -> Unit,
+) {
+    if (compact) {
+        Column { left(); right() }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.xl)) {
+            Column(modifier = Modifier.weight(1f)) { left() }
+            Column(modifier = Modifier.weight(1f)) { right() }
+        }
     }
 }
 

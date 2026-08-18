@@ -51,8 +51,10 @@ val TeslaTypography = Typography(
         fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 14.sp, lineHeight = 18.sp,
         letterSpacing = (-0.1).sp,
     ),
+    // 타일 라벨 — 값이 주인공이라 라벨은 작고 자간을 넓혀 '이름표'처럼 물러선다
     labelSmall = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W500, fontSize = 12.sp, lineHeight = 16.sp,
+        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 12.sp, lineHeight = 16.sp,
+        letterSpacing = 0.6.sp,
     ),
 )
 
@@ -63,4 +65,27 @@ val MetricTextStyle = TextStyle(
     fontSize = 48.sp,
     lineHeight = 54.sp,
     letterSpacing = (-1.2).sp,
+)
+
+/**
+ * 타일 값 — 라벨(12sp)과 3배 가까이 벌린다.
+ *
+ * 이 화면의 성격은 서체가 아니라 이 낙차가 만든다. 계기판처럼 값만 먼저 눈에 꽂히고
+ * 라벨은 필요할 때만 읽히게 하려는 것.
+ */
+val TileValueStyle = TextStyle(
+    fontFamily = Sans,
+    fontWeight = FontWeight.W700,
+    fontSize = 34.sp,
+    lineHeight = 40.sp,
+    letterSpacing = (-0.8).sp,
+)
+
+/** 히어로 타일(실내 온도) 전용. 가장 멀리서도 읽혀야 하는 단 하나의 값 */
+val TileValueStyleLarge = TextStyle(
+    fontFamily = Sans,
+    fontWeight = FontWeight.W700,
+    fontSize = 64.sp,
+    lineHeight = 70.sp,
+    letterSpacing = (-2).sp,
 )

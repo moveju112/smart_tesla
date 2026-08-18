@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.ui.graphics.toArgb
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -91,6 +92,20 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Compose가 그리기 전 첫 프레임과 상태바 아이콘도 낮/밤을 따라야 한다.
+        // 안 맞추면 밤에 앱을 열 때마다 흰 화면이 한 번 번쩍인다
+        val night = com.wemade.teslamacro.ui.theme.isNightNow()
+        val palette = if (night) {
+            com.wemade.teslamacro.ui.theme.DarkPalette
+        } else {
+            com.wemade.teslamacro.ui.theme.LightPalette
+        }
+        window.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(palette.void.toArgb())
+        )
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            .isAppearanceLightStatusBars = !night
         requestRuntimePermissions()
 
         val app = application as TeslaMacroApplication

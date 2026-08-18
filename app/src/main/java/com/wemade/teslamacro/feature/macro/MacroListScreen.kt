@@ -85,6 +85,11 @@ fun MacroListScreen(
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 이름별 마지막 실행 시각. 목록에서 진짜 궁금한 건 "언제 마지막으로 뛰었나"다
+    val lastRunByName = remember(log) {
+        log.groupBy { it.ruleName }.mapValues { (_, entries) -> entries.maxOf { it.timestampMillis } }
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 420.dp),
         modifier = modifier.fillMaxSize().padding(horizontal = Space.lg),
@@ -138,6 +143,7 @@ fun MacroListScreen(
             MacroCard(
                 rule = rule,
                 isRunning = rule.id in runningIds,
+                lastRunMillis = lastRunByName[rule.name],
                 progress = progress[rule.id],
                 onToggle = { onToggle(rule.id, it) },
                 onRunNow = { onRunNow(rule) },
@@ -169,6 +175,7 @@ fun MacroListScreen(
 private fun MacroCard(
     rule: MacroRule,
     isRunning: Boolean,
+    lastRunMillis: Long?,
     progress: MacroProgress?,
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit,
@@ -225,57 +232,14 @@ private fun MacroCard(
 
         Spacer(Modifier.height(Space.md))
 
-        // 동작 순서를 나열하되, 실행 중이 아니면 4줄에서 접는다 — 카드는 요약이지 명세서가 아니다
-        val visible = if (isRunning) rule.actions.size else minOf(rule.actions.size, MAX_STEP_LINES)
-        rule.actions.take(visible).forEachIndexed { index, step ->
-            val isCurrent = isRunning && progress?.stepIndex == index
-            Row(
-                modifier = Modifier.padding(vertical = Space.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // 텍스트 글리프(▶)는 폰트 따라 이모지로 렌더될 수 있어 벡터 아이콘으로
-                if (isCurrent) {
-                    Box(modifier = Modifier.width(stepNumberWidth)) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            tint = T.Electric,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
-                } else {
-                    Text(
-                        text = "${index + 1}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = T.InkFaint,
-                        modifier = Modifier.width(stepNumberWidth),
-                    )
-                }
-                Text(
-                    text = when (step) {
-                        is ActionStep.Run -> step.command.label
-                        is ActionStep.Wait -> "${formatDuration(step.seconds)} 대기"
-                        is ActionStep.WaitUntil ->
-                            "${describe(step.condition)}까지 대기 (최대 ${formatDuration(step.timeoutSeconds)})"
-                        is ActionStep.Navigate -> "${step.destinationName} 안내 시작"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = when {
-                        isCurrent -> T.Ink
-                        step is ActionStep.Run -> T.InkMuted
-                        else -> T.InkFaint
-                    },
-                )
-            }
-        }
-        if (rule.actions.size > visible) {
-            Text(
-                text = "외 ${rule.actions.size - visible}개 동작",
-                style = MaterialTheme.typography.labelSmall,
-                color = T.InkFaint,
-                modifier = Modifier.padding(start = stepNumberWidth, top = Space.xs),
-            )
-        }
+        // 단계 목록은 편집 화면 내용이라 카드에서 뺐다. 목록에서 궁금한 건
+        // "무엇을 하는가"가 아니라 "제대로 돌고 있는가"다
+        Text(
+            text = "동작 ${rule.actions.size}개 · ${lastRunLabel(lastRunMillis)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = T.InkFaint,
+            modifier = Modifier.padding(top = Space.sm),
+        )
 
         Spacer(Modifier.height(Space.md))
         Row(
@@ -363,8 +327,21 @@ private fun MacroCard(
     }
 }
 
-/** 접기 전 보여줄 동작 줄 수 */
-private const val MAX_STEP_LINES = 4
+/** "마지막 실행 …" 문구. 오래된 건 날짜로, 최근 건 상대 시간으로 */
+private fun lastRunLabel(millis: Long?): String {
+    if (millis == null) return "실행된 적 없음"
+    val elapsed = System.currentTimeMillis() - millis
+    val minutes = elapsed / 60_000
+    return when {
+        minutes < 1 -> "방금 실행"
+        minutes < 60 -> "${minutes}분 전 실행"
+        minutes < 24 * 60 -> "${minutes / 60}시간 전 실행"
+        minutes < 48 * 60 -> "어제 실행"
+        // 아주 오래된 값은 날짜 수가 의미 없다 — 자릿수만 늘어나 읽기 방해된다
+        minutes < 30 * 24 * 60 -> "${minutes / (24 * 60)}일 전 실행"
+        else -> "한참 전 실행"
+    }
+}
 
 /** 스텝 번호·현재 표시 칼럼 고정 폭 — 토큰 밖 값이라 이름 붙여 한곳에서 관리 */
 private val stepNumberWidth = 20.dp

@@ -81,6 +81,8 @@ private fun AirflowMark(modifier: Modifier = Modifier) {
         label = "phase",
     )
 
+    // 그리기 람다 안에서는 색 토큰을 못 읽는다 — 바깥에서 꺼내 둔다
+    val markColor = T.Electric
     Canvas(modifier = modifier.size(width = 88.dp, height = 56.dp)) {
         val lineCount = 3
         val gap = size.height / (lineCount + 1)
@@ -95,7 +97,7 @@ private fun AirflowMark(modifier: Modifier = Modifier) {
             // 화면 밖으로 나가는 구간은 서서히 사라지게 한다
             val fade = 1f - kotlin.math.abs(offset - 0.5f) * 1.6f
             drawLine(
-                color = T.Electric.copy(alpha = fade.coerceIn(0f, 1f)),
+                color = markColor.copy(alpha = fade.coerceIn(0f, 1f)),
                 start = Offset(startX.coerceAtLeast(0f), y),
                 end = Offset((startX + length).coerceAtMost(size.width), y),
                 // 픽셀 리터럴은 고밀도 화면에서 실처럼 얇아진다 — dp 기준으로 굵기 고정

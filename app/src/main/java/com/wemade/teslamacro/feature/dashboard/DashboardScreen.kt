@@ -3,81 +3,65 @@ package com.wemade.teslamacro.feature.dashboard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AcUnit
-import androidx.compose.material.icons.rounded.DirectionsCar
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.Luggage
-import androidx.compose.material.icons.rounded.VerticalAlignBottom
-import androidx.compose.material.icons.rounded.VerticalAlignTop
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.model.Level
-import com.wemade.teslamacro.domain.model.SeatPosition
-import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatClimate
+import com.wemade.teslamacro.domain.model.SeatMode
+import com.wemade.teslamacro.domain.model.SeatPosition
+import com.wemade.teslamacro.ui.component.BreathingBar
 import com.wemade.teslamacro.ui.component.ButtonTone
+import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.IndeterminateBar
 import com.wemade.teslamacro.ui.component.InlineBanner
 import com.wemade.teslamacro.ui.component.LevelSelector
-import com.wemade.teslamacro.ui.component.SectionHeader
-import com.wemade.teslamacro.ui.component.Hairline
-import com.wemade.teslamacro.ui.component.SkeletonBlock
+import com.wemade.teslamacro.ui.component.NumberStepper
+import com.wemade.teslamacro.ui.component.PickerSheet
 import com.wemade.teslamacro.ui.component.StatusPill
-import com.wemade.teslamacro.ui.component.softShadow
+import com.wemade.teslamacro.ui.component.StatusTile
 import com.wemade.teslamacro.ui.component.TButton
-import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.component.TileTone
 import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
-import com.wemade.teslamacro.ui.theme.Radius
-import com.wemade.teslamacro.ui.theme.MetricTextStyle
-import com.wemade.teslamacro.ui.theme.Elevation
+import com.wemade.teslamacro.ui.theme.ColorRole
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
+/** 지금 열려 있는 조작 시트. 홈은 읽기만 하고, 조작은 전부 여기로 내려간다 */
+private enum class Sheet { NONE, CLIMATE, LOCK, CHARGE, SEAT_LEFT, SEAT_RIGHT, OPENINGS }
+
 /**
- * 제어 화면 — 0.7.0 리디자인.
+ * 제어 화면 — 계기판이지 조작판이 아니다.
  *
- * "차에 타서 3초 안에 원하는 걸 누른다"가 목표.
- * 세로(폰) 기준: 상태 히어로 → 바로 아래 퀵액션 그리드 → 공조 → 시트.
- * 이전 버전의 "상태" 카드는 없앴다 — 배터리·잠금은 히어로로, 갱신·자동화는 헤더 캡션으로.
+ * 이 화면은 대부분의 시간 동안 아무도 안 만진다. 매크로가 알아서 다 하기 때문이다.
+ * 그래서 목표는 "빨리 누르기"가 아니라 **"안 만지고 알아채기"** 다:
+ *
+ * - 스크롤이 없다. 차에 고정된 화면에서 스크롤은 못 본 정보를 만든다
+ * - 값이 크고 라벨이 작다. 위치가 고정이라 라벨은 한 번만 읽으면 된다
+ * - **정상이면 무채색이다.** 색은 차가 일하는 중이거나 사람이 봐야 할 때만 쓴다.
+ *   그래야 글자를 안 읽어도 "색이 없다 = 괜찮다"를 안다
+ * - 조작은 전부 타일을 눌러야 나온다. 홈에 버튼을 늘어놓지 않는다
  */
 @Composable
 fun DashboardScreen(
@@ -90,666 +74,481 @@ fun DashboardScreen(
     onStealthCharging: (Boolean) -> Unit = {},
 ) {
     val compact = LocalPane.current.isCompact
+    var sheet by remember { mutableStateOf(Sheet.NONE) }
 
     Column(modifier = modifier.fillMaxSize()) {
-
-        // 명령이 오가는 동안 화면 맨 위에 얇은 선이 흐른다. 누른 게 먹었는지 즉시 안다
+        // 명령이 오가는 동안 맨 위에 얇은 선이 흐른다. 누른 게 먹었는지 즉시 안다
         IndeterminateBar(active = state.isBusy)
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(
-                    horizontal = if (compact) Space.md else Space.lg,
-                    vertical = Space.lg,
-                ),
+                .padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
         ) {
-            ConnectionHeader(state, onRetryConnect)
-
-            Spacer(Modifier.height(Space.md))
+            StatusBand(state, onRetryConnect)
             InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
+            Spacer(Modifier.height(Space.md))
 
-            // 좁으면 한 단 스크롤, 넓으면 좌우 두 단.
-            // 폰에서 두 단을 유지하면 세그먼트 버튼이 손가락보다 좁아진다
-            TwoPane(
-                compact = compact,
-                modifier = Modifier.fillMaxSize().padding(top = Space.sm),
-                first = {
-                    HeroCard(state)
-
-                    Spacer(Modifier.height(Space.md))
-                    QuickActionGrid(state, onCommand, columns = if (compact) 3 else 2)
-
-                    // 넓은 화면에선 충전을 왼단에 — 오른단(공조+시트)과 단 길이 균형을 맞춘다
-                    if (!compact) {
-                        SectionHeader("충전")
-                        ChargeCard(state, onCommand, onStealthCharging)
-                    }
-                },
-                second = {
-                    // 단 맨 위 헤더는 위 여백 0 — 왼단 히어로와 시작선을 맞춘다
-                    SectionHeader("공조", topPadding = if (compact) Space.lg else 0.dp)
-                    ClimateCard(state, onCommand)
-
-                    SectionHeader("시트")
-                    TCard {
-                        // 운전석/동승석은 따로. 통풍이냐 열선이냐만 토글 하나로 합친다
-                        SeatControl(
-                            seatLabel = "운전석",
-                            climate = state.seatClimate[SeatPosition.FRONT_LEFT] ?: SeatClimate(),
-                            enabled = state.isReady,
-                            pending = state.pendingSeat == SeatPosition.FRONT_LEFT,
-                            onChange = { mode, level ->
-                                onSeatClimate(SeatPosition.FRONT_LEFT, mode, level)
-                            },
-                        )
-                        Spacer(Modifier.height(Space.md))
-                        Hairline()
-                        Spacer(Modifier.height(Space.md))
-                        SeatControl(
-                            seatLabel = "동승석",
-                            climate = state.seatClimate[SeatPosition.FRONT_RIGHT] ?: SeatClimate(),
-                            enabled = state.isReady,
-                            pending = state.pendingSeat == SeatPosition.FRONT_RIGHT,
-                            onChange = { mode, level ->
-                                onSeatClimate(SeatPosition.FRONT_RIGHT, mode, level)
-                            },
-                        )
-                    }
-
-                    // 좁은 화면에선 원래 순서대로 맨 아래에
-                    if (compact) {
-                        SectionHeader("충전")
-                        ChargeCard(state, onCommand, onStealthCharging)
-                    }
-                },
-            )
+            // 넓으면 화면을 정확히 채우고, 좁으면(폰) 그때만 스크롤을 허용한다
+            if (compact) {
+                Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    TileField(state, compact = true) { sheet = it }
+                }
+            } else {
+                TileField(state, compact = false) { sheet = it }
+            }
         }
+    }
+
+    SheetHost(
+        sheet = sheet,
+        state = state,
+        onDismiss = { sheet = Sheet.NONE },
+        onCommand = onCommand,
+        onSeatClimate = onSeatClimate,
+        onStealthCharging = onStealthCharging,
+    )
+}
+
+/**
+ * 화면 맨 위 한 줄 — 차 이름과 연결 상태.
+ *
+ * 예전엔 여기에 갱신 시각·자동화 상태까지 세 줄로 쌓여 있었다.
+ * 매일 보는 화면에서 매일 같은 글자를 세 줄 읽을 이유가 없어 한 줄로 눕혔다.
+ */
+@Composable
+private fun StatusBand(state: DashboardUiState, onRetryConnect: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = state.vehicleName,
+            style = MaterialTheme.typography.titleMedium,
+            color = T.Ink,
+        )
+        Spacer(Modifier.width(Space.md))
+        Text(
+            text = "${state.lastUpdatedLabel} · 자동화 ${state.automationLabel}",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+            modifier = Modifier.weight(1f),
+        )
+        if (state.link is LinkState.Failed) {
+            TButton(
+                text = "다시 연결",
+                tone = ButtonTone.Secondary,
+                fillWidth = false,
+                small = true,
+                onClick = onRetryConnect,
+            )
+            Spacer(Modifier.width(Space.sm))
+        }
+        StatusPill(
+            text = state.connectionLabel,
+            color = state.connectionRole.color,
+            textColor = state.connectionTextRole.color,
+        )
     }
 }
 
 /**
- * 두 덩어리를 폭에 맞춰 배치한다.
- * 좁으면 위아래로 이어 한 번에 스크롤하고, 넓으면 좌우로 나눠 각각 스크롤한다.
+ * 타일 밭 — 크기가 곧 중요도다.
+ *
+ * 실내 온도가 가장 크고, 배터리·잠금·시트가 그다음이다.
+ * 이 크기와 위치는 상태가 변해도 절대 안 움직인다 — 눈이 길을 외우게 하려는 것.
  */
 @Composable
-private fun TwoPane(
+private fun TileField(
+    state: DashboardUiState,
     compact: Boolean,
-    first: @Composable ColumnScope.() -> Unit,
-    second: @Composable ColumnScope.() -> Unit,
-    modifier: Modifier = Modifier,
+    onOpen: (Sheet) -> Unit,
 ) {
     if (compact) {
-        Column(modifier = modifier.verticalScroll(rememberScrollState())) {
-            first()
-            second()
-            Spacer(Modifier.height(Space.xxl))
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            ClimateTile(state, Modifier.fillMaxWidth()) { onOpen(Sheet.CLIMATE) }
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                BatteryTile(state, Modifier.weight(1f)) { onOpen(Sheet.CHARGE) }
+                LockTile(state, Modifier.weight(1f)) { onOpen(Sheet.LOCK) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                SeatTile(state, SeatPosition.FRONT_LEFT, Modifier.weight(1f)) {
+                    onOpen(Sheet.SEAT_LEFT)
+                }
+                SeatTile(state, SeatPosition.FRONT_RIGHT, Modifier.weight(1f)) {
+                    onOpen(Sheet.SEAT_RIGHT)
+                }
+            }
+            OpeningTile(state, Modifier.fillMaxWidth()) { onOpen(Sheet.OPENINGS) }
         }
         return
     }
 
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
-        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            first()
-            Spacer(Modifier.height(Space.xxl))
-        }
-        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-            second()
-            Spacer(Modifier.height(Space.xxl))
-        }
-    }
-}
-
-// ---- 퀵액션 ----
-
-/** 퀵액션 한 칸의 정의 */
-private data class QuickAction(
-    val icon: ImageVector,
-    val label: String,
-    /** 켜짐 상태로 강조할지 (잠금·공조처럼 상태가 있는 것만) */
-    val active: Boolean = false,
-    val command: VehicleCommand,
-)
-
-/**
- * 자주 쓰는 명령을 아이콘 그리드로.
- * 세로 화면에서 스크롤 없이 손 닿는 위치에 두는 게 목적이라 히어로 바로 아래에 있다.
- */
-@Composable
-private fun QuickActionGrid(
-    state: DashboardUiState,
-    onCommand: (VehicleCommand) -> Unit,
-    columns: Int,
-) {
-    val actions = listOf(
-        QuickAction(
-            // 라벨은 "누르면 일어날 일"로 쓴다 — 현재 상태는 아이콘·테두리가 말해준다.
-            // 읽기 전엔 상태를 단정하지 않는다 (히어로는 "--"인데 여기만 "열림" 주장하는 모순 방지)
-            icon = if (state.hasBodyReading && state.isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-            label = if (state.hasBodyReading && state.isLocked) "잠금 해제" else "잠그기",
-            active = state.hasBodyReading && state.isLocked,
-            command = if (state.hasBodyReading && state.isLocked) VehicleCommand.Unlock else VehicleCommand.Lock,
-        ),
-        QuickAction(
-            icon = Icons.Rounded.AcUnit,
-            label = if (state.hasClimateReading && state.isClimateOn) "공조 끄기" else "공조 켜기",
-            active = state.hasClimateReading && state.isClimateOn,
-            command = if (state.hasClimateReading && state.isClimateOn) VehicleCommand.ClimateOff
-            else VehicleCommand.ClimateOn,
-        ),
-        QuickAction(
-            icon = Icons.Rounded.VerticalAlignBottom,
-            label = "창문 환기",
-            command = VehicleCommand.VentWindows,
-        ),
-        QuickAction(
-            icon = Icons.Rounded.VerticalAlignTop,
-            label = "창문 닫기",
-            command = VehicleCommand.CloseWindows,
-        ),
-        QuickAction(
-            icon = Icons.Rounded.Luggage,
-            label = "트렁크",
-            command = VehicleCommand.OpenTrunk,
-        ),
-        QuickAction(
-            icon = Icons.Rounded.DirectionsCar,
-            label = "프렁크",
-            command = VehicleCommand.OpenFrunk,
-        ),
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        actions.chunked(columns).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                row.forEach { action ->
-                    QuickActionCell(
-                        action = action,
-                        enabled = state.isReady,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onCommand(action.command) },
-                    )
-                }
-                // 마지막 줄이 모자라면 빈 칸으로 정렬을 지킨다
-                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
-/** 아이콘 + 라벨 한 칸. 상태가 있으면(잠금·공조) 켜짐 색으로 알려준다 */
-@Composable
-private fun QuickActionCell(
-    action: QuickAction,
-    enabled: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(Radius.card)
-    val tint = when {
-        !enabled -> T.InkFaint
-        action.active -> T.Electric
-        else -> T.InkMuted
-    }
-    Column(
-        modifier = modifier
-            .softShadow(Elevation.card, Radius.card)
-            .clip(shape)
-            .background(T.Graphite, shape)
-            // 켜짐 상태는 배경이 아니라 얇은 테두리로 — 면을 칠하면 라이트 미니멀이 깨진다
-            .border(1.dp, if (action.active && enabled) T.Electric.copy(alpha = 0.35f) else Color.Transparent, shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = Space.md),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Icon(imageVector = action.icon, contentDescription = action.label, tint = tint, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.height(Space.sm))
-        Text(
-            text = action.label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (enabled) T.InkMuted else T.InkFaint,
-            // 좁은 칸에서 라벨이 2줄로 꺾이면 같은 줄 셀 높이가 제각각 — 한 줄로 고정
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
+        // 왼쪽 한 칸이 통째로 실내 온도. 이 화면에서 가장 알고 싶은 값이다
+        ClimateTile(state, Modifier.weight(1f).fillMaxSize()) { onOpen(Sheet.CLIMATE) }
 
-// ---- 공조 ----
-
-/** 공조 켜기/끄기 + 목표 온도 슬라이더 */
-@Composable
-private fun ClimateCard(
-    state: DashboardUiState,
-    onCommand: (VehicleCommand) -> Unit,
-) {
-    TCard {
-        // 드래그 중에는 화면 값만 바뀌고, 손을 떼는 순간 한 번 전송한다.
-        // 틱마다 보내면 BLE 직렬 큐가 밀려 마지막 값이 늦게 도착한다
-        var draftTemp by remember(state.targetTempValue) {
-            mutableStateOf(state.targetTempValue ?: 22.0)
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.weight(1.2f).fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    // 읽기 전엔 "꺼짐"이 아니라 확인 중 — 충전 카드와 같은 규칙
-                    text = when {
-                        !state.hasClimateReading -> "상태 확인 중"
-                        state.isClimateOn -> "작동 중"
-                        else -> "꺼짐"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (state.hasClimateReading && state.isClimateOn) T.Ink else T.InkFaint,
-                )
-                Text(
-                    text = "목표 ${"%.1f".format(draftTemp)}℃",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkFaint,
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                BatteryTile(state, Modifier.weight(1f).fillMaxSize()) { onOpen(Sheet.CHARGE) }
+                LockTile(state, Modifier.weight(1f).fillMaxSize()) { onOpen(Sheet.LOCK) }
             }
-            TButton(
-                text = if (state.isClimateOn) "끄기" else "켜기",
-                tone = if (state.isClimateOn) ButtonTone.Secondary else ButtonTone.Primary,
-                fillWidth = false,
-                enabled = state.isReady,
-                onClick = {
-                    onCommand(
-                        if (state.isClimateOn) VehicleCommand.ClimateOff
-                        else VehicleCommand.ClimateOn
-                    )
-                },
-            )
-        }
-        Spacer(Modifier.height(Space.sm))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("15℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
-            Slider(
-                value = draftTemp.toFloat(),
-                // 0.5도 단위로 끊는다 — 차량이 받는 최소 단위다
-                onValueChange = { draftTemp = (it * 2).roundToInt() / 2.0 },
-                onValueChangeFinished = {
-                    onCommand(VehicleCommand.SetTemperature(draftTemp))
-                },
-                valueRange = 15f..28f,
-                enabled = state.isReady,
-                colors = SliderDefaults.colors(
-                    thumbColor = T.Electric,
-                    activeTrackColor = T.Electric,
-                    inactiveTrackColor = T.Slate,
-                ),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = Space.sm),
-            )
-            Text("28℃", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+            Row(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                SeatTile(state, SeatPosition.FRONT_LEFT, Modifier.weight(1f).fillMaxSize()) {
+                    onOpen(Sheet.SEAT_LEFT)
+                }
+                SeatTile(state, SeatPosition.FRONT_RIGHT, Modifier.weight(1f).fillMaxSize()) {
+                    onOpen(Sheet.SEAT_RIGHT)
+                }
+            }
+            OpeningTile(state, Modifier.fillMaxWidth().weight(0.7f)) { onOpen(Sheet.OPENINGS) }
         }
     }
 }
-
-// ---- 충전 ----
 
 /**
- * 충전 시작/중지 + 한도(%) + 전류(A) 슬라이더.
- * 값은 차가 보고한 설정값에서 시작하고, 손을 떼는 순간 한 번만 전송한다 (공조 슬라이더와 같은 규칙).
+ * 실내 온도 + 공조를 한 타일에 합쳤다.
+ *
+ * 예전엔 "실내 온도 카드"와 "공조 카드"와 "공조 끄기 버튼"이 따로 있었는데,
+ * 사실 이건 하나의 질문이다 — "지금 차 안이 어떻고, 차가 뭘 하고 있나".
+ * 합치니 중복 조작도 같이 사라졌다.
  */
 @Composable
-private fun ChargeCard(
-    state: DashboardUiState,
-    onCommand: (VehicleCommand) -> Unit,
-    onStealthCharging: (Boolean) -> Unit,
-) {
-    TCard {
-        var draftLimit by remember(state.chargeLimitPercent) {
-            mutableStateOf(state.chargeLimitPercent ?: 80)
-        }
-        var draftAmps by remember(state.chargingAmps) {
-            mutableStateOf(state.chargingAmps ?: 32)
-        }
+private fun ClimateTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
+    val running = state.isClimateOn && state.hasClimateReading
+    // 색은 차가 실제로 일할 때만. 27℃ 주차 차량은 정상이라 색을 쓰지 않는다.
+    // 목표보다 더우면 식히는 중(파랑), 추우면 데우는 중(주황)
+    val inside = state.insideTemp.toDoubleOrNull()
+    val target = state.targetTempValue
+    val tone = when {
+        !running -> TileTone.Calm
+        inside == null || target == null -> TileTone.Cool
+        inside > target -> TileTone.Cool
+        else -> TileTone.Warm
+    }
+    // 목표·공조는 아래 수치줄이 이미 말한다. 여기서 또 쓰면 같은 걸 두 번 읽힌다
+    val detail = if (state.hasClimateReading) null else "확인 중"
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (state.isCharging) {
-                        true -> "충전 중"
-                        false -> "충전 안 함"
-                        null -> "상태 확인 중"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (state.isCharging == true) T.Ink else T.InkFaint,
-                )
-                Text(
-                    // 절 이어쓰기(" · ") 대신 줄 분리 — 난독증 사용자 기준 한 항목 = 한 줄
-                    text = "한도 ${draftLimit}%\n전류 ${draftAmps}A",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkFaint,
+    StatusTile(
+        label = "실내",
+        value = if (state.hasReading) "${state.insideTemp}°" else "--",
+        modifier = modifier,
+        detail = detail,
+        tone = tone,
+        big = true,
+        onClick = onClick,
+        content = {
+            // 앱에서 유일하게 움직이는 것 — 공조가 실제로 도는 동안만
+            if (running) {
+                BreathingBar(color = if (tone == TileTone.Cool) T.Cool else T.Heat)
+            }
+        },
+        footer = {
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                HeroMetric("외부", "${state.outsideTemp}°", Modifier.weight(1f))
+                HeroMetric("목표", "${state.targetTemp}°", Modifier.weight(1f))
+                HeroMetric(
+                    label = "공조",
+                    value = if (!state.hasClimateReading) "--"
+                    else if (state.isClimateOn) "켜짐" else "꺼짐",
+                    modifier = Modifier.weight(1f),
                 )
             }
-            TButton(
-                text = if (state.isCharging == true) "중지" else "시작",
-                tone = if (state.isCharging == true) ButtonTone.Secondary else ButtonTone.Primary,
-                fillWidth = false,
-                enabled = state.isReady,
-                onClick = { onCommand(VehicleCommand.SetCharging(state.isCharging != true)) },
-            )
-        }
-
-        Spacer(Modifier.height(Space.sm))
-        LabeledSlider(
-            label = "한도",
-            valueText = "${draftLimit}%",
-            value = draftLimit.toFloat(),
-            range = 50f..100f,
-            // 5% 단위 — 차가 받는 최소 단위보다 촘촘할 이유가 없다
-            onChange = { draftLimit = ((it / 5).roundToInt() * 5) },
-            onCommit = { onCommand(VehicleCommand.SetChargeLimit(draftLimit)) },
-            enabled = state.isReady,
-        )
-        LabeledSlider(
-            label = "전류",
-            valueText = "${draftAmps}A",
-            value = draftAmps.toFloat(),
-            range = 5f..48f,
-            onChange = { draftAmps = it.roundToInt() },
-            onCommit = { onCommand(VehicleCommand.SetChargingAmps(draftAmps)) },
-            enabled = state.isReady && !state.stealthCharging,
-        )
-
-        Spacer(Modifier.height(Space.sm))
-        Hairline()
-        Spacer(Modifier.height(Space.sm))
-        // 스텔스 충전 토글. 켜면 컨트롤러가 전류를 계속 흔들어 수동 전류 조절은 잠근다
-        ToggleRow(
-            title = "스텔스 충전",
-            subtitle = "전류를 난수로 흔들어 충전 부하 패턴을 흐려요.\n충전이 느려질 수 있어요.",
-            checked = state.stealthCharging,
-            onCheckedChange = onStealthCharging,
-        )
-    }
+        },
+    )
 }
 
-/** 이름 + 값 + 슬라이더 한 줄. 충전 카드 전용의 얇은 배치 */
+/** 히어로 바닥에 깔리는 보조 수치. 값이 주인공인 규칙은 여기서도 같다 */
 @Composable
-private fun LabeledSlider(
-    label: String,
-    valueText: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    onChange: (Float) -> Unit,
-    onCommit: () -> Unit,
-    enabled: Boolean,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun HeroMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = T.InkFaint,
-            // 고정 폭이면 글꼴 확대 시 잘린다 — 최소 폭만 잡고 스스로 늘어나게
-            modifier = Modifier.widthIn(min = 32.dp),
         )
-        Slider(
-            value = value,
-            onValueChange = onChange,
-            onValueChangeFinished = onCommit,
-            valueRange = range,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = T.Electric,
-                activeTrackColor = T.Electric,
-                inactiveTrackColor = T.Slate,
-            ),
-            modifier = Modifier.weight(1f).padding(horizontal = Space.sm),
-        )
-        Text(
-            text = valueText,
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkMuted,
-            maxLines = 1,
-            modifier = Modifier.widthIn(min = 44.dp),
-        )
-    }
-}
-
-// ---- 시트 ----
-
-/**
- * 좌석 한 자리의 통풍/열선 컨트롤.
- *
- * 통풍과 열선은 동시에 켤 수 없으므로 모드 토글 하나로 합쳤다.
- * 위: 좌석 이름 + 통풍/열선 토글, 아래: 단계 세그먼트(모드 색으로 강조).
- */
-@Composable
-private fun SeatControl(
-    seatLabel: String,
-    climate: SeatClimate,
-    enabled: Boolean,
-    pending: Boolean = false,
-    onChange: (SeatMode, Level) -> Unit,
-) {
-    val accent = if (climate.mode == SeatMode.COOL) T.Cool else T.Heat
-
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(seatLabel, style = MaterialTheme.typography.titleSmall, color = T.Ink)
-                // 화면 값은 즉시 바뀌지만 차량 전송은 뒤따라온다 — 그 간극을 스피너로 보여준다
-                if (pending) {
-                    Spacer(Modifier.width(Space.sm))
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                        color = accent,
-                    )
-                }
-            }
-            SeatModeToggle(
-                mode = climate.mode,
-                enabled = enabled,
-                // 모드를 바꾸면 지금 단계를 그대로 새 모드로 옮긴다 (반대 모드는 꺼진다)
-                onSelect = { newMode -> onChange(newMode, climate.level) },
-            )
-        }
-        Spacer(Modifier.height(Space.sm))
-        LevelSelector(
-            label = "",
-            selected = climate.level,
-            accent = accent,
-            enabled = enabled,
-            onSelect = { level -> onChange(climate.mode, level) },
-        )
-    }
-}
-
-/** 통풍 ↔ 열선 2단 토글. 선택한 쪽이 그 모드 색으로 채워진다 */
-// ponytail: ChipRow로 통합하지 않고 자체 구현 유지 — 모드별 채움색(Cool/Heat)이 ChipRow 규칙과 달라 통합 이득이 없다
-@Composable
-private fun SeatModeToggle(
-    mode: SeatMode,
-    enabled: Boolean,
-    onSelect: (SeatMode) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(T.Slate)
-            .padding(Space.xs),
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        SeatMode.entries.forEach { m ->
-            val selected = m == mode
-            val fill = if (m == SeatMode.COOL) T.Cool else T.Heat
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.pill))
-                    .background(if (selected) fill else Color.Transparent)
-                    .clickable(enabled = enabled) { onSelect(m) }
-                    // 주행 중 눈 안 떼고 누르는 화면 — 최소 터치 타깃 44dp 확보
-                    .heightIn(min = 44.dp)
-                    .padding(horizontal = Space.md, vertical = Space.xs),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = m.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    // 주황(Heat) 위 흰 글자는 대비 미달이라 진회색으로 — 파랑(Cool)은 흰 글자 유지
-                    color = when {
-                        !selected -> T.InkMuted
-                        m == SeatMode.HEAT -> T.Ink
-                        else -> Color.White
-                    },
-                )
-            }
-        }
-    }
-}
-
-// ---- 히어로 ----
-
-/**
- * 화면 상단 히어로 — 이 차의 "지금"을 한 장으로.
- * 실내 온도를 크게 앞세우고, 외부·목표·배터리·잠금을 아래 한 줄로 묶는다.
- * 이전의 "상태" 카드가 여기로 흡수됐다 (같은 값을 두 군데서 보여주지 않는다).
- */
-@Composable
-private fun HeroCard(state: DashboardUiState) {
-    val shape = RoundedCornerShape(Radius.hero)
-    // 실내 온도에 따라 배경 톤을 미세하게 바꾼다 — 그라데이션 금지 규칙에 맞춰 단색 틴트만
-    val bg = when {
-        !state.isClimateOn -> T.Graphite
-        state.insideTempAccent == T.Heat -> T.HeatTint
-        else -> T.CoolTint
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .softShadow(Elevation.hero, Radius.hero)
-            .clip(shape)
-            .background(bg, shape)
-            .padding(Space.lg),
-    ) {
-        Column(Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("실내 온도", style = MaterialTheme.typography.titleSmall, color = T.InkMuted)
-                StatusPill(
-                    // 읽기 전 기본값(false)이 "꺼짐"으로 보이면 오보 — 잠금 칸과 같은 가드
-                    text = when {
-                        !state.hasClimateReading -> "확인 중"
-                        state.isClimateOn -> "공조 켜짐"
-                        else -> "공조 꺼짐"
-                    },
-                    color = if (state.hasClimateReading && state.isClimateOn) T.Cool else T.InkFaint,
-                    // 옅은 파랑 틴트 위 파랑 글자는 대비 미달 — 진한 파랑으로
-                    textColor = if (state.hasClimateReading && state.isClimateOn) T.ElectricPressed else T.InkMuted,
-                )
-            }
-
-            Spacer(Modifier.height(Space.sm))
-
-            if (state.hasReading) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = state.insideTemp,
-                        style = MetricTextStyle,
-                        color = state.insideTempAccent,
-                    )
-                    Text(
-                        text = "℃",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = T.InkMuted,
-                        modifier = Modifier.padding(start = Space.xs, bottom = Space.sm),
-                    )
-                }
-            } else {
-                Spacer(Modifier.height(Space.xs))
-                SkeletonBlock(width = 150, height = 52)
-                Spacer(Modifier.height(Space.xs))
-            }
-
-            Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                HeroStat("외부", if (state.hasClimateReading) "${state.outsideTemp}℃" else "--", Modifier.weight(1f))
-                // 첫 읽기 전엔 "--℃" 같은 어색한 표기가 되므로 외부와 같은 가드를 건다
-                HeroStat("목표", if (state.hasClimateReading) "${state.targetTemp}℃" else "--", Modifier.weight(1f))
-                HeroStat("배터리", state.batteryLabel, Modifier.weight(1f))
-                // 읽기 전 기본값(false)이 "열림"으로 보이면 오보다 — 다른 칸과 같은 가드
-                HeroStat("잠금", if (state.hasBodyReading) { if (state.isLocked) "잠김" else "열림" } else "--", Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-/** 히어로 하단의 작은 지표 한 칸 */
-@Composable
-private fun HeroStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
         Spacer(Modifier.height(Space.xs))
-        Text(value, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = T.Ink,
+        )
     }
 }
 
-// ---- 헤더 ----
+@Composable
+private fun BatteryTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
+    val charging = state.isCharging == true
+    StatusTile(
+        label = "배터리",
+        value = state.batteryLabel,
+        modifier = modifier,
+        detail = when {
+            state.isCharging == null -> "확인 중"
+            charging -> "충전 중 · ${state.chargingAmps ?: "--"}A"
+            state.rangeKm != null -> "${state.rangeKm}km · 한도 ${state.chargeLimitPercent ?: "--"}%"
+            else -> "한도 ${state.chargeLimitPercent ?: "--"}%"
+        },
+        // 충전은 차가 일하는 중이라 색을 준다
+        tone = if (charging) TileTone.Cool else TileTone.Calm,
+        onClick = onClick,
+    )
+}
 
 @Composable
-private fun ConnectionHeader(
+private fun LockTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
+    val unlocked = state.hasBodyReading && !state.isLocked
+    StatusTile(
+        label = "잠금",
+        // 열려 있는 건 사람이 봐야 하는 상태다. 이 화면에서 면이 물드는 유일한 경우
+        value = when {
+            !state.hasBodyReading -> "--"
+            state.isLocked -> "잠김"
+            else -> "열림"
+        },
+        modifier = modifier,
+        detail = if (unlocked) "눌러서 잠그기" else null,
+        tone = if (unlocked) TileTone.Alert else TileTone.Calm,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun SeatTile(
     state: DashboardUiState,
-    onRetryConnect: () -> Unit,
+    seat: SeatPosition,
+    modifier: Modifier,
+    onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // weight가 없으면 긴 실패 사유가 오른쪽 StatusPill·버튼을 화면 밖으로 밀어낸다
-        Column(modifier = Modifier.weight(1f).padding(end = Space.sm)) {
-            Text(
-                text = state.vehicleName,
-                style = MaterialTheme.typography.headlineMedium,
-                color = T.Ink,
-            )
-            // 연결 상세 + 갱신 시각 + 자동화 상태를 캡션으로.
-            // 항목마다 줄을 나눈다 — 난독증 사용자 기준 한 항목 = 한 줄
-            // 실패 사유엔 개행이 들어올 수 있어 캡션에선 공백으로 눌러 항목당 1줄을 보장한다
-            Text(
-                text = listOf(
-                    state.connectionDetail.replace('\n', ' '),
-                    "갱신 ${state.lastUpdatedLabel}",
-                    "자동화 ${state.automationLabel}",
-                ).joinToString("\n"),
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusPill(
-                text = state.connectionLabel,
-                color = state.connectionColor,
-                textColor = state.connectionTextColor,
-            )
-            if (state.link is LinkState.Failed) {
-                Spacer(Modifier.width(Space.sm))
-                TButton("다시 연결", ButtonTone.Ghost, fillWidth = false, onClick = onRetryConnect)
+    val climate = state.seatClimate[seat] ?: SeatClimate()
+    val on = climate.level != Level.OFF
+    StatusTile(
+        label = seat.label,
+        value = if (on) climate.level.label else "끔",
+        modifier = modifier,
+        detail = if (on) climate.mode.label else null,
+        tone = when {
+            !on -> TileTone.Calm
+            climate.mode == SeatMode.COOL -> TileTone.Cool
+            else -> TileTone.Warm
+        },
+        pending = state.pendingSeat == seat,
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun RowScope.OpeningButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    TButton(
+        text = text,
+        tone = ButtonTone.Secondary,
+        modifier = Modifier.weight(1f),
+        enabled = enabled,
+        onClick = onClick,
+    )
+}
+
+/**
+ * 문·트렁크 열림 상태.
+ *
+ * 예전엔 여기가 버튼 네 개였다 — 누를 수는 있는데 **지금 열려 있는지는 알 수 없었다**.
+ * 차는 도어 상태를 계속 읽고 있었으니 화면이 안 쓰고 버린 셈이다.
+ * 비 오는 날 창문 열어둔 걸 알려주는 게 여는 버튼보다 중요하다.
+ */
+@Composable
+private fun OpeningTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
+    val open = state.openings
+    StatusTile(
+        label = "문 · 적재함",
+        value = when {
+            !state.hasBodyReading -> "--"
+            open.isEmpty() -> "모두 닫힘"
+            else -> open.joinToString(" · ")
+        },
+        modifier = modifier,
+        detail = if (open.isEmpty()) null else "눌러서 조작",
+        tone = if (open.isNotEmpty()) TileTone.Alert else TileTone.Calm,
+        onClick = onClick,
+    )
+}
+
+/** 타일을 누르면 열리는 조작 시트들. 홈을 읽기 전용으로 두기 위한 장치 */
+@Composable
+private fun SheetHost(
+    sheet: Sheet,
+    state: DashboardUiState,
+    onDismiss: () -> Unit,
+    onCommand: (VehicleCommand) -> Unit,
+    onSeatClimate: (SeatPosition, SeatMode, Level) -> Unit,
+    onStealthCharging: (Boolean) -> Unit,
+) {
+    when (sheet) {
+        Sheet.NONE -> Unit
+
+        Sheet.CLIMATE -> PickerSheet(title = "공조", onDismiss = onDismiss) {
+            Column(modifier = Modifier.padding(horizontal = Space.lg)) {
+                Text(
+                    text = "목표 온도",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkMuted,
+                )
+                Spacer(Modifier.height(Space.sm))
+                NumberStepper(
+                    value = state.targetTempValue ?: 22.0,
+                    min = 15.0,
+                    max = 28.0,
+                    step = 0.5,
+                    unit = "℃",
+                    onChange = { onCommand(VehicleCommand.SetTemperature(it)) },
+                )
+                Spacer(Modifier.height(Space.lg))
+                if (state.isClimateOn) {
+                    TButton("공조 끄기", tone = ButtonTone.Secondary) {
+                        onCommand(VehicleCommand.ClimateOff)
+                        onDismiss()
+                    }
+                } else {
+                    TButton("공조 켜기") {
+                        onCommand(VehicleCommand.ClimateOn)
+                        onDismiss()
+                    }
+                }
+                Spacer(Modifier.height(Space.lg))
             }
+        }
+
+        Sheet.LOCK -> PickerSheet(title = "잠금", onDismiss = onDismiss) {
+            Column(modifier = Modifier.padding(horizontal = Space.lg)) {
+                // 잠금 해제는 실수로 눌리면 안 되는 동작이라 타일 탭으로 바로 걸지 않았다
+                TButton("잠그기") {
+                    onCommand(VehicleCommand.Lock)
+                    onDismiss()
+                }
+                Spacer(Modifier.height(Space.sm))
+                TButton("잠금 해제", tone = ButtonTone.Secondary) {
+                    onCommand(VehicleCommand.Unlock)
+                    onDismiss()
+                }
+                Spacer(Modifier.height(Space.lg))
+            }
+        }
+
+        Sheet.CHARGE -> PickerSheet(title = "충전", onDismiss = onDismiss) {
+            Column(modifier = Modifier.padding(horizontal = Space.lg)) {
+                Text(
+                    text = "충전 한도",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkMuted,
+                )
+                Spacer(Modifier.height(Space.sm))
+                NumberStepper(
+                    value = (state.chargeLimitPercent ?: 80).toDouble(),
+                    min = 50.0,
+                    max = 100.0,
+                    step = 5.0,
+                    unit = "%",
+                    onChange = { onCommand(VehicleCommand.SetChargeLimit(it.toInt())) },
+                )
+                Spacer(Modifier.height(Space.md))
+                Text(
+                    text = "충전 전류",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkMuted,
+                )
+                Spacer(Modifier.height(Space.sm))
+                NumberStepper(
+                    value = (state.chargingAmps ?: 32).toDouble(),
+                    min = 5.0,
+                    max = 48.0,
+                    step = 1.0,
+                    unit = "A",
+                    onChange = { onCommand(VehicleCommand.SetChargingAmps(it.toInt())) },
+                )
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
+                ToggleRow(
+                    title = "스텔스 충전",
+                    subtitle = "전류를 조금씩 흔들어 눈에 덜 띄게 해요",
+                    checked = state.stealthCharging,
+                    onCheckedChange = onStealthCharging,
+                )
+                Spacer(Modifier.height(Space.lg))
+            }
+        }
+
+        Sheet.OPENINGS -> PickerSheet(title = "문 · 적재함", onDismiss = onDismiss) {
+            Column(modifier = Modifier.padding(horizontal = Space.lg)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    OpeningButton("창문 환기", state.isReady) {
+                        onCommand(VehicleCommand.VentWindows)
+                    }
+                    OpeningButton("창문 닫기", state.isReady) {
+                        onCommand(VehicleCommand.CloseWindows)
+                    }
+                }
+                Spacer(Modifier.height(Space.sm))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    OpeningButton("트렁크", state.isReady) { onCommand(VehicleCommand.OpenTrunk) }
+                    OpeningButton("프렁크", state.isReady) { onCommand(VehicleCommand.OpenFrunk) }
+                }
+                Spacer(Modifier.height(Space.lg))
+            }
+        }
+
+        Sheet.SEAT_LEFT -> SeatSheet(state, SeatPosition.FRONT_LEFT, onDismiss, onSeatClimate)
+        Sheet.SEAT_RIGHT -> SeatSheet(state, SeatPosition.FRONT_RIGHT, onDismiss, onSeatClimate)
+    }
+}
+
+@Composable
+private fun SeatSheet(
+    state: DashboardUiState,
+    seat: SeatPosition,
+    onDismiss: () -> Unit,
+    onSeatClimate: (SeatPosition, SeatMode, Level) -> Unit,
+) {
+    val climate = state.seatClimate[seat] ?: SeatClimate()
+    var mode by remember(seat) { mutableStateOf(climate.mode) }
+
+    PickerSheet(title = seat.label, onDismiss = onDismiss) {
+        Column(modifier = Modifier.padding(horizontal = Space.lg)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                SeatMode.entries.forEach { candidate ->
+                    TButton(
+                        text = candidate.label,
+                        tone = if (candidate == mode) ButtonTone.Primary else ButtonTone.Secondary,
+                        modifier = Modifier.weight(1f),
+                        onClick = { mode = candidate },
+                    )
+                }
+            }
+            Spacer(Modifier.height(Space.md))
+            LevelSelector(
+                label = "단계",
+                selected = climate.level,
+                accent = if (mode == SeatMode.COOL) T.Cool else T.Heat,
+                onSelect = { onSeatClimate(seat, mode, it) },
+                enabled = state.isReady,
+            )
+            Spacer(Modifier.height(Space.lg))
         }
     }
 }
@@ -769,7 +568,7 @@ data class DashboardUiState(
     /** 좌석별 통풍/열선 설정 (클라 저장값). 화면은 이걸 기준으로 그린다 */
     val seatClimate: Map<SeatPosition, SeatClimate> = emptyMap(),
     val isSimulated: Boolean,
-    /** 상태를 한 번이라도 읽었는지. false면 스켈레톤을 보여준다 */
+    /** 상태를 한 번이라도 읽었는지. false면 값 자리에 --를 보여준다 */
     val hasReading: Boolean,
     /** VCSEC(잠금·탑승)를 실제로 읽었는가 — 전역 hasReading은 다른 카테고리 성공으로도 참이 된다 */
     val hasBodyReading: Boolean = false,
@@ -780,13 +579,17 @@ data class DashboardUiState(
     /** 마지막으로 차량 상태를 읽은 뒤 흐른 초. 못 읽었으면 null */
     val secondsSinceReading: Long? = null,
     val batteryPercent: Int? = null,
-    /** 충전 상태. 못 읽었으면 null — 카드가 "확인 중"으로 보인다 */
+    /** 충전 상태. 못 읽었으면 null — 타일이 "확인 중"으로 보인다 */
     val isCharging: Boolean? = null,
     val chargeLimitPercent: Int? = null,
     val chargingAmps: Int? = null,
     val stealthCharging: Boolean = false,
     val automationEnabled: Boolean = true,
     val runningMacroCount: Int = 0,
+    /** 주행 가능 거리(km). 배터리 %만으론 실감이 안 나 함께 보여준다 */
+    val rangeKm: Int? = null,
+    /** 지금 열려 있는 문·트렁크 이름. 차는 읽고 있었는데 화면이 안 쓰던 값이다 */
+    val openings: List<String> = emptyList(),
 ) {
     val isReady: Boolean get() = link is LinkState.Ready
 
@@ -813,7 +616,7 @@ data class DashboardUiState(
             link is LinkState.Scanning ||
             link is LinkState.Connecting
 
-    /** 지금 차량으로 전송 중인 시트 명령의 좌석. 그 좌석 컨트롤에만 스피너를 단다 */
+    /** 지금 차량으로 전송 중인 시트 명령의 좌석. 그 좌석 타일에만 표시를 단다 */
     val pendingSeat: SeatPosition?
         get() = when (val command = pendingCommand) {
             is VehicleCommand.SetSeatCooler -> command.seat
@@ -830,19 +633,19 @@ data class DashboardUiState(
             is LinkState.Failed -> "연결 실패"
         }
 
-    val connectionColor: Color
+    val connectionRole: ColorRole
         get() = when (link) {
-            is LinkState.Ready -> if (isSimulated) T.Warn else T.Ok
-            is LinkState.Failed -> T.Danger
-            else -> T.InkMuted
+            is LinkState.Ready -> if (isSimulated) ColorRole.Warn else ColorRole.Ok
+            is LinkState.Failed -> ColorRole.Danger
+            else -> ColorRole.InkMuted
         }
 
     /** 배지 글자색 — 밝은 상태색(Warn/Ok)은 옅은 틴트 위에서 안 읽혀 진한 색으로 분리한다 */
-    val connectionTextColor: Color
+    val connectionTextRole: ColorRole
         get() = when (link) {
-            is LinkState.Ready -> if (isSimulated) T.WarnText else T.OkText
-            is LinkState.Failed -> T.Danger
-            else -> T.InkMuted
+            is LinkState.Ready -> if (isSimulated) ColorRole.WarnText else ColorRole.OkText
+            is LinkState.Failed -> ColorRole.Danger
+            else -> ColorRole.InkMuted
         }
 
     val connectionDetail: String
@@ -856,13 +659,13 @@ data class DashboardUiState(
             else -> "대기 중"
         }
 
-    /** 27℃를 넘으면 색으로 경고한다. 매크로 발동 임계값과 같은 기준 */
-    val insideTempAccent: Color
+    /** 27℃를 넘으면 더운 상태로 본다. 매크로 발동 임계값과 같은 기준 */
+    val insideTempRole: ColorRole
         get() = insideTemp.toDoubleOrNull()?.let {
             when {
-                it >= 27.0 -> T.Heat
-                it <= 5.0 -> T.Cool
-                else -> T.Ink
+                it >= 27.0 -> ColorRole.Heat
+                it <= 5.0 -> ColorRole.Cool
+                else -> ColorRole.Ink
             }
-        } ?: T.Ink
+        } ?: ColorRole.Ink
 }

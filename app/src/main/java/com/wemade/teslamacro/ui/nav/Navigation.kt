@@ -48,13 +48,16 @@ fun NavBar(
     onSelect: (Destination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 그리기 람다 안에서는 색 토큰을 못 읽는다 — 바깥에서 꺼내 둔다
+    val barColor = T.Carbon
+    val lineColor = T.Hairline
     Row(
         modifier = modifier
             .fillMaxWidth()
             // 상단에 얇은 경계선 한 겹 — 본문과 탭바를 분리
             .drawBehind {
-                drawRect(T.Carbon)
-                drawRect(T.Hairline, size = size.copy(height = 1f))
+                drawRect(barColor)
+                drawRect(lineColor, size = size.copy(height = 1f))
             }
             .padding(horizontal = Space.sm, vertical = Space.sm),
         horizontalArrangement = Arrangement.SpaceEvenly,

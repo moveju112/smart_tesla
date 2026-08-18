@@ -33,36 +33,6 @@ import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
 /**
- * 큰 계측값 하나. 온도처럼 "한눈에 읽혀야 하는 값"에만 쓴다.
- * 운전 직전 흘깃 보는 화면이라 라벨보다 숫자를 압도적으로 크게 둔다.
- */
-@Composable
-fun MetricBlock(
-    label: String,
-    value: String,
-    unit: String,
-    modifier: Modifier = Modifier,
-    accent: Color = T.Ink,
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
-        )
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(text = value, style = MetricTextStyle, color = accent)
-            Text(
-                text = unit,
-                style = MaterialTheme.typography.titleMedium,
-                color = T.InkFaint,
-                modifier = Modifier.padding(start = Space.xs, bottom = Space.sm),
-            )
-        }
-    }
-}
-
-/**
  * 통풍/열선 4단계 선택기.
  * 슬라이더 대신 세그먼트를 쓴다 — 주행 중 눈을 안 떼고 누를 수 있는 큰 타겟이 필요해서다.
  */

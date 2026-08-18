@@ -58,13 +58,31 @@ class ScreenshotTest {
     )
 
     /** 레일까지 포함한 실제 앱 배치로 감싼다 */
-    private fun snapshot(name: String, selected: Destination, content: @Composable () -> Unit) {
-        paparazzi.snapshot(name) { AppFrame(selected, content) }
+    private fun snapshot(
+        name: String,
+        selected: Destination,
+        dark: Boolean = false,
+        content: @Composable () -> Unit,
+    ) {
+        paparazzi.snapshot(name) { AppFrame(selected, dark, content) }
     }
 
     @Test
     fun `01 제어 화면`() {
         snapshot("01-dashboard", Destination.Dashboard) {
+            DashboardScreen(
+                state = dashboardState(),
+                onCommand = {},
+                onRetryConnect = {},
+                onDismissError = {},
+            )
+        }
+    }
+
+    // 밤 팔레트는 눈으로만 검증할 수 있다 — 대비가 무너지면 여기서 바로 보인다
+    @Test
+    fun `01N 제어 화면 - 밤`() {
+        snapshot("01N-dashboard-night", Destination.Dashboard, dark = true) {
             DashboardScreen(
                 state = dashboardState(),
                 onCommand = {},

@@ -217,24 +217,3 @@ fun InlineBanner(
 
 enum class BannerTone { Error, Warning, Info }
 
-/** 버튼 안에서 도는 작은 표시. 텍스트를 "진행 중…"으로 바꾸는 것보다 명확하다 */
-@Composable
-fun PulsingDot(modifier: Modifier = Modifier, color: Color = T.Ink) {
-    val transition = rememberInfiniteTransition(label = "dot")
-    val alpha by transition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = Motion.breathe(600),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse",
-    )
-    // alpha 모디파이어는 background 뒤에선 효과가 없다 — 색 알파로 깜빡이게 한다
-    Box(
-        modifier = modifier
-            .size(8.dp)
-            .clip(RoundedCornerShape(Radius.pill))
-            .background(color.copy(alpha = alpha)),
-    )
-}

@@ -6,9 +6,19 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import java.util.Calendar
+import kotlinx.coroutines.delay
 
 /** 8dp 그리드. 화면에서 raw dp를 쓰지 말고 여기서 꺼내 쓴다 */
 object Space {
@@ -29,11 +39,14 @@ object Radius {
 
     // 트랙(button) 안에 들어가는 세그먼트 칸 — 산술(button - xs) 대신 토큰으로 고정
     val segment = 10.dp
+
+    // 상태 타일 — 카드보다 크게 잡아 멀리서도 덩어리로 읽힌다
+    val tile = 22.dp
 }
 
 /**
- * 그림자 세기. 밝은 배경이라 아주 얕게만 준다.
- * 흰 카드는 옅은 회색 배경과의 대비 + 미세 그림자로만 뜬다.
+ * 그림자 세기. 아주 얕게만 준다.
+ * 카드는 배경과의 대비 + 미세 그림자로만 뜬다.
  */
 object Elevation {
     val card = 2.dp
@@ -59,28 +72,84 @@ private val TeslaShapes = Shapes(
     large = RoundedCornerShape(Radius.card),
 )
 
-private val TeslaColorScheme = lightColorScheme(
-    primary = T.Electric,
-    onPrimary = androidx.compose.ui.graphics.Color.White,
-    secondary = T.InkMuted,
-    onSecondary = androidx.compose.ui.graphics.Color.White,
-    background = T.Void,
-    onBackground = T.Ink,
-    surface = T.Carbon,
-    onSurface = T.Ink,
-    surfaceVariant = T.Slate,
-    onSurfaceVariant = T.InkMuted,
-    outline = T.Hairline,
-    error = T.Danger,
-    onError = androidx.compose.ui.graphics.Color.White,
-)
+// 낮이 시작·끝나는 시각. 계절마다 해 뜨는 때가 달라 정밀 계산은 과하고,
+// 실차에서 눈부심을 보고 조절할 수 있게 상수로 빼 둔다
+private const val DAY_START_HOUR = 7
+private const val DAY_END_HOUR = 19
 
+/**
+ * 시계만 보고 밤인지 정한다. 태블릿 시스템 다크가 꺼져 있어도 밤엔 어두워져야 한다.
+ * 액티비티가 첫 프레임 배경·상태바를 맞출 때도 같은 답을 써야 해서 밖에 열어 둔다.
+ */
+fun isNightNow(): Boolean {
+    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    return hour < DAY_START_HOUR || hour >= DAY_END_HOUR
+}
+
+// 경계(07시·19시)를 넘겼는지 보는 주기. 분 단위로 볼 이유가 없다
+private const val NIGHT_RECHECK_MILLIS = 10 * 60 * 1000L
+
+/** 시간이 흐르면 스스로 낮↔밤을 뒤집는다 */
 @Composable
-fun TeslaMacroTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = TeslaColorScheme,
-        typography = TeslaTypography,
-        shapes = TeslaShapes,
-        content = content,
+private fun rememberIsNight(): Boolean {
+    var night by remember { mutableStateOf(isNightNow()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(NIGHT_RECHECK_MILLIS)
+            night = isNightNow()
+        }
+    }
+    return night
+}
+
+private fun colorSchemeFor(palette: Palette, dark: Boolean) = if (dark) {
+    darkColorScheme(
+        primary = palette.electric,
+        onPrimary = Color.White,
+        secondary = palette.inkMuted,
+        onSecondary = Color.White,
+        background = palette.void,
+        onBackground = palette.ink,
+        surface = palette.carbon,
+        onSurface = palette.ink,
+        surfaceVariant = palette.slate,
+        onSurfaceVariant = palette.inkMuted,
+        outline = palette.hairline,
+        error = palette.danger,
+        onError = Color.White,
     )
+} else {
+    lightColorScheme(
+        primary = palette.electric,
+        onPrimary = Color.White,
+        secondary = palette.inkMuted,
+        onSecondary = Color.White,
+        background = palette.void,
+        onBackground = palette.ink,
+        surface = palette.carbon,
+        onSurface = palette.ink,
+        surfaceVariant = palette.slate,
+        onSurfaceVariant = palette.inkMuted,
+        outline = palette.hairline,
+        error = palette.danger,
+        onError = Color.White,
+    )
+}
+
+/**
+ * @param dark null이면 시계를 보고 스스로 정한다.
+ *   스냅샷 테스트처럼 결과가 고정돼야 하는 곳에서만 true/false를 직접 넘긴다.
+ */
+@Composable
+fun TeslaMacroTheme(dark: Boolean? = null, content: @Composable () -> Unit) {
+    val isDark = dark ?: rememberIsNight()
+    val palette = if (isDark) DarkPalette else LightPalette
+    CompositionLocalProvider(LocalPalette provides palette) {
+        MaterialTheme(
+            colorScheme = colorSchemeFor(palette, isDark),
+            typography = TeslaTypography,
+            shapes = TeslaShapes,
+            content = content,
+        )
+    }
 }

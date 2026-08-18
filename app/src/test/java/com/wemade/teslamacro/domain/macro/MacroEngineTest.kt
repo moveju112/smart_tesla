@@ -86,6 +86,30 @@ class MacroEngineTest {
     }
 
     @Test
+    fun `조건이 막으면 어떤 조건이 막았는지 알려준다`() {
+        // "왜 안 터졌지" 진단용 — 탑승은 감지됐는데 위치·시간 조건이 막은 경우를 로그로 본다
+        val blocked = mutableListOf<Pair<String, List<Condition>>>()
+        engine.evaluate(
+            rules = listOf(
+                rule(
+                    triggers = listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)),
+                    conditions = listOf(
+                        Condition.TimeWindow(18 * 60, 19 * 60),
+                        Condition.NearLocation(latitude = 37.0, longitude = 127.0),
+                    ),
+                )
+            ),
+            previous = reading(userPresent = false),
+            current = reading(userPresent = true, minutesOfDay = 9 * 60),
+            lastFiredAtMillis = emptyMap(),
+            onBlocked = { r, unmet -> blocked += r.name to unmet },
+        )
+        assertEquals(1, blocked.size)
+        // 시간대(9시)와 위치(측위 없음) 둘 다 불충족으로 보고돼야 한다
+        assertEquals(2, blocked[0].second.size)
+    }
+
+    @Test
     fun `재시작 직후 이미 타 있으면 탑승 트리거는 1회 발동한다`() {
         // 직전 값이 없으면(재부팅) 엣지를 못 보지만, 탑승만은 놓치면 안 된다
         val fired = evaluate(

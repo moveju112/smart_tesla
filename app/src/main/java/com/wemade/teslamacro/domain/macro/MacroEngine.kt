@@ -24,6 +24,7 @@ class MacroEngine {
     /**
      * @param previous 직전 판정 시점. 트리거는 "변화"라서 직전 값이 필요하다
      * @param lastFiredAtMillis 매크로 id -> 마지막 발동 시각
+     * @param onBlocked 트리거는 발동했는데 조건이 막은 경우 알림 — "왜 안 터졌지" 진단용
      * @return 지금 실행해야 하는 매크로들 (선언 순서 유지)
      */
     fun evaluate(
@@ -31,6 +32,7 @@ class MacroEngine {
         previous: Reading?,
         current: Reading,
         lastFiredAtMillis: Map<String, Long>,
+        onBlocked: (MacroRule, List<Condition>) -> Unit = { _, _ -> },
     ): List<MacroRule> {
         // 꺼졌거나 삭제된 룰의 래치는 잊는다 — 다시 켜면 "이미 참"도 1회 발동한다
         alwaysHeld.keys.retainAll(rules.filter { it.enabled }.map { it.id }.toSet())
@@ -52,8 +54,16 @@ class MacroEngine {
 
             // 4. 트리거 하나라도 발생 && 조건 전부 만족.
             //    any 대신 map+any — 래치 갱신 때문에 모든 트리거를 반드시 평가한다
-            rule.triggers.map { fired(rule, it, previous, current) }.any { it } &&
-                rule.conditions.all { holds(it, current) }
+            val triggered = rule.triggers.map { fired(rule, it, previous, current) }.any { it }
+            if (!triggered) return@filter false
+
+            // 어떤 조건이 막았는지 알려준다 — 진단 로그 없이는 "왜 안 터졌는지" 알 길이 없다
+            val unmet = rule.conditions.filter { !holds(it, current) }
+            if (unmet.isNotEmpty()) {
+                onBlocked(rule, unmet)
+                return@filter false
+            }
+            true
         }
     }
 

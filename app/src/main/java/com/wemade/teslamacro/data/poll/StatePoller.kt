@@ -11,6 +11,7 @@ import com.wemade.teslamacro.domain.macro.MacroEngine
 import com.wemade.teslamacro.domain.macro.MacroRunner
 import com.wemade.teslamacro.domain.macro.Reading
 import com.wemade.teslamacro.domain.macro.TimeContext
+import com.wemade.teslamacro.domain.macro.describe
 import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
@@ -210,9 +211,12 @@ class StatePoller(
                 failStreak = 0
             }
 
-            // 4. 사건이 보이면 집중 폴링 창을 연다
+            // 4. 사건이 보이면 집중 폴링 창을 연다.
+            //    위치 캐시도 버린다 — 탑승 직전 실패(null)가 캐시에 남아 있으면
+            //    "출발지 근처" 조건이 탑승 순간(1회성 엣지)에 오판되어 매크로가 영영 안 터진다
             if (isWakeEvent(previous?.snapshot, merged)) {
                 activeUntil = now() + settings.activeWindowSeconds * 1000L
+                locationCachedAt = 0L
             }
 
             // 5. 매크로 판정 + 실행.
@@ -222,11 +226,22 @@ class StatePoller(
             latestReading.value = current
 
             if (settings.automationEnabled) {
-                engine.evaluate(ruleStore.rules.value, previous, current, lastFiredAt)
-                    .forEach { rule ->
-                        lastFiredAt[rule.id] = current.time.epochMillis
-                        runner.launch(rule, current.time.epochMillis)
-                    }
+                engine.evaluate(
+                    rules = ruleStore.rules.value,
+                    previous = previous,
+                    current = current,
+                    lastFiredAtMillis = lastFiredAt,
+                    // 트리거는 발동했는데 조건이 막았으면 무엇이 막았는지 남긴다
+                    onBlocked = { rule, unmet ->
+                        com.wemade.teslable.DiagLog.add(
+                            "매크로 [${rule.name}] 보류 — " +
+                                unmet.joinToString(", ") { describe(it) } + " 불충족"
+                        )
+                    },
+                ).forEach { rule ->
+                    lastFiredAt[rule.id] = current.time.epochMillis
+                    runner.launch(rule, current.time.epochMillis)
+                }
             }
 
             previous = current
@@ -310,6 +325,10 @@ class StatePoller(
         if (now() - locationCachedAt < LOCATION_TTL_MS) return locationCache
         locationCache = locationReader()
         locationCachedAt = now()
+        // 위치 조건이 필요한 순간의 측위 실패는 매크로 오판 원인 1순위 — 흔적을 남긴다
+        if (locationCache == null) {
+            com.wemade.teslable.DiagLog.add("위치 읽기 실패 — 위치 조건은 불충족으로 처리")
+        }
         return locationCache
     }
 

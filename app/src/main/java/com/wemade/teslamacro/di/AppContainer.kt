@@ -74,7 +74,7 @@ class AppContainer(private val context: Context) {
         runner = MacroRunner(gateway, appScope, latestReading, navigator::navigate)
         poller = StatePoller(
             gateway, ruleStore, settingsStore, runner, latestReading,
-            locationReader = tabletLocation::read,
+            locationReader = ::readLocationWithFallback,
         )
         stealthCharge = com.wemade.teslamacro.data.charge.StealthChargeController(
             gateway, poller, settingsStore,
@@ -82,6 +82,23 @@ class AppContainer(private val context: Context) {
     }
 
     val isSimulated: Boolean get() = gateway.current is SimulatedVehicleGateway
+
+    /**
+     * 측위 성공 좌표는 저장하고, 실패하면 마지막 성공 좌표로 대체한다.
+     * 태블릿은 차에 상주하므로 마지막 좌표가 곧 차의 위치다 —
+     * 탑승 순간(1회성 트리거)의 GPS 콜드스타트 실패로 위치 매크로가 통째로 빠지는 걸 막는다.
+     */
+    private suspend fun readLocationWithFallback(): com.wemade.teslamacro.domain.macro.GeoPoint? {
+        val fresh = tabletLocation.read()
+        if (fresh != null) {
+            settingsStore.saveLastGeo(fresh.latitude, fresh.longitude)
+            return fresh
+        }
+        val saved = settingsStore.lastGeo() ?: return null
+        val ageMinutes = (System.currentTimeMillis() - saved.second) / 60_000L
+        com.wemade.teslable.DiagLog.add("측위 실패 — 저장된 마지막 위치로 대체 (${ageMinutes}분 전)")
+        return saved.first
+    }
 
     /**
      * VIN이 들어왔으니 실차로 갈아끼운다.

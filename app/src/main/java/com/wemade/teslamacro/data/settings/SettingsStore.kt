@@ -4,11 +4,14 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
@@ -89,6 +92,22 @@ class SettingsStore(private val context: Context) {
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
 
+    // 마지막으로 성공한 측위 좌표를 남긴다 — 다음 측위 실패 때 대체값으로 쓴다.
+    // 태블릿은 차에 상주하므로 마지막 좌표가 곧 차의 위치다
+    suspend fun saveLastGeo(latitude: Double, longitude: Double) = edit {
+        it[KeyLastGeoLat] = latitude
+        it[KeyLastGeoLng] = longitude
+        it[KeyLastGeoAt] = System.currentTimeMillis()
+    }
+
+    /** 저장된 마지막 좌표와 저장 시각. 저장된 적 없으면 null */
+    suspend fun lastGeo(): Pair<com.wemade.teslamacro.domain.macro.GeoPoint, Long>? {
+        val prefs = context.dataStore.data.first()
+        val lat = prefs[KeyLastGeoLat] ?: return null
+        val lng = prefs[KeyLastGeoLng] ?: return null
+        return com.wemade.teslamacro.domain.macro.GeoPoint(lat, lng) to (prefs[KeyLastGeoAt] ?: 0L)
+    }
+
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)
     }
@@ -104,5 +123,8 @@ class SettingsStore(private val context: Context) {
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")
         val KeyStealthCharging = booleanPreferencesKey("stealth_charging")
+        val KeyLastGeoLat = doublePreferencesKey("last_geo_lat")
+        val KeyLastGeoLng = doublePreferencesKey("last_geo_lng")
+        val KeyLastGeoAt = longPreferencesKey("last_geo_at")
     }
 }

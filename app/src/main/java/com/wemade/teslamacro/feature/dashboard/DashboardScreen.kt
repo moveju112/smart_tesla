@@ -223,17 +223,19 @@ private fun QuickActionGrid(
 ) {
     val actions = listOf(
         QuickAction(
-            // 라벨은 "누르면 일어날 일"로 쓴다 — 현재 상태는 아이콘·테두리가 말해준다
-            icon = if (state.isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-            label = if (state.isLocked) "잠금 해제" else "잠그기",
-            active = state.isLocked,
-            command = if (state.isLocked) VehicleCommand.Unlock else VehicleCommand.Lock,
+            // 라벨은 "누르면 일어날 일"로 쓴다 — 현재 상태는 아이콘·테두리가 말해준다.
+            // 읽기 전엔 상태를 단정하지 않는다 (히어로는 "--"인데 여기만 "열림" 주장하는 모순 방지)
+            icon = if (state.hasBodyReading && state.isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+            label = if (state.hasBodyReading && state.isLocked) "잠금 해제" else "잠그기",
+            active = state.hasBodyReading && state.isLocked,
+            command = if (state.hasBodyReading && state.isLocked) VehicleCommand.Unlock else VehicleCommand.Lock,
         ),
         QuickAction(
             icon = Icons.Rounded.AcUnit,
-            label = if (state.isClimateOn) "공조 끄기" else "공조 켜기",
-            active = state.isClimateOn,
-            command = if (state.isClimateOn) VehicleCommand.ClimateOff else VehicleCommand.ClimateOn,
+            label = if (state.hasClimateReading && state.isClimateOn) "공조 끄기" else "공조 켜기",
+            active = state.hasClimateReading && state.isClimateOn,
+            command = if (state.hasClimateReading && state.isClimateOn) VehicleCommand.ClimateOff
+            else VehicleCommand.ClimateOn,
         ),
         QuickAction(
             icon = Icons.Rounded.VerticalAlignBottom,
@@ -336,12 +338,12 @@ private fun ClimateCard(
                 Text(
                     // 읽기 전엔 "꺼짐"이 아니라 확인 중 — 충전 카드와 같은 규칙
                     text = when {
-                        !state.hasReading -> "상태 확인 중"
+                        !state.hasClimateReading -> "상태 확인 중"
                         state.isClimateOn -> "작동 중"
                         else -> "꺼짐"
                     },
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (state.hasReading && state.isClimateOn) T.Ink else T.InkFaint,
+                    color = if (state.hasClimateReading && state.isClimateOn) T.Ink else T.InkFaint,
                 )
                 Text(
                     text = "목표 ${"%.1f".format(draftTemp)}℃",
@@ -646,13 +648,13 @@ private fun HeroCard(state: DashboardUiState) {
                 StatusPill(
                     // 읽기 전 기본값(false)이 "꺼짐"으로 보이면 오보 — 잠금 칸과 같은 가드
                     text = when {
-                        !state.hasReading -> "확인 중"
+                        !state.hasClimateReading -> "확인 중"
                         state.isClimateOn -> "공조 켜짐"
                         else -> "공조 꺼짐"
                     },
-                    color = if (state.hasReading && state.isClimateOn) T.Cool else T.InkFaint,
+                    color = if (state.hasClimateReading && state.isClimateOn) T.Cool else T.InkFaint,
                     // 옅은 파랑 틴트 위 파랑 글자는 대비 미달 — 진한 파랑으로
-                    textColor = if (state.hasReading && state.isClimateOn) T.ElectricPressed else T.InkMuted,
+                    textColor = if (state.hasClimateReading && state.isClimateOn) T.ElectricPressed else T.InkMuted,
                 )
             }
 
@@ -683,12 +685,12 @@ private fun HeroCard(state: DashboardUiState) {
             Spacer(Modifier.height(Space.md))
 
             Row(modifier = Modifier.fillMaxWidth()) {
-                HeroStat("외부", if (state.hasReading) "${state.outsideTemp}℃" else "--", Modifier.weight(1f))
+                HeroStat("외부", if (state.hasClimateReading) "${state.outsideTemp}℃" else "--", Modifier.weight(1f))
                 // 첫 읽기 전엔 "--℃" 같은 어색한 표기가 되므로 외부와 같은 가드를 건다
-                HeroStat("목표", if (state.hasReading) "${state.targetTemp}℃" else "--", Modifier.weight(1f))
+                HeroStat("목표", if (state.hasClimateReading) "${state.targetTemp}℃" else "--", Modifier.weight(1f))
                 HeroStat("배터리", state.batteryLabel, Modifier.weight(1f))
                 // 읽기 전 기본값(false)이 "열림"으로 보이면 오보다 — 다른 칸과 같은 가드
-                HeroStat("잠금", if (state.hasReading) { if (state.isLocked) "잠김" else "열림" } else "--", Modifier.weight(1f))
+                HeroStat("잠금", if (state.hasBodyReading) { if (state.isLocked) "잠김" else "열림" } else "--", Modifier.weight(1f))
             }
         }
     }
@@ -769,6 +771,10 @@ data class DashboardUiState(
     val isSimulated: Boolean,
     /** 상태를 한 번이라도 읽었는지. false면 스켈레톤을 보여준다 */
     val hasReading: Boolean,
+    /** VCSEC(잠금·탑승)를 실제로 읽었는가 — 전역 hasReading은 다른 카테고리 성공으로도 참이 된다 */
+    val hasBodyReading: Boolean = false,
+    /** CLIMATE를 실제로 읽었는가 — 읽기 전 "공조 꺼짐" 단정을 막는다 */
+    val hasClimateReading: Boolean = false,
     val pendingCommand: VehicleCommand?,
     val errorMessage: String?,
     /** 마지막으로 차량 상태를 읽은 뒤 흐른 초. 못 읽었으면 null */

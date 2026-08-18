@@ -256,6 +256,8 @@ class ScreenshotTest {
         ),
         isSimulated = false,
         hasReading = hasReading,
+        hasBodyReading = hasReading,
+        hasClimateReading = hasReading,
         pendingCommand = null,
         errorMessage = error,
         secondsSinceReading = if (hasReading) 3 else null,

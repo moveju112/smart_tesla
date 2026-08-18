@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -73,7 +74,14 @@ class StatePoller(
         launch {
             var last: LinkState? = null
             gateway.linkState.collect { state ->
-                if (last is LinkState.Ready && state !is LinkState.Ready) nudge()
+                if (last is LinkState.Ready && state !is LinkState.Ready) {
+                    // 끊긴 순간의 값은 더 이상 사실이 아니다 — 특히 isCharging이 참으로 굳으면
+                    // 재연결 순간(전체 읽기 전) 스텔스 충전이 자는 차에 명령을 쏜다
+                    _snapshot.update {
+                        it.copy(isCharging = null, isUserPresent = null, isLocked = null)
+                    }
+                    nudge()
+                }
                 last = state
             }
         }
@@ -154,7 +162,9 @@ class StatePoller(
             if (focusRequested.isNotEmpty()) {
                 focusCategories = focusCategories + focusRequested
                 focusUntil = now() + FOCUS_CONFIRM_MS
-                activeUntil = maxOf(activeUntil, now() + settings.activeWindowSeconds * 1000L)
+                // 집중 창은 확인 창 길이만큼만 — 명령 한 번에 3~5분짜리 고빈도 창이 열리면
+                // FOCUS_CONFIRM_MS로 아끼려던 인포테인먼트 비용이 그대로 나간다
+                activeUntil = maxOf(activeUntil, focusUntil)
             }
             val isActiveWindow = now() < activeUntil
             if (now() >= focusUntil) focusCategories = setOf()
@@ -187,8 +197,11 @@ class StatePoller(
                 _snapshot.value.isCharging == true -> setOf(
                     StateCategory.BODY_CONTROLLER,
                     StateCategory.CHARGE,
-                )
-                else -> setOf(StateCategory.BODY_CONTROLLER)
+                ) + requiredCategories()
+                // 켜진 룰이 요구하는 카테고리는 빈 차에서도 읽는다 — "주차 과열 보호"처럼
+                // 빈 차가 본령인 룰이 하차 시점 값(몇 시간 전 46℃)으로 판정되는 걸 막는다.
+                // 인포테인먼트 읽기가 차 수면을 방해하는 비용은 그 룰을 켠 사용자의 선택이다
+                else -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories()
             }
             needFullRead = false
 
@@ -258,8 +271,11 @@ class StatePoller(
                 activeSeconds = settings.activePollSeconds,
                 idleSeconds = settings.idlePollSeconds,
             )
-            // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지
-            sleep((interval * 1000L - (now() - cycleStart)).coerceAtLeast(1_000L))
+            // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지.
+            // 단 실패가 낀 사이클은 경과를 빼지 않는다 — 타임아웃(8초×N)이 주기를 넘으면
+            // 하한 1초로 떨어져 "느린 차일수록 쉼 없이 재시도"가 된다
+            val elapsed = if (results.any { it.second.isFailure }) 0L else now() - cycleStart
+            sleep((interval * 1000L - elapsed).coerceAtLeast(1_000L))
         }
     }
 
@@ -288,6 +304,11 @@ class StatePoller(
     // 경합해도 요청이 유실되지 않는다
     private val pendingFocus =
         java.util.concurrent.atomic.AtomicReference<Set<StateCategory>>(emptySet())
+
+    /** 수동 실행(목록·음성)도 쿨다운에 기록한다 — 방금 돈 매크로가 트리거로 곧장 또 돌지 않게 */
+    fun recordFired(ruleId: String) {
+        lastFiredAt[ruleId] = now()
+    }
 
     /** 명령 성공 직후 호출 — 해당 카테고리를 집중 폴링에 태우고 폴러를 즉시 깨운다 */
     fun focusOn(category: StateCategory) {
@@ -387,8 +408,11 @@ class StatePoller(
         driverTempSettingC = incoming.driverTempSettingC ?: base.driverTempSettingC,
         isClimateOn = incoming.isClimateOn ?: base.isClimateOn,
         isPreconditioning = incoming.isPreconditioning ?: base.isPreconditioning,
-        isUserPresent = incoming.isUserPresent ?: base.isUserPresent,
-        isLocked = incoming.isLocked ?: base.isLocked,
+        // 탑승·잠금은 VCSEC 소유 필드 — VCSEC 읽기가 성공했는데 null(UNKNOWN)이면
+        // "모름"이 진실이다. 기존 값을 유지하면 true가 동결돼 깊은 유휴에 영영 못 들고
+        // 빈 차의 인포테인먼트를 계속 깨운다 (isCharging에만 있던 가드를 확장)
+        isUserPresent = if (ownsPresence(category)) incoming.isUserPresent else base.isUserPresent,
+        isLocked = if (ownsPresence(category)) incoming.isLocked else base.isLocked,
         shiftState = if (incoming.shiftState != ShiftState.UNKNOWN) incoming.shiftState
         else base.shiftState,
         doorOpen = base.doorOpen + incoming.doorOpen,
@@ -403,6 +427,10 @@ class StatePoller(
         speedKph = incoming.speedKph ?: base.speedKph,
     )
 }
+
+/** 탑승·잠금 필드를 보고하는 카테고리인가 (VCSEC 상태 응답 계열) */
+private fun ownsPresence(category: StateCategory): Boolean =
+    category == StateCategory.BODY_CONTROLLER || category == StateCategory.CLOSURES
 
 /** 깊은 유휴 주기. 사용자가 평상시를 이보다 길게 잡았으면 그 값을 따른다 */
 internal const val DEEP_IDLE_SECONDS = 120

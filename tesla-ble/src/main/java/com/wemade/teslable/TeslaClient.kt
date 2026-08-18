@@ -183,7 +183,9 @@ class TeslaClient(
         if (!quiet) DiagLog.add("명령 전송 ${domain.name} (${payload.size}B)")
         val response = sendAndAwait(message.toByteArray(), uuid)
             ?: run {
-                DiagLog.add("명령 응답 없음 (${RESPONSE_TIMEOUT_MS}ms)")
+                // 폴링(quiet) 무응답은 여기서 안 적는다 — 차가 자는 동안 매 사이클 쌓인다.
+                // 게이트웨이가 카테고리별 "읽기 실패"를 원인 변화 시에만 남긴다
+                if (!quiet) DiagLog.add("명령 응답 없음 (${RESPONSE_TIMEOUT_MS}ms)")
                 throw TeslaProtocolException("차량이 응답하지 않는다")
             }
 

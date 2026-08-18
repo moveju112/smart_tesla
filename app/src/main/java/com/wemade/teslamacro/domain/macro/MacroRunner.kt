@@ -68,11 +68,22 @@ class MacroRunner(
     private val _progress = MutableStateFlow<Map<String, MacroProgress>>(emptyMap())
     val progress: StateFlow<Map<String, MacroProgress>> = _progress.asStateFlow()
 
-    /** 매크로를 실행한다. 같은 매크로가 돌고 있으면 취소하고 새로 시작한다 */
-    fun launch(rule: MacroRule, nowMillis: Long) {
+    /**
+     * 매크로를 실행한다.
+     * 트리거 재발동은 실행 중이면 건너뛴다 — 끊고 다시 시작하면
+     * "창문 열기 → 10분 대기 → 창문 닫기"의 닫기가 재발동마다 유실된다 (쿨다운 < 총 대기 시간일 때).
+     * 수동 실행([restartIfRunning])만 기존 실행을 끊고 처음부터 다시 돈다 — 사람 의도가 우선.
+     */
+    fun launch(rule: MacroRule, nowMillis: Long, restartIfRunning: Boolean = false) {
         scope.launch {
             lock.withLock {
-                jobs.remove(rule.id)?.cancel()
+                if (jobs[rule.id]?.isActive == true) {
+                    if (!restartIfRunning) {
+                        append(nowMillis, rule.name, "재발동 무시 — 이미 실행 중")
+                        return@withLock
+                    }
+                    jobs.remove(rule.id)?.cancel()
+                }
                 jobs[rule.id] = scope.launch { execute(rule, nowMillis) }
             }
         }
@@ -115,15 +126,24 @@ class MacroRunner(
                 }
             }
             append(now(), rule.name, "완료")
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // 취소도 흔적을 남긴다 — "시작만 있고 끝이 없는" 제3의 상태를 로그에서 없앤다.
+            // 안 남기면 하차 정리의 잠금 걸음이 왜 안 됐는지 추적할 수 없다
+            append(now(), rule.name, "중단됨 (사람 조작 또는 재발동)", isError = true)
+            throw cancelled
         } finally {
             // 내 항목일 때만 지운다 — 재발동으로 방금 등록된 새 잡의 항목을
             // 취소된 이전 잡의 finally가 지우면, 새 잡이 추적을 벗어나
-            // cancelAll(사람 조작 우선)이 못 멈추고 다음 발동과 겹쳐 돈다
-            lock.withLock {
-                if (jobs[rule.id] === myJob) {
-                    jobs.remove(rule.id)
-                    _running.update { it - rule.id }
-                    _progress.update { it - rule.id }
+            // cancelAll(사람 조작 우선)이 못 멈추고 다음 발동과 겹쳐 돈다.
+            // NonCancellable — 취소된 코루틴에서 withLock이 또 취소 예외를 던져
+            // 정리를 건너뛰는 것을 막는다
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                lock.withLock {
+                    if (jobs[rule.id] === myJob) {
+                        jobs.remove(rule.id)
+                        _running.update { it - rule.id }
+                        _progress.update { it - rule.id }
+                    }
                 }
             }
         }

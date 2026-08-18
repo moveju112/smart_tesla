@@ -168,6 +168,8 @@ class PhoneScreenshotTest {
         ),
         isSimulated = false,
         hasReading = true,
+        hasBodyReading = true,
+        hasClimateReading = true,
         pendingCommand = null,
         errorMessage = null,
         secondsSinceReading = 3,

@@ -386,9 +386,16 @@ class BleVehicleGateway(
                 }
             }
         }.onFailure {
-            com.wemade.teslable.DiagLog.add("$category 읽기 실패: ${it.message}")
-        }
+            // 같은 실패(차가 자는 동안 무응답 등)는 첫 번째만 — 원인이 바뀌면 다시 남긴다
+            val message = it.message ?: "원인 불명"
+            if (lastReadFailure[category] != message) {
+                lastReadFailure[category] = message
+                com.wemade.teslable.DiagLog.add("$category 읽기 실패: $message")
+            }
+        }.onSuccess { lastReadFailure.remove(category) }
     }
+
+    private val lastReadFailure = mutableMapOf<StateCategory, String>()
 
     // 파싱 결과는 값이 바뀔 때만 남긴다 — "배터리=99"를 15초마다 반복하면
     // 300줄 버퍼에서 연결·매크로 로그를 밀어낸다

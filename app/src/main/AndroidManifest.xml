@@ -77,10 +77,11 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay">
+            <!-- BROWSABLE은 뺀다 — 넣으면 아무 웹페이지 링크 한 줄로 unlock·트렁크가
+                 확인 없이 실행된다. 자동화 앱·바로가기(명시적 VIEW 인텐트)는 그대로 동작한다 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="teslamacro" android:host="run" />
             </intent-filter>
         </activity>

@@ -76,7 +76,17 @@ class VoiceService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startInForeground()
+        // 마이크 권한 없이 microphone 타입 포그라운드를 올리면 SecurityException으로 프로세스가 죽고,
+        // voiceAlwaysOn이 저장돼 있어 앱을 열 때마다 다시 죽는 루프가 된다 — 못 올리면 스스로 내린다
+        val hasMic = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasMic || runCatching { startInForeground() }.isFailure) {
+            com.wemade.teslable.DiagLog.add(
+                "음성 대기 시작 실패 — " + if (!hasMic) "마이크 권한 없음" else "포그라운드 승격 거부"
+            )
+            stopSelf()
+            return
+        }
         speaker = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) speaker?.language = Locale.KOREAN
         }
@@ -224,7 +234,9 @@ class VoiceService : LifecycleService() {
 
             is VoiceIntent.RunMacro -> {
                 announce("${intent.rule.name} 실행")
-                app.container.runner.launch(intent.rule, System.currentTimeMillis())
+                // 음성 실행도 수동 — 기존 실행을 끊고 처음부터 + 쿨다운 기록
+                app.container.runner.launch(intent.rule, System.currentTimeMillis(), restartIfRunning = true)
+                app.container.poller.recordFired(intent.rule.id)
             }
 
             // 상대 조절 — 현재 값은 폴러 스냅샷이 안다. 여기서 절대값 명령으로 바꿔 재귀한다

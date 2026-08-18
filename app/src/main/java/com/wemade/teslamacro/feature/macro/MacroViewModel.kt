@@ -27,7 +27,9 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 조건과 무관하게 즉시 실행 (매크로 동작을 눈으로 확인할 때) */
     fun runNow(rule: MacroRule) {
-        container.runner.launch(rule, System.currentTimeMillis())
+        // 수동 실행은 기존 실행을 끊고 처음부터 + 쿨다운 기록 (직후 트리거 재발동 방지)
+        container.runner.launch(rule, System.currentTimeMillis(), restartIfRunning = true)
+        container.poller.recordFired(rule.id)
     }
 
     fun stopAll() = container.runner.cancelAll()

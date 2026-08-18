@@ -41,7 +41,8 @@ class QuickActionActivity : Activity() {
             app.ready.first { it }
 
             val settings = app.container.settingsStore.settings.first()
-            if (settings.isPaired) app.container.gateway.connect(settings.vin)
+            // isReady(키 등록까지 완료) — isPaired만 보면 등록 핸드셰이크 도중에 끼어든다
+            if (settings.isReady) app.container.gateway.connect(settings.vin)
 
             val result = app.container.gateway.send(command)
             // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다

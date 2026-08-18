@@ -116,8 +116,13 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             seatCooler = effective.seatCooler,
             seatHeater = effective.seatHeater,
             isSimulated = container.isSimulated,
-            // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다
+            // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다.
+            // 전역 타임스탬프는 아무 카테고리 하나만 성공해도 갱신되므로,
+            // 잠금(VCSEC)·공조(CLIMATE)는 해당 카테고리를 실제로 읽었는지로 따로 가린다
             hasReading = snapshot.timestampMillis > 0L,
+            hasBodyReading = StateCategory.BODY_CONTROLLER in snapshot.categoryReadAt ||
+                StateCategory.CLOSURES in snapshot.categoryReadAt,
+            hasClimateReading = StateCategory.CLIMATE in snapshot.categoryReadAt,
             pendingCommand = aux.pending,
             errorMessage = aux.error,
             secondsSinceReading = snapshot.timestampMillis
@@ -183,8 +188,16 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
      */
     fun setSeatClimate(seat: SeatPosition, mode: SeatMode, level: Level) {
         viewModelScope.launch {
-            // 1. 클라 저장 — 화면은 이 값을 즉시 따른다
+            // 1. 클라 저장 + 낙관 반영 — 저장만 하면 차량 보고값(옛값)이 우선돼
+            //    누른 단계가 한 프레임 만에 "끔"으로 튕긴다 (send() 경로와 같은 규칙)
             container.seatStore.set(seat, SeatClimate(mode, level))
+            optimistic.update {
+                it.copy(
+                    seatCooler = it.seatCooler + (seat to if (mode == SeatMode.COOL) level else Level.OFF),
+                    seatHeater = it.seatHeater + (seat to if (mode == SeatMode.HEAT) level else Level.OFF),
+                    climateAppliedAtMillis = System.currentTimeMillis(),
+                )
+            }
 
             // 2. 사람 조작이 우선이라 매크로는 멈춘다
             container.runner.cancelAll()
@@ -218,8 +231,16 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
             pending.value = null
-            // 하나라도 갔으면 공조를 즉시 다시 읽어 실제 좌석 상태로 확정한다
-            if (anySuccess) container.poller.focusOn(StateCategory.CLIMATE)
+            if (anySuccess) {
+                // 전송 완료 시각으로 낙관 시계를 미루고, 공조를 즉시 다시 읽어 확정한다
+                optimistic.update { it.copy(climateAppliedAtMillis = System.currentTimeMillis()) }
+                container.poller.focusOn(StateCategory.CLIMATE)
+            } else {
+                // 한 발도 못 갔으면 낙관 표시를 거둔다 — 화면이 거짓을 유지하면 안 된다
+                optimistic.update {
+                    it.copy(seatCooler = it.seatCooler - seat, seatHeater = it.seatHeater - seat)
+                }
+            }
         }
     }
 
@@ -330,7 +351,10 @@ internal fun seatClimateOf(
         when {
             heater != null && heater != Level.OFF -> SeatClimate(SeatMode.HEAT, heater)
             cooler != null && cooler != Level.OFF -> SeatClimate(SeatMode.COOL, cooler)
-            cooler == null && heater == null -> saved
+            // 저장된 모드 쪽 채널이 null(차가 안 알려줌)이면 저장값을 믿는다 —
+            // 반대 채널의 "꺼짐" 보고만으로 이쪽까지 끔으로 단정하면 안 된다
+            saved.mode == SeatMode.COOL && cooler == null -> saved
+            saved.mode == SeatMode.HEAT && heater == null -> saved
             else -> SeatClimate(saved.mode, Level.OFF)
         }
     }

@@ -56,11 +56,22 @@ class StealthChargeController(
     private suspend fun runLoop() {
         // 시작값은 차가 보고한 현재 전류, 없으면 상한
         var current = poller.snapshot.value.chargingAmps ?: maxAmps
+        var stepCount = 0
         while (true) {
             val step = StealthChargePlan.next(current, MIN_AMPS, maxAmps)
-            gateway.send(VehicleCommand.SetChargingAmps(step.amps))
+            val sent = gateway.send(VehicleCommand.SetChargingAmps(step.amps))
             current = step.amps
-            com.wemade.teslable.DiagLog.add("스텔스 충전 → ${step.amps}A (${step.holdSeconds}s)")
+            stepCount++
+            // 스텝마다 적으면(평균 75초) 밤샘 충전이 300줄 버퍼를 한 바퀴 돌린다 —
+            // 시작 1회 + 10스텝마다 + 실패 시에만 남긴다
+            when {
+                sent.isFailure -> com.wemade.teslable.DiagLog.add(
+                    "스텔스 충전 전송 실패 — ${sent.exceptionOrNull()?.message}"
+                )
+                stepCount == 1 || stepCount % 10 == 0 -> com.wemade.teslable.DiagLog.add(
+                    "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A)"
+                )
+            }
             delay(step.holdSeconds * 1000L)   // 취소되면 여기서 CancellationException으로 빠져나간다
         }
     }

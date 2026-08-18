@@ -86,6 +86,49 @@ class MacroEngineTest {
     }
 
     @Test
+    fun `깊은 유휴(2분 폴링)에서도 시각 트리거를 놓치지 않는다`() {
+        // 17:59 → 18:01 표본이면 18:00을 건너뛰지만, (직전, 현재] 창 판정으로 잡는다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.AtTime(18 * 60)))),
+            previous = reading(minutesOfDay = 18 * 60 - 1),
+            current = reading(minutesOfDay = 18 * 60 + 1),
+        )
+        assertEquals(1, fired.size)
+    }
+
+    @Test
+    fun `시각 트리거 소급은 15분까지만 — 몇 시간 뒤 뒷북 발동은 버린다`() {
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.AtTime(8 * 60)))),
+            previous = reading(minutesOfDay = 7 * 60),
+            current = reading(minutesOfDay = 10 * 60),   // Doze로 3시간 공백
+        )
+        assertEquals(0, fired.size)
+    }
+
+    @Test
+    fun `쿨다운 중에도 Always 래치는 갱신된다`() {
+        // 쿨다운 중 조건 이탈을 래치가 봐야, 쿨다운이 끝난 뒤 재진입 없이도 발동한다
+        val always = rule(
+            triggers = listOf(Trigger.Always),
+            conditions = listOf(Condition.InRange(Signal.INSIDE_TEMP, gte = 22.0, lte = 24.0)),
+            cooldown = 300,
+        )
+        val base = defaultNow
+        // t=0 발동 (조건 진입)
+        evaluate(listOf(always), reading(inside = 30.0, epochMillis = base), reading(inside = 23.0, epochMillis = base))
+        val firedAt = mapOf("test" to base)
+        // t=60 쿨다운 중 조건 이탈 — 래치가 이 이탈을 기억해야 한다
+        evaluate(listOf(always), reading(inside = 23.0, epochMillis = base + 60_000), reading(inside = 26.0, epochMillis = base + 60_000), firedAt)
+        // t=200 쿨다운 중 재진입 — 발동은 막히지만 래치는 참으로
+        evaluate(listOf(always), reading(inside = 26.0, epochMillis = base + 200_000), reading(inside = 23.0, epochMillis = base + 200_000), firedAt)
+        // t=310 쿨다운 만료 후 이탈 → t=320 재진입이면 발동해야 한다
+        evaluate(listOf(always), reading(inside = 23.0, epochMillis = base + 310_000), reading(inside = 26.0, epochMillis = base + 310_000), firedAt)
+        val fired = evaluate(listOf(always), reading(inside = 26.0, epochMillis = base + 320_000), reading(inside = 23.0, epochMillis = base + 320_000), firedAt)
+        assertEquals(1, fired.size)
+    }
+
+    @Test
     fun `조건이 막으면 어떤 조건이 막았는지 알려준다`() {
         // "왜 안 터졌지" 진단용 — 탑승은 감지됐는데 위치·시간 조건이 막은 경우를 로그로 본다
         val blocked = mutableListOf<Pair<String, List<Condition>>>()

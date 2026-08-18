@@ -44,18 +44,20 @@ class MacroEngine {
             // 2. 트리거가 없으면 발동할 수 없다 (조건만으로는 절대 실행되지 않는다)
             if (rule.triggers.isEmpty()) return@filter false
 
-            // 3. 쿨다운 중이면 건너뛴다
+            // 3. 트리거 평가를 쿨다운보다 먼저 — Always 래치는 쿨다운 중에도 갱신돼야 한다.
+            //    쿨다운이 먼저 자르면 래치가 발동 시점의 참으로 굳어, 쿨다운이 끝나도
+            //    조건 이탈-재진입을 한 번 더 해야만 발동하는 침묵 구간이 생긴다.
+            //    any 대신 map+any — 래치 갱신 때문에 모든 트리거를 반드시 평가한다
+            val triggered = rule.triggers.map { fired(rule, it, previous, current) }.any { it }
+            if (!triggered) return@filter false
+
+            // 4. 쿨다운 중이면 발동하지 않는다
             val lastFired = lastFiredAtMillis[rule.id]
             if (lastFired != null &&
                 current.time.epochMillis - lastFired < rule.cooldownSeconds * 1000L
             ) {
                 return@filter false
             }
-
-            // 4. 트리거 하나라도 발생 && 조건 전부 만족.
-            //    any 대신 map+any — 래치 갱신 때문에 모든 트리거를 반드시 평가한다
-            val triggered = rule.triggers.map { fired(rule, it, previous, current) }.any { it }
-            if (!triggered) return@filter false
 
             // 어떤 조건이 막았는지 알려준다 — 진단 로그 없이는 "왜 안 터졌는지" 알 길이 없다
             val unmet = rule.conditions.filter { !holds(it, current) }
@@ -89,19 +91,21 @@ class MacroEngine {
                 }
             }
 
-            // 그 분에 들어서는 순간에만 참. 같은 분에 두 번 폴링해도 한 번만 발동한다
+            // (직전, 현재] 창 판정 — 분 일치 비교는 폴링이 성기면(깊은 유휴 2분+) 그 분을
+            // 통째로 건너뛰어 시각 매크로가 조용히 유실된다. 같은 분 재폴링은 창이 비어 걸러진다.
+            // Doze로 몇 시간 밀린 뒤의 뒷북 발동은 의미가 없어 15분까지만 소급한다
             is Trigger.AtTime -> {
                 val dayMatches = trigger.days.isEmpty() || current.time.dayOfWeek in trigger.days
-                val reachedNow = current.time.minutesOfDay == trigger.minutesOfDay
-                val wasBefore = previous?.time?.minutesOfDay == trigger.minutesOfDay
-                dayMatches && reachedNow && !wasBefore
+                dayMatches && crossedInWindow(previous, current) { minute ->
+                    minute == trigger.minutesOfDay
+                }
             }
 
-            // 주기: 나눠떨어지는 분에 들어서는 순간. 같은 분 재진입은 걸러진다
+            // 주기: (직전, 현재] 창 안에 배수 분이 있으면 발동 — AtTime과 같은 그물눈 보정
             is Trigger.Every -> {
-                val minutes = current.time.minutesOfDay
-                val onTick = trigger.everyMinutes > 0 && minutes % trigger.everyMinutes == 0
-                onTick && previous?.time?.minutesOfDay != minutes
+                trigger.everyMinutes > 0 && crossedInWindow(previous, current) { minute ->
+                    minute % trigger.everyMinutes == 0
+                }
             }
 
             // 호출 전용. 폴링 판정으로는 절대 발동하지 않는다 — 음성/직접 실행만
@@ -128,4 +132,30 @@ class MacroEngine {
     /** 조건은 "지금 그런 상태인가요"만 본다. 대기 해제와 같은 규칙을 쓴다 */
     private fun holds(condition: Condition, current: Reading): Boolean =
         ConditionEvaluator.holds(condition, current)
+
+    /**
+     * (직전, 현재] 사이에 [matches]가 참인 분(minute)이 있었는지.
+     * 자정 넘김을 처리하고, 소급은 [LATE_FIRE_LIMIT_MINUTES]까지만 본다.
+     * 직전 표본이 없으면(첫 판정) 현재 분만 본다 — 재시작 시 과거 발동을 몰아서 터뜨리지 않는다
+     */
+    private fun crossedInWindow(
+        previous: Reading?,
+        current: Reading,
+        matches: (Int) -> Boolean,
+    ): Boolean {
+        val cur = current.time.minutesOfDay
+        val prev = previous?.time?.minutesOfDay ?: return matches(cur)
+        val gap = ((cur - prev) + MINUTES_PER_DAY) % MINUTES_PER_DAY
+        val window = minOf(gap, LATE_FIRE_LIMIT_MINUTES)
+        return (0 until window).any { back ->
+            matches(((cur - back) + MINUTES_PER_DAY) % MINUTES_PER_DAY)
+        }
+    }
+
+    private companion object {
+        const val MINUTES_PER_DAY = 24 * 60
+
+        /** 폴링 공백(깊은 유휴·Doze) 소급 발동 상한 — 이보다 늦은 시각 트리거는 뒷북이라 버린다 */
+        const val LATE_FIRE_LIMIT_MINUTES = 15
+    }
 }

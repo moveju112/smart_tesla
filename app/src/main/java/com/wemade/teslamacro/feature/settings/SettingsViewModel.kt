@@ -81,13 +81,28 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                             ?.content?.takeIf { it.endsWith(".apk") }
                     }
                 val latest = tag.removePrefix("v")
-                if (latest.isNotBlank() && latest != com.wemade.teslamacro.BuildConfig.VERSION_NAME) {
+                // "다르면 새 버전"이 아니라 실제로 높은지 본다 — 릴리스보다 앞선 로컬 빌드에서
+                // 다운그레이드 APK를 새 버전으로 안내하는 사고 방지
+                if (isNewer(latest, com.wemade.teslamacro.BuildConfig.VERSION_NAME)) {
                     UpdateState.Available(latest, apkUrl ?: RELEASE_PAGE)
                 } else {
                     UpdateState.UpToDate
                 }
             }.getOrElse { UpdateState.Failed }
         }
+    }
+
+    // 점 구분 숫자 버전 비교 — 숫자 아닌 접미사("-beta")는 무시하고 자리별 수치로 판정한다
+    private fun isNewer(latest: String, current: String): Boolean {
+        if (latest.isBlank()) return false
+        val a = latest.split(".").map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+        val b = current.split(".").map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
+        repeat(maxOf(a.size, b.size)) { i ->
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
     }
 
     // ---- 음성 ----

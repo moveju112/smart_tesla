@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 업데이트 APK를 시스템 설치기에 넘길 때 쓰는 FileProvider 경로. 캐시만 노출한다 -->
-<paths>
-    <cache-path name="update" path="." />
-</paths>

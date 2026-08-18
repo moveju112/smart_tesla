@@ -24,8 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DiagLogPanel
@@ -188,6 +190,7 @@ fun SettingsScreen(
 /** 현재 버전 표시 + GitHub 최신 릴리스 확인/원클릭 설치 */
 @Composable
 private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: () -> Unit) {
+    val context = LocalContext.current
     TCard {
         LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
         Spacer(Modifier.height(Space.md))
@@ -199,29 +202,40 @@ private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: ()
                     null -> "새 버전이 나왔는지 확인해 보세요."
                     is UpdateState.Checking -> "확인 중…"
                     is UpdateState.UpToDate -> "최신 버전이에요."
-                    is UpdateState.Failed -> "확인에 실패했어요.\n인터넷 연결을 봐주세요."
-                    is UpdateState.Available ->
-                        if (update.downloadFailed) "다운로드에 실패했어요.\n다시 눌러 주세요."
-                        else "새 버전 ${update.version}이 있어요!"
+                    is UpdateState.Failed -> update.message
+                    is UpdateState.NeedsInstallPermission ->
+                        "앱 설치 권한이 필요해요.\n한 번만 켜주면 다음부터는 저절로 끝나요."
+                    is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
                     is UpdateState.Downloading -> "내려받는 중… ${update.percent}%"
+                    is UpdateState.Installing -> "설치 중…"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = when (update) {
-                    is UpdateState.Failed -> T.WarnText
-                    is UpdateState.Available ->
-                        if (update.downloadFailed) T.WarnText else T.Ink
-                    is UpdateState.Downloading -> T.Ink
+                    is UpdateState.Failed, is UpdateState.NeedsInstallPermission -> T.WarnText
+                    is UpdateState.Available, is UpdateState.Downloading,
+                    is UpdateState.Installing -> T.Ink
                     else -> T.InkFaint
                 },
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Space.md))
             when (update) {
-                // 앱이 직접 내려받아 설치 화면까지 띄운다. 남는 조작은 "설치" 탭 1번
+                // 앱이 스스로를 갈아끼운다. 첫 회만 확인 화면이 뜨고 그 뒤로는 조용히 끝난다
                 is UpdateState.Available ->
                     TButton("설치", fillWidth = false, small = true, onClick = onInstall)
-                is UpdateState.Downloading ->
+                // 진행 중에는 눌러도 할 일이 없다
+                is UpdateState.Downloading, is UpdateState.Installing ->
                     TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
+                // 권한 화면으로 직접 보낸다. 어디서 켜는지 찾게 만들지 않는다
+                is UpdateState.NeedsInstallPermission ->
+                    TButton("권한 켜기", fillWidth = false, small = true) {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:${context.packageName}"),
+                            )
+                        )
+                    }
                 else ->
                     TButton(
                         text = "업데이트 확인",

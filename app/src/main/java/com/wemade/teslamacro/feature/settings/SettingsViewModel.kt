@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.update.AppUpdater
+import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.di.AppContainer
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
@@ -52,115 +54,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     // ---- 업데이트 ----
 
-    /** null = 아직 확인 안 함 */
-    val update = MutableStateFlow<UpdateState?>(null)
+    /** 확인·설치 진행 상태. 리시버가 갱신하므로 정본은 [AppUpdater]에 있다 */
+    val update: MutableStateFlow<UpdateState?> = AppUpdater.state
 
-    /**
-     * GitHub 최신 릴리스와 현재 버전을 비교한다.
-     * 실패해도 릴리스 페이지 링크로 안내할 수 있게 상태만 남긴다.
-     */
+    /** GitHub 최신 릴리스와 현재 버전을 비교한다 */
     fun checkUpdate() {
-        update.value = UpdateState.Checking
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            update.value = runCatching {
-                // 응답이 안 오면 "확인 중"에 영원히 매달린다 — 연결·읽기 5초씩에 끊는다
-                val connection = java.net.URL(RELEASE_API).openConnection()
-                    as java.net.HttpURLConnection
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = kotlinx.serialization.json.Json.parseToJsonElement(body)
-                    .let { it as kotlinx.serialization.json.JsonObject }
-                val tag = json["tag_name"]
-                    ?.let { (it as kotlinx.serialization.json.JsonPrimitive).content }
-                    .orEmpty()
-                val apkUrl = (json["assets"] as? kotlinx.serialization.json.JsonArray)
-                    ?.firstNotNullOfOrNull { asset ->
-                        val obj = asset as kotlinx.serialization.json.JsonObject
-                        (obj["browser_download_url"] as? kotlinx.serialization.json.JsonPrimitive)
-                            ?.content?.takeIf { it.endsWith(".apk") }
-                    }
-                val latest = tag.removePrefix("v")
-                // "다르면 새 버전"이 아니라 실제로 높은지 본다 — 릴리스보다 앞선 로컬 빌드에서
-                // 다운그레이드 APK를 새 버전으로 안내하는 사고 방지
-                if (isNewer(latest, com.wemade.teslamacro.BuildConfig.VERSION_NAME)) {
-                    UpdateState.Available(latest, apkUrl ?: RELEASE_PAGE)
-                } else {
-                    UpdateState.UpToDate
-                }
-            }.getOrElse { UpdateState.Failed }
+        viewModelScope.launch {
+            AppUpdater.check(com.wemade.teslamacro.BuildConfig.VERSION_NAME)
         }
     }
 
-    /**
-     * 원클릭 업데이트: APK를 앱 캐시로 내려받아 시스템 설치 화면을 바로 띄운다.
-     * 브라우저·알림·파일 앱을 거치지 않는다. 남는 조작은 설치 화면의 "설치" 탭 1번뿐.
-     */
+    /** 원클릭 업데이트: 내려받아 곧바로 설치까지 넘긴다 */
     fun downloadAndInstall() {
-        // 진행 중 재진입 방지 — 버튼이 비활성이긴 하지만 상태 꼬임을 원천 차단한다
-        val target = update.value as? UpdateState.Available ?: return
-        update.value = UpdateState.Downloading(target.version, percent = 0)
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                // 1. 캐시로 다운로드 (진행률 갱신)
-                val file = java.io.File(container.appContext.cacheDir, "update.apk")
-                val connection = java.net.URL(target.apkUrl).openConnection()
-                    as java.net.HttpURLConnection
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 30_000
-                val total = connection.contentLengthLong
-                connection.inputStream.use { input ->
-                    file.outputStream().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        var copied = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            output.write(buffer, 0, read)
-                            copied += read
-                            if (total > 0) {
-                                update.value = UpdateState.Downloading(
-                                    target.version,
-                                    percent = (copied * 100 / total).toInt(),
-                                )
-                            }
-                        }
-                    }
-                }
-                // 2. FileProvider URI로 시스템 설치기 호출
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    container.appContext,
-                    "${container.appContext.packageName}.fileprovider",
-                    file,
-                )
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                            android.content.Intent.FLAG_ACTIVITY_NEW_TASK,
-                    )
-                }
-                container.appContext.startActivity(intent)
-                // 3. 설치를 취소하고 돌아와도 다시 누를 수 있게 "새 버전 있음"으로 되돌린다
-                update.value = target
-            }.getOrElse {
-                // 실패해도 다시 누르면 재시도되도록 상태만 표시한다
-                update.value = target.copy(downloadFailed = true)
-            }
-        }
-    }
-
-    // 점 구분 숫자 버전 비교 — 숫자 아닌 접미사("-beta")는 무시하고 자리별 수치로 판정한다
-    private fun isNewer(latest: String, current: String): Boolean {
-        if (latest.isBlank()) return false
-        val a = latest.split(".").map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
-        val b = current.split(".").map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
-        repeat(maxOf(a.size, b.size)) { i ->
-            val x = a.getOrElse(i) { 0 }
-            val y = b.getOrElse(i) { 0 }
-            if (x != y) return x > y
-        }
-        return false
+        viewModelScope.launch { AppUpdater.downloadAndInstall(container.appContext) }
     }
 
     // ---- 음성 ----
@@ -195,28 +101,4 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    private companion object {
-        const val RELEASE_API =
-            "https://api.github.com/repos/moveju112/smart_tesla/releases/latest"
-        const val RELEASE_PAGE =
-            "https://github.com/moveju112/smart_tesla/releases/latest"
-    }
-}
-
-/** 업데이트 확인 결과 */
-sealed interface UpdateState {
-    data object Checking : UpdateState
-    data object UpToDate : UpdateState
-    data object Failed : UpdateState
-
-    /** 새 버전이 있다. 설치 버튼이 [apkUrl]을 앱이 직접 내려받는다 */
-    data class Available(
-        val version: String,
-        val apkUrl: String,
-        /** 직전 다운로드가 실패했다 — 같은 버튼으로 재시도 */
-        val downloadFailed: Boolean = false,
-    ) : UpdateState
-
-    /** APK 내려받는 중. [percent]는 0~100 */
-    data class Downloading(val version: String, val percent: Int) : UpdateState
 }

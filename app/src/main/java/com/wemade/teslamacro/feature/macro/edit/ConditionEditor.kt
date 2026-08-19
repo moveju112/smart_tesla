@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.wemade.teslamacro.data.location.TabletLocation
 import com.wemade.teslamacro.data.nav.NaverNavigator
 import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.ConditionEvaluator
 import com.wemade.teslamacro.domain.macro.GeoPoint
 import com.wemade.teslamacro.service.MacroService
 import kotlinx.coroutines.launch
@@ -270,6 +271,106 @@ private fun NearLocationEditor(
             meters = condition.radiusMeters,
             onChange = { onChange(condition.copy(radiusMeters = it)) },
         )
+
+        Spacer(Modifier.height(Space.md))
+        CurrentLocationPanel(condition)
+    }
+}
+
+/**
+ * 태블릿이 "지금 자기를 어디라고 믿는지" 보여준다.
+ *
+ * 매크로가 안 뛰는 이유의 대부분이 여기다 — 지하주차장에서는 새 측위가 안 돼
+ * 마지막 지상 좌표가 그대로 쓰이는데, 그게 어디인지 볼 방법이 지금까지 없었다.
+ * 저장 위치와의 실제 거리를 같이 띄워 반경을 바로 정할 수 있게 한다.
+ *
+ * 좌표는 화면에만 띄우고 진단 로그에는 안 남긴다 — 로그는 공유로 밖에 나가는 통로다.
+ */
+@Composable
+private fun CurrentLocationPanel(condition: Condition.NearLocation) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var here by remember { mutableStateOf<GeoPoint?>(null) }
+    var ageMinutes by remember { mutableStateOf<Long?>(null) }
+    var address by remember { mutableStateOf<String?>(null) }
+    var reading by remember { mutableStateOf(false) }
+
+    val refresh: () -> Unit = {
+        reading = true
+        scope.launch {
+            val tablet = TabletLocation(context)
+            val point = tablet.read()
+            here = point
+            ageMinutes = tablet.lastFixAgeMillis()?.let { it / 60_000 }
+            address = point?.let { NaverNavigator(context).addressOf(it) }
+            reading = false
+        }
+    }
+    // 카드를 열면 한 번은 자동으로 읽는다. 버튼을 또 누르게 만들 이유가 없다
+    LaunchedEffect(Unit) { refresh() }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "지금 태블릿 위치",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+                modifier = Modifier.weight(1f),
+            )
+            TButton(
+                text = if (reading) "읽는 중…" else "새로고침",
+                tone = ButtonTone.Ghost,
+                fillWidth = false,
+                small = true,
+                enabled = !reading,
+                onClick = refresh,
+            )
+        }
+        Spacer(Modifier.height(Space.xs))
+
+        val point = here
+        if (point == null) {
+            Text(
+                text = if (reading) "확인 중… (최대 8초)" else "위치를 읽지 못했어요",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (reading) T.InkFaint else T.WarnText,
+            )
+            return@Column
+        }
+
+        Text(
+            text = "좌표 %.5f, %.5f".format(point.latitude, point.longitude),
+            style = MaterialTheme.typography.bodyMedium,
+            color = T.Ink,
+        )
+        address?.let {
+            Text(text = it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        }
+        // 몇 분 전 좌표인지가 핵심이다 — 달리는 중에 40분 전 좌표면 수십 km 틀린다
+        ageMinutes?.let {
+            Text(
+                text = if (it < 1) "방금 측위" else "${it}분 전 측위",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (it >= 10) T.WarnText else T.InkFaint,
+            )
+        }
+
+        // 저장 위치까지의 실제 거리. 반경을 얼마로 둘지 여기서 바로 정할 수 있다
+        val lat = condition.latitude
+        val lng = condition.longitude
+        if (lat != null && lng != null) {
+            val meters = ConditionEvaluator
+                .distanceMeters(point.latitude, point.longitude, lat, lng)
+                .toInt()
+            val passes = meters <= condition.radiusMeters
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                text = "저장 위치에서 ${meters}m · 반경 ${condition.radiusMeters}m → " +
+                    if (passes) "지금이면 통과" else "지금이면 불충족",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (passes) T.OkText else T.WarnText,
+            )
+        }
     }
 }
 

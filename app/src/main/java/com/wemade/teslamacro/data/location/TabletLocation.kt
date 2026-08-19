@@ -22,6 +22,18 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class TabletLocation(private val context: Context) {
 
+    /**
+     * 지금 쓰이고 있는 좌표가 몇 밀리초 전 것인지. 못 읽으면 null.
+     *
+     * 매크로가 왜 그 자리로 판정했는지 화면에서 보여주려고 연다 —
+     * "1분 전"인지 "40분 전"인지가 오작동 원인의 대부분이다.
+     */
+    fun lastFixAgeMillis(): Long? {
+        if (!hasPermission()) return null
+        val manager = context.getSystemService(LocationManager::class.java) ?: return null
+        return runCatching { lastKnown(manager)?.let { ageMillis(it) } }.getOrNull()
+    }
+
     /** 권한이 없거나 측위에 실패하면 null — 조건 평가는 null을 불충족으로 본다 */
     suspend fun read(): GeoPoint? {
         if (!hasPermission()) {

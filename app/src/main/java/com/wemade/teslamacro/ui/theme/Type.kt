@@ -24,11 +24,11 @@ private val Sans = FontFamily.Default
 val TeslaTypography = Typography(
     // 화면 제목 — 굵고 큼직하게
     headlineLarge = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W700, fontSize = 26.sp, lineHeight = 34.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W800, fontSize = 26.sp, lineHeight = 34.sp,
         letterSpacing = (-0.4).sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W700, fontSize = 22.sp, lineHeight = 30.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W800, fontSize = 22.sp, lineHeight = 30.sp,
         letterSpacing = (-0.3).sp,
     ),
     // 카드 제목 / 강조

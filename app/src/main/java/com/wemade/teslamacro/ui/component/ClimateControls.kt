@@ -142,8 +142,8 @@ fun ToggleRow(
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 // 파란 트랙 위 어두운 thumb는 켜짐이 안 보인다 — 토스식 흰 thumb
-                checkedThumbColor = Color.White,
-                checkedTrackColor = T.Electric,
+                checkedThumbColor = T.Carbon,
+                checkedTrackColor = T.InkMuted,
                 checkedBorderColor = Color.Transparent,
                 uncheckedThumbColor = T.InkFaint,
                 uncheckedTrackColor = T.Slate,

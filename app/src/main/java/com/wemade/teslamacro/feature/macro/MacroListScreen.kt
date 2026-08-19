@@ -101,9 +101,9 @@ fun MacroListScreen(
         horizontalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
         LazyVerticalGrid(
-            // 실기기 목록 칸이 약 540dp라 360dp면 한 열로 떨어진다. 두 열이 들어가게 낮춘다
-            columns = GridCells.Adaptive(minSize = 250.dp),
-            modifier = Modifier.weight(if (compact) 1f else 2f),
+            // 한 열로 세운다 — 카드를 좌우로 흩어 놓으면 훑는 순서가 두 갈래가 된다
+            columns = GridCells.Fixed(1),
+            modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(vertical = Space.lg),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
@@ -164,8 +164,8 @@ fun MacroListScreen(
                 )
             }
 
-            // 좁은 화면에서는 옆에 둘 자리가 없어 아래로 잇는다
-            if (compact) {
+            // 기록은 목록 아래로 잇는다 — 옆에 레일로 세우면 화면이 두 갈래로 쪼개진다
+            if (true) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("실행 기록") }
                 if (log.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) { EmptyLogNotice() }
@@ -178,7 +178,7 @@ fun MacroListScreen(
             }
         }
 
-        if (!compact) {
+        if (false) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(vertical = Space.lg),
@@ -254,8 +254,8 @@ private fun MacroCard(
                 checked = rule.enabled,
                 onCheckedChange = onToggle,
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color.White,
-                    checkedTrackColor = T.Electric,
+                    checkedThumbColor = T.Carbon,
+                    checkedTrackColor = T.InkMuted,
                     checkedBorderColor = Color.Transparent,
                     uncheckedThumbColor = T.InkFaint,
                     uncheckedTrackColor = T.Slate,

@@ -376,31 +376,26 @@ private fun WidePage(
 
         Spacer(Modifier.height(Space.md))
 
-        // 두 칸이다. 세 칸으로 나눴더니 실기기(960dp)에서 한 칸이 250dp까지 좁아져
-        // 칩이 두 줄로 접히고 동작 이름이 잘렸다 — 발동 조건 둘을 왼쪽에 겹쳐 쌓는다
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(Space.lg),
+        // 한 칸으로 세운다. 좌우로 쪼개면 눈이 어느 쪽을 먼저 볼지 정해야 해서
+        // 항목 수가 같아도 더 어수선하게 읽힌다. 위에서 아래로 한 줄기면 읽는 순서가 하나다
+        Column(
+            modifier = Modifier.fillMaxWidth().weight(1f)
+                .verticalScroll(rememberScrollState()),
         ) {
-            Column(
-                modifier = Modifier.weight(1f).fillMaxHeight()
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                ColumnHeading("언제", "이 사건이 일어나는 순간 (하나라도)")
-                StepTriggers(draft, onChange, onPickTrigger)
-                Spacer(Modifier.height(Space.lg))
-                ColumnHeading("어떤 조건이면", "모두 만족해야 실행해요")
-                StepConditions(draft, onChange, onPickCondition)
-                Spacer(Modifier.height(Space.xl))
-            }
-            EditColumn("무엇을", "위에서 아래로 순서대로", Modifier.weight(1.3f)) {
-                StepActions(
-                    draft = draft,
-                    onChange = onChange,
-                    onPickAction = onPickAction,
-                    onPickWaitUntil = onPickWaitUntil,
-                )
-            }
+            ColumnHeading("언제", "이 사건이 일어나는 순간 (하나라도)")
+            StepTriggers(draft, onChange, onPickTrigger)
+            Spacer(Modifier.height(Space.lg))
+            ColumnHeading("어떤 조건이면", "모두 만족해야 실행해요")
+            StepConditions(draft, onChange, onPickCondition)
+            Spacer(Modifier.height(Space.lg))
+            ColumnHeading("무엇을", "위에서 아래로 순서대로")
+            StepActions(
+                draft = draft,
+                onChange = onChange,
+                onPickAction = onPickAction,
+                onPickWaitUntil = onPickWaitUntil,
+            )
+            Spacer(Modifier.height(Space.xl))
         }
 
         Spacer(Modifier.height(Space.sm))

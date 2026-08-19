@@ -30,28 +30,27 @@ object Space {
     val xxl = 48.dp
 }
 
-/** 토스 계열 둥글기 — 카드는 넉넉히, 버튼은 또렷하게 */
+/**
+ * 각진 모서리로 통일한다. 둥글수록 말랑해 보이고, 차 안에서 쓸 계기에는 안 맞는다.
+ * 알약(999dp)은 점·막대처럼 실제로 둥글어야 하는 것에만 남긴다.
+ */
 object Radius {
-    val button = 14.dp
-    val card = 18.dp
-    val hero = 20.dp
+    val button = 4.dp
+    val card = 4.dp
+    val hero = 4.dp
     val pill = 999.dp
-
-    // 트랙(button) 안에 들어가는 세그먼트 칸 — 산술(button - xs) 대신 토큰으로 고정
-    val segment = 10.dp
-
-    // 상태 타일 — 카드보다 크게 잡아 멀리서도 덩어리로 읽힌다
-    val tile = 22.dp
+    val segment = 4.dp
+    val tile = 4.dp
 }
 
 /**
- * 그림자 세기. 아주 얕게만 준다.
- * 카드는 배경과의 대비 + 미세 그림자로만 뜬다.
+ * 그림자를 쓰지 않는다. 층은 명도 차와 1dp 경계선으로만 만든다 —
+ * 그림자가 겹치면 카드가 많은 화면에서 지저분해진다.
  */
 object Elevation {
-    val card = 2.dp
+    val card = 0.dp
     val button = 0.dp
-    val hero = 3.dp
+    val hero = 0.dp
 }
 
 /** 원본의 0.33s cubic-bezier를 그대로 옮긴 공용 모션 */

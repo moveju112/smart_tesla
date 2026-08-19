@@ -83,11 +83,12 @@ fun TButton(
         label = "buttonPress",
     )
 
-    // 채움 배경 — Primary는 파랑, Danger는 빨강, 나머지는 옅은 회색 면 (그라데이션 금지 규칙: 전부 단색)
+    // 채움은 Primary만. Danger는 빨간 덩어리 대신 조용한 면에 빨간 글자로 둔다 —
+    // 화면에서 빨간 면은 "지금 봐야 할 상태" 전용이라 버튼이 그 자리를 뺏으면 안 된다
     val fillColor: Color = when {
         !enabled -> Color.Transparent
         tone == ButtonTone.Primary -> if (pressed) T.ElectricPressed else T.Electric
-        tone == ButtonTone.Danger -> if (pressed) T.Danger.copy(alpha = 0.85f) else T.Danger
+        tone == ButtonTone.Danger -> if (pressed) T.Hairline else T.Slate
         tone == ButtonTone.Secondary -> if (pressed) T.Hairline else T.Slate
         tone == ButtonTone.Ghost && pressed -> T.Slate
         else -> Color.Transparent
@@ -97,11 +98,13 @@ fun TButton(
         !enabled -> T.InkFaint
         tone == ButtonTone.Ghost -> T.InkMuted
         tone == ButtonTone.Secondary -> T.Ink
-        else -> Color.White
+        tone == ButtonTone.Danger -> T.Danger
+        else -> T.Carbon
     }
 
     val borderColor = when {
         !enabled -> T.Hairline.copy(alpha = 0.5f)
+        tone == ButtonTone.Danger -> T.Danger.copy(alpha = 0.35f)
         tone == ButtonTone.Secondary || tone == ButtonTone.Ghost -> T.Hairline
         else -> Color.Transparent
     }
@@ -170,12 +173,10 @@ fun TCard(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // 흰 카드 + 아주 얕은 그림자. 옅은 회색 배경과의 대비로 뜬다
-            .softShadow(Elevation.card, Radius.card)
             .clip(shape)
             .background(T.Graphite, shape)
-            // outlined일 때만 테두리. 평소엔 그림자만으로 충분하다
-            .then(if (outlined) Modifier.border(1.dp, T.Hairline, shape) else Modifier)
+            // 그림자 대신 1dp 경계선으로 층을 만든다. outlined는 강조용으로 색만 진하게
+            .border(1.dp, if (outlined) T.InkFaint else T.Hairline, shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(Space.lg),
         content = content,

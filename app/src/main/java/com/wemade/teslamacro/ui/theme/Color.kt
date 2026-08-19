@@ -44,66 +44,69 @@ data class Palette(
 )
 
 /**
- * 낮 — 토스/네이버 계열의 밝고 단정한 팔레트.
+ * 낮 — 각지고 조용한 팔레트.
  *
- * 그라데이션·글로우를 쓰지 않는다. 위계는 색이 아니라 굵기와 여백으로 잡는다.
+ * 그림자를 안 쓴다. 층은 아주 옅은 명도 차와 1dp 경계선으로만 만든다.
+ * 액센트가 파랑이 아니라 검정이다 — 유채색을 액센트에서 빼야
+ * 냉방·난방·경보의 색이 유일한 유채색으로 남아 곧바로 눈에 걸린다.
+ * 회색은 파랑기 없이 따뜻한 쪽으로 잡아 종이에 가깝게 둔다.
  */
 val LightPalette = Palette(
-    void = Color(0xFFF2F4F6),
-    carbon = Color(0xFFFFFFFF),
-    graphite = Color(0xFFFFFFFF),
-    slate = Color(0xFFEDF0F3),
-    hairline = Color(0xFFE5E8EB),
-    ink = Color(0xFF191F28),
-    inkMuted = Color(0xFF4E5968),
-    inkFaint = Color(0xFF8B95A1),
-    electric = Color(0xFF3182F6),
-    electricPressed = Color(0xFF1B64DA),
-    electricFaint = Color(0xFFEAF3FF),
-    // 냉방은 액센트 파랑과 다른 색이어야 한다 — 같으면 "누를 수 있음"과 "차가 식히는 중"이 안 갈린다
-    cool = Color(0xFF0E9FD4),
-    heat = Color(0xFFFF6B00),
-    warn = Color(0xFFFFB020),
-    warnText = Color(0xFFB45309),
-    warnFaint = Color(0xFFFFF6E4),
-    danger = Color(0xFFF04452),
-    onDanger = Color(0xFFFFFFFF),
-    ok = Color(0xFF12B886),
-    okText = Color(0xFF067A57),
-    coolTint = Color(0xFFF1F9FD),
-    heatTint = Color(0xFFFFF6F0),
+    void = Color(0xFFEFEFED),
+    carbon = Color(0xFFFAFAF8),
+    graphite = Color(0xFFFAFAF8),
+    slate = Color(0xFFE4E4E0),
+    hairline = Color(0xFFD8D8D4),
+    ink = Color(0xFF141414),
+    inkMuted = Color(0xFF55554F),
+    inkFaint = Color(0xFF7A7A76),
+    // 액센트 = 검정. 누를 수 있다는 표시에 색을 쓰지 않는다
+    electric = Color(0xFF141414),
+    electricPressed = Color(0xFF3A3A38),
+    electricFaint = Color(0xFFE4E4E0),
+    // 의미색은 남기되 채도를 낮춘다 — 조용한 바탕에선 이 정도로도 충분히 튄다
+    cool = Color(0xFF0E7490),
+    heat = Color(0xFFB45309),
+    warn = Color(0xFFA16207),
+    warnText = Color(0xFF7C4A03),
+    warnFaint = Color(0xFFF0EBDE),
+    danger = Color(0xFFB3261E),
+    onDanger = Color(0xFFFAFAF8),
+    ok = Color(0xFF4D7C0F),
+    okText = Color(0xFF3F6212),
+    coolTint = Color(0xFFEDF2F3),
+    heatTint = Color(0xFFF5F0E9),
 )
 
 /**
- * 밤 — 순검정을 쓰지 않는다.
+ * 밤 — 같은 성격의 어두운 판.
  *
- * 검정 배경에 흰 글씨는 야간 운전에서 눈이 아프고, 값싼 패널에서 잔상이 남는다.
- * 파랑기 없는 따뜻한 그래파이트로 깔고, 카드를 바탕보다 한 단계 밝게 띄운다.
+ * 순검정을 쓰지 않는다. 야간 운전에서 눈이 아프고 값싼 패널에서 잔상이 남는다.
+ * 액센트는 흰색에 가깝게 — 낮의 검정 액센트를 그대로 뒤집은 것이다.
  */
 val DarkPalette = Palette(
-    void = Color(0xFF121316),
-    carbon = Color(0xFF1A1C20),
-    graphite = Color(0xFF1E2126),
-    slate = Color(0xFF262A30),
-    hairline = Color(0xFF2E323A),
-    ink = Color(0xFFF0F1EE),
-    inkMuted = Color(0xFFA3A9B3),
-    inkFaint = Color(0xFF7B828C),
-    electric = Color(0xFF4C93F8),
-    electricPressed = Color(0xFF7AB0FA),
-    electricFaint = Color(0xFF17273D),
-    cool = Color(0xFF35B4E3),
-    heat = Color(0xFFFF8534),
-    warn = Color(0xFFFFC04D),
-    // 어두운 바탕에선 밝은 앰버가 그대로 읽힌다 — 낮처럼 어둡게 죽일 필요가 없다
-    warnText = Color(0xFFFFC04D),
-    warnFaint = Color(0xFF33280F),
-    danger = Color(0xFFFF6B72),
-    onDanger = Color(0xFF1A1012),
-    ok = Color(0xFF2DD4A0),
-    okText = Color(0xFF2DD4A0),
-    coolTint = Color(0xFF14222B),
-    heatTint = Color(0xFF2A1D14),
+    void = Color(0xFF161614),
+    carbon = Color(0xFF1C1C1A),
+    graphite = Color(0xFF1E1E1C),
+    slate = Color(0xFF2A2A27),
+    hairline = Color(0xFF34342F),
+    ink = Color(0xFFF2F2EE),
+    inkMuted = Color(0xFFA8A8A1),
+    inkFaint = Color(0xFF7E7E77),
+    electric = Color(0xFFF2F2EE),
+    electricPressed = Color(0xFFC9C9C2),
+    electricFaint = Color(0xFF2A2A27),
+    cool = Color(0xFF4FB6CF),
+    heat = Color(0xFFE0964A),
+    warn = Color(0xFFD9A441),
+    warnText = Color(0xFFD9A441),
+    warnFaint = Color(0xFF2E2718),
+    danger = Color(0xFFE5544A),
+    onDanger = Color(0xFF16100F),
+    ok = Color(0xFF86B84A),
+    okText = Color(0xFF86B84A),
+    coolTint = Color(0xFF17252A),
+    heatTint = Color(0xFF2A2019),
 )
 
 /** 지금 팔레트. [TeslaMacroTheme]이 낮/밤에 맞춰 갈아 끼운다 */

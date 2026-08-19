@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -74,16 +75,12 @@ fun PairingScreen(
 ) {
     val compact = LocalPane.current.isCompact
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(if (compact) Space.lg else Space.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = if (compact) Arrangement.Top else Arrangement.Center,
-    ) {
-        Column(modifier = Modifier.widthIn(max = 520.dp)) {
-
+    // 넓으면 안내(왼쪽)와 입력(오른쪽)을 나란히 둔다. 한 기둥으로 세우면
+    // 가로 태블릿에서 좌우가 통째로 비고, 지금 뭘 해야 하는지가 스크롤 아래로 밀린다
+    TwoPaneOrColumn(
+        compact = compact,
+        modifier = modifier,
+        guide = {
             Text(
                 text = "차량 등록",
                 style = MaterialTheme.typography.headlineLarge,
@@ -101,8 +98,8 @@ fun PairingScreen(
 
             Spacer(Modifier.height(Space.lg))
             StepIndicator(state.step)
-            Spacer(Modifier.height(Space.lg))
-
+        },
+        form = {
             TCard {
                 OutlinedTextField(
                     value = state.vin,
@@ -180,7 +177,49 @@ fun PairingScreen(
                 )
             }
             Spacer(Modifier.height(Space.xl))
+        },
+    )
+}
+
+/**
+ * 넓으면 좌우 두 칸, 좁으면 위아래 한 기둥.
+ *
+ * 등록은 "읽고 → 입력하고 → 누르는" 흐름이라 안내와 입력을 갈라 두면
+ * 넓은 화면에서 눈이 왼쪽에서 오른쪽으로 한 번만 움직이면 된다.
+ */
+@Composable
+private fun TwoPaneOrColumn(
+    compact: Boolean,
+    modifier: Modifier,
+    guide: @Composable ColumnScope.() -> Unit,
+    form: @Composable ColumnScope.() -> Unit,
+) {
+    if (compact) {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(Space.lg),
+        ) {
+            guide()
+            Spacer(Modifier.height(Space.lg))
+            form()
         }
+        return
+    }
+    Row(
+        modifier = modifier.fillMaxSize().padding(Space.xl),
+        horizontalArrangement = Arrangement.spacedBy(Space.xxl),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            content = guide,
+        )
+        Column(
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            content = form,
+        )
     }
 }
 

@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -35,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -114,6 +117,22 @@ fun MacroEditScreen(
         }
     }
 
+    // 넓으면 네 단계를 한 화면에 펼친다. 위저드는 세로폰에서만 의미가 있고,
+    // 가로 태블릿에서는 화면의 3분의 2가 비면서 한 질문에 답하려고 네 번 넘겨야 했다
+    if (!compact) {
+        WidePage(
+            draft = draft,
+            onChange = onChange,
+            onSave = onSave,
+            onDelete = onDelete,
+            onCancel = onCancel,
+            modifier = modifier,
+            onPickTrigger = { picker = OpenPicker.TRIGGER },
+            onPickCondition = { picker = OpenPicker.CONDITION },
+            onPickAction = { picker = OpenPicker.ACTION },
+            onPickWaitUntil = { picker = OpenPicker.WAIT_UNTIL },
+        )
+    } else {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -257,6 +276,8 @@ fun MacroEditScreen(
         }
     }
 
+    }
+
     when (picker) {
         OpenPicker.TRIGGER -> TriggerPicker(
             onDismiss = { picker = OpenPicker.NONE },
@@ -296,6 +317,136 @@ fun MacroEditScreen(
         )
 
         OpenPicker.NONE -> Unit
+    }
+}
+
+
+/**
+ * 넓은 화면용 한 장 편집.
+ *
+ * **언제 · 어떤 조건이면 · 무엇을** 을 나란히 편다.
+ * 루틴 앱이 넓은 화면에서 쓰는 문법 그대로다 — 세 칸이 곧 매크로의 문장 구조라서
+ * 무엇을 채워야 하는지 설명 없이 보인다. 위저드는 이 구조를 시간축으로 접은 것뿐이었다.
+ *
+ * 이름·재발동·삭제는 한 화면에 다 있으니 굳이 별도 단계로 두지 않고 위아래로 붙인다.
+ */
+@Composable
+private fun WidePage(
+    draft: MacroDraft,
+    onChange: (MacroDraft) -> Unit,
+    onSave: () -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier,
+    onPickTrigger: () -> Unit,
+    onPickCondition: () -> Unit,
+    onPickAction: () -> Unit,
+    onPickWaitUntil: () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxSize().padding(Space.lg)) {
+
+        // 머리줄 — 닫기 · 이름 · 저장. 이름은 곧 음성 명령이라 가장 먼저 눈에 둔다
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "닫기",
+                tint = T.InkMuted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.pill))
+                    .clickable(onClick = onCancel)
+                    .padding(Space.sm + Space.xs)
+                    .size(24.dp),
+            )
+            Spacer(Modifier.width(Space.md))
+            OutlinedTextField(
+                value = draft.name,
+                onValueChange = { onChange(draft.copy(name = it)) },
+                label = { Text("매크로 이름 (음성 명령으로도 쓰여요)") },
+                singleLine = true,
+                colors = editorFieldColors(),
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Space.md))
+            if (!draft.isNew) {
+                TButton("삭제", ButtonTone.Danger, fillWidth = false, onClick = onDelete)
+                Spacer(Modifier.width(Space.sm))
+            }
+            TButton("저장", fillWidth = false, enabled = draft.canSave, onClick = onSave)
+        }
+
+        Spacer(Modifier.height(Space.lg))
+
+        // 세 칸이 곧 문장이다 — 언제 / 라면 / 한다
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(Space.lg),
+        ) {
+            EditColumn("언제", "이 사건이 일어나는 순간 (하나라도)", Modifier.weight(1f)) {
+                StepTriggers(draft, onChange, onPickTrigger)
+            }
+            EditColumn("어떤 조건이면", "모두 만족해야 실행해요", Modifier.weight(1f)) {
+                StepConditions(draft, onChange, onPickCondition)
+            }
+            EditColumn("무엇을", "위에서 아래로 순서대로", Modifier.weight(1.2f)) {
+                StepActions(
+                    draft = draft,
+                    onChange = onChange,
+                    onPickAction = onPickAction,
+                    onPickWaitUntil = onPickWaitUntil,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+
+        // 꼬리줄 — 켜기·재발동 억제. 매번 만지는 값이 아니라 아래로 내린다
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("사용", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
+                Spacer(Modifier.width(Space.sm))
+                Switch(
+                    checked = draft.enabled,
+                    onCheckedChange = { onChange(draft.copy(enabled = it)) },
+                )
+            }
+            Spacer(Modifier.width(Space.xl))
+            Text("재발동 억제", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
+            Spacer(Modifier.width(Space.sm))
+            ChipRow(
+                options = listOf(60, 300, 600, 1800, 3600),
+                selected = draft.cooldownSeconds,
+                label = { if (it >= 60) "${it / 60}분" else "${it}초" },
+                onSelect = { onChange(draft.copy(cooldownSeconds = it)) },
+                modifier = Modifier.weight(1f),
+            )
+            // 저장이 막힌 이유를 버튼 옆이 아니라 여기 한 곳에서 말한다
+            draft.blockReason?.let {
+                Spacer(Modifier.width(Space.md))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = T.WarnText)
+            }
+        }
+    }
+}
+
+/** 한 칸 — 제목 + 설명 + 내용. 세 칸의 시작선을 맞추려고 따로 뺐다 */
+@Composable
+private fun EditColumn(
+    title: String,
+    subtitle: String,
+    modifier: Modifier,
+    content: @Composable () -> Unit,
+) {
+    Column(modifier = modifier.fillMaxHeight().verticalScroll(rememberScrollState())) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+            modifier = Modifier.padding(top = Space.xs, bottom = Space.md),
+        )
+        content()
     }
 }
 

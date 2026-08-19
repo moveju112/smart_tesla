@@ -99,17 +99,6 @@ fun SettingsScreen(
             )
         }
 
-        if (voice != null) {
-            SectionHeader("음성")
-            VoicePanel(
-                alwaysOn = settings.voiceAlwaysOn,
-                model = voice.model,
-                onAlwaysOnChange = voice.onAlwaysOnChange,
-                onInstall = voice.onInstall,
-                onRemove = voice.onRemove,
-            )
-        }
-
         SectionHeader("폴링 주기")
         TCard {
             Text(
@@ -143,12 +132,6 @@ fun SettingsScreen(
 
             },
             right = {
-        // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다.
-        // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 폴링 주기·토글 상태를 알 수 없다
-        // 제목은 다른 섹션과 같이 카드 밖 SectionHeader로 — 패널 내부 제목은 끈다
-        SectionHeader("진단 로그")
-        DiagLogPanel(title = null, shareExtra = { settingsDump(settings) })
-
         SectionHeader("차량")
         TCard {
             if (settings.vehicleName.isNotBlank()) {
@@ -192,6 +175,24 @@ fun SettingsScreen(
 
         SectionHeader("업데이트")
         UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
+
+        if (voice != null) {
+            SectionHeader("음성")
+            VoicePanel(
+                alwaysOn = settings.voiceAlwaysOn,
+                model = voice.model,
+                onAlwaysOnChange = voice.onAlwaysOnChange,
+                onInstall = voice.onInstall,
+                onRemove = voice.onRemove,
+            )
+        }
+
+        // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다.
+        // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 폴링 주기·토글 상태를 알 수 없다
+        // 제목은 다른 섹션과 같이 카드 밖 SectionHeader로 — 패널 내부 제목은 끈다
+        SectionHeader("진단 로그")
+        DiagLogPanel(title = null, shareExtra = { settingsDump(settings) })
+
             },
         )
 

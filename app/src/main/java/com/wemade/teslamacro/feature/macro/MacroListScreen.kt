@@ -101,7 +101,8 @@ fun MacroListScreen(
         horizontalArrangement = Arrangement.spacedBy(Space.lg),
     ) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 360.dp),
+            // 실기기 목록 칸이 약 540dp라 360dp면 한 열로 떨어진다. 두 열이 들어가게 낮춘다
+            columns = GridCells.Adaptive(minSize = 250.dp),
             modifier = Modifier.weight(if (compact) 1f else 2f),
             contentPadding = PaddingValues(vertical = Space.lg),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),

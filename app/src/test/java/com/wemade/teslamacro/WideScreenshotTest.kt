@@ -71,6 +71,88 @@ class WideScreenshotTest {
         }
     }
 
+    // 나머지 화면도 실기기 크기로 본다. PIXEL_C(1280dp)로만 보면 320dp나 넓어서
+    // 실기기에서 짓눌리는 걸 못 잡는다 — 편집 화면이 그렇게 새어 나갔다
+    @Test
+    fun `W3 매크로 편집`() {
+        paparazzi.snapshot("W3-macro-edit") {
+            AppFrame(Destination.Macros) {
+                com.wemade.teslamacro.feature.macro.edit.MacroEditScreen(
+                    draft = com.wemade.teslamacro.feature.macro.edit.MacroDraft
+                        .from(com.wemade.teslamacro.data.macro.MacroPresets.summerBoarding()),
+                    onChange = {},
+                    onSave = {},
+                    onDelete = {},
+                    onCancel = {},
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `W4 매크로 목록`() {
+        paparazzi.snapshot("W4-macro-list") {
+            AppFrame(Destination.Macros) {
+                com.wemade.teslamacro.feature.macro.MacroListScreen(
+                    rules = com.wemade.teslamacro.data.macro.MacroPresets.defaults(),
+                    runningIds = emptySet(),
+                    progress = emptyMap(),
+                    log = emptyList(),
+                    onToggle = { _, _ -> },
+                    onRunNow = {},
+                    onStopAll = {},
+                    onEdit = {},
+                    onDuplicate = {},
+                    onDelete = {},
+                    onCreate = {},
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `W5 설정`() {
+        paparazzi.snapshot("W5-settings") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    settings = com.wemade.teslamacro.data.settings.AppSettings(
+                        vin = "5YJS0000000000000",
+                    ),
+                    onAutomationChange = {},
+                    onIdlePollChange = {},
+                    onActivePollChange = {},
+                    onActiveWindowChange = {},
+                    onUnpair = {},
+                    onStartPairing = {},
+                    voice = com.wemade.teslamacro.feature.settings.VoiceControls(
+                        model = com.wemade.teslamacro.data.voice.VoiceModelState.NotInstalled,
+                        onAlwaysOnChange = {},
+                        onInstall = {},
+                        onRemove = {},
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `W6 차량 등록`() {
+        paparazzi.snapshot("W6-pairing") {
+            FullScreenFrame {
+                com.wemade.teslamacro.feature.pairing.PairingScreen(
+                    state = com.wemade.teslamacro.feature.pairing.PairingUiState(
+                        vin = "5YJS0000000000000",
+                        step = com.wemade.teslamacro.feature.pairing.PairingStep.TapCard,
+                    ),
+                    onVinChange = {},
+                    onFindVehicle = {},
+                    onRequestEnrollment = {},
+                    onSkip = {},
+                )
+            }
+        }
+    }
+
     private fun wideState() = DashboardUiState(
         link = LinkState.Ready,
         vehicleName = "Tesla Model Y Why",

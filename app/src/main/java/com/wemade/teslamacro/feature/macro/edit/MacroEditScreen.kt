@@ -343,7 +343,7 @@ private fun WidePage(
     onPickAction: () -> Unit,
     onPickWaitUntil: () -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxSize().padding(Space.lg)) {
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = Space.lg, vertical = Space.md)) {
 
         // 머리줄 — 닫기 · 이름 · 저장. 이름은 곧 음성 명령이라 가장 먼저 눈에 둔다
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -374,20 +374,26 @@ private fun WidePage(
             TButton("저장", fillWidth = false, enabled = draft.canSave, onClick = onSave)
         }
 
-        Spacer(Modifier.height(Space.lg))
+        Spacer(Modifier.height(Space.md))
 
-        // 세 칸이 곧 문장이다 — 언제 / 라면 / 한다
+        // 두 칸이다. 세 칸으로 나눴더니 실기기(960dp)에서 한 칸이 250dp까지 좁아져
+        // 칩이 두 줄로 접히고 동작 이름이 잘렸다 — 발동 조건 둘을 왼쪽에 겹쳐 쌓는다
         Row(
             modifier = Modifier.fillMaxWidth().weight(1f),
             horizontalArrangement = Arrangement.spacedBy(Space.lg),
         ) {
-            EditColumn("언제", "이 사건이 일어나는 순간 (하나라도)", Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f).fillMaxHeight()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                ColumnHeading("언제", "이 사건이 일어나는 순간 (하나라도)")
                 StepTriggers(draft, onChange, onPickTrigger)
-            }
-            EditColumn("어떤 조건이면", "모두 만족해야 실행해요", Modifier.weight(1f)) {
+                Spacer(Modifier.height(Space.lg))
+                ColumnHeading("어떤 조건이면", "모두 만족해야 실행해요")
                 StepConditions(draft, onChange, onPickCondition)
+                Spacer(Modifier.height(Space.xl))
             }
-            EditColumn("무엇을", "위에서 아래로 순서대로", Modifier.weight(1.2f)) {
+            EditColumn("무엇을", "위에서 아래로 순서대로", Modifier.weight(1.3f)) {
                 StepActions(
                     draft = draft,
                     onChange = onChange,
@@ -397,9 +403,9 @@ private fun WidePage(
             }
         }
 
-        Spacer(Modifier.height(Space.md))
+        Spacer(Modifier.height(Space.sm))
         Hairline()
-        Spacer(Modifier.height(Space.md))
+        Spacer(Modifier.height(Space.sm))
 
         // 꼬리줄 — 켜기·재발동 억제. 매번 만지는 값이 아니라 아래로 내린다
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -430,7 +436,7 @@ private fun WidePage(
     }
 }
 
-/** 한 칸 — 제목 + 설명 + 내용. 세 칸의 시작선을 맞추려고 따로 뺐다 */
+/** 한 칸 — 제목 + 설명 + 내용 */
 @Composable
 private fun EditColumn(
     title: String,
@@ -439,15 +445,23 @@ private fun EditColumn(
     content: @Composable () -> Unit,
 ) {
     Column(modifier = modifier.fillMaxHeight().verticalScroll(rememberScrollState())) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-            modifier = Modifier.padding(top = Space.xs, bottom = Space.md),
-        )
+        ColumnHeading(title, subtitle)
         content()
+        // 마지막 카드가 화면 끝에서 반토막 나면 고장으로 보인다 — 스크롤 끝 여백
+        Spacer(Modifier.height(Space.xl))
     }
+}
+
+/** 칸 제목 — 왼쪽 칸은 이걸 두 번 써서 두 구역을 겹쳐 쌓는다 */
+@Composable
+private fun ColumnHeading(title: String, subtitle: String) {
+    Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+    Text(
+        text = subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = T.InkFaint,
+        modifier = Modifier.padding(top = Space.xs, bottom = Space.md),
+    )
 }
 
 /** 1/4 — 발동 시점 */

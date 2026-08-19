@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import app.cash.paparazzi.DeviceConfig
@@ -192,6 +193,33 @@ class ScreenshotTest {
         }
     }
 
+    // 반경은 직접 입력이라 눈으로 봐야 확인된다 — 조건 카드만 따로 찍는다.
+    // 위치 편집기가 권한 런처를 쓰는데 Paparazzi엔 액티비티가 없어 빈 등록기를 끼워 넣는다
+    @Test
+    fun `11 위치 조건 카드`() {
+        snapshot("11-condition-location", Destination.Macros) {
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.activity.compose.LocalActivityResultRegistryOwner provides NoResultRegistry
+            ) {
+            androidx.compose.foundation.layout.Box(
+                modifier = androidx.compose.ui.Modifier.padding(
+                    com.wemade.teslamacro.ui.theme.Space.lg
+                )
+            ) {
+                com.wemade.teslamacro.feature.macro.edit.ConditionCard(
+                    condition = com.wemade.teslamacro.domain.macro.Condition.NearLocation(
+                        latitude = 37.4020,
+                        longitude = 127.1086,
+                        radiusMeters = 1800,
+                    ),
+                    onChange = {},
+                    onRemove = {},
+                )
+            }
+            }
+        }
+    }
+
     @Test
     fun `08 설정 - 시뮬레이터`() {
         snapshot("08-settings", Destination.Settings) {
@@ -290,4 +318,16 @@ class ScreenshotTest {
         MacroLogEntry(1_700_000_002_000, "여름 탑승 쿨링", "공조 켜기"),
         MacroLogEntry(1_700_000_003_000, "여름 탑승 쿨링", "목표 온도 24.0℃"),
     )
+}
+
+/** 스냅샷 전용 빈 등록기. 실제로 실행할 액티비티가 없으니 launch는 아무것도 안 한다 */
+private val NoResultRegistry = object : androidx.activity.result.ActivityResultRegistryOwner {
+    override val activityResultRegistry = object : androidx.activity.result.ActivityResultRegistry() {
+        override fun <I, O> onLaunch(
+            requestCode: Int,
+            contract: androidx.activity.result.contract.ActivityResultContract<I, O>,
+            input: I,
+            options: androidx.core.app.ActivityOptionsCompat?,
+        ) = Unit
+    }
 }

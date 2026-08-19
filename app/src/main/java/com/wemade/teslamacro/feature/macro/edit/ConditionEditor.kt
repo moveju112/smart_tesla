@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -262,14 +264,50 @@ private fun NearLocationEditor(
             }
         }
         Spacer(Modifier.height(Space.md))
-        Text("허용 반경", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
-        Spacer(Modifier.height(Space.sm))
-        // 지하주차장 GPS 오차를 감안해 기본을 400m로 넉넉히 잡았다
-        ChipRow(
-            options = listOf(100, 400, 1000, 3000),
-            selected = condition.radiusMeters,
-            label = { if (it >= 1000) "${it / 1000}km" else "${it}m" },
-            onSelect = { onChange(condition.copy(radiusMeters = it)) },
+        // 미리 정해둔 100·400·1000·3000m로는 실차에서 필요한 값을 못 맞춘다.
+        // 진단 로그가 실제 거리를 m로 찍어주므로 그 숫자를 그대로 넣을 수 있게 직접 입력으로 둔다
+        RadiusField(
+            meters = condition.radiusMeters,
+            onChange = { onChange(condition.copy(radiusMeters = it)) },
+        )
+    }
+}
+
+/**
+ * 허용 반경을 m 단위로 직접 받는다.
+ *
+ * 지하주차장에서는 마지막 지상 측위 좌표가 쓰여서 실제 주차 자리와 수백 m씩 어긋난다.
+ * 그 어긋난 값은 차마다·주차장마다 달라 고정 선택지로는 못 맞춘다.
+ * 매크로가 막히면 진단 로그에 `거리 1671m / 반경 1000m`처럼 실제 거리가 찍히니 그 값을 보고 넣으면 된다.
+ */
+@Composable
+private fun RadiusField(meters: Int, onChange: (Int) -> Unit) {
+    // 타이핑 중간 상태("", "5")를 그대로 두려고 화면용 문자열을 따로 들고 있는다.
+    // 조건 값에 바로 물리면 지우는 순간 0으로 튄다
+    var text by rememberSaveable { mutableStateOf(meters.toString()) }
+
+    Column {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { input ->
+                // 숫자만. 5자리면 99km라 실수로 긴 값이 들어갈 여지를 없앤다
+                val digits = input.filter(Char::isDigit).take(5)
+                text = digits
+                digits.toIntOrNull()?.takeIf { it > 0 }?.let(onChange)
+            },
+            label = { Text("허용 반경 (m)") },
+            suffix = { Text("m", color = T.InkFaint) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            colors = editorFieldColors(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(Space.xs))
+        Text(
+            text = "지하주차장은 GPS가 안 잡혀 마지막 지상 좌표를 써요.\n" +
+                "안 뛰면 진단 로그의 \"거리 ○○m\"를 보고 그보다 넉넉하게 넣어 주세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
         )
     }
 }

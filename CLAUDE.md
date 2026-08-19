@@ -13,6 +13,7 @@
 - 등록 완료 = 카드 태그 후 핸드셰이크 성공. VIN 저장(isPaired) ≠ 키 등록(isEnrolled)
 - UI는 토스식 미니멀 + **낮/밤 자동 전환**(0.8.22~) — 그라데이션/글로우는 여전히 금지, 값은 `T/Space/Radius/Motion` 토큰만
 - 제어 화면은 **계기판**이다 — 정상이면 무채색, 색은 "차가 일하는 중"이거나 "사람이 봐야 할 때"만 (docs/CODING_RULES.md)
+- 실기기는 **ALLDOCUBE iPlay 60 mini Pro** (8.4" 1920×1200 ≈ 960×600dp) — 세로가 짧다. UI는 폭에 따라 칸이 바뀌는 반응형이어야 하고, 검증은 `WideScreenshotTest`(실기기 비율)로 한다. PIXEL_C만 보면 실기기 부풂을 못 잡는다
 - `./gradlew test`에 Paparazzi는 없다 — UI 변경 시 `recordPaparazziDebug` 별도
 - 배포마다 versionCode +1, 실기기는 arm64 split APK (universal 없음)
 - 주석은 한국어 "왜" 중심, 새 함수 위 설명 주석 필수

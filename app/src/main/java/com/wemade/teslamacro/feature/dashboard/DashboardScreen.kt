@@ -25,6 +25,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.gateway.LinkState
@@ -53,8 +55,8 @@ import com.wemade.teslamacro.ui.theme.T
 /** 목표 도달로 볼 여유 폭(℃). 차 온도계가 0.1씩 흔들려 딱 맞을 때만 도달로 보면 색이 깜빡인다 */
 private const val REACHED_MARGIN_C = 1.0
 
-/** 타일 밭이 자랄 수 있는 최대 높이. 넘어가면 타일 속이 비어 보인다 */
-private val TILE_FIELD_MAX_HEIGHT = 440.dp
+/** 타일 한 줄의 높이. 화면 높이에 맞춰 늘리지 않는다 — 늘리면 속이 빈다 */
+private val TILE_HEIGHT = 196.dp
 
 /** 지금 열려 있는 조작 시트. 홈은 읽기만 하고, 조작은 전부 여기로 내려간다 */
 private enum class Sheet { NONE, CLIMATE, LOCK, CHARGE, SEAT_LEFT, SEAT_RIGHT, OPENINGS }
@@ -97,17 +99,7 @@ fun DashboardScreen(
             InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
             Spacer(Modifier.height(Space.md))
 
-            // 넓으면 화면을 정확히 채우고, 좁으면(폰) 그때만 스크롤을 허용한다
-            if (compact) {
-                Column(
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(Space.sm),
-                ) {
-                    TileField(state, compact = true) { sheet = it }
-                }
-            } else {
-                TileField(state, compact = false) { sheet = it }
-            }
+            TileField(state) { sheet = it }
         }
     }
 
@@ -163,67 +155,83 @@ private fun StatusBand(state: DashboardUiState, onRetryConnect: () -> Unit) {
     }
 }
 
+/** 타일 한 칸의 명세 — 몇 칸을 먹는지와 어떻게 그리는지 */
+private data class TileSpec(val span: Int, val content: @Composable (Modifier) -> Unit)
+
 /**
- * 타일 밭 — 크기가 곧 중요도다.
+ * 타일 밭 — 폭에 맞춰 칸 수가 바뀐다.
  *
- * 실내 온도가 가장 크고, 배터리·잠금·시트가 그다음이다.
- * 이 크기와 위치는 상태가 변해도 절대 안 움직인다 — 눈이 길을 외우게 하려는 것.
+ * 좌우 2단 같은 특정 배치를 고정하지 않는다. 기기마다 폭도 비율도 달라서
+ * 한 배치에 맞춰 두면 다른 기기에서 반드시 어딘가 비거나 넘친다.
+ * 칸 수만 정하고 타일을 순서대로 채워 넣는다 — 실내와 문·적재함은 두 칸을 먹어
+ * 어떤 폭에서든 크기로 중요도가 유지된다.
+ *
+ * 높이는 고정이다. 화면을 채우려 늘리면 내용보다 상자가 커져 속이 빈다.
  */
 @Composable
-private fun TileField(
-    state: DashboardUiState,
-    compact: Boolean,
-    onOpen: (Sheet) -> Unit,
-) {
-    if (compact) {
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            ClimateTile(state, Modifier.fillMaxWidth()) { onOpen(Sheet.CLIMATE) }
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                BatteryTile(state, Modifier.weight(1f)) { onOpen(Sheet.CHARGE) }
-                LockTile(state, Modifier.weight(1f)) { onOpen(Sheet.LOCK) }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                SeatTile(state, SeatPosition.FRONT_LEFT, Modifier.weight(1f)) {
-                    onOpen(Sheet.SEAT_LEFT)
-                }
-                SeatTile(state, SeatPosition.FRONT_RIGHT, Modifier.weight(1f)) {
-                    onOpen(Sheet.SEAT_RIGHT)
-                }
-            }
-            OpeningTile(state, Modifier.fillMaxWidth()) { onOpen(Sheet.OPENINGS) }
-        }
-        return
-    }
+private fun TileField(state: DashboardUiState, onOpen: (Sheet) -> Unit) {
+    val specs = listOf(
+        TileSpec(2) { m -> ClimateTile(state, m) { onOpen(Sheet.CLIMATE) } },
+        TileSpec(1) { m -> BatteryTile(state, m) { onOpen(Sheet.CHARGE) } },
+        TileSpec(1) { m -> LockTile(state, m) { onOpen(Sheet.LOCK) } },
+        TileSpec(1) { m ->
+            SeatTile(state, SeatPosition.FRONT_LEFT, m) { onOpen(Sheet.SEAT_LEFT) }
+        },
+        TileSpec(1) { m ->
+            SeatTile(state, SeatPosition.FRONT_RIGHT, m) { onOpen(Sheet.SEAT_RIGHT) }
+        },
+        TileSpec(2) { m -> OpeningTile(state, m) { onOpen(Sheet.OPENINGS) } },
+    )
 
-    // 화면 높이를 끝까지 채우면 타일이 내용보다 훨씬 커져 속이 텅 빈다.
-    // 높이를 묶고 위로 붙인 뒤 남는 공간은 여백으로 둔다 —
-    // 테두리 안의 빈 공간은 고장으로 읽히지만, 테두리 밖 여백은 의도로 읽힌다
-    Column(
-        modifier = Modifier.fillMaxWidth().heightIn(max = TILE_FIELD_MAX_HEIGHT),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        // 4칸 × 2줄. 실내와 문·적재함이 두 칸씩 먹어 크기로 중요도를 고정한다
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val columns = columnsFor(maxWidth)
+        Column(
+            // 짧은 화면에서는 스크롤이 열린다. 목표 기기에서는 두 줄이라 안 열린다
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            ClimateTile(state, Modifier.weight(2f).fillMaxHeight()) { onOpen(Sheet.CLIMATE) }
-            BatteryTile(state, Modifier.weight(1f).fillMaxHeight()) { onOpen(Sheet.CHARGE) }
-            LockTile(state, Modifier.weight(1f).fillMaxHeight()) { onOpen(Sheet.LOCK) }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            SeatTile(state, SeatPosition.FRONT_LEFT, Modifier.weight(1f).fillMaxHeight()) {
-                onOpen(Sheet.SEAT_LEFT)
+            packRows(specs, columns).forEach { row ->
+                val spans = row.map { it.span.coerceAtMost(columns) }.toMutableList()
+                val short = columns - spans.sum()
+                // 덜 찬 줄은 마지막 타일이 남은 칸을 먹는다. 구멍을 남기면 줄이 어긋나 보인다
+                if (short > 0) spans[spans.lastIndex] = spans.last() + short
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(TILE_HEIGHT),
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                ) {
+                    row.forEachIndexed { index, spec ->
+                        spec.content(Modifier.weight(spans[index].toFloat()).fillMaxHeight())
+                    }
+                }
             }
-            SeatTile(state, SeatPosition.FRONT_RIGHT, Modifier.weight(1f).fillMaxHeight()) {
-                onOpen(Sheet.SEAT_RIGHT)
-            }
-            OpeningTile(state, Modifier.weight(2f).fillMaxHeight()) { onOpen(Sheet.OPENINGS) }
         }
     }
+}
+
+/** 폭에 몇 칸이 들어가는지. 한 칸이 손가락보다 좁아지지 않게 나눈다 */
+private fun columnsFor(width: Dp): Int = when {
+    width < 520.dp -> 2
+    width < 760.dp -> 3
+    else -> 4
+}
+
+/** 칸 수를 넘지 않게 타일을 줄로 묶는다 */
+private fun packRows(specs: List<TileSpec>, columns: Int): List<List<TileSpec>> {
+    val rows = mutableListOf<List<TileSpec>>()
+    var row = mutableListOf<TileSpec>()
+    var used = 0
+    specs.forEach { spec ->
+        val span = spec.span.coerceAtMost(columns)
+        if (used + span > columns) {
+            rows += row
+            row = mutableListOf()
+            used = 0
+        }
+        row += spec
+        used += span
+    }
+    if (row.isNotEmpty()) rows += row
+    return rows
 }
 
 /**

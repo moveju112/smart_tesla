@@ -16,10 +16,10 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * 실차 거치 태블릿 비율로 찍는다.
+ * 실차 거치 태블릿(ALLDOCUBE iPlay 60 mini Pro, 8.4" 1920x1200)으로 찍는다.
  *
- * 기본 PIXEL_C는 1.42:1인데 차량용 태블릿은 1.6:1 언저리로 더 넓고 납작하다.
- * 이 차이 때문에 기본 기기에서는 멀쩡해 보이던 타일이 실기기에서 속이 텅 비어 보였다.
+ * 기본 PIXEL_C는 1.42:1인데 이 기기는 1.6:1로 넓고 납작하다 — dp로는 약 960x600이라
+ * 세로가 특히 짧다. 이 차이 때문에 기본 기기에서 멀쩡하던 타일이 실기기에서 속이 텅 비었다.
  * 제어 화면은 "스크롤 없이 한 화면"이 전제라 비율이 바뀌면 바로 티가 난다.
  */
 class WideScreenshotTest {
@@ -32,6 +32,7 @@ class WideScreenshotTest {
             softButtons = false,
             screenWidth = 1920,
             screenHeight = 1200,
+            density = com.android.resources.Density.XHIGH,
         ),
         showSystemUi = false,
     )

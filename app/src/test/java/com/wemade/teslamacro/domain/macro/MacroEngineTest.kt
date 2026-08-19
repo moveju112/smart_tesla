@@ -164,6 +164,29 @@ class MacroEngineTest {
     }
 
     @Test
+    fun `재시작 직후라도 이미 달리는 중이면 탑승 트리거는 발동하지 않는다`() {
+        // 0.8.22 실차: 주행 중 업데이트 설치로 앱이 되살아나 출근 안내가 통째로 다시 터졌다.
+        // D로 굴러가는 중이면 방금 탄 게 아니다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
+            previous = null,
+            current = reading(userPresent = true, shift = ShiftState.DRIVE),
+        )
+        assertEquals(0, fired.size)
+    }
+
+    @Test
+    fun `재시작 직후 주차 중이면 탑승 트리거는 그대로 발동한다`() {
+        // 가드가 정상 경로(주차장에서 타는 순간)까지 막으면 안 된다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
+            previous = null,
+            current = reading(userPresent = true, shift = ShiftState.PARK),
+        )
+        assertEquals(1, fired.size)
+    }
+
+    @Test
     fun `재시작 직후 탑승 외 신호는 발동하지 않는다`() {
         // 예: 문 열림 매크로가 앱 시작만으로 터지면 오발동이다
         val fired = evaluate(

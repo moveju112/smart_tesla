@@ -85,7 +85,7 @@ val TileValueStyle = TextStyle(
 val TileValueStyleLarge = TextStyle(
     fontFamily = Sans,
     fontWeight = FontWeight.W700,
-    fontSize = 64.sp,
-    lineHeight = 70.sp,
+    fontSize = 56.sp,
+    lineHeight = 62.sp,
     letterSpacing = (-2).sp,
 )

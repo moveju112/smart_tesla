@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,6 +49,12 @@ import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.ColorRole
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
+
+/** 목표 도달로 볼 여유 폭(℃). 차 온도계가 0.1씩 흔들려 딱 맞을 때만 도달로 보면 색이 깜빡인다 */
+private const val REACHED_MARGIN_C = 1.0
+
+/** 타일 밭이 자랄 수 있는 최대 높이. 넘어가면 타일 속이 비어 보인다 */
+private val TILE_FIELD_MAX_HEIGHT = 440.dp
 
 /** 지금 열려 있는 조작 시트. 홈은 읽기만 하고, 조작은 전부 여기로 내려간다 */
 private enum class Sheet { NONE, CLIMATE, LOCK, CHARGE, SEAT_LEFT, SEAT_RIGHT, OPENINGS }
@@ -187,36 +195,33 @@ private fun TileField(
         return
     }
 
-    Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+    // 화면 높이를 끝까지 채우면 타일이 내용보다 훨씬 커져 속이 텅 빈다.
+    // 높이를 묶고 위로 붙인 뒤 남는 공간은 여백으로 둔다 —
+    // 테두리 안의 빈 공간은 고장으로 읽히지만, 테두리 밖 여백은 의도로 읽힌다
+    Column(
+        modifier = Modifier.fillMaxWidth().heightIn(max = TILE_FIELD_MAX_HEIGHT),
+        verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        // 왼쪽 한 칸이 통째로 실내 온도. 이 화면에서 가장 알고 싶은 값이다
-        ClimateTile(state, Modifier.weight(1f).fillMaxSize()) { onOpen(Sheet.CLIMATE) }
-
-        Column(
-            modifier = Modifier.weight(1.2f).fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
+        // 4칸 × 2줄. 실내와 문·적재함이 두 칸씩 먹어 크기로 중요도를 고정한다
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            ) {
-                BatteryTile(state, Modifier.weight(1f).fillMaxSize()) { onOpen(Sheet.CHARGE) }
-                LockTile(state, Modifier.weight(1f).fillMaxSize()) { onOpen(Sheet.LOCK) }
+            ClimateTile(state, Modifier.weight(2f).fillMaxHeight()) { onOpen(Sheet.CLIMATE) }
+            BatteryTile(state, Modifier.weight(1f).fillMaxHeight()) { onOpen(Sheet.CHARGE) }
+            LockTile(state, Modifier.weight(1f).fillMaxHeight()) { onOpen(Sheet.LOCK) }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            SeatTile(state, SeatPosition.FRONT_LEFT, Modifier.weight(1f).fillMaxHeight()) {
+                onOpen(Sheet.SEAT_LEFT)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            ) {
-                SeatTile(state, SeatPosition.FRONT_LEFT, Modifier.weight(1f).fillMaxSize()) {
-                    onOpen(Sheet.SEAT_LEFT)
-                }
-                SeatTile(state, SeatPosition.FRONT_RIGHT, Modifier.weight(1f).fillMaxSize()) {
-                    onOpen(Sheet.SEAT_RIGHT)
-                }
+            SeatTile(state, SeatPosition.FRONT_RIGHT, Modifier.weight(1f).fillMaxHeight()) {
+                onOpen(Sheet.SEAT_RIGHT)
             }
-            OpeningTile(state, Modifier.fillMaxWidth().weight(0.7f)) { onOpen(Sheet.OPENINGS) }
+            OpeningTile(state, Modifier.weight(2f).fillMaxHeight()) { onOpen(Sheet.OPENINGS) }
         }
     }
 }
@@ -231,15 +236,16 @@ private fun TileField(
 @Composable
 private fun ClimateTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
     val running = state.isClimateOn && state.hasClimateReading
-    // 색은 차가 실제로 일할 때만. 27℃ 주차 차량은 정상이라 색을 쓰지 않는다.
-    // 목표보다 더우면 식히는 중(파랑), 추우면 데우는 중(주황)
+    // 색은 "아직 목표에 못 갔다"는 뜻이다. 도달해서 유지만 하는 중이면 무채색으로 돌아온다 —
+    // 22.5℃가 목표 22.5℃에 닿았는데도 주황이면 색이 거짓말을 하고, 그러면 색 전체가 의미를 잃는다
     val inside = state.insideTemp.toDoubleOrNull()
     val target = state.targetTempValue
+    val gap = if (inside != null && target != null) inside - target else 0.0
     val tone = when {
         !running -> TileTone.Calm
-        inside == null || target == null -> TileTone.Cool
-        inside > target -> TileTone.Cool
-        else -> TileTone.Warm
+        gap > REACHED_MARGIN_C -> TileTone.Cool   // 아직 더워서 식히는 중
+        gap < -REACHED_MARGIN_C -> TileTone.Warm  // 아직 추워서 데우는 중
+        else -> TileTone.Calm                     // 목표 도달 — 조용히 유지
     }
     // 목표·공조는 아래 수치줄이 이미 말한다. 여기서 또 쓰면 같은 걸 두 번 읽힌다
     val detail = if (state.hasClimateReading) null else "확인 중"
@@ -255,12 +261,18 @@ private fun ClimateTile(state: DashboardUiState, modifier: Modifier, onClick: ()
         content = {
             // 앱에서 유일하게 움직이는 것 — 공조가 실제로 도는 동안만
             if (running) {
-                BreathingBar(color = if (tone == TileTone.Cool) T.Cool else T.Heat)
+                BreathingBar(
+                    color = when (tone) {
+                        TileTone.Cool -> T.Cool
+                        TileTone.Warm -> T.Heat
+                        // 도달 후 유지 — 돌고는 있다는 사실만 옅게 남긴다
+                        else -> T.InkFaint
+                    }
+                )
             }
         },
         footer = {
-            Hairline()
-            Spacer(Modifier.height(Space.md))
+            Spacer(Modifier.height(Space.sm))
             Row(modifier = Modifier.fillMaxWidth()) {
                 HeroMetric("외부", "${state.outsideTemp}°", Modifier.weight(1f))
                 HeroMetric("목표", "${state.targetTemp}°", Modifier.weight(1f))
@@ -314,7 +326,9 @@ private fun BatteryTile(state: DashboardUiState, modifier: Modifier, onClick: ()
 
 @Composable
 private fun LockTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
-    val unlocked = state.hasBodyReading && !state.isLocked
+    // 문이 열려 있으면 잠금 해제는 당연한 결과라 새 소식이 아니다.
+    // 문 타일이 이미 더 정확히 말하고 있으니 빨간 면을 두 개 만들지 않는다
+    val unlocked = state.hasBodyReading && !state.isLocked && state.openings.isEmpty()
     StatusTile(
         label = "잠금",
         // 열려 있는 건 사람이 봐야 하는 상태다. 이 화면에서 면이 물드는 유일한 경우

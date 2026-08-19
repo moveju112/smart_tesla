@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.domain.macro
 
+import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.Signal
 
 /**
@@ -86,8 +87,11 @@ class MacroEngine {
                     before != null -> before != trigger.to
                     // 재시작 직후(직전 값 없음)의 "탑승" 트리거는 이미 타 있어도 1회 발동 —
                     // 태블릿이 밤새 재부팅되면 첫 판정이 곧 탑승 순간인데 엣지만 고집하면 영영 놓친다.
-                    // 탑승 외 신호는 제외: 재시작 오발동(예: 주차 중 앱 시작 → 잠금 명령)이 더 해롭다
-                    else -> trigger.signal == Signal.USER_PRESENT && trigger.to
+                    // 탑승 외 신호는 제외: 재시작 오발동(예: 주차 중 앱 시작 → 잠금 명령)이 더 해롭다.
+                    // 단 이미 D로 달리는 중이면 방금 탄 게 아니다 — 주행 중 업데이트 설치로 앱이
+                    // 되살아나면 탑승 매크로가 통째로 다시 터진다(0.8.22 실차: 출근 안내 오발동)
+                    else -> trigger.signal == Signal.USER_PRESENT && trigger.to &&
+                        current.snapshot.shiftState != ShiftState.DRIVE
                 }
             }
 

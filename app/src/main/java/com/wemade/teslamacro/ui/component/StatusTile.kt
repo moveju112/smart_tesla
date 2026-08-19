@@ -167,6 +167,19 @@ fun StatusTile(
  */
 @Composable
 fun BreathingBar(color: Color, modifier: Modifier = Modifier) {
+    // 기기에서 애니메이션을 껐으면 움직이지 않는다. 다만 막대는 남긴다 —
+    // 이 막대의 존재 자체가 "공조가 돌고 있다"는 정보라 지우면 안 된다
+    if (reducedMotion()) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(RoundedCornerShape(Radius.pill))
+                .background(color),
+        )
+        return
+    }
+
     val transition = rememberInfiniteTransition(label = "breathing")
     val alpha by transition.animateFloat(
         initialValue = 0.25f,

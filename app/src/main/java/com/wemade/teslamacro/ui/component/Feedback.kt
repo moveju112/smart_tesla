@@ -55,6 +55,17 @@ fun IndeterminateBar(
         return
     }
 
+    // 애니메이션을 껐으면 훑는 대신 가득 찬 선으로 "진행 중"을 표시한다
+    if (reducedMotion()) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(color),
+        )
+        return
+    }
+
     val transition = rememberInfiniteTransition(label = "indeterminate")
     val progress by transition.animateFloat(
         initialValue = 0f,

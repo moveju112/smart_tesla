@@ -13,54 +13,60 @@ import androidx.compose.ui.unit.sp
  * - 제목은 굵게(W700), 강조는 W600, 본문은 W400
  * - 큰 숫자도 얇게 뽑지 않고 굵게 — 얇은 대형 숫자가 "기계가 만든" 인상을 준다
  */
+/**
+ * 고정폭 숫자. 온도·배터리가 22.5→22.6으로 바뀔 때 자릿수 폭이 달라지면
+ * 숫자 전체가 좌우로 흔들려 흘깃 보는 화면에서 특히 거슬린다.
+ */
+private const val TABULAR = "tnum"
+
 private val Sans = FontFamily.Default
 
 val TeslaTypography = Typography(
     // 화면 제목 — 굵고 큼직하게
     headlineLarge = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W700, fontSize = 26.sp, lineHeight = 34.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W700, fontSize = 26.sp, lineHeight = 34.sp,
         letterSpacing = (-0.4).sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W700, fontSize = 22.sp, lineHeight = 30.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W700, fontSize = 22.sp, lineHeight = 30.sp,
         letterSpacing = (-0.3).sp,
     ),
     // 카드 제목 / 강조
     titleMedium = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 17.sp, lineHeight = 24.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 17.sp, lineHeight = 24.sp,
         letterSpacing = (-0.2).sp,
     ),
     titleSmall = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 15.sp, lineHeight = 21.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 15.sp, lineHeight = 21.sp,
         letterSpacing = (-0.1).sp,
     ),
     // 본문
     bodyMedium = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W400, fontSize = 15.sp, lineHeight = 22.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400, fontSize = 15.sp, lineHeight = 22.sp,
     ),
     bodySmall = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W400, fontSize = 13.sp, lineHeight = 19.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400, fontSize = 13.sp, lineHeight = 19.sp,
     ),
     // 버튼 라벨 — 토스 버튼은 또렷하게 굵다
     labelLarge = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 16.sp, lineHeight = 20.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 16.sp, lineHeight = 20.sp,
         letterSpacing = (-0.2).sp,
     ),
     // 소형 버튼 라벨 — 미정의 시 Material 기본(12sp·양수 자간)으로 폴백돼 스케일이 어긋난다
     labelMedium = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 14.sp, lineHeight = 18.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 14.sp, lineHeight = 18.sp,
         letterSpacing = (-0.1).sp,
     ),
     // 타일 라벨 — 값이 주인공이라 라벨은 작고 자간을 넓혀 '이름표'처럼 물러선다
     labelSmall = TextStyle(
-        fontFamily = Sans, fontWeight = FontWeight.W600, fontSize = 12.sp, lineHeight = 16.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 12.sp, lineHeight = 16.sp,
         letterSpacing = 0.6.sp,
     ),
 )
 
 /** 온도·배터리처럼 크게 읽히는 값. 토스 숫자처럼 굵게 뽑는다 */
 val MetricTextStyle = TextStyle(
-    fontFamily = Sans,
+    fontFamily = Sans, fontFeatureSettings = TABULAR,
     fontWeight = FontWeight.W700,
     fontSize = 48.sp,
     lineHeight = 54.sp,
@@ -74,7 +80,7 @@ val MetricTextStyle = TextStyle(
  * 라벨은 필요할 때만 읽히게 하려는 것.
  */
 val TileValueStyle = TextStyle(
-    fontFamily = Sans,
+    fontFamily = Sans, fontFeatureSettings = TABULAR,
     fontWeight = FontWeight.W700,
     fontSize = 34.sp,
     lineHeight = 40.sp,
@@ -83,7 +89,7 @@ val TileValueStyle = TextStyle(
 
 /** 히어로 타일(실내 온도) 전용. 가장 멀리서도 읽혀야 하는 단 하나의 값 */
 val TileValueStyleLarge = TextStyle(
-    fontFamily = Sans,
+    fontFamily = Sans, fontFeatureSettings = TABULAR,
     fontWeight = FontWeight.W700,
     fontSize = 48.sp,
     lineHeight = 54.sp,

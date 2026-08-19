@@ -1,11 +1,15 @@
 package com.wemade.teslamacro.feature.dashboard
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +32,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.gateway.LinkState
@@ -48,15 +56,15 @@ import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TileTone
 import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
+import com.wemade.teslamacro.ui.layout.Pane
 import com.wemade.teslamacro.ui.theme.ColorRole
+import com.wemade.teslamacro.ui.theme.HeroValueStyle
+import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
 /** 목표 도달로 볼 여유 폭(℃). 차 온도계가 0.1씩 흔들려 딱 맞을 때만 도달로 보면 색이 깜빡인다 */
 private const val REACHED_MARGIN_C = 1.0
-
-/** 타일 한 줄의 높이. 화면 높이에 맞춰 늘리지 않는다 — 늘리면 속이 빈다 */
-private val TILE_HEIGHT = 196.dp
 
 /** 지금 열려 있는 조작 시트. 홈은 읽기만 하고, 조작은 전부 여기로 내려간다 */
 private enum class Sheet { NONE, CLIMATE, LOCK, CHARGE, SEAT_LEFT, SEAT_RIGHT, OPENINGS }
@@ -99,7 +107,16 @@ fun DashboardScreen(
             InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
             Spacer(Modifier.height(Space.md))
 
-            TileField(state) { sheet = it }
+            // 숫자와 지표 줄을 한 덩어리로 묶어 세로 가운데에 둔다.
+            // 위아래 끝으로 벌리면 가운데가 통째로 비어 화면이 고장난 것처럼 보인다
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                HeroValue(state) { sheet = Sheet.CLIMATE }
+                Spacer(Modifier.height(Space.xxl))
+                MetricStrip(state) { sheet = it }
+            }
         }
     }
 
@@ -155,225 +172,218 @@ private fun StatusBand(state: DashboardUiState, onRetryConnect: () -> Unit) {
     }
 }
 
-/** 타일 한 칸의 명세 — 몇 칸을 먹는지와 어떻게 그리는지 */
-private data class TileSpec(val span: Int, val content: @Composable (Modifier) -> Unit)
-
 /**
- * 타일 밭 — 폭에 맞춰 칸 수가 바뀐다.
+ * 히어로 — 실내 온도 하나가 화면을 지배한다.
  *
- * 좌우 2단 같은 특정 배치를 고정하지 않는다. 기기마다 폭도 비율도 달라서
- * 한 배치에 맞춰 두면 다른 기기에서 반드시 어딘가 비거나 넘친다.
- * 칸 수만 정하고 타일을 순서대로 채워 넣는다 — 실내와 문·적재함은 두 칸을 먹어
- * 어떤 폭에서든 크기로 중요도가 유지된다.
- *
- * 높이는 고정이다. 화면을 채우려 늘리면 내용보다 상자가 커져 속이 빈다.
+ * 이 화면에서 알고 싶은 건 결국 "지금 차 안이 어떤가" 하나다.
+ * 나머지 값은 아래 한 줄로 눕히고, 여기에만 크기를 몰아준다 —
+ * 멀리서 곁눈으로 볼 때 읽히는 건 어차피 가장 큰 것 하나뿐이라서다.
  */
 @Composable
-private fun TileField(state: DashboardUiState, onOpen: (Sheet) -> Unit) {
-    val specs = listOf(
-        TileSpec(2) { m -> ClimateTile(state, m) { onOpen(Sheet.CLIMATE) } },
-        TileSpec(1) { m -> BatteryTile(state, m) { onOpen(Sheet.CHARGE) } },
-        TileSpec(1) { m -> LockTile(state, m) { onOpen(Sheet.LOCK) } },
-        TileSpec(1) { m ->
-            SeatTile(state, SeatPosition.FRONT_LEFT, m) { onOpen(Sheet.SEAT_LEFT) }
-        },
-        TileSpec(1) { m ->
-            SeatTile(state, SeatPosition.FRONT_RIGHT, m) { onOpen(Sheet.SEAT_RIGHT) }
-        },
-        TileSpec(2) { m -> OpeningTile(state, m) { onOpen(Sheet.OPENINGS) } },
-    )
-
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val columns = columnsFor(maxWidth)
-        Column(
-            // 짧은 화면에서는 스크롤이 열린다. 목표 기기에서는 두 줄이라 안 열린다
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            packRows(specs, columns).forEach { row ->
-                val spans = row.map { it.span.coerceAtMost(columns) }.toMutableList()
-                val short = columns - spans.sum()
-                // 덜 찬 줄은 마지막 타일이 남은 칸을 먹는다. 구멍을 남기면 줄이 어긋나 보인다
-                if (short > 0) spans[spans.lastIndex] = spans.last() + short
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(TILE_HEIGHT),
-                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                ) {
-                    row.forEachIndexed { index, spec ->
-                        spec.content(Modifier.weight(spans[index].toFloat()).fillMaxHeight())
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 폭에 몇 칸이 들어가는지. 한 칸이 손가락보다 좁아지지 않게 나눈다 */
-private fun columnsFor(width: Dp): Int = when {
-    width < 520.dp -> 2
-    width < 760.dp -> 3
-    else -> 4
-}
-
-/** 칸 수를 넘지 않게 타일을 줄로 묶는다 */
-private fun packRows(specs: List<TileSpec>, columns: Int): List<List<TileSpec>> {
-    val rows = mutableListOf<List<TileSpec>>()
-    var row = mutableListOf<TileSpec>()
-    var used = 0
-    specs.forEach { spec ->
-        val span = spec.span.coerceAtMost(columns)
-        if (used + span > columns) {
-            rows += row
-            row = mutableListOf()
-            used = 0
-        }
-        row += spec
-        used += span
-    }
-    if (row.isNotEmpty()) rows += row
-    return rows
-}
-
-/**
- * 실내 온도 + 공조를 한 타일에 합쳤다.
- *
- * 예전엔 "실내 온도 카드"와 "공조 카드"와 "공조 끄기 버튼"이 따로 있었는데,
- * 사실 이건 하나의 질문이다 — "지금 차 안이 어떻고, 차가 뭘 하고 있나".
- * 합치니 중복 조작도 같이 사라졌다.
- */
-@Composable
-private fun ClimateTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
+private fun HeroValue(state: DashboardUiState, onClick: () -> Unit) {
     val running = state.isClimateOn && state.hasClimateReading
-    // 색은 "아직 목표에 못 갔다"는 뜻이다. 도달해서 유지만 하는 중이면 무채색으로 돌아온다 —
-    // 22.5℃가 목표 22.5℃에 닿았는데도 주황이면 색이 거짓말을 하고, 그러면 색 전체가 의미를 잃는다
+    // 색은 "아직 목표에 못 갔다"는 뜻이다. 도달해 유지만 하는 중이면 무채색으로 돌아온다
     val inside = state.insideTemp.toDoubleOrNull()
     val target = state.targetTempValue
     val gap = if (inside != null && target != null) inside - target else 0.0
     val tone = when {
         !running -> TileTone.Calm
-        gap > REACHED_MARGIN_C -> TileTone.Cool   // 아직 더워서 식히는 중
-        gap < -REACHED_MARGIN_C -> TileTone.Warm  // 아직 추워서 데우는 중
-        else -> TileTone.Calm                     // 목표 도달 — 조용히 유지
+        gap > REACHED_MARGIN_C -> TileTone.Cool
+        gap < -REACHED_MARGIN_C -> TileTone.Warm
+        else -> TileTone.Calm
     }
-    // 목표·공조는 아래 수치줄이 이미 말한다. 여기서 또 쓰면 같은 걸 두 번 읽힌다
-    val detail = if (state.hasClimateReading) null else "확인 중"
+    val valueColor = when (tone) {
+        TileTone.Cool -> T.Cool
+        TileTone.Warm -> T.Heat
+        else -> T.Ink
+    }
 
-    StatusTile(
-        label = "실내",
-        value = if (state.hasReading) "${state.insideTemp}°" else "--",
-        modifier = modifier,
-        detail = detail,
-        tone = tone,
-        big = true,
-        onClick = onClick,
-        content = {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.tile))
+            .clickable(onClick = onClick)
+            .padding(vertical = Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                text = if (state.hasReading) "${state.insideTemp}°" else "--",
+                style = heroStyle(),
+                color = valueColor,
+                maxLines = 1,
+            )
             // 앱에서 유일하게 움직이는 것 — 공조가 실제로 도는 동안만
             if (running) {
                 BreathingBar(
                     color = when (tone) {
                         TileTone.Cool -> T.Cool
                         TileTone.Warm -> T.Heat
-                        // 도달 후 유지 — 돌고는 있다는 사실만 옅게 남긴다
                         else -> T.InkFaint
-                    }
+                    },
+                    modifier = Modifier.width(heroBarWidth()),
                 )
             }
-        },
-        footer = {
-            Spacer(Modifier.height(Space.sm))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                HeroMetric("외부", "${state.outsideTemp}°", Modifier.weight(1f))
-                HeroMetric("목표", "${state.targetTemp}°", Modifier.weight(1f))
-                HeroMetric(
-                    label = "공조",
-                    value = if (!state.hasClimateReading) "--"
-                    else if (state.isClimateOn) "켜짐" else "꺼짐",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        },
-    )
-}
-
-/** 히어로 바닥에 깔리는 보조 수치. 값이 주인공인 규칙은 여기서도 같다 */
-@Composable
-private fun HeroMetric(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.xs))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = T.Ink,
-        )
+        }
+        Spacer(Modifier.width(Space.xl))
+        Column {
+            Text(
+                text = "실내",
+                style = MaterialTheme.typography.labelSmall,
+                color = T.InkFaint,
+            )
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                text = when {
+                    !state.hasClimateReading -> "공조 확인 중"
+                    state.isClimateOn -> "공조 켜짐 · 목표 ${state.targetTemp}°"
+                    else -> "공조 꺼짐"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = T.InkMuted,
+            )
+            Text(
+                text = "외부 ${state.outsideTemp}°",
+                style = MaterialTheme.typography.bodyMedium,
+                color = T.InkFaint,
+            )
+        }
     }
 }
 
+/** 히어로 숫자 크기 — 폭이 좁으면 줄인다. 넘치면 읽히지도 않는다 */
 @Composable
-private fun BatteryTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
-    val charging = state.isCharging == true
-    StatusTile(
-        label = "배터리",
-        value = state.batteryLabel,
-        modifier = modifier,
-        detail = when {
-            state.isCharging == null -> "확인 중"
-            charging -> "충전 중 · ${state.chargingAmps ?: "--"}A"
-            state.rangeKm != null -> "${state.rangeKm}km · 한도 ${state.chargeLimitPercent ?: "--"}%"
-            else -> "한도 ${state.chargeLimitPercent ?: "--"}%"
-        },
-        // 충전은 차가 일하는 중이라 색을 준다
-        tone = if (charging) TileTone.Cool else TileTone.Calm,
-        onClick = onClick,
-    )
-}
+private fun heroStyle() = HeroValueStyle.copy(
+    fontSize = when (LocalPane.current) {
+        Pane.Compact -> 64.sp
+        Pane.Medium -> 88.sp
+        Pane.Expanded -> 112.sp
+    }
+)
 
 @Composable
-private fun LockTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
-    // 문이 열려 있으면 잠금 해제는 당연한 결과라 새 소식이 아니다.
-    // 문 타일이 이미 더 정확히 말하고 있으니 빨간 면을 두 개 만들지 않는다
-    val unlocked = state.hasBodyReading && !state.isLocked && state.openings.isEmpty()
-    StatusTile(
-        label = "잠금",
-        // 열려 있는 건 사람이 봐야 하는 상태다. 이 화면에서 면이 물드는 유일한 경우
-        value = when {
-            !state.hasBodyReading -> "--"
-            state.isLocked -> "잠김"
-            else -> "열림"
-        },
-        modifier = modifier,
-        detail = if (unlocked) "눌러서 잠그기" else null,
-        tone = if (unlocked) TileTone.Alert else TileTone.Calm,
-        onClick = onClick,
-    )
+private fun heroBarWidth() = when (LocalPane.current) {
+    Pane.Compact -> 140.dp
+    Pane.Medium -> 190.dp
+    Pane.Expanded -> 240.dp
 }
 
+/**
+ * 아래 한 줄 — 나머지 값 전부.
+ *
+ * 각 항목을 누르면 그 조작 시트가 열린다. 홈에는 버튼을 늘어놓지 않는다.
+ * 좁아지면 줄바꿈되므로 폭이 바뀌어도 눌리지 않는다.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SeatTile(
-    state: DashboardUiState,
-    seat: SeatPosition,
-    modifier: Modifier,
+private fun MetricStrip(state: DashboardUiState, onOpen: (Sheet) -> Unit) {
+    val climateLeft = state.seatClimate[SeatPosition.FRONT_LEFT] ?: SeatClimate()
+    val climateRight = state.seatClimate[SeatPosition.FRONT_RIGHT] ?: SeatClimate()
+    // 문이 열려 있으면 잠금 해제는 당연한 결과라 새 소식이 아니다 — 경보는 한 곳만
+    val openings = state.openings
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Space.xl),
+        verticalArrangement = Arrangement.spacedBy(Space.md),
+    ) {
+        Metric("배터리", state.batteryLabel) { onOpen(Sheet.CHARGE) }
+        if (state.rangeKm != null) {
+            Metric("주행", "${state.rangeKm}km") { onOpen(Sheet.CHARGE) }
+        }
+        Metric(
+            label = "잠금",
+            value = when {
+                !state.hasBodyReading -> "--"
+                state.isLocked -> "잠김"
+                else -> "열림"
+            },
+            alert = state.hasBodyReading && !state.isLocked && openings.isEmpty(),
+        ) { onOpen(Sheet.LOCK) }
+        Metric(
+            label = "운전석",
+            value = if (climateLeft.level != Level.OFF) {
+                "${climateLeft.mode.label} ${climateLeft.level.label}"
+            } else "끔",
+            accent = seatAccent(climateLeft),
+            pending = state.pendingSeat == SeatPosition.FRONT_LEFT,
+        ) { onOpen(Sheet.SEAT_LEFT) }
+        Metric(
+            label = "동승석",
+            value = if (climateRight.level != Level.OFF) {
+                "${climateRight.mode.label} ${climateRight.level.label}"
+            } else "끔",
+            accent = seatAccent(climateRight),
+            pending = state.pendingSeat == SeatPosition.FRONT_RIGHT,
+        ) { onOpen(Sheet.SEAT_RIGHT) }
+        Metric(
+            label = "문 · 적재함",
+            value = when {
+                !state.hasBodyReading -> "--"
+                openings.isEmpty() -> "모두 닫힘"
+                else -> openings.joinToString(" · ")
+            },
+            alert = openings.isNotEmpty(),
+        ) { onOpen(Sheet.OPENINGS) }
+    }
+}
+
+/** 시트가 실제로 돌고 있을 때만 색을 준다 */
+@Composable
+private fun seatAccent(climate: SeatClimate): Color = when {
+    climate.level == Level.OFF -> T.Ink
+    climate.mode == SeatMode.COOL -> T.Cool
+    else -> T.Heat
+}
+
+/**
+ * 지표 한 칸. 라벨은 작고 값이 크다.
+ *
+ * [alert]면 값을 빨간 면에 얹는다 — 이 줄의 글씨는 히어로보다 작아서
+ * 색만 바꾸면 곁눈에 안 걸린다. 면으로 깔아야 안 읽고도 보인다.
+ */
+@Composable
+private fun Metric(
+    label: String,
+    value: String,
+    accent: Color = T.Ink,
+    alert: Boolean = false,
+    pending: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val climate = state.seatClimate[seat] ?: SeatClimate()
-    val on = climate.level != Level.OFF
-    StatusTile(
-        label = seat.label,
-        value = if (on) climate.level.label else "끔",
-        modifier = modifier,
-        detail = if (on) climate.mode.label else null,
-        tone = when {
-            !on -> TileTone.Calm
-            climate.mode == SeatMode.COOL -> TileTone.Cool
-            else -> TileTone.Warm
-        },
-        pending = state.pendingSeat == seat,
-        onClick = onClick,
-    )
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.button))
+            .clickable(onClick = onClick)
+            // 주행 중 조작이라 손가락보다 넉넉하게
+            .heightIn(min = 56.dp)
+            .padding(horizontal = Space.sm, vertical = Space.xs),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (pending) T.Electric else T.InkFaint,
+        )
+        Spacer(Modifier.height(Space.xs))
+        if (alert) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineMedium,
+                color = T.OnDanger,
+                maxLines = 1,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.button))
+                    .background(T.Danger)
+                    .padding(horizontal = Space.sm, vertical = Space.xs),
+            )
+        } else {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineMedium,
+                color = accent,
+                maxLines = 1,
+            )
+        }
+    }
 }
 
 @Composable
@@ -383,30 +393,6 @@ private fun RowScope.OpeningButton(text: String, enabled: Boolean, onClick: () -
         tone = ButtonTone.Secondary,
         modifier = Modifier.weight(1f),
         enabled = enabled,
-        onClick = onClick,
-    )
-}
-
-/**
- * 문·트렁크 열림 상태.
- *
- * 예전엔 여기가 버튼 네 개였다 — 누를 수는 있는데 **지금 열려 있는지는 알 수 없었다**.
- * 차는 도어 상태를 계속 읽고 있었으니 화면이 안 쓰고 버린 셈이다.
- * 비 오는 날 창문 열어둔 걸 알려주는 게 여는 버튼보다 중요하다.
- */
-@Composable
-private fun OpeningTile(state: DashboardUiState, modifier: Modifier, onClick: () -> Unit) {
-    val open = state.openings
-    StatusTile(
-        label = "문 · 적재함",
-        value = when {
-            !state.hasBodyReading -> "--"
-            open.isEmpty() -> "모두 닫힘"
-            else -> open.joinToString(" · ")
-        },
-        modifier = modifier,
-        detail = if (open.isEmpty()) null else "눌러서 조작",
-        tone = if (open.isNotEmpty()) TileTone.Alert else TileTone.Calm,
         onClick = onClick,
     )
 }

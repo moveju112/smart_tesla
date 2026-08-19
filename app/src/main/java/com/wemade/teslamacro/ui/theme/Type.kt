@@ -95,3 +95,18 @@ val TileValueStyleLarge = TextStyle(
     lineHeight = 54.sp,
     letterSpacing = (-2).sp,
 )
+
+/**
+ * 히어로 값 — 화면에서 유일하게 압도적으로 큰 것.
+ *
+ * 실제 크기는 화면 폭에 따라 화면 쪽에서 정한다. 여기선 굵기와 자간만 잡는다 —
+ * 이만한 크기에서는 기본 자간이 헐거워 보여 음수로 당겨야 덩어리로 읽힌다.
+ */
+val HeroValueStyle = TextStyle(
+    fontFamily = Sans,
+    fontFeatureSettings = TABULAR,
+    fontWeight = FontWeight.W700,
+    fontSize = 112.sp,
+    lineHeight = 116.sp,
+    letterSpacing = (-4).sp,
+)

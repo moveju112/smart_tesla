@@ -51,7 +51,6 @@ import com.wemade.teslamacro.ui.component.LevelSelector
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.PickerSheet
 import com.wemade.teslamacro.ui.component.StatusPill
-import com.wemade.teslamacro.ui.component.StatusTile
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TileTone
 import com.wemade.teslamacro.ui.component.ToggleRow
@@ -571,8 +570,6 @@ data class DashboardUiState(
     val targetTempValue: Double?,
     val isClimateOn: Boolean,
     val isLocked: Boolean,
-    val seatCooler: Map<SeatPosition, Level>,
-    val seatHeater: Map<SeatPosition, Level>,
     /** 좌석별 통풍/열선 설정 (클라 저장값). 화면은 이걸 기준으로 그린다 */
     val seatClimate: Map<SeatPosition, SeatClimate> = emptyMap(),
     val isSimulated: Boolean,
@@ -654,17 +651,6 @@ data class DashboardUiState(
             is LinkState.Ready -> if (isSimulated) ColorRole.WarnText else ColorRole.OkText
             is LinkState.Failed -> ColorRole.Danger
             else -> ColorRole.InkMuted
-        }
-
-    val connectionDetail: String
-        get() = when {
-            pendingCommand != null -> "${pendingCommand.label} 전송 중"
-            link is LinkState.Connecting -> "신호 ${link.rssi}dBm"
-            link is LinkState.Failed -> link.reason
-            link is LinkState.Ready && isSimulated -> "가상 차량"
-            link is LinkState.Ready -> "BLE 직결"
-            link is LinkState.Scanning -> "차량을 찾는 중"
-            else -> "대기 중"
         }
 
     /** 27℃를 넘으면 더운 상태로 본다. 매크로 발동 임계값과 같은 기준 */

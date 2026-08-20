@@ -36,26 +36,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.wemade.teslamacro.ui.theme.Elevation
 import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
 enum class ButtonTone { Primary, Secondary, Ghost, Danger }
-
-/**
- * 부드러운 그림자. 밝은 회색 배경 위 흰 카드가 살짝 뜨게만 한다.
- * spot/ambient를 검정으로 두고 clip=false로 카드 밖으로 번지게 한다.
- */
-fun Modifier.softShadow(elevation: androidx.compose.ui.unit.Dp, radius: androidx.compose.ui.unit.Dp) =
-    this.shadow(
-        elevation = elevation,
-        shape = RoundedCornerShape(radius),
-        clip = false,
-        ambientColor = Color.Black,
-        spotColor = Color.Black,
-    )
 
 /**
  * 공용 버튼.

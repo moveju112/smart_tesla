@@ -43,15 +43,6 @@ object Radius {
     val tile = 4.dp
 }
 
-/**
- * 그림자를 쓰지 않는다. 층은 명도 차와 1dp 경계선으로만 만든다 —
- * 그림자가 겹치면 카드가 많은 화면에서 지저분해진다.
- */
-object Elevation {
-    val card = 0.dp
-    val button = 0.dp
-    val hero = 0.dp
-}
 
 /** 원본의 0.33s cubic-bezier를 그대로 옮긴 공용 모션 */
 object Motion {

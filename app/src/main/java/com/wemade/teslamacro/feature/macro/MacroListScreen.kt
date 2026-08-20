@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -58,7 +57,6 @@ import com.wemade.teslamacro.ui.component.StatusPill
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Radius
-import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlinx.coroutines.delay
@@ -92,7 +90,6 @@ fun MacroListScreen(
         log.groupBy { it.ruleName }.mapValues { (_, entries) -> entries.maxOf { it.timestampMillis } }
     }
 
-    val compact = LocalPane.current.isCompact
 
     // 넓으면 목록과 기록을 좌우로 나눈다. 한 단으로 쌓으면 기록이 목록 아래에 묻혀
     // 매크로를 보려면 매번 기록을 지나쳐 스크롤해야 했다
@@ -165,7 +162,6 @@ fun MacroListScreen(
             }
 
             // 기록은 목록 아래로 잇는다 — 옆에 레일로 세우면 화면이 두 갈래로 쪼개진다
-            if (true) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("실행 기록") }
                 if (log.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) { EmptyLogNotice() }
@@ -175,23 +171,8 @@ fun MacroListScreen(
                         span = { GridItemSpan(maxLineSpan) },
                     ) { entry -> LogRow(entry) }
                 }
-            }
         }
 
-        if (false) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = Space.lg),
-            ) {
-                item { SectionHeader("실행 기록", topPadding = 0.dp) }
-                if (log.isEmpty()) {
-                    item { EmptyLogNotice() }
-                } else {
-                    val recent = log.asReversed().take(40)
-                    items(recent.size) { index -> LogRow(recent[index]) }
-                }
-            }
-        }
     }
 }
 

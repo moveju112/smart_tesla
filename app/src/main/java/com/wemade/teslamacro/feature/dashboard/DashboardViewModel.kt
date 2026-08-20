@@ -113,8 +113,6 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             targetTempValue = effective.driverTempSettingC,
             isClimateOn = effective.isClimateOn == true,
             isLocked = effective.isLocked == true,
-            seatCooler = effective.seatCooler,
-            seatHeater = effective.seatHeater,
             isSimulated = container.isSimulated,
             // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다.
             // 전역 타임스탬프는 아무 카테고리 하나만 성공해도 갱신되므로,
@@ -328,8 +326,6 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         targetTempValue = null,
         isClimateOn = false,
         isLocked = true,
-        seatCooler = emptyMap(),
-        seatHeater = emptyMap(),
         isSimulated = container.isSimulated,
         hasReading = false,
         pendingCommand = null,

@@ -292,14 +292,6 @@ class ScreenshotTest {
             SeatPosition.FRONT_LEFT to com.wemade.teslamacro.domain.model.SeatClimate(com.wemade.teslamacro.domain.model.SeatMode.COOL, Level.MEDIUM),
             SeatPosition.FRONT_RIGHT to com.wemade.teslamacro.domain.model.SeatClimate(com.wemade.teslamacro.domain.model.SeatMode.HEAT, Level.OFF),
         ),
-        seatCooler = mapOf(
-            SeatPosition.FRONT_LEFT to Level.MEDIUM,
-            SeatPosition.FRONT_RIGHT to Level.OFF,
-        ),
-        seatHeater = mapOf(
-            SeatPosition.FRONT_LEFT to Level.OFF,
-            SeatPosition.FRONT_RIGHT to Level.OFF,
-        ),
         isSimulated = false,
         hasReading = hasReading,
         hasBodyReading = hasReading,

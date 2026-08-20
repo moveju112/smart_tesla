@@ -162,8 +162,6 @@ class WideScreenshotTest {
         targetTempValue = 22.5,
         isClimateOn = true,
         isLocked = true,
-        seatCooler = emptyMap(),
-        seatHeater = emptyMap(),
         seatClimate = mapOf(
             SeatPosition.FRONT_LEFT to SeatClimate(SeatMode.COOL, Level.MEDIUM),
         ),

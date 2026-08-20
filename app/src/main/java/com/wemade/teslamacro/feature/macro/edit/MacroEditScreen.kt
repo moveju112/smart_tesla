@@ -431,22 +431,6 @@ private fun WidePage(
     }
 }
 
-/** 한 칸 — 제목 + 설명 + 내용 */
-@Composable
-private fun EditColumn(
-    title: String,
-    subtitle: String,
-    modifier: Modifier,
-    content: @Composable () -> Unit,
-) {
-    Column(modifier = modifier.fillMaxHeight().verticalScroll(rememberScrollState())) {
-        ColumnHeading(title, subtitle)
-        content()
-        // 마지막 카드가 화면 끝에서 반토막 나면 고장으로 보인다 — 스크롤 끝 여백
-        Spacer(Modifier.height(Space.xl))
-    }
-}
-
 /** 칸 제목 — 왼쪽 칸은 이걸 두 번 써서 두 구역을 겹쳐 쌓는다 */
 @Composable
 private fun ColumnHeading(title: String, subtitle: String) {

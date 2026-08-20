@@ -39,8 +39,6 @@ data class Palette(
     val onDanger: Color,
     val ok: Color,
     val okText: Color,
-    val coolTint: Color,
-    val heatTint: Color,
 )
 
 /**
@@ -74,8 +72,6 @@ val LightPalette = Palette(
     onDanger = Color(0xFFFAFAF8),
     ok = Color(0xFF4D7C0F),
     okText = Color(0xFF3F6212),
-    coolTint = Color(0xFFEDF2F3),
-    heatTint = Color(0xFFF5F0E9),
 )
 
 /**
@@ -105,8 +101,6 @@ val DarkPalette = Palette(
     onDanger = Color(0xFF16100F),
     ok = Color(0xFF86B84A),
     okText = Color(0xFF86B84A),
-    coolTint = Color(0xFF17252A),
-    heatTint = Color(0xFF2A2019),
 )
 
 /** 지금 팔레트. [TeslaMacroTheme]이 낮/밤에 맞춰 갈아 끼운다 */
@@ -142,8 +136,6 @@ object T {
     val OnDanger: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.onDanger
     val Ok: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.ok
     val OkText: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.okText
-    val CoolTint: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.coolTint
-    val HeatTint: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.heatTint
 }
 
 /**

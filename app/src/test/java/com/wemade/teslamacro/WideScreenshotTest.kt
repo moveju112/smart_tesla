@@ -1,5 +1,7 @@
 package com.wemade.teslamacro
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.NightMode
@@ -131,6 +133,37 @@ class WideScreenshotTest {
                         onRemove = {},
                     ),
                 )
+            }
+        }
+    }
+
+    // 진단 로그 카드는 설정 화면 맨 아래라 W5 화면에 안 잡힌다.
+    // 줄을 끈 모습(설정)과 켠 모습(등록)을 나란히 세워 따로 확인한다
+    @Test
+    fun `W7 진단 로그 카드`() {
+        com.wemade.teslable.DiagLog.clear()
+        repeat(5) { com.wemade.teslable.DiagLog.add("직행 연결 성공 (표본 $it)") }
+        paparazzi.snapshot("W7-diaglog") {
+            AppFrame(Destination.Settings) {
+                androidx.compose.foundation.layout.Column(
+                    modifier = androidx.compose.ui.Modifier.padding(
+                        com.wemade.teslamacro.ui.theme.Space.lg
+                    )
+                ) {
+                    com.wemade.teslamacro.ui.component.DiagLogPanel(
+                        title = "설정 화면 — 줄 숨김",
+                        showLines = false,
+                    )
+                    androidx.compose.foundation.layout.Spacer(
+                        androidx.compose.ui.Modifier.height(
+                            com.wemade.teslamacro.ui.theme.Space.lg
+                        )
+                    )
+                    com.wemade.teslamacro.ui.component.DiagLogPanel(
+                        title = "등록 화면 — 줄 표시",
+                        showLines = true,
+                    )
+                }
             }
         }
     }

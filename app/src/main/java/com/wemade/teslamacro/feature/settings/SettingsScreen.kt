@@ -132,6 +132,9 @@ fun SettingsScreen(
 
             },
             right = {
+        SectionHeader("업데이트")
+        UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
+
         SectionHeader("차량")
         TCard {
             if (settings.vehicleName.isNotBlank()) {
@@ -173,9 +176,6 @@ fun SettingsScreen(
             }
         }
 
-        SectionHeader("업데이트")
-        UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
-
         if (voice != null) {
             SectionHeader("음성")
             VoicePanel(
@@ -187,11 +187,16 @@ fun SettingsScreen(
             )
         }
 
-        // 실차 문제를 원격으로 전달받는 통로. 항상 노출한다.
+        // 실차 문제를 원격으로 전달받는 통로. 공유 버튼은 항상 남긴다.
+        // 줄 목록은 끈다 — 사용자가 읽을 내용이 아니고 여기가 화면을 제일 많이 먹었다.
         // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 폴링 주기·토글 상태를 알 수 없다
         // 제목은 다른 섹션과 같이 카드 밖 SectionHeader로 — 패널 내부 제목은 끈다
         SectionHeader("진단 로그")
-        DiagLogPanel(title = null, shareExtra = { settingsDump(settings) })
+        DiagLogPanel(
+            title = null,
+            showLines = false,
+            shareExtra = { settingsDump(settings) },
+        )
 
             },
         )

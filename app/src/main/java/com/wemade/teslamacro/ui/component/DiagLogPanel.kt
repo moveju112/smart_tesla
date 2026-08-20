@@ -30,6 +30,8 @@ import com.wemade.teslamacro.ui.theme.T
  * 복사(클립보드)와 공유(공유 시트 — 메일·메신저 직행) 두 길을 둔다.
  *
  * @param title 카드 안 제목. 화면이 SectionHeader를 카드 밖에 둘 때는 null로 끈다
+ * @param showLines 로그 줄을 화면에 늘어놓을지. 개발자용이라 평소엔 끈다 —
+ *   등록 화면처럼 사용자가 진행 과정을 봐야 하는 곳에서만 켠다
  * @param shareExtra 공유 본문 앞에 붙일 추가 정보(설정 덤프 등). 호출부가 채운다
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -37,6 +39,7 @@ import com.wemade.teslamacro.ui.theme.T
 fun DiagLogPanel(
     modifier: Modifier = Modifier,
     title: String? = "진단 로그",
+    showLines: Boolean = true,
     shareExtra: () -> String = { "" },
 ) {
     val lines by DiagLog.lines.collectAsState()
@@ -94,7 +97,16 @@ fun DiagLogPanel(
         }
         Spacer(Modifier.height(Space.md))
 
-        if (lines.isEmpty()) {
+        if (!showLines) {
+            // 줄을 늘어놓지 않는다 — 사용자가 읽을 내용이 아니고, 여기가 화면을 제일 많이 먹었다.
+            // 공유 한 번으로 전체가 나가므로 몇 줄 쌓였는지만 알려준다
+            Text(
+                text = if (lines.isEmpty()) "아직 기록이 없어요."
+                else "기록 ${lines.size}줄. 문제가 생기면 공유를 눌러 보내주세요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        } else if (lines.isEmpty()) {
             Text(
                 text = "아직 기록이 없어요.\n차량 찾기를 시도하면 여기에 과정이 남아요.",
                 style = MaterialTheme.typography.bodySmall,

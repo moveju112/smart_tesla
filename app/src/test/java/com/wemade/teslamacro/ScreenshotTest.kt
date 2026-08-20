@@ -237,6 +237,10 @@ class ScreenshotTest {
                     onInstall = {},
                     onRemove = {},
                 ),
+                battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                    unrestricted = true,
+                    onOpenSettings = {},
+                ),
                 simulator = SimulatorControls(
                     insideTemp = 31.0,
                     outsideTemp = 29.0,

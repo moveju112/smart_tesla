@@ -140,6 +140,10 @@ class PhoneScreenshotTest {
                         onInstall = {},
                         onRemove = {},
                     ),
+                battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                    unrestricted = false,
+                    onOpenSettings = {},
+                ),
                 )
             }
         }

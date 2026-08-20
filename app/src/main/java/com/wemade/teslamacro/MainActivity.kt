@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.graphics.toArgb
+import android.content.Intent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -269,6 +270,13 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val simulated = settingsViewModel.simulatedState?.collectAsState()?.value
                     val voiceModel by settingsViewModel.voiceModel.collectAsState()
                     val update by settingsViewModel.update.collectAsState()
+                    val batteryUnrestricted by settingsViewModel.batteryUnrestricted.collectAsState()
+
+                    // 절전 다이얼로그에서 돌아오면 상태를 다시 읽는다.
+                    // 결과 코드는 의미가 없다 — 허용했는지는 시스템에 되물어야 안다
+                    val batteryDialog = rememberLauncherForActivityResult(
+                        ActivityResultContracts.StartActivityForResult()
+                    ) { settingsViewModel.refreshBatteryUnrestricted() }
 
                     // 음성 모델 zip 고르기. 앱이 직접 내려받지 않으므로 파일을 받아 오는 건 사용자 몫이다
                     val pickModel = rememberLauncherForActivityResult(
@@ -299,12 +307,37 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onInstall = { pickModel.launch(arrayOf("*/*")) },
                             onRemove = settingsViewModel::removeVoiceModel,
                         ),
+                        battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                            unrestricted = batteryUnrestricted,
+                            onOpenSettings = { requestBatteryUnrestricted(context, batteryDialog) },
+                        ),
                         update = update,
                         onCheckUpdate = settingsViewModel::checkUpdate,
                         onDownloadUpdate = settingsViewModel::downloadAndInstall,
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 절전 제외를 요청한다.
+ *
+ * 바로 뜨는 확인 다이얼로그를 먼저 시도하고, 그 화면이 없는 기기에서는
+ * 앱 목록으로 보낸다 — 아무것도 안 열리는 버튼이 되면 안 된다.
+ */
+private fun requestBatteryUnrestricted(
+    context: android.content.Context,
+    launcher: androidx.activity.result.ActivityResultLauncher<Intent>,
+) {
+    val direct = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        .setData(android.net.Uri.parse("package:${context.packageName}"))
+    runCatching { launcher.launch(direct) }.onFailure {
+        runCatching {
+            launcher.launch(
+                Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            )
         }
     }
 }

@@ -71,6 +71,27 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { AppUpdater.downloadAndInstall(container.appContext) }
     }
 
+    // ---- 절전 제외 ----
+
+    /**
+     * 이 앱이 배터리 최적화에서 빠져 있는지.
+     *
+     * Doze는 프로세스를 죽이는 게 아니라 늦춘다 — 매크로의 고정 대기가 늘어지고,
+     * 탑승 순간의 측위가 밀려 위치 조건이 통째로 빠진다.
+     */
+    private val _batteryUnrestricted = MutableStateFlow(readBatteryUnrestricted())
+    val batteryUnrestricted: StateFlow<Boolean> = _batteryUnrestricted
+
+    /** 시스템 다이얼로그에서 돌아왔을 때 부른다 — 안 부르면 "절전 걸림"이 계속 남는다 */
+    fun refreshBatteryUnrestricted() {
+        _batteryUnrestricted.value = readBatteryUnrestricted()
+    }
+
+    private fun readBatteryUnrestricted(): Boolean {
+        val power = container.appContext.getSystemService(android.os.PowerManager::class.java)
+        return power?.isIgnoringBatteryOptimizations(container.appContext.packageName) == true
+    }
+
     // ---- 음성 ----
 
     val voiceModel: StateFlow<VoiceModelState> = container.voiceModelStore.state

@@ -58,6 +58,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     simulator: SimulatorControls? = null,
     voice: VoiceControls? = null,
+    battery: BatteryControls? = null,
     update: UpdateState? = null,
     onCheckUpdate: () -> Unit = {},
     onDownloadUpdate: () -> Unit = {},
@@ -134,6 +135,11 @@ fun SettingsScreen(
             right = {
         SectionHeader("업데이트")
         UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
+
+        if (battery != null) {
+            SectionHeader("절전")
+            BatteryPanel(battery)
+        }
 
         SectionHeader("차량")
         TCard {
@@ -222,6 +228,48 @@ private fun TwoColumns(
     }
 }
 
+/**
+ * 절전 제외 안내.
+ *
+ * 설정돼 있으면 조용한 확인 한 줄, 안 돼 있으면 경고색 + 버튼.
+ * 제조사 자체 절전은 표준 인텐트가 없어 코드로 못 켠다 — 어디를 봐야 하는지만 적는다.
+ */
+@Composable
+private fun BatteryPanel(battery: BatteryControls) {
+    TCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (battery.unrestricted) {
+                    "제한 없음으로 설정돼 있어요.\n매크로 대기와 위치 확인이 밀리지 않아요."
+                } else {
+                    "절전이 걸려 있어요.\n매크로 대기가 늘어지고 위치·업데이트 확인이 밀릴 수 있어요."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (battery.unrestricted) T.InkFaint else T.WarnText,
+                modifier = Modifier.weight(1f),
+            )
+            if (!battery.unrestricted) {
+                Spacer(Modifier.width(Space.md))
+                TButton(
+                    text = "제한 없음으로",
+                    fillWidth = false,
+                    small = true,
+                    onClick = battery.onOpenSettings,
+                )
+            }
+        }
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        Text(
+            text = "태블릿 자체 절전은 따로예요. 설정 → 앱 → Smart Tesla에서 " +
+                "'자동 시작'과 '백그라운드 실행'도 함께 허용해 주세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+        )
+    }
+}
+
 /** 현재 버전 표시 + GitHub 최신 릴리스 확인/원클릭 설치 */
 @Composable
 private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: () -> Unit) {
@@ -304,6 +352,17 @@ private fun LabelValueRow(label: String, value: String) {
 }
 
 /** 음성 설정에 필요한 값과 콜백 묶음 */
+/**
+ * 절전 제외 상태와 시스템 다이얼로그로 보내는 길.
+ *
+ * 상태를 화면이 직접 읽지 않는 이유: 사용자가 시스템 설정에서 바꾸고 돌아오면
+ * 다시 읽어야 하는데, 그 시점을 아는 건 호출부(액티비티)뿐이다.
+ */
+data class BatteryControls(
+    val unrestricted: Boolean,
+    val onOpenSettings: () -> Unit,
+)
+
 data class VoiceControls(
     val model: VoiceModelState,
     val onAlwaysOnChange: (Boolean) -> Unit,

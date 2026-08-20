@@ -49,6 +49,17 @@ class AppContainer(private val context: Context) {
 
     val ruleStore = RuleStore(context)
 
+    /**
+     * 초기화 때 읽어 둔 설정.
+     *
+     * ViewModel이 DataStore를 새로 구독하면 첫 값은 빈 기본값(vin="")이 되고,
+     * 그 한 프레임 때문에 등록이 끝난 차에서도 VIN 입력 화면이 스친다 —
+     * 느린 태블릿에선 그게 눈에 보인다. 이미 읽어 둔 값을 첫 값으로 쓰게 넘겨준다.
+     */
+    var initialSettings: com.wemade.teslamacro.data.settings.AppSettings =
+        com.wemade.teslamacro.data.settings.AppSettings()
+        private set
+
     /** 폴러가 쓰고 러너가 읽는다. 조건 대기가 최신 상태를 봐야 해서 공유한다 */
     private val latestReading = MutableStateFlow<Reading?>(null)
 
@@ -66,6 +77,7 @@ class AppContainer(private val context: Context) {
         ruleStore.load()
 
         val settings = settingsStore.settings.first()
+        initialSettings = settings
         // 차를 등록했으면 실차, 아니면 시뮬레이터로 시작한다.
         // 등록 도중에 실차로 갈아끼울 수 있게 껍데기를 씌운다
         gateway = SwitchingVehicleGateway(

@@ -32,7 +32,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsStore.settings.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = AppSettings(),
+        // 빈 기본값으로 시작하면 등록이 끝난 차에서도 VIN 입력 화면이 한 번 스친다.
+        // 컨테이너가 시작할 때 이미 읽어 둔 값이 있으니 그걸 첫 값으로 쓴다
+        initialValue = container.initialSettings,
     )
 
     fun setAutomationEnabled(enabled: Boolean) {

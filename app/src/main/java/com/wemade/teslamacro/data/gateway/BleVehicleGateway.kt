@@ -4,6 +4,7 @@ import android.content.Context
 import com.wemade.teslable.TeslaBleLink
 import com.wemade.teslable.TeslaBleScanner
 import com.wemade.teslable.TeslaClient
+import com.tesla.generated.carserver.server.CarServer
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.command.requiresPark
 import com.wemade.teslamacro.domain.gateway.EnrollmentState
@@ -332,14 +333,31 @@ class BleVehicleGateway(
 
         return runCatching {
             when (val encoded = CommandEncoder.encode(command)) {
-                is EncodedCommand.Infotainment ->
-                    active.sendToInfotainment(encoded.action.toByteArray())
+                is EncodedCommand.Infotainment -> {
+                    // 봉투가 무사히 왕복해도 차는 본문에 거부를 실어 보낸다.
+                    // 이걸 안 읽으면 "완료"라고 기록해 놓고 차는 안 움직이는 거짓 성공이 된다
+                    // (실차 0.8.35: 창문 환기·닫기가 조용히 무시됨)
+                    val responseBytes = active.sendToInfotainment(encoded.action.toByteArray())
+                    checkInfotainmentResult(command, responseBytes)
+                }
                 is EncodedCommand.Vehicle ->
                     active.sendToVcsec(encoded.message)
             }
             // 여기까지 왔으면 차량이 인증하고 받아들인 것이다
             _enrollmentState.value = EnrollmentState.Enrolled
         }.map { }
+    }
+
+    /**
+     * 인포테인먼트 응답 본문의 실행 결과를 검사한다.
+     *
+     * 차는 명령을 거부할 때 예외를 내지 않는다 — actionStatus에 ERROR와 사유 문장을
+     * 실어 보낼 뿐이다. 사유가 있으면 그대로 사용자에게 보여준다 (차가 제일 정확히 안다).
+     */
+    private fun checkInfotainmentResult(command: VehicleCommand, responseBytes: ByteArray) {
+        val reason = infotainmentRejection(responseBytes) ?: return
+        com.wemade.teslable.DiagLog.add("${command.label} 거부됨 — $reason")
+        throw IllegalStateException(reason)
     }
 
     override suspend fun read(category: StateCategory): Result<VehicleSnapshot> {
@@ -427,4 +445,15 @@ class BleVehicleGateway(
         /** autoConnect 직접 연결은 차가 나타날 때까지 넉넉히 기다린다 */
         const val DIRECT_TIMEOUT_MS = 30_000L
     }
+}
+
+/**
+ * 인포테인먼트 응답에서 거부 사유를 뽑는다. 거부가 아니면 null.
+ * 게이트웨이 없이도 검사할 수 있게 순수 함수로 둔다.
+ */
+internal fun infotainmentRejection(responseBytes: ByteArray): String? {
+    val status = runCatching { CarServer.Response.parseFrom(responseBytes).actionStatus }
+        .getOrNull() ?: return null // 본문 해석 실패는 여기서 판정하지 않는다
+    if (status.result != CarServer.OperationStatus_E.OPERATIONSTATUS_ERROR) return null
+    return status.resultReason.plainText.ifBlank { "차량이 거부함 (사유 없음)" }
 }

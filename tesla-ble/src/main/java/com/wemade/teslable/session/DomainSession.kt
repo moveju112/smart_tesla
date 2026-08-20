@@ -63,9 +63,15 @@ class DomainSession(
             return "이 키가 차량에 등록되어 있지 않다"
         }
 
-        // 1. 공유키 유도 후 태그 검증 — 여기서 MITM이 걸러진다
-        val derived = runCatching { clientKey.sharedKeyWith(info.publicKey.toByteArray()) }
-            .getOrElse { return "차량 공개키가 올바르지 않다" }
+        // 1. 공유키 유도 후 태그 검증 — 여기서 MITM이 걸러진다.
+        //    깨는 중인 차는 공개키 자리를 비운 응답을 먼저 보낸다. 이걸 "키가 올바르지 않다"고
+        //    적으면 등록이 깨진 줄 알고 엉뚱한 데를 파게 된다 — 두 경우를 갈라서 말한다
+        val vehicleKey = info.publicKey.toByteArray()
+        if (vehicleKey.isEmpty()) {
+            return "차량이 아직 세션 키를 안 보냈다 (깨는 중 — 곧 재시도)"
+        }
+        val derived = runCatching { clientKey.sharedKeyWith(vehicleKey) }
+            .getOrElse { return "차량 공개키를 해석하지 못했다 (${vehicleKey.size}바이트)" }
 
         val metadata = Metadata.Builder()
             .putByte(Metadata.TAG_SIGNATURE_TYPE, SIGNATURE_TYPE_HMAC)

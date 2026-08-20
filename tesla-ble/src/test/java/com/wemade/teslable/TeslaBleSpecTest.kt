@@ -75,3 +75,54 @@ class BleFramingTest {
         assertArrayEquals(byteArrayOf(7), reassembler.push(BleFraming.frame(byteArrayOf(7), 100).first()))
     }
 }
+
+/**
+ * 세션 정보 검증 — 실패 사유를 갈라서 말하는지.
+ *
+ * 실차에서 재연결마다 "차량 공개키가 올바르지 않다"가 찍혔는데,
+ * 실제로는 깨는 중인 차가 공개키 자리를 비워 보낸 것이었다.
+ * 두 경우가 같은 문구로 나오면 등록이 깨진 줄 알고 엉뚱한 데를 판다.
+ */
+class SessionInfoDiagnosisTest {
+
+    private fun session(): com.wemade.teslable.session.DomainSession {
+        // 검증이 공개키 단계에서 먼저 걸리므로 키 쌍은 아무거나면 된다
+        val pair = java.security.KeyPairGenerator.getInstance("EC").apply {
+            initialize(java.security.spec.ECGenParameterSpec("secp256r1"))
+        }.generateKeyPair()
+        return com.wemade.teslable.session.DomainSession(
+            domain = com.tesla.generated.universalmessage.UniversalMessage.Domain
+                .DOMAIN_VEHICLE_SECURITY,
+            vin = "5YJS0000000000000",
+            clientKey = com.wemade.teslable.crypto.ClientKey(
+                privateKey = pair.private,
+                publicKey = pair.public,
+                isHardwareBacked = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `공개키가 비면 깨는 중이라고 말한다`() {
+        val info = com.tesla.generated.signatures.Signatures.SessionInfo.newBuilder().build()
+        val reason = session().applySessionInfo(
+            sessionInfoBytes = info.toByteArray(),
+            tagFromVehicle = ByteArray(32),
+            challenge = ByteArray(16),
+        )
+        assertEquals("차량이 아직 세션 키를 안 보냈다 (깨는 중 — 곧 재시도)", reason)
+    }
+
+    @Test
+    fun `공개키가 쓰레기면 해석 실패라고 말한다`() {
+        val info = com.tesla.generated.signatures.Signatures.SessionInfo.newBuilder()
+            .setPublicKey(com.google.protobuf.ByteString.copyFrom(ByteArray(9) { 1 }))
+            .build()
+        val reason = session().applySessionInfo(
+            sessionInfoBytes = info.toByteArray(),
+            tagFromVehicle = ByteArray(32),
+            challenge = ByteArray(16),
+        )
+        assertEquals("차량 공개키를 해석하지 못했다 (9바이트)", reason)
+    }
+}

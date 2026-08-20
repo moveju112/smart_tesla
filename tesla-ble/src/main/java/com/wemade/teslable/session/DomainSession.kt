@@ -26,6 +26,13 @@ class SignedRequest(
  * 도메인마다 공개키·시계·카운터가 따로라 반드시 분리해서 관리해야 한다.
  * protocol.md "Authorizing commands" 절을 그대로 구현한다.
  */
+/**
+ * 깨는 중인 차가 공개키 자리를 비워 보낸 경우.
+ * 키가 틀린 게 아니라 아직 준비가 안 된 것이라, 잠깐 뒤 다시 물으면 풀린다.
+ * 호출부가 "이건 곧 풀릴 실패"인지 알아야 즉시 재시도할 수 있어 밖으로 뺀다.
+ */
+const val REASON_VEHICLE_NOT_READY = "차량이 아직 세션 키를 안 보냈다 (깨는 중 — 곧 재시도)"
+
 class DomainSession(
     private val domain: UniversalMessage.Domain,
     private val vin: String,
@@ -68,7 +75,7 @@ class DomainSession(
         //    적으면 등록이 깨진 줄 알고 엉뚱한 데를 파게 된다 — 두 경우를 갈라서 말한다
         val vehicleKey = info.publicKey.toByteArray()
         if (vehicleKey.isEmpty()) {
-            return "차량이 아직 세션 키를 안 보냈다 (깨는 중 — 곧 재시도)"
+            return REASON_VEHICLE_NOT_READY
         }
         val derived = runCatching { clientKey.sharedKeyWith(vehicleKey) }
             .getOrElse { return "차량 공개키를 해석하지 못했다 (${vehicleKey.size}바이트)" }

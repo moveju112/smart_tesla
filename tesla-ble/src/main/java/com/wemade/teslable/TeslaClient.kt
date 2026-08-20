@@ -8,6 +8,8 @@ import com.tesla.generated.vcsec.Vcsec
 import com.wemade.teslable.crypto.ClientKey
 import com.wemade.teslable.crypto.ClientKeyStore
 import com.wemade.teslable.session.DomainSession
+import com.wemade.teslable.session.REASON_VEHICLE_NOT_READY
+import kotlinx.coroutines.delay
 import com.wemade.teslable.session.SignedRequest
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -134,7 +136,16 @@ class TeslaClient(
         }
     }
 
-    private suspend fun handshake(domain: UniversalMessage.Domain, session: DomainSession) {
+    /**
+     * @param attempt 0부터. 차가 깨는 중이면 공개키를 비워 보내는데,
+     *   예전엔 여기서 그냥 던지고 다음 폴링(실측 1~16초)까지 기다렸다.
+     *   그 사이 BODY_CONTROLLER를 못 읽어 탑승 감지가 통째로 밀린다 — 바로 다시 묻는다.
+     */
+    private suspend fun handshake(
+        domain: UniversalMessage.Domain,
+        session: DomainSession,
+        attempt: Int = 0,
+    ) {
         val uuid = ByteArray(16).also(random::nextBytes)
 
         val request = baseMessage(domain, uuid)
@@ -157,6 +168,15 @@ class TeslaClient(
             challenge = uuid,
         )
         if (failure != null) {
+            // 곧 풀릴 실패만 즉시 재시도한다. 인증 실패(중간자 의심)는 다시 물어도 안 되고,
+            // 되풀이하면 오히려 공격 시도를 눈감아 주는 꼴이 된다
+            if (failure == REASON_VEHICLE_NOT_READY &&
+                attempt < HANDSHAKE_WAKE_RETRIES
+            ) {
+                delay(HANDSHAKE_WAKE_DELAYS_MS[attempt])
+                handshake(domain, session, attempt + 1)
+                return
+            }
             DiagLog.add("핸드셰이크 검증 실패: $failure")
             throw TeslaProtocolException(failure)
         }
@@ -303,6 +323,12 @@ class TeslaClient(
     }
 
     private companion object {
+        /** 깨는 중 실패에 한해 몇 번까지 바로 다시 묻는지 */
+        const val HANDSHAKE_WAKE_RETRIES = 2
+
+        /** 재시도 간격(ms). 차가 깨는 데 걸리는 시간이라 두 번째는 조금 더 준다 */
+        val HANDSHAKE_WAKE_DELAYS_MS = longArrayOf(300L, 700L)
+
         const val RESPONSE_TIMEOUT_MS = 8_000L
         /** 타임아웃 후 지각 응답을 흘려보내는 격리 시간 */
         const val LATE_RESPONSE_QUARANTINE_MS = 1_500L

@@ -110,7 +110,7 @@ class SessionInfoDiagnosisTest {
             tagFromVehicle = ByteArray(32),
             challenge = ByteArray(16),
         )
-        assertEquals("차량이 아직 세션 키를 안 보냈다 (깨는 중 — 곧 재시도)", reason)
+        assertEquals(com.wemade.teslable.session.REASON_VEHICLE_NOT_READY, reason)
     }
 
     @Test

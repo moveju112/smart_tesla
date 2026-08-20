@@ -100,6 +100,26 @@ class SettingsStore(private val context: Context) {
         it[KeyLastGeoAt] = System.currentTimeMillis()
     }
 
+    /**
+     * 마지막으로 본 탑승 상태를 남긴다.
+     *
+     * 앱이 죽었다 살면 "직전 값"이 사라져 탑승 엣지를 못 본다. 그래서 0.8.14가
+     * 재시작 직후 1회 강제 발동을 넣었는데, 주행 중 업데이트로 앱이 되살아나면
+     * 그게 탑승 매크로를 통째로 다시 터뜨렸다(0.8.22 실차).
+     * 값을 남겨두면 재시작 뒤에도 엣지를 정상 판정할 수 있다.
+     */
+    suspend fun savePresence(present: Boolean) = edit {
+        it[KeyLastPresence] = present
+        it[KeyLastPresenceAt] = System.currentTimeMillis()
+    }
+
+    /** 마지막으로 본 탑승 상태와 본 시각. 남긴 적 없으면 null */
+    suspend fun lastPresence(): Pair<Boolean, Long>? {
+        val prefs = context.dataStore.data.first()
+        val present = prefs[KeyLastPresence] ?: return null
+        return present to (prefs[KeyLastPresenceAt] ?: 0L)
+    }
+
     /** 저장된 마지막 좌표와 저장 시각. 저장된 적 없으면 null */
     suspend fun lastGeo(): Pair<com.wemade.teslamacro.domain.macro.GeoPoint, Long>? {
         val prefs = context.dataStore.data.first()
@@ -126,5 +146,7 @@ class SettingsStore(private val context: Context) {
         val KeyLastGeoLat = doublePreferencesKey("last_geo_lat")
         val KeyLastGeoLng = doublePreferencesKey("last_geo_lng")
         val KeyLastGeoAt = longPreferencesKey("last_geo_at")
+        val KeyLastPresence = booleanPreferencesKey("last_presence")
+        val KeyLastPresenceAt = longPreferencesKey("last_presence_at")
     }
 }

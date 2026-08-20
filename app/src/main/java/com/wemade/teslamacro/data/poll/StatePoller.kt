@@ -68,6 +68,20 @@ class StatePoller(
     }
 
     private suspend fun loop() = coroutineScope {
+        // 재시작 전 탑승 상태를 읽어 둔다. 신선할 때만 믿는다 —
+        // 밤새 꺼져 있던 태블릿의 기록은 그 사이 타고 내렸을 수 있어 의미가 없다
+        settingsStore.lastPresence()?.let { (present, savedAt) ->
+            if (now() - savedAt < PRESENCE_TRUST_MILLIS) {
+                presenceBeforeRestart = present
+                lastSavedPresence = present
+                if (present) {
+                    com.wemade.teslable.DiagLog.add(
+                        "재시작 전 이미 탑승 중이었음 — 탑승 트리거 헛발동 방지"
+                    )
+                }
+            }
+        }
+
         // 링크가 "살아 있다가" 끊기는 순간 즉시 깨운다 — 안 깨우면 깊은 유휴 잠(최대 120초)을
         // 다 자고서야 끊김을 알아챈다. 시도 실패로 뜨는 Failed(Ready였던 적 없음)에는
         // 반응하지 않아 재연결 백오프를 망가뜨리지 않는다
@@ -241,12 +255,21 @@ class StatePoller(
             val current = Reading(merged, TimeContext.of(now()), location)
             latestReading.value = current
 
+            // 재시작해도 "직전 값"을 알 수 있게 남긴다. 바뀔 때만 쓴다 —
+            // 15초마다 DataStore를 두드릴 이유가 없다
+            val presenceNow = merged.isUserPresent
+            if (presenceNow != null && presenceNow != lastSavedPresence) {
+                lastSavedPresence = presenceNow
+                settingsStore.savePresence(presenceNow)
+            }
+
             if (settings.automationEnabled) {
                 engine.evaluate(
                     rules = ruleStore.rules.value,
                     previous = previous,
                     current = current,
                     lastFiredAtMillis = lastFiredAt,
+                    knownPresenceBeforeRestart = presenceBeforeRestart,
                     // 트리거는 발동했는데 조건이 막았으면 무엇이 막았는지 남긴다
                     onBlocked = { rule, unmet ->
                         com.wemade.teslable.DiagLog.add(
@@ -334,7 +357,24 @@ class StatePoller(
     private var locationCache: GeoPoint? = null
     private var locationCachedAt = 0L
 
+    /** 마지막으로 DataStore에 쓴 탑승 상태. 같은 값을 되풀이해 쓰지 않기 위한 것 */
+    private var lastSavedPresence: Boolean? = null
+
+    /**
+     * 재시작 전에 마지막으로 본 탑승 상태. 신선할 때만 채운다.
+     *
+     * 오래된 값(밤새 꺼져 있던 태블릿)은 의미가 없다 — 그 사이 타고 내렸을 수 있으니
+     * null로 두어 예전처럼 1회 발동에 맡긴다.
+     */
+    private var presenceBeforeRestart: Boolean? = null
+
     private companion object {
+        /**
+         * 재시작 전 탑승 기록을 믿는 시간. 업데이트 설치·프로세스 재시작은 초 단위로 끝나므로
+         * 넉넉히 5분이면 충분하고, 그보다 오래된 기록은 그 사이 타고 내렸을 수 있다
+         */
+        const val PRESENCE_TRUST_MILLIS = 5 * 60 * 1000L
+
         const val LOCATION_TTL_MS = 60_000L
 
         /** 이 횟수만큼 사이클 전멸이 이어지면 좀비 연결로 보고 끊는다 */

@@ -345,6 +345,10 @@ class BleVehicleGateway(
             }
             // 여기까지 왔으면 차량이 인증하고 받아들인 것이다
             _enrollmentState.value = EnrollmentState.Enrolled
+        }.onFailure {
+            // 취소는 실패가 아니다. 삼키면 매크로 중단이 "명령 실패"로 잘못 기록되고
+            // 취소가 상위로 전파되지 않아 다음 걸음 판단이 어긋난다
+            if (it is kotlinx.coroutines.CancellationException) throw it
         }.map { }
     }
 

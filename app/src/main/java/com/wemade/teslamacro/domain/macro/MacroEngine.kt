@@ -1,6 +1,5 @@
 package com.wemade.teslamacro.domain.macro
 
-import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.Signal
 
 /**
@@ -28,11 +27,17 @@ class MacroEngine {
      * @param onBlocked 트리거는 발동했는데 조건이 막은 경우 알림 — "왜 안 터졌지" 진단용
      * @return 지금 실행해야 하는 매크로들 (선언 순서 유지)
      */
+    /**
+     * @param knownPresenceBeforeRestart 재시작 전에 마지막으로 본 탑승 상태.
+     *   앱이 죽었다 살면 [previous]가 null이라 엣지를 못 보는데, 이 값이 있으면
+     *   "이미 타 있었다"를 알아 헛발동을 막는다. 오래된 값은 호출부가 null로 걸러 넣는다.
+     */
     fun evaluate(
         rules: List<MacroRule>,
         previous: Reading?,
         current: Reading,
         lastFiredAtMillis: Map<String, Long>,
+        knownPresenceBeforeRestart: Boolean? = null,
         onBlocked: (MacroRule, List<Condition>) -> Unit = { _, _ -> },
     ): List<MacroRule> {
         // 꺼졌거나 삭제된 룰의 래치는 잊는다 — 다시 켜면 "이미 참"도 1회 발동한다
@@ -49,7 +54,7 @@ class MacroEngine {
             //    쿨다운이 먼저 자르면 래치가 발동 시점의 참으로 굳어, 쿨다운이 끝나도
             //    조건 이탈-재진입을 한 번 더 해야만 발동하는 침묵 구간이 생긴다.
             //    any 대신 map+any — 래치 갱신 때문에 모든 트리거를 반드시 평가한다
-            val triggered = rule.triggers.map { fired(rule, it, previous, current) }.any { it }
+            val triggered = rule.triggers.map { fired(rule, it, previous, current, knownPresenceBeforeRestart) }.any { it }
             if (!triggered) return@filter false
 
             // 4. 쿨다운 중이면 발동하지 않는다
@@ -76,6 +81,7 @@ class MacroEngine {
         trigger: Trigger,
         previous: Reading?,
         current: Reading,
+        knownPresenceBeforeRestart: Boolean? = null,
     ): Boolean =
         when (trigger) {
 
@@ -88,10 +94,13 @@ class MacroEngine {
                     // 재시작 직후(직전 값 없음)의 "탑승" 트리거는 이미 타 있어도 1회 발동 —
                     // 태블릿이 밤새 재부팅되면 첫 판정이 곧 탑승 순간인데 엣지만 고집하면 영영 놓친다.
                     // 탑승 외 신호는 제외: 재시작 오발동(예: 주차 중 앱 시작 → 잠금 명령)이 더 해롭다.
-                    // 단 이미 D로 달리는 중이면 방금 탄 게 아니다 — 주행 중 업데이트 설치로 앱이
-                    // 되살아나면 탑승 매크로가 통째로 다시 터진다(0.8.22 실차: 출근 안내 오발동)
+                    //
+                    // 단 재시작 직전에 이미 타 있었다는 기록이 있으면 방금 탄 게 아니다 —
+                    // 주행 중 업데이트로 앱이 되살아나면 탑승 매크로가 통째로 다시 터졌다(0.8.22 실차).
+                    // 예전엔 기어(D)로 걸렀는데 DRIVE 카테고리를 평소에 안 읽어 판정이 항상
+                    // UNKNOWN이었고, 그래서 가드가 통과해 버렸다(0.8.36 검토에서 발견).
                     else -> trigger.signal == Signal.USER_PRESENT && trigger.to &&
-                        current.snapshot.shiftState != ShiftState.DRIVE
+                        knownPresenceBeforeRestart != true
                 }
             }
 

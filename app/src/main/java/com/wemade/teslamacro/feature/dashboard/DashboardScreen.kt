@@ -513,8 +513,20 @@ private fun SheetHost(
                 }
                 Spacer(Modifier.height(Space.sm))
                 Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    OpeningButton("트렁크", state.isReady) { onCommand(VehicleCommand.OpenTrunk) }
-                    OpeningButton("프렁크", state.isReady) { onCommand(VehicleCommand.OpenFrunk) }
+                    OpeningButton("트렁크 열기", state.isReady) {
+                        onCommand(VehicleCommand.OpenTrunk)
+                    }
+                    // 열기만 있고 닫기가 없었다. 프렁크는 전동이 아니라 손으로 닫아야 해서 없다
+                    OpeningButton("트렁크 닫기", state.isReady) {
+                        onCommand(VehicleCommand.CloseTrunk)
+                    }
+                }
+                Spacer(Modifier.height(Space.sm))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    OpeningButton("프렁크 열기", state.isReady) {
+                        onCommand(VehicleCommand.OpenFrunk)
+                    }
+                    Spacer(Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(Space.lg))
             }
@@ -543,7 +555,14 @@ private fun SeatSheet(
                         text = candidate.label,
                         tone = if (candidate == mode) ButtonTone.Primary else ButtonTone.Secondary,
                         modifier = Modifier.weight(1f),
-                        onClick = { mode = candidate },
+                        onClick = {
+                            mode = candidate
+                            // 이미 켜져 있으면 모드 전환을 그 자리에서 보낸다.
+                            // 안 보내면 통풍→열선을 눌러도 아무 일이 없어 고장으로 보인다
+                            if (climate.level != Level.OFF) {
+                                onSeatClimate(seat, candidate, climate.level)
+                            }
+                        },
                     )
                 }
             }

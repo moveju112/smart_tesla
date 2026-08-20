@@ -48,6 +48,9 @@ class NaverNavigator(private val context: Context) {
                 )
                 com.wemade.teslable.DiagLog.add("네이버 지도 안내 시작 → $label")
             }.recoverCatching { throwable ->
+                // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
+                // 잘못 기록되고, 취소가 상위로 전파되지 않는다
+                if (throwable is kotlinx.coroutines.CancellationException) throw throwable
                 // 네이버 지도가 없을 때의 안내를 사람이 읽을 말로 바꾼다
                 if (throwable is android.content.ActivityNotFoundException) {
                     error("네이버 지도 앱이 설치되어 있지 않아요")

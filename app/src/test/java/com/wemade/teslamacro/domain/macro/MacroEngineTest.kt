@@ -48,7 +48,8 @@ class MacroEngineTest {
         previous: Reading?,
         current: Reading,
         lastFired: Map<String, Long> = emptyMap(),
-    ) = engine.evaluate(rules, previous, current, lastFired)
+        knownPresenceBeforeRestart: Boolean? = null,
+    ) = engine.evaluate(rules, previous, current, lastFired, knownPresenceBeforeRestart)
 
     private fun rule(
         triggers: List<Trigger>,
@@ -164,24 +165,38 @@ class MacroEngineTest {
     }
 
     @Test
-    fun `재시작 직후라도 이미 달리는 중이면 탑승 트리거는 발동하지 않는다`() {
-        // 0.8.22 실차: 주행 중 업데이트 설치로 앱이 되살아나 출근 안내가 통째로 다시 터졌다.
-        // D로 굴러가는 중이면 방금 탄 게 아니다
+    fun `재시작 전 이미 타 있었다는 기록이 있으면 탑승 트리거는 발동하지 않는다`() {
+        // 0.8.22 실차: 주행 중 업데이트 설치로 앱이 되살아나 출근 안내가 오발동했다.
+        // 예전 가드는 기어(D)를 봤는데 DRIVE 카테고리를 평소에 안 읽어 항상 UNKNOWN이었다
         val fired = evaluate(
             rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
             previous = null,
-            current = reading(userPresent = true, shift = ShiftState.DRIVE),
+            current = reading(userPresent = true),
+            knownPresenceBeforeRestart = true,
         )
         assertEquals(0, fired.size)
     }
 
     @Test
-    fun `재시작 직후 주차 중이면 탑승 트리거는 그대로 발동한다`() {
-        // 가드가 정상 경로(주차장에서 타는 순간)까지 막으면 안 된다
+    fun `재시작 전 안 타고 있었으면 탑승 트리거는 발동한다`() {
+        // 밤새 재부팅된 태블릿 — 첫 판정이 곧 탑승 순간이라 놓치면 안 된다
         val fired = evaluate(
             rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
             previous = null,
-            current = reading(userPresent = true, shift = ShiftState.PARK),
+            current = reading(userPresent = true),
+            knownPresenceBeforeRestart = false,
+        )
+        assertEquals(1, fired.size)
+    }
+
+    @Test
+    fun `기록이 오래돼 없으면 예전처럼 1회 발동한다`() {
+        // 호출부가 신선하지 않은 기록을 null로 걸러 넣는다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
+            previous = null,
+            current = reading(userPresent = true),
+            knownPresenceBeforeRestart = null,
         )
         assertEquals(1, fired.size)
     }

@@ -31,6 +31,16 @@ class AppUpdaterTest {
         assertFalse(AppUpdater.isNewer("0.8.0", "0.8"))
     }
 
+    // 하루 한 번 스로틀 — 서비스가 재시작될 때마다 GitHub를 두드리면 안 된다
+    @Test
+    fun `마지막 확인이 하루가 안 됐으면 건너뛴다`() {
+        val day = 24L * 60 * 60 * 1000
+        assertFalse(AppUpdater.isCheckDue(lastCheckMillis = 1_000, nowMillis = 1_000 + day - 1))
+        assertTrue(AppUpdater.isCheckDue(lastCheckMillis = 1_000, nowMillis = 1_000 + day))
+        // 한 번도 확인한 적 없으면(0) 바로 확인한다
+        assertTrue(AppUpdater.isCheckDue(lastCheckMillis = 0, nowMillis = day))
+    }
+
     @Test
     fun `꼬리표는 무시하고 빈 문자열은 새 버전이 아니다`() {
         assertTrue(AppUpdater.isNewer("0.8.21-beta", "0.8.20"))

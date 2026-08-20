@@ -12,9 +12,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
+import com.wemade.teslamacro.BuildConfig
 import com.wemade.teslamacro.MainActivity
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
+import com.wemade.teslamacro.data.update.AppUpdater
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -39,6 +41,53 @@ class MacroService : LifecycleService() {
             // 스텔스 충전도 같은 서비스 수명에 맞춰 돈다. 안에서 설정·충전 여부를 스스로 게이트한다
             app.container.stealthCharge.start(lifecycleScope)
         }
+
+        // 새 버전 확인은 컨테이너·차량과 무관하니 따로 돈다
+        checkForUpdate()
+    }
+
+    /** 하루 한 번 새 버전을 확인하고, 이번에 찾았으면 알림으로 알린다 */
+    private fun checkForUpdate() {
+        lifecycleScope.launch {
+            // 확인이 죽어도 감시는 계속돼야 한다
+            val version = runCatching {
+                AppUpdater.checkAutomatically(this@MacroService, BuildConfig.VERSION_NAME)
+            }.getOrNull()
+            if (version != null) notifyUpdate(version)
+        }
+    }
+
+    /**
+     * 새 버전을 찾았을 때 한 번 알린다.
+     *
+     * 감시 알림은 IMPORTANCE_MIN이라 눈에 안 보인다 — 그 채널에 실으면 아무도 못 본다.
+     * 그래서 보이는 채널을 따로 둔다.
+     */
+    private fun notifyUpdate(version: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(
+                UPDATE_CHANNEL_ID,
+                getString(R.string.update_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            )
+        )
+        val openApp = PendingIntent.getActivity(
+            this,
+            1,   // 감시 알림(0)과 다른 요청 코드 — 같으면 인텐트가 서로 덮인다
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager.notify(
+            UPDATE_NOTIFICATION_ID,
+            Notification.Builder(this, UPDATE_CHANNEL_ID)
+                .setContentTitle("새 버전 ${version}이 있어요")
+                .setContentText("설정 → 업데이트에서 설치할 수 있어요")
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setContentIntent(openApp)
+                .setAutoCancel(true)
+                .build(),
+        )
     }
 
     /** 위치 권한을 나중에 받아도 start()를 다시 부르면 여기서 타입이 갱신된다 */
@@ -118,6 +167,10 @@ class MacroService : LifecycleService() {
     companion object {
         private const val CHANNEL_ID = "macro_watch_min"
         private const val NOTIFICATION_ID = 1001
+
+        /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
+        private const val UPDATE_CHANNEL_ID = "update_available"
+        private const val UPDATE_NOTIFICATION_ID = 1002
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, MacroService::class.java))

@@ -52,11 +52,54 @@ object AppUpdater {
     private const val OWNER_REPO = "moveju112/smart_tesla"
     private const val RELEASE_API = "https://api.github.com/repos/$OWNER_REPO/releases/latest"
 
+    private const val PREFS = "updater"
+    private const val KEY_LAST_CHECK = "lastCheck"
+
+    /** 스스로 확인하는 간격. 하루 한 번이면 충분하다 */
+    private const val CHECK_INTERVAL_MS = 24L * 60 * 60 * 1000
+
     /** null이면 아직 확인해 본 적이 없다는 뜻 */
     val state = MutableStateFlow<UpdateState?>(null)
 
     /** 설치 확인 화면을 취소하고 돌아왔을 때 "설치" 버튼을 되살릴 대상 */
     private var lastAvailable: UpdateState.Available? = null
+
+    /**
+     * 하루에 한 번 스스로 확인한다.
+     *
+     * 설정 탭을 열어야만 새 버전을 아는 건 곤란하다 — 태블릿은 차에 거치돼 있어
+     * 앱을 열 일 자체가 드물다. 감시 서비스가 뜰 때 슬쩍 한 번 본다.
+     *
+     * @return 이번에 실제로 확인해서 찾은 새 버전. 확인을 건너뛰었거나 최신이면 null
+     */
+    suspend fun checkAutomatically(context: Context, currentVersion: String): String? {
+        // 사용자가 지금 받거나 깔고 있으면 끼어들지 않는다 — 진행률 표시를 덮어쓴다
+        if (state.value is UpdateState.Downloading || state.value is UpdateState.Installing) {
+            return null
+        }
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!isCheckDue(prefs.getLong(KEY_LAST_CHECK, 0), System.currentTimeMillis())) return null
+
+        check(currentVersion)
+
+        // 실패엔 도장을 찍지 않는다 — 망이 없었던 것뿐이라 다음 기회에 다시 해본다
+        val found = state.value
+        if (found is UpdateState.Failed) {
+            DiagLog.add("업데이트 확인 실패 — 다음 기회에 다시")
+            return null
+        }
+        prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply()
+
+        val version = (found as? UpdateState.Available)?.version
+        DiagLog.add(
+            if (version != null) "업데이트 · 새 버전 $version 있음" else "업데이트 확인 · 최신 버전"
+        )
+        return version
+    }
+
+    /** 확인할 때가 됐는가. SharedPreferences 없이 검증할 수 있게 떼어 둔다 */
+    internal fun isCheckDue(lastCheckMillis: Long, nowMillis: Long): Boolean =
+        nowMillis - lastCheckMillis >= CHECK_INTERVAL_MS
 
     /** 최신 릴리스를 조회해 지금 버전과 견준다 */
     suspend fun check(currentVersion: String) {

@@ -102,7 +102,8 @@ class StatePoller(
 
         var previous: Reading? = null
         var activeUntil = 0L
-        var needFullRead = true   // 연결 직후 한 번은 전부 읽어 대시보드를 채운다
+        var needFullRead = true   // 연결 직후 첫 사이클 — 매크로에 필요한 것만
+        var needDashboardFill = false  // 그 다음 사이클 — 대시보드용 여분을 채운다
         // 명령 후 확인 읽기로 요청된 카테고리 — 확인 창(짧게) 동안만 읽는다.
         // 1회 성공에 바로 끝내면 차량이 명령을 아직 반영하기 전의 정상 응답(옛값)으로
         // 낙관 표시가 되돌아간 채 재확인이 없다. 창(10초, 2초 주기 4~5회)이 흡수한다
@@ -183,7 +184,13 @@ class StatePoller(
             val isActiveWindow = now() < activeUntil
             if (now() >= focusUntil) focusCategories = setOf()
             val categories = when {
-                needFullRead -> setOf(
+                // 연결 직후 첫 사이클은 매크로 판정에 필요한 것만 읽는다.
+                // 대시보드용(공조·충전·주행)까지 기다리면 BLE 왕복 3번(실측 ~1초)이
+                // 탑승 순간에 그대로 얹힌다 — 지도 안내가 그만큼 늦는다.
+                // 여분은 다음 사이클(집중 창이라 2초 뒤)에 읽어 화면을 채운다
+                needFullRead -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories()
+                // 첫 사이클에서 미뤄둔 대시보드용 값을 여기서 채운다
+                needDashboardFill -> setOf(
                     StateCategory.BODY_CONTROLLER,
                     StateCategory.CLIMATE,
                     StateCategory.CHARGE,
@@ -217,7 +224,12 @@ class StatePoller(
                 // 인포테인먼트 읽기가 차 수면을 방해하는 비용은 그 룰을 켠 사용자의 선택이다
                 else -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories()
             }
-            needFullRead = false
+            if (needFullRead) {
+                needFullRead = false
+                needDashboardFill = true   // 여분은 다음 사이클에
+            } else if (needDashboardFill) {
+                needDashboardFill = false
+            }
 
             // 3. 카테고리는 하나씩 읽어 병합한다 (한 번에 여러 개는 응답 크기 초과)
             val results = categories.map { it to gateway.read(it) }

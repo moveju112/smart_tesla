@@ -23,6 +23,9 @@ import java.util.Locale
 /** 창이 실제로 붙는 데 걸리는 시간. 너무 짧으면 예외가 안 열린다 */
 private const val WINDOW_ATTACH_MILLIS = 120L
 
+/** 주소 → 좌표 캐시 저장소 이름 */
+private const val GEOCODE_CACHE = "geocode_cache"
+
 class NaverNavigator(private val context: Context) {
 
     /** 권한이 이미 있는가. 편집 화면이 안내 문구를 띄울지 판단할 때 쓴다 */
@@ -37,7 +40,13 @@ class NaverNavigator(private val context: Context) {
                 }
                 if (address.isBlank()) error("주소가 비어 있어요")
 
-                val point = geocode(address) ?: error("주소를 좌표로 못 바꿨어요: $address")
+                // 좌표는 캐시를 먼저 본다. 지오코딩은 인터넷을 타서 실측 400~500ms가 걸리고,
+                // 지하주차장처럼 망이 없으면 아예 실패한다 — 탑승 순간에 둘 다 치명적이다.
+                // 캐시 키가 주소 문자열이라 주소를 고치면 자동으로 다시 푼다
+                //   (이사·오타 수정이 먹어야 한다는 원래 의도 유지)
+                val point = cachedPoint(address)
+                    ?: geocode(address)?.also { cachePoint(address, it) }
+                    ?: error("주소를 좌표로 못 바꿨어요: $address")
                 val label = name.ifBlank { address }
                 val uri = Uri.parse(
                     "nmap://navigation?dlat=${point.latitude}&dlng=${point.longitude}" +
@@ -94,6 +103,28 @@ class NaverNavigator(private val context: Context) {
         } finally {
             if (attached) runCatching { manager.removeView(anchor) }
         }
+    }
+
+    // 주소 → 좌표 캐시. 목적지가 한둘이라 SharedPreferences 하나로 충분하다
+    private val geocodeCache
+        get() = context.getSharedPreferences(GEOCODE_CACHE, Context.MODE_PRIVATE)
+
+    /** 캐시에 있으면 인터넷을 안 탄다 */
+    private fun cachedPoint(address: String): android.location.Address? {
+        val raw = geocodeCache.getString(address, null) ?: return null
+        val parts = raw.split(",")
+        val lat = parts.getOrNull(0)?.toDoubleOrNull() ?: return null
+        val lng = parts.getOrNull(1)?.toDoubleOrNull() ?: return null
+        return android.location.Address(Locale.KOREA).apply {
+            latitude = lat
+            longitude = lng
+        }
+    }
+
+    private fun cachePoint(address: String, resolved: android.location.Address) {
+        geocodeCache.edit()
+            .putString(address, "${resolved.latitude},${resolved.longitude}")
+            .apply()
     }
 
     /** 주소를 좌표로. "출발지 근처" 조건이 주소 입력으로 위치를 찍을 때도 쓴다 */

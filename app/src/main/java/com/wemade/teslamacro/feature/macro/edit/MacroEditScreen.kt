@@ -9,9 +9,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
 import com.wemade.teslamacro.ui.component.Hairline
@@ -35,9 +32,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Switch
+import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +42,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.wemade.teslamacro.ui.component.DraftMark
+import com.wemade.teslamacro.ui.component.DraftToggle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.CommandCatalog
@@ -142,7 +139,7 @@ fun MacroEditScreen(
         // 상단: 닫기(X) + 진행 표시 — 루틴 앱 관례대로 취소는 좌상단 아이콘 하나로
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = Icons.Rounded.Close,
+                imageVector = DraftMark.Close,
                 contentDescription = "닫기",
                 tint = T.InkMuted,
                 // 흔들리는 차 안에서도 닫히게 패딩으로 터치 타깃 48dp를 확보한다
@@ -201,7 +198,7 @@ fun MacroEditScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(modifier = Modifier.widthIn(max = 680.dp)) {
-                    Text(STEPS[current].title, style = MaterialTheme.typography.headlineMedium, color = T.Ink)
+                    Text(STEPS[current].title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
                     Text(
                         text = STEPS[current].subtitle,
                         style = MaterialTheme.typography.bodySmall,
@@ -348,7 +345,7 @@ private fun WidePage(
         // 머리줄 — 닫기 · 이름 · 저장. 이름은 곧 음성 명령이라 가장 먼저 눈에 둔다
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = Icons.Rounded.Close,
+                imageVector = DraftMark.Close,
                 contentDescription = "닫기",
                 tint = T.InkMuted,
                 modifier = Modifier
@@ -358,12 +355,11 @@ private fun WidePage(
                     .size(24.dp),
             )
             Spacer(Modifier.width(Space.md))
-            OutlinedTextField(
+            DraftField(
                 value = draft.name,
                 onValueChange = { onChange(draft.copy(name = it)) },
-                label = { Text("매크로 이름 (음성 명령으로도 쓰여요)") },
+                label = "매크로 이름 (음성 명령으로도 쓰여요)",
                 singleLine = true,
-                colors = editorFieldColors(),
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Space.md))
@@ -407,9 +403,10 @@ private fun WidePage(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("사용", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
                 Spacer(Modifier.width(Space.sm))
-                Switch(
+                DraftToggle(
                     checked = draft.enabled,
                     onCheckedChange = { onChange(draft.copy(enabled = it)) },
+                    label = if (draft.enabled) "켬" else "끔",
                 )
             }
             Spacer(Modifier.width(Space.xl))
@@ -464,7 +461,7 @@ private fun StepTriggers(
                 onRemove = { onChange(draft.removeTrigger(index)) },
             )
         }
-        TButton("언제 추가", ButtonTone.Secondary, icon = Icons.Rounded.Add, onClick = onAdd)
+        TButton("언제 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onAdd)
     }
 }
 
@@ -490,7 +487,7 @@ private fun StepConditions(
                 onRemove = { onChange(draft.removeCondition(index)) },
             )
         }
-        TButton("조건 추가", ButtonTone.Secondary, icon = Icons.Rounded.Add, onClick = onAdd)
+        TButton("조건 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onAdd)
     }
 }
 
@@ -527,7 +524,7 @@ private fun StepActions(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false, icon = Icons.Rounded.Add, onClick = onPickAction)
+            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false, icon = DraftMark.Add, onClick = onPickAction)
             TButton("시간 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false) {
                 onChange(draft.addAction(ActionStep.Wait(60)))
             }
@@ -544,13 +541,12 @@ private fun StepFinish(
     onDelete: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        OutlinedTextField(
+        DraftField(
             value = draft.name,
             onValueChange = { onChange(draft.copy(name = it)) },
-            label = { Text("매크로 이름") },
-            supportingText = { Text("이 이름이 곧 음성 명령이에요", color = T.InkFaint) },
+            label = "매크로 이름",
+            note = "이 이름이 곧 음성 명령이에요",
             singleLine = true,
-            colors = editorFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
         TCard {
@@ -580,18 +576,6 @@ private fun StepFinish(
         }
     }
 }
-
-/** 편집 화면 입력 필드 공통 색 — ActionEditor·ConditionEditor의 필드도 이 규칙을 공유한다 */
-@Composable
-internal fun editorFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = T.Electric,
-    unfocusedBorderColor = T.Hairline,
-    focusedTextColor = T.Ink,
-    unfocusedTextColor = T.Ink,
-    cursorColor = T.Electric,
-    focusedLabelColor = T.Electric,
-    unfocusedLabelColor = T.InkFaint,
-)
 
 /** 트리거는 "사건"만 고를 수 있다. 상태 신호는 여기 안 나온다 */
 @Composable

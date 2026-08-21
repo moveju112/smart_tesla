@@ -4,3 +4,8 @@ build/
 *.iml
 .idea/
 _workspace/
+
+# Impeccable 검수 증거물 — 스크린샷·사이드카. 소스가 아니다 (DESIGN.md는 커밋한다)
+.impeccable/
+# Kotlin 빌드 캐시
+.kotlin/

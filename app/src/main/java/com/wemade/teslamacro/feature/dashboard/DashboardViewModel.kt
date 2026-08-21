@@ -135,7 +135,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             runningMacroCount = container.runner.running.value.size,
             rangeKm = effective.rangeKm?.toInt(),
             // 열린 문만 추린다. 다 닫혀 있으면 빈 목록 = 화면은 "모두 닫힘"
-            openings = effective.doorOpen.filterValues { it }.keys.map { it.label },
+            // 라벨이 아니라 Door 자체를 넘긴다 — 선도가 어느 짝인지 알아야 그 문만 벌어지게 그린다
+            openings = effective.doorOpen.filterValues { it }.keys.toList(),
         )
     }.stateIn(
         scope = viewModelScope,

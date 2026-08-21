@@ -63,7 +63,7 @@ class WideScreenshotTest {
                     state = wideState().copy(
                         insideTemp = "31.4",
                         isLocked = false,
-                        openings = listOf("운전석 도어"),
+                        openings = listOf(com.wemade.teslamacro.domain.model.Door.DRIVER_FRONT),
                     ),
                     onCommand = {},
                     onRetryConnect = {},
@@ -190,30 +190,4 @@ class WideScreenshotTest {
         }
     }
 
-    private fun wideState() = DashboardUiState(
-        link = LinkState.Ready,
-        vehicleName = "Tesla Model Y Why",
-        insideTemp = "22.5",
-        outsideTemp = "30.0",
-        targetTemp = "22.5",
-        targetTempValue = 22.5,
-        isClimateOn = true,
-        isLocked = true,
-        seatClimate = mapOf(
-            SeatPosition.FRONT_LEFT to SeatClimate(SeatMode.COOL, Level.MEDIUM),
-        ),
-        isSimulated = false,
-        hasReading = true,
-        hasBodyReading = true,
-        hasClimateReading = true,
-        pendingCommand = null,
-        errorMessage = null,
-        secondsSinceReading = 2,
-        batteryPercent = 85,
-        isCharging = false,
-        chargeLimitPercent = 100,
-        chargingAmps = 32,
-        rangeKm = 359,
-        openings = emptyList(),
-    )
 }

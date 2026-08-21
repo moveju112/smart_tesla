@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -78,7 +76,7 @@ fun LevelSelector(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(44.dp)
+                        .height(48.dp)
                         .background(background, cellShape)
                         // OFF 선택 칸은 흰색 위 흰색이라 테두리 없으면 선택 여부가 안 보인다
                         .then(
@@ -137,18 +135,12 @@ fun ToggleRow(
             }
         }
         Spacer(modifier = Modifier.width(Space.md))
-        Switch(
+        // 알약형 스위치를 쓰지 않는다 — 켜짐/꺼짐이 색으로만 갈리고, 이 세계의 문법이 아니다.
+        // 채운 사각 = 켜짐, 빈 사각 = 꺼짐. 상태어를 함께 적어 색 없이도 읽힌다
+        DraftToggle(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                // 파란 트랙 위 어두운 thumb는 켜짐이 안 보인다 — 토스식 흰 thumb
-                checkedThumbColor = T.Carbon,
-                checkedTrackColor = T.InkMuted,
-                checkedBorderColor = Color.Transparent,
-                uncheckedThumbColor = T.InkFaint,
-                uncheckedTrackColor = T.Slate,
-                uncheckedBorderColor = Color.Transparent,
-            ),
+            label = if (checked) "켬" else "끔",
         )
     }
 }

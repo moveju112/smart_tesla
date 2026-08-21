@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.wemade.teslamacro.ui.component.DraftMark
 import androidx.compose.ui.platform.LocalContext
 import com.wemade.teslamacro.data.location.TabletLocation
 import com.wemade.teslamacro.data.nav.NaverNavigator
@@ -243,12 +242,11 @@ private fun NearLocationEditor(
         }
         Spacer(Modifier.height(Space.md))
         // 현장에 안 가도 되는 두 번째 방법 — 주소를 좌표로 바꿔 저장한다
-        OutlinedTextField(
+        DraftField(
             value = address,
             onValueChange = { address = it },
-            label = { Text("또는 주소로 지정 (예: 성남시 분당구 판교역로 152)") },
+            label = "또는 주소로 지정 (예: 성남시 분당구 판교역로 152)",
             singleLine = true,
-            colors = editorFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(Space.sm))
@@ -388,7 +386,7 @@ private fun RadiusField(meters: Int, onChange: (Int) -> Unit) {
     var text by rememberSaveable { mutableStateOf(meters.toString()) }
 
     Column {
-        OutlinedTextField(
+        DraftField(
             value = text,
             onValueChange = { input ->
                 // 숫자만. 5자리면 99km라 실수로 긴 값이 들어갈 여지를 없앤다
@@ -396,11 +394,10 @@ private fun RadiusField(meters: Int, onChange: (Int) -> Unit) {
                 text = digits
                 digits.toIntOrNull()?.takeIf { it > 0 }?.let(onChange)
             },
-            label = { Text("허용 반경 (m)") },
-            suffix = { Text("m", color = T.InkFaint) },
+            label = "허용 반경 (m)",
+            suffix = "m",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
-            colors = editorFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(Space.xs))
@@ -427,7 +424,8 @@ private fun CardHeader(title: String, onRemove: () -> Unit) {
             modifier = Modifier.weight(1f),
         )
         // 삭제는 파괴적 동작 — ActionCard 헤더와 같은 아이콘·Danger 색 패턴으로 통일한다
-        CardIconButton(Icons.Rounded.Delete, "삭제", tint = T.Danger, onClick = onRemove)
+        // 삭제는 행마다 있는 평상 조작이다 — 경보 잉크를 쓰면 모든 행이 경보로 보인다
+        CardIconButton(DraftMark.Strike, "삭제", tint = T.InkMuted, onClick = onRemove)
     }
 }
 

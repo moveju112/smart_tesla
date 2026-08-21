@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
@@ -193,10 +194,21 @@ fun InlineBanner(
             BannerTone.Warning -> T.Warn
             BannerTone.Info -> T.Electric
         }
+        // 도면의 주기(註記)는 색 면이 아니라 두 줄 사이에 놓인다.
+        // 옅은 색 면으로 깔면 잠금 해제 같은 다른 경보와 유채색을 나눠 쓰게 되고,
+        // 그러면 "색이 하나 뜨면 그게 소식"이라는 규칙이 무너진다
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color.copy(alpha = 0.12f), RoundedCornerShape(Radius.button))
+                .drawBehind {
+                    val rule = 2.dp.toPx()
+                    drawRect(color, size = size.copy(height = rule))
+                    drawRect(
+                        color,
+                        topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - rule),
+                        size = size.copy(height = rule),
+                    )
+                }
                 .padding(horizontal = Space.md, vertical = Space.sm + Space.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -213,7 +225,7 @@ fun InlineBanner(
                 modifier = Modifier
                     .clip(RoundedCornerShape(Radius.pill))
                     .clickable(onClick = onDismiss)
-                    .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp),
+                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(

@@ -8,9 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -47,7 +44,7 @@ fun NumberStepper(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        StepButton(Icons.Rounded.Remove, "줄이기", enabled = value > min) {
+        StepButton(DraftMark.Minus, "줄이기", enabled = value > min) {
             onChange(snap((value - step).coerceAtLeast(min), step))
         }
         // 고정 폭이면 "3600초"나 글꼴 확대 시 잘린다 — 최소 폭만 보장
@@ -59,7 +56,7 @@ fun NumberStepper(
             maxLines = 1,
             modifier = Modifier.widthIn(min = 76.dp),
         )
-        StepButton(Icons.Rounded.Add, "늘리기", enabled = value < max) {
+        StepButton(DraftMark.Add, "늘리기", enabled = value < max) {
             onChange(snap((value + step).coerceAtMost(max), step))
         }
     }
@@ -75,7 +72,7 @@ private fun StepButton(
 ) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             // clip을 먼저 — 리플이 둥근 모서리 밖으로 번지지 않게
             .clip(RoundedCornerShape(Radius.button))
             .background(T.Slate)

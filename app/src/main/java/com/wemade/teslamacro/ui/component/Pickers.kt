@@ -22,9 +22,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -83,7 +80,7 @@ fun PickerSheet(
                 Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
                 // 아이콘은 24dp지만 패딩으로 터치 타깃을 48dp까지 키운다 — 주행 중 닫기 실패 방지
                 Icon(
-                    imageVector = Icons.Filled.Close,
+                    imageVector = DraftMark.Close,
                     contentDescription = "닫기",
                     tint = T.InkFaint,
                     modifier = Modifier
@@ -148,7 +145,7 @@ fun <T> PickerList(
                 contentAlignment = Alignment.BottomCenter,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    imageVector = DraftMark.Expand,
                     contentDescription = "아래로 스크롤",
                     tint = T.InkFaint,
                 )

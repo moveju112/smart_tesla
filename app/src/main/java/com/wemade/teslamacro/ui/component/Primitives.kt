@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
+import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
@@ -105,8 +106,8 @@ fun TButton(
             .clip(shape)
             .background(fillColor)
             .border(1.dp, borderColor, shape)
-            // small도 44dp — 흔들리는 차 안에서 36dp는 자주 빗나간다
-            .defaultMinSize(minHeight = if (small) 44.dp else 52.dp)
+            // small도 48dp — 안드로이드 최소 타깃이고, 장갑 끼고 흔들리는 차에서는 더 커야 한다
+            .defaultMinSize(minHeight = if (small) 48.dp else 52.dp)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
@@ -144,27 +145,32 @@ fun TButton(
 }
 
 /**
- * 카드 표면. 흰 카드 + 얕은 그림자.
- * 옅은 회색 배경과의 대비만으로 층을 만든다 (그라데이션·하이라이트 없음).
+ * 판 한 칸 — 카드가 아니라 **괘선으로 구획된 구역**이다.
+ *
+ * 예전엔 4면 테두리 상자였다. 그러면 층이 상자에서 생기는데, 이 세계의 약속은
+ * "판은 종이와 같은 색이고 층은 괘선으로만 생긴다"였다. 상자 다섯 개가 쌓인 화면은
+ * 도면이 아니라 카드 목록이다.
+ *
+ * 위에 굵은 괘선 하나를 긋고 그 아래를 구역으로 삼는다. 도면 표가 구역을 나누는 방식이다.
+ *
+ * @param outlined 강조 구역. 괘선이 2dp로 굵어진다 (실행 중인 항목 등)
  */
 @Composable
 fun TCard(
     modifier: Modifier = Modifier,
     outlined: Boolean = false,
-    /** 카드 전체를 탭 대상으로 만든다 (목록 카드 탭 = 상세/편집 패턴) */
+    /** 구역 전체를 탭 대상으로 만든다 (목록 항목 탭 = 상세/편집 패턴) */
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(Radius.card)
+    val rule = if (outlined) Stroke.bold else Stroke.thin
+    val ruleColor = if (outlined) T.Ink else T.Hairline
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(T.Graphite, shape)
-            // 그림자 대신 1dp 경계선으로 층을 만든다. outlined는 강조용으로 색만 진하게
-            .border(1.dp, if (outlined) T.InkFaint else T.Hairline, shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(Space.lg),
+            .drawBehind { drawRect(ruleColor, size = size.copy(height = rule.toPx())) }
+            .padding(top = Space.md, bottom = Space.lg),
         content = content,
     )
 }

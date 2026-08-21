@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.background
@@ -19,8 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,7 +39,8 @@ import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DiagLogPanel
-import com.wemade.teslamacro.ui.component.StatusPill
+import com.wemade.teslamacro.ui.component.CalloutNumber
+import com.wemade.teslamacro.ui.component.draftBlock
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
@@ -101,24 +103,15 @@ fun PairingScreen(
         },
         form = {
             TCard {
-                OutlinedTextField(
+                DraftField(
                     value = state.vin,
                     onValueChange = onVinChange,
-                    label = { Text("VIN (17자)") },
+                    label = "VIN (17자)",
                     singleLine = true,
                     enabled = state.step == PairingStep.EnterVin,
                     isError = state.vin.isNotEmpty() && !state.isVinValid,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Characters,
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = T.Electric,
-                        unfocusedBorderColor = T.Hairline,
-                        focusedTextColor = T.Ink,
-                        unfocusedTextColor = T.Ink,
-                        cursorColor = T.Electric,
-                        focusedLabelColor = T.Electric,
-                        unfocusedLabelColor = T.InkFaint,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -233,7 +226,7 @@ private fun BoardingNotice() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(T.ElectricFaint, RoundedCornerShape(Radius.button))
+            .draftBlock()
             .padding(horizontal = Space.md, vertical = Space.md),
     ) {
         Column {
@@ -263,7 +256,7 @@ private fun DetectedVehicleNotice(name: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(T.ElectricFaint, RoundedCornerShape(Radius.button))
+            .draftBlock()
             .padding(Space.md),
     ) {
         Column {
@@ -327,8 +320,8 @@ private fun VinPrivacyNotice() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            // Carbon(순백)은 흰 카드 위에서 안 보인다 — 옅은 회색 면으로 구분한다
-            .background(T.Slate, RoundedCornerShape(Radius.button))
+            // 채운 면을 쓰지 않는다. 시트 3이 이미 채움을 버렸고, 이 세계의 구획은 괘선이다
+            .draftBlock()
             .padding(Space.md),
     ) {
         Text(
@@ -395,13 +388,13 @@ private fun StepIndicator(current: PairingStep) {
                         modifier = Modifier
                             .height(6.dp)
                             .weight(1f)
+                            // 각진 눈금. 알약은 도면 문법이 아니다
                             .background(
-                                color = when {
-                                    step == current -> T.Electric
-                                    step.ordinal < current.ordinal -> T.Ok
+                                when {
+                                    step == current -> T.Ink
+                                    step.ordinal < current.ordinal -> T.InkFaint
                                     else -> T.Slate
-                                },
-                                shape = RoundedCornerShape(Radius.pill),
+                                }
                             ),
                     )
                 }
@@ -426,23 +419,26 @@ private fun StepIndicator(current: PairingStep) {
 
     Column {
         // 중간 폭 화면에서 칩 4개가 오른쪽으로 넘친다 — 줄바꿈되는 FlowRow로 감싼다
+        // 알약 칩을 쓰지 않는다 — 도면의 절차는 번호가 붙어 나열된다.
+        // 지금 단계는 번호가 채워지고, 지난 단계는 취소선으로 지워진다
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             PairingStep.entries.forEach { step ->
                 val isCurrent = step == current
                 val isPast = step.ordinal < current.ordinal
-                StatusPill(
-                    text = step.title,
-                    color = when {
-                        isCurrent -> T.Electric
-                        isPast -> T.Ok
-                        else -> T.InkFaint
-                    },
-                    // 옅은 틴트 위 밝은 글자는 대비 미달 — 글자만 진하게 분리 (매크로 목록과 동일 규칙)
-                    textColor = if (isCurrent) T.ElectricPressed else T.InkMuted,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 지난 단계도 번호를 채운다 — 취소선을 그으면 "완료"가 아니라
+                    // "무효"로 읽힌다. 도면의 취소선은 지워진 항목에 쓰는 기호다
+                    CalloutNumber(number = step.ordinal + 1, highlighted = isCurrent || isPast)
+                    Spacer(Modifier.width(Space.xs + 2.dp))
+                    Text(
+                        text = step.title,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isCurrent) T.Ink else T.InkFaint,
+                    )
+                }
             }
         }
         Text(
@@ -480,20 +476,11 @@ private fun DirectConnectPanel(busy: Boolean, onConnect: (String) -> Unit) {
             color = T.InkMuted,
             modifier = Modifier.padding(top = Space.xs, bottom = Space.md),
         )
-        OutlinedTextField(
+        DraftField(
             value = address,
             onValueChange = { address = it.uppercase() },
-            label = { Text("BLE 주소 (예 AA:BB:CC:11:22:33)") },
+            label = "BLE 주소 (예 AA:BB:CC:11:22:33)",
             singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = T.Electric,
-                unfocusedBorderColor = T.Hairline,
-                focusedTextColor = T.Ink,
-                unfocusedTextColor = T.Ink,
-                cursorColor = T.Electric,
-                focusedLabelColor = T.Electric,
-                unfocusedLabelColor = T.InkFaint,
-            ),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(Space.md))
@@ -527,7 +514,8 @@ private fun NearbyPanel(
             color = T.Ink,
         )
         Text(
-            text = "주변 기기를 훑거나(★=테슬라), 이미 폰에 페어링된 기기 목록을 봅니다.\n" +
+            text = "주변 기기를 훑거나, 이미 폰에 페어링된 기기 목록을 봅니다.\n" +
+                "테슬라로 보이는 것은 앞에 표시가 붙습니다.\n" +
                 "페어링 목록은 차가 없어도 읽혀요.",
             style = MaterialTheme.typography.bodySmall,
             // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
@@ -569,12 +557,16 @@ private fun NearbyPanel(
             } else {
                 nearby.forEach { device ->
                     Row(modifier = Modifier.padding(top = Space.xs)) {
-                        // ★만 파랑으로 강조하고 이름은 Ink — 파란 소형 텍스트는 대비 미달
+                        // 글리프(★)를 아이콘으로 쓰지 않는다 — 폰트에 따라 모양이 달라지고
+                        // 별은 도면 기호가 아니다. 지목은 삼각 지시자로 한다
                         if (device.isTesla) {
-                            Text(
-                                text = "★ ",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = T.Electric,
+                            androidx.compose.material3.Icon(
+                                imageVector = com.wemade.teslamacro.ui.component.DraftMark.Pointer,
+                                contentDescription = "테슬라 후보",
+                                tint = T.Ink,
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .padding(end = Space.xs),
                             )
                         }
                         Text(
@@ -599,7 +591,7 @@ private fun WarnNotice(body: String, modifier: Modifier = Modifier, label: Strin
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(T.WarnFaint, RoundedCornerShape(Radius.button))
+            .draftBlock(tone = T.Warn)
             .padding(Space.md),
     ) {
         if (label != null) {

@@ -70,8 +70,7 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Space.lg, vertical = Space.lg),
     ) {
-        Text("설정", style = MaterialTheme.typography.headlineMedium, color = T.Ink)
-
+        // 화면 제목을 두지 않는다 — 도면엔 큰 제목이 없고, 어느 시트인지는 좌측 목차가 말한다
         // 가로 태블릿에서 한 칸으로 쌓으면 폭의 절반이 비고 스크롤만 길어진다.
         // 자주 만지는 것(자동화·폴링)을 왼쪽에, 어쩌다 보는 것(차량·업데이트)을 오른쪽에 둔다
         TwoColumns(
@@ -492,8 +491,10 @@ private fun IntervalPicker(
         ) {
             options.forEach { seconds ->
                 val selected = seconds == current
+                // 고른 칸은 잉크로 채운다. 예전엔 고른 칸이 더 밝아서
+                // 오히려 안 고른 것처럼 보였다 — 매크로 편집의 칩과도 어긋났다
                 val background by animateColorAsState(
-                    targetValue = if (selected) T.Carbon else Color.Transparent,
+                    targetValue = if (selected) T.Ink else Color.Transparent,
                     animationSpec = Motion.quick(),
                     label = "intervalBackground",
                 )
@@ -511,7 +512,7 @@ private fun IntervalPicker(
                     Text(
                         text = if (seconds >= 60) "${seconds / 60}분" else "${seconds}초",
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (selected) T.Ink else T.InkMuted,
+                        color = if (selected) T.Void else T.InkMuted,
                     )
                 }
             }

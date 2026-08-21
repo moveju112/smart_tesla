@@ -14,17 +14,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.wemade.teslamacro.ui.component.DraftMark
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,10 +82,11 @@ fun ActionCard(
                 modifier = Modifier.weight(1f),
             )
             // 글자 글리프(▲▼) 대신 벡터 아이콘 — 접근성 설명과 44dp 터치 타깃을 함께 확보한다
-            CardIconButton(Icons.Rounded.KeyboardArrowUp, "위로", enabled = index > 0) { onMove(-1) }
-            CardIconButton(Icons.Rounded.KeyboardArrowDown, "아래로", enabled = index < total - 1) { onMove(1) }
+            CardIconButton(DraftMark.ArrowUp, "위로", enabled = index > 0) { onMove(-1) }
+            CardIconButton(DraftMark.ArrowDown, "아래로", enabled = index < total - 1) { onMove(1) }
             // 삭제는 파괴적 동작 — Danger 색으로 드러낸다
-            CardIconButton(Icons.Rounded.Delete, "삭제", tint = T.Danger, onClick = onRemove)
+            // 삭제는 행마다 있는 평상 조작이다 — 경보 잉크를 쓰면 모든 행이 경보로 보인다
+        CardIconButton(DraftMark.Strike, "삭제", tint = T.InkMuted, onClick = onRemove)
         }
 
         val editor = parameterEditor(step, template)
@@ -114,7 +112,7 @@ internal fun CardIconButton(
 ) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(RoundedCornerShape(Radius.pill))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -227,21 +225,19 @@ private fun parameterEditor(
     step is ActionStep.Navigate -> { onChange ->
         val context = LocalContext.current
         Column {
-            OutlinedTextField(
+            DraftField(
                 value = step.destinationName,
                 onValueChange = { onChange(step.copy(destinationName = it)) },
-                label = { Text("목적지 이름 (예: 회사)") },
+                label = "목적지 이름 (예: 회사)",
                 singleLine = true,
-                colors = editorFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(Space.sm))
-            OutlinedTextField(
+            DraftField(
                 value = step.address,
                 onValueChange = { onChange(step.copy(address = it)) },
-                label = { Text("주소 (예: 성남시 분당구 판교역로 152)") },
+                label = "주소 (예: 성남시 분당구 판교역로 152)",
                 singleLine = true,
-                colors = editorFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             // 백그라운드에서 지도를 띄우려면 이 권한이 필수다. 여기서 바로 받는다.

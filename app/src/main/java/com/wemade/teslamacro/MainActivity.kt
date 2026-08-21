@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
@@ -118,7 +119,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .background(T.Void)
-                        .windowInsetsPadding(WindowInsets.systemBars),
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                        // 키보드가 올라오면 본문을 밀어 올린다. 가로 태블릿은 세로가 600dp라
+                        // 키보드가 화면 절반을 먹어 VIN·주소 입력칸이 그대로 가려졌다
+                        .imePadding(),
                 ) {
                     // 폭은 여기서 한 번만 재고 CompositionLocal로 내려보낸다
                     CompositionLocalProvider(LocalPane provides Pane.of(maxWidth)) {

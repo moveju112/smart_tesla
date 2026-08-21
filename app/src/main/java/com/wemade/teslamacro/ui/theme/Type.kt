@@ -4,109 +4,133 @@ import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
 /**
- * 토스/네이버 계열 타이포.
+ * 도면의 글자.
  *
- * 위계를 색이 아니라 **굵기**로 잡는다.
- * - 제목은 굵게(W700), 강조는 W600, 본문은 W400
- * - 큰 숫자도 얇게 뽑지 않고 굵게 — 얇은 대형 숫자가 "기계가 만든" 인상을 준다
- */
-/**
- * 고정폭 숫자. 온도·배터리가 22.5→22.6으로 바뀔 때 자릿수 폭이 달라지면
- * 숫자 전체가 좌우로 흔들려 흘깃 보는 화면에서 특히 거슬린다.
+ * 도면에는 큰 제목이 없다. 제일 큰 글자는 **기입된 치수**이고,
+ * 도면 이름은 표제란 안에 작게 적힌다. 그래서 위계가 거꾸로다 —
+ * 계측값이 가장 크고, 제목이 가장 작다.
+ *
+ * 세 가지 역할만 있다:
+ * - **계측**([Mono]): 숫자·단위·부품번호. 고정폭이라 자릿수가 바뀌어도 안 흔들린다
+ * - **라벨**: 부품 이름. 얇고 자간이 넓다 — 도면 라벨은 읽히되 물러서 있다
+ * - **표제**: 표제란 안의 글자. 작고 또렷하다
+ *
+ * 전용 서체를 심지 않았다. 이 기기에 실을 수 있는 한글 서체는 시스템 서체(Noto Sans CJK)
+ * 하나뿐이라 20MB를 더 실어도 화면이 똑같다. 그래서 성격은 서체가 아니라
+ * **고정폭 계측 + 넓은 자간의 라벨 + 거꾸로 된 위계**가 만든다.
  */
 private const val TABULAR = "tnum"
 
+/** 한글이 섞이는 곳. 라벨과 본문 */
 private val Sans = FontFamily.Default
 
+/**
+ * 계측값 전용 고정폭.
+ *
+ * 멋내기가 아니라 계측이라서 쓴다 — 22.5→22.6에서 자릿수 폭이 흔들리면
+ * 흘깃 보는 화면에서 숫자 전체가 좌우로 움직인다.
+ */
+private val Mono = FontFamily.Monospace
+
 val TeslaTypography = Typography(
-    // 화면 제목 — 굵고 큼직하게
+    // 도면 이름 — 표제란 글자다. 크지 않다
     headlineLarge = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W800, fontSize = 26.sp, lineHeight = 34.sp,
-        letterSpacing = (-0.4).sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
+        fontSize = 17.sp, lineHeight = 24.sp, letterSpacing = 0.4.sp,
     ),
     headlineMedium = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W800, fontSize = 22.sp, lineHeight = 30.sp,
-        letterSpacing = (-0.3).sp,
+        fontFamily = Mono, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W500,
+        fontSize = 20.sp, lineHeight = 26.sp, letterSpacing = (-0.2).sp,
     ),
-    // 카드 제목 / 강조
+    // 절 제목 — 도면의 구역 이름. 넓은 자간으로 눕는다
     titleMedium = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 17.sp, lineHeight = 24.sp,
-        letterSpacing = (-0.2).sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
+        fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.7.sp,
     ),
     titleSmall = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 15.sp, lineHeight = 21.sp,
-        letterSpacing = (-0.1).sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
+        fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = 0.5.sp,
     ),
-    // 본문
+    // 본문 — 주기(註記). 도면의 설명 글은 작다
     bodyMedium = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400, fontSize = 15.sp, lineHeight = 22.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400,
+        fontSize = 14.sp, lineHeight = 21.sp, letterSpacing = 0.1.sp,
     ),
     bodySmall = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400, fontSize = 13.sp, lineHeight = 19.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400,
+        fontSize = 12.sp, lineHeight = 18.sp, letterSpacing = 0.1.sp,
     ),
-    // 버튼 라벨 — 토스 버튼은 또렷하게 굵다
+    // 버튼 라벨 — 도면의 지시. 자간을 벌려 명판처럼 읽힌다
     labelLarge = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 16.sp, lineHeight = 20.sp,
-        letterSpacing = (-0.2).sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
+        fontSize = 14.sp, lineHeight = 18.sp, letterSpacing = 0.6.sp,
     ),
-    // 소형 버튼 라벨 — 미정의 시 Material 기본(12sp·양수 자간)으로 폴백돼 스케일이 어긋난다
     labelMedium = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 14.sp, lineHeight = 18.sp,
-        letterSpacing = (-0.1).sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
+        fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp,
     ),
-    // 타일 라벨 — 값이 주인공이라 라벨은 작고 자간을 넓혀 '이름표'처럼 물러선다
+    // 부품 라벨 — 가장 물러선 글자.
+    // 자간을 1.6sp(0.145em)까지 벌렸더니 한글 자모 덩어리가 흩어졌다.
+    // 라틴 소형 대문자 관례를 한글에 그대로 쓸 수 없다 — 0.055em까지만 벌린다
     labelSmall = TextStyle(
-        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600, fontSize = 12.sp, lineHeight = 16.sp,
-        letterSpacing = 0.6.sp,
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W500,
+        fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 0.6.sp,
     ),
 )
 
-/** 온도·배터리처럼 크게 읽히는 값. 토스 숫자처럼 굵게 뽑는다 */
+/** 부품번호 — 지시선 끝에 매달리는 두 자리 숫자. 도면과 표를 잇는 유일한 끈 */
+val CalloutNumberStyle = TextStyle(
+    fontFamily = Mono, fontFeatureSettings = TABULAR,
+    fontWeight = FontWeight.W500,
+    fontSize = 11.sp,
+    lineHeight = 14.sp,
+    letterSpacing = 0.6.sp,
+)
+
+/** 표에 기입된 계측값. 한 행의 주인공 */
 val MetricTextStyle = TextStyle(
-    fontFamily = Sans, fontFeatureSettings = TABULAR,
-    fontWeight = FontWeight.W700,
-    fontSize = 48.sp,
-    lineHeight = 54.sp,
-    letterSpacing = (-1.2).sp,
+    fontFamily = Mono, fontFeatureSettings = TABULAR,
+    fontWeight = FontWeight.W500,
+    fontSize = 26.sp,
+    lineHeight = 32.sp,
+    letterSpacing = (-0.4).sp,
 )
 
-/**
- * 타일 값 — 라벨(12sp)과 3배 가까이 벌린다.
- *
- * 이 화면의 성격은 서체가 아니라 이 낙차가 만든다. 계기판처럼 값만 먼저 눈에 꽂히고
- * 라벨은 필요할 때만 읽히게 하려는 것.
- */
+/** 지시선에 매달린 값. 선도 옆 여백에 앉는다 */
 val TileValueStyle = TextStyle(
-    fontFamily = Sans, fontFeatureSettings = TABULAR,
-    fontWeight = FontWeight.W700,
-    fontSize = 34.sp,
-    lineHeight = 40.sp,
-    letterSpacing = (-0.8).sp,
+    fontFamily = Mono, fontFeatureSettings = TABULAR,
+    fontWeight = FontWeight.W500,
+    fontSize = 20.sp,
+    lineHeight = 26.sp,
+    letterSpacing = (-0.2).sp,
 )
 
-/** 히어로 타일(실내 온도) 전용. 가장 멀리서도 읽혀야 하는 단 하나의 값 */
+/** 좁은 화면에서 선도를 접었을 때의 값 크기 */
 val TileValueStyleLarge = TextStyle(
-    fontFamily = Sans, fontFeatureSettings = TABULAR,
-    fontWeight = FontWeight.W700,
-    fontSize = 48.sp,
-    lineHeight = 54.sp,
-    letterSpacing = (-2).sp,
+    fontFamily = Mono, fontFeatureSettings = TABULAR,
+    fontWeight = FontWeight.W500,
+    fontSize = 26.sp,
+    lineHeight = 32.sp,
+    letterSpacing = (-0.4).sp,
 )
 
 /**
- * 히어로 값 — 화면에서 유일하게 압도적으로 큰 것.
+ * 기입된 치수 — 화면에서 유일하게 압도적으로 큰 것.
  *
- * 실제 크기는 화면 폭에 따라 화면 쪽에서 정한다. 여기선 굵기와 자간만 잡는다 —
- * 이만한 크기에서는 기본 자간이 헐거워 보여 음수로 당겨야 덩어리로 읽힌다.
+ * 도면에서 제일 큰 글자는 제목이 아니라 치수다. 실내 온도가 그 치수다.
+ * 실제 크기는 화면 폭에 따라 화면 쪽에서 정한다.
  */
 val HeroValueStyle = TextStyle(
-    fontFamily = Sans,
+    fontFamily = Mono,
     fontFeatureSettings = TABULAR,
-    fontWeight = FontWeight.W700,
-    fontSize = 112.sp,
-    lineHeight = 116.sp,
-    letterSpacing = (-4).sp,
+    fontWeight = FontWeight.W500,
+    fontSize = 96.sp,
+    lineHeight = 100.sp,
+    // em으로 잡는다. sp로 두면 화면이 크기를 84sp로 줄여도 절대값이 남아
+    // 비율이 -0.048em까지 벌어져 자간 하한(-0.04em)을 넘었다
+    letterSpacing = (-0.035).em,
 )

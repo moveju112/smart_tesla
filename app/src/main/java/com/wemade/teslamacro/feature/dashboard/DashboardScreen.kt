@@ -78,8 +78,17 @@ import com.wemade.teslamacro.ui.theme.TileValueStyle
 /** 목표 도달로 볼 여유 폭(℃). 차 온도계가 0.1씩 흔들려 딱 맞을 때만 도달로 보면 색이 깜빡인다 */
 private const val REACHED_MARGIN_C = 1.0
 
-/** 작도 영역이 가로로 먹는 비율. 나머지가 치수 기입란이다 */
+/** 좌우로 나눌 때 작도 영역이 먹는 비율. 나머지가 치수 기입란이다 */
 private const val PLAN_WEIGHT = 0.68f
+
+/**
+ * 위아래로 쌓을 때 작도 영역이 먹는 비율.
+ *
+ * 세로에서는 차가 전폭으로 앉아 높이를 폭의 1/2.47만 쓴다 — 좌우 배치와 같은 0.68을 주면
+ * 선도 위아래로 200dp가 그냥 빈다. 남는 높이는 기입란에 주는 게 낫다:
+ * 이 기기는 **주로 세로로 쓰이고**, 그러면 기입 치수가 화면의 주인공이다.
+ */
+private const val PLAN_WEIGHT_STACKED = 0.46f
 
 /**
  * 제어 화면 — 시트 1. 계기판이 아니라 **도면**이다.
@@ -115,40 +124,66 @@ fun DashboardScreen(
         IndeterminateBar(active = state.isBusy)
         InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
 
-        Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            // 좁은 화면에서는 선도를 접고 값만 남긴다. 둘을 함께 줄이면 둘 다 못 읽는다
-            if (!compact) {
+        // 폭에 따라 작도 영역과 기입란을 **좌우로 나눌지 위아래로 쌓을지** 가른다.
+        //
+        // 실기기를 세로로 돌리면 600dp가 되는데, 그때 좌우로 나누면 작도 영역이 408dp가 되어
+        // 차가 손톱만큼 작아지고 남은 높이가 통째로 빈다. 지시선은 화면 절반을 가로질러
+        // 무엇을 가리키는지 알 수 없게 된다. 좁으면 눕히는 게 아니라 **쌓아야** 한다.
+        val stacked = LocalPane.current == Pane.Medium
+        val detail: @Composable () -> Unit = {
+            if (selected == null) {
+                DimensionPanel(state, compact = compact, stacked = stacked) { selected = it }
+            } else {
+                DetailView(
+                    part = selected!!,
+                    state = state,
+                    onClose = { selected = null },
+                    onCommand = onCommand,
+                    onSeatClimate = onSeatClimate,
+                    onStealthCharging = onStealthCharging,
+                )
+            }
+        }
+
+        if (stacked) {
+            Column(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 DrawingArea(
                     state = state,
                     selected = selected,
                     onSelect = { selected = it },
-                    modifier = Modifier.weight(PLAN_WEIGHT).fillMaxHeight(),
+                    modifier = Modifier.fillMaxWidth().weight(PLAN_WEIGHT_STACKED),
                 )
-                // 괘선 — 작도 영역과 기입란의 경계. 여백으로 나누면 도면이 아니다
+                // 괘선 — 작도 영역과 기입란의 경계
                 Box(
                     Modifier
-                        .width(Stroke.thin)
-                        .fillMaxHeight()
+                        .fillMaxWidth()
+                        .height(Stroke.thin)
                         .background(T.Hairline)
                 )
+                Box(modifier = Modifier.fillMaxWidth().weight(1f - PLAN_WEIGHT_STACKED)) { detail() }
             }
-            Box(
-                modifier = Modifier
-                    .weight(if (compact) 1f else 1f - PLAN_WEIGHT)
-                    .fillMaxHeight()
-            ) {
-                if (selected == null) {
-                    DimensionPanel(state, compact = compact, onSelect = { selected = it })
-                } else {
-                    DetailView(
-                        part = selected!!,
+        } else {
+            Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                // 가장 좁은 화면에서는 선도를 접고 값만 남긴다. 둘을 함께 줄이면 둘 다 못 읽는다
+                if (!compact) {
+                    DrawingArea(
                         state = state,
-                        onClose = { selected = null },
-                        onCommand = onCommand,
-                        onSeatClimate = onSeatClimate,
-                        onStealthCharging = onStealthCharging,
+                        selected = selected,
+                        onSelect = { selected = it },
+                        modifier = Modifier.weight(PLAN_WEIGHT).fillMaxHeight(),
+                    )
+                    Box(
+                        Modifier
+                            .width(Stroke.thin)
+                            .fillMaxHeight()
+                            .background(T.Hairline)
                     )
                 }
+                Box(
+                    modifier = Modifier
+                        .weight(if (compact) 1f else 1f - PLAN_WEIGHT)
+                        .fillMaxHeight()
+                ) { detail() }
             }
         }
 
@@ -379,6 +414,8 @@ private fun CalloutLabel(
 private fun DimensionPanel(
     state: DashboardUiState,
     compact: Boolean,
+    /** 도면 아래에 띠로 눕는가. 세로 화면에서 그렇다 */
+    stacked: Boolean = false,
     onSelect: (CarPart) -> Unit,
 ) {
     Column(
@@ -394,7 +431,8 @@ private fun DimensionPanel(
         // 기입란 머리 — 도면번호·축척·시트. 표제란에 밀어 넣었더니 폰에서 두 줄로 접혔고,
         // 이 칸의 위쪽이 통째로 비어 화면에서 가장 큰 공백이 되어 있었다.
         // 도면의 이 정보는 원래 작도 영역 옆에 적힌다
-        if (!compact) {
+        // 세로에서는 도면 식별을 표제란이 이미 지고 있고, 띠 높이가 짧아 넣을 자리가 없다
+        if (!compact && !stacked) {
             SheetStamp(
                 fields = listOf(
                     "도번" to "ST-01",
@@ -471,11 +509,40 @@ private fun DimensionPanel(
             },
         )
 
-        // 좁은 화면에서는 선도가 없으니 부위 값을 여기 표로 세운다
-        if (compact) {
-            Spacer(Modifier.height(Space.lg))
-            (topCallouts(state) + bottomCallouts(state)).forEach { callout ->
-                CompactRow(callout, onSelect)
+        // 부품표. 좁은 화면에서는 선도가 없으니 이것이 유일한 값 목록이고,
+        // 세로에서는 선도 아래 자리가 남아 함께 싣는다 — 도면은 그림과 부품표를
+        // 같은 시트에 싣는 것이 정상이고, 값이 두 번 읽히는 게 흘깃 보기에 유리하다
+        if (compact || stacked) {
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            val parts = topCallouts(state) + bottomCallouts(state)
+            // 세로는 폭이 넉넉하니 두 열로 접는다 — 한 열로 세우면 다섯 줄이
+            // 기입란을 넘겨 06·07이 잘렸다. 제어 화면은 스크롤 없이 한 화면이 전제다
+            val perRow = if (stacked) 2 else 1
+            parts.chunked(perRow).forEach { row ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    row.forEachIndexed { index, callout ->
+                        if (index > 0) {
+                            // 열 사이 괘선 — 없으면 왼쪽 칸의 값과 오른쪽 칸의 라벨이 붙어
+                            // 어디까지가 한 항목인지 읽히지 않는다
+                            Box(
+                                Modifier
+                                    .width(Stroke.thin)
+                                    .height(24.dp)
+                                    .align(Alignment.CenterVertically)
+                                    .background(T.Hairline)
+                            )
+                            Spacer(Modifier.width(Space.md))
+                        }
+                        CompactRow(
+                            callout = callout,
+                            onSelect = onSelect,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // 마지막 줄이 한 칸이면 남은 칸을 비워 열을 맞춘다
+                    repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }
@@ -561,12 +628,17 @@ private fun DimensionRow(label: String, value: String, number: Int? = null) {
 
 /** 좁은 화면의 값 한 줄. 도면의 부품 명세표 한 행이다 */
 @Composable
-private fun CompactRow(callout: Callout, onSelect: (CarPart) -> Unit) {
+private fun CompactRow(
+    callout: Callout,
+    onSelect: (CarPart) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable { onSelect(callout.part) },
+            .clickable { onSelect(callout.part) }
+            .padding(end = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CalloutNumber(

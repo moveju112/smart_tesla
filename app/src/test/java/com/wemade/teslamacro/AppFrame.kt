@@ -29,8 +29,12 @@ fun AppFrame(selected: Destination, dark: Boolean = false, content: @Composable 
     TeslaMacroTheme(dark = dark) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(T.Void)) {
             val pane = Pane.of(maxWidth)
+            // MainActivity는 **방향**으로 레일/탭을 가른다(`bottomNav = portrait`).
+            // 여기서 폭으로 갈랐더니 세로 태블릿(600×960dp)이 스냅샷에서는 레일,
+            // 실제 앱에서는 하단 탭으로 나와 컷이 거짓말을 했다
+            val portrait = maxHeight > maxWidth
             CompositionLocalProvider(LocalPane provides pane) {
-                if (pane.isCompact) {
+                if (portrait) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         Box(modifier = Modifier.weight(1f)) { content() }
                         NavBar(current = selected, onSelect = {})

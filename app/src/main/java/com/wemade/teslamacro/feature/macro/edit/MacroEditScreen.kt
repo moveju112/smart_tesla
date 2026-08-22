@@ -51,6 +51,7 @@ import com.wemade.teslamacro.domain.command.CommandGroup
 import com.wemade.teslamacro.domain.command.CommandTemplate
 import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.ForecastMetric
 import com.wemade.teslamacro.domain.macro.Trigger
 import com.wemade.teslamacro.domain.model.Signal
 import com.wemade.teslamacro.domain.model.SignalKind
@@ -625,7 +626,14 @@ private data class ConditionChoice(
     val build: () -> Condition,
 )
 
-/** 조건은 "상태"다. 차량 신호 전부 + 시간대/요일 */
+/** 예보 조건을 처음 고를 때의 기본 임계값 — 곧바로 말이 되는 값으로 시작한다 */
+private fun defaultForecastThreshold(metric: ForecastMetric): Double = when (metric) {
+    ForecastMetric.MIN_TEMP -> 0.0      // 영하면 예열
+    ForecastMetric.MAX_TEMP -> 30.0     // 더우면 미리 식힘
+    ForecastMetric.RAIN_CHANCE -> 60.0  // 비 오면 창문 닫기
+}
+
+/** 조건은 "상태"다. 차량 신호 전부 + 시간대/요일 + 오늘 예보 */
 @Composable
 private fun ConditionPicker(
     onDismiss: () -> Unit,
@@ -649,7 +657,14 @@ private fun ConditionPicker(
         ConditionChoice("출발지 근처", "저장한 위치 반경 안에서만 (예: 집 주차장에서 탔을 때)") {
             Condition.NearLocation()
         },
-    )
+    ) + ForecastMetric.entries.map { metric ->
+        // 차의 외기온은 지금만 말한다. 예보는 앞을 봐서 "미리" 움직이게 해준다
+        ConditionChoice(
+            label = metric.label,
+            detail = "예보 · ${metric.unit} (인터넷 필요)",
+            build = { Condition.ForecastInRange(metric, lte = defaultForecastThreshold(metric)) },
+        )
+    }
 
     PickerSheet(title = title, onDismiss = onDismiss) {
         PickerList(items = choices) { choice ->

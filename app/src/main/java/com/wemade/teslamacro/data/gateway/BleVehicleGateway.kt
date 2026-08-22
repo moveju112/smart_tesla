@@ -5,7 +5,10 @@ import com.wemade.teslable.TeslaBleLink
 import com.wemade.teslable.TeslaBleScanner
 import com.wemade.teslable.TeslaClient
 import com.tesla.generated.carserver.server.CarServer
+import com.tesla.generated.errors.Errors
+import com.tesla.generated.vcsec.Vcsec
 import com.wemade.teslamacro.domain.command.VehicleCommand
+import com.wemade.teslamacro.domain.command.isIdempotent
 import com.wemade.teslamacro.domain.command.requiresPark
 import com.wemade.teslamacro.domain.gateway.EnrollmentState
 import com.wemade.teslamacro.domain.gateway.LinkState
@@ -13,6 +16,8 @@ import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import com.wemade.teslamacro.domain.model.overlay
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
@@ -82,6 +87,8 @@ class BleVehicleGateway(
                 lastConnectFailure = null
                 com.wemade.teslable.DiagLog.add("직행 연결 성공 $saved")
                 client = TeslaClient(context, link, vin)
+            // 새 연결이면 묶음 조회를 다시 시도해 본다 — 차·펌웨어가 바뀌었을 수 있다
+            bundledReadAllowed = true
                 _linkState.value = LinkState.Ready
                 return@runCatching
             }
@@ -153,6 +160,8 @@ class BleVehicleGateway(
 
             // 4. 프로토콜 클라이언트 준비 (핸드셰이크는 첫 명령 때 지연 수행)
             client = TeslaClient(context, link, vin)
+            // 새 연결이면 묶음 조회를 다시 시도해 본다 — 차·펌웨어가 바뀌었을 수 있다
+            bundledReadAllowed = true
             _linkState.value = LinkState.Ready
         }.onFailure { throwable ->
             // 같은 실패가 이어지면 첫 번째만 남긴다 — 원인이 바뀌는 순간은 반드시 남긴다
@@ -198,6 +207,8 @@ class BleVehicleGateway(
             scanner.bondedTesla()?.let { settingsStore.setVehicleName(it.name) }
 
             client = TeslaClient(context, link, vin)
+            // 새 연결이면 묶음 조회를 다시 시도해 본다 — 차·펌웨어가 바뀌었을 수 있다
+            bundledReadAllowed = true
             _linkState.value = LinkState.Ready
             com.wemade.teslable.DiagLog.add("직접 연결 성공 $address")
         }.onFailure { throwable ->
@@ -337,11 +348,19 @@ class BleVehicleGateway(
                     // 봉투가 무사히 왕복해도 차는 본문에 거부를 실어 보낸다.
                     // 이걸 안 읽으면 "완료"라고 기록해 놓고 차는 안 움직이는 거짓 성공이 된다
                     // (실차 0.8.35: 창문 환기·닫기가 조용히 무시됨)
-                    val responseBytes = active.sendToInfotainment(encoded.action.toByteArray())
+                    val responseBytes =
+                        sendInfotainmentAwake(active, command, encoded.action.toByteArray())
                     checkInfotainmentResult(command, responseBytes)
                 }
-                is EncodedCommand.Vehicle ->
-                    active.sendToVcsec(encoded.message)
+                is EncodedCommand.Vehicle -> {
+                    // VCSEC도 봉투를 정상 처리하고 본문에 거부를 실어 보낸다.
+                    // 인포테인먼트와 똑같이 본문을 읽어야 거짓 성공이 안 생긴다
+                    val response = active.sendToVcsec(encoded.message)
+                    vcsecRejection(response)?.let { reason ->
+                        com.wemade.teslable.DiagLog.add("${command.label} 거부됨 — $reason")
+                        throw IllegalStateException(reason)
+                    }
+                }
             }
             // 여기까지 왔으면 차량이 인증하고 받아들인 것이다
             _enrollmentState.value = EnrollmentState.Enrolled
@@ -358,66 +377,181 @@ class BleVehicleGateway(
      * 차는 명령을 거부할 때 예외를 내지 않는다 — actionStatus에 ERROR와 사유 문장을
      * 실어 보낼 뿐이다. 사유가 있으면 그대로 사용자에게 보여준다 (차가 제일 정확히 안다).
      */
+    /**
+     * 인포테인먼트 명령을 보낸다. 차가 자고 있으면 깨우고 준비될 때까지 기다린다.
+     *
+     * 인포테인먼트(MCU)는 주차 몇 분 뒤 잠들지만 VCSEC은 계속 깨어 있다.
+     * 그래서 잠든 차에 공조 명령을 보내면 그냥 실패한다 — 매크로가 여기서 무너졌다.
+     * 지금까지는 매크로마다 Wake 뒤에 고정 15초를 넣어 버텼는데, 15초는
+     * 빠를 땐 낭비고 느릴 땐 모자랐다. 이제 게이트웨이가 실제로 깰 때까지 기다린다.
+     */
+    private suspend fun sendInfotainmentAwake(
+        active: TeslaClient,
+        command: VehicleCommand,
+        action: ByteArray,
+    ): ByteArray {
+        // 1. 평소 경로 — 차가 깨어 있으면 여기서 끝난다
+        firstAttempt(active, action)?.let { return it }
+
+        // 2. 재시도는 멱등 명령만. 응답만 유실됐을 수도 있어 트렁크를 두 번 열면 안 된다
+        if (!command.isIdempotent()) {
+            throw IllegalStateException("차가 응답하지 않았어요 — 실행됐는지 몰라 다시 보내지 않았어요")
+        }
+
+        // 3. VCSEC은 수면 중에도 받는다. 이걸로 MCU를 깨운다
+        com.wemade.teslable.DiagLog.add("${command.label} 무응답 → 차량 깨우고 재시도")
+        val wake = CommandEncoder.encode(VehicleCommand.Wake)
+        if (wake is EncodedCommand.Vehicle) {
+            runCatching { active.sendToVcsec(wake.message) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+        }
+
+        // 4. 깨는 데 걸리는 시간은 차 상태마다 다르다. 짧게 시작해 늘려 잡는다
+        WAKE_RETRY_DELAYS_MS.forEach { waitMillis ->
+            delay(waitMillis)
+            firstAttempt(active, action)?.let { return it }
+        }
+        throw IllegalStateException("차량이 깨어나지 않았어요")
+    }
+
+    /** 한 번 보내보고 응답을 돌려준다. 실패면 null — 취소만은 그대로 올린다 */
+    private suspend fun firstAttempt(active: TeslaClient, action: ByteArray): ByteArray? =
+        try {
+            active.sendToInfotainment(action)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Throwable) {
+            com.wemade.teslable.DiagLog.add("인포테인먼트 무응답 — ${failure.message}")
+            null
+        }
+
     private fun checkInfotainmentResult(command: VehicleCommand, responseBytes: ByteArray) {
         val reason = infotainmentRejection(responseBytes) ?: return
         com.wemade.teslable.DiagLog.add("${command.label} 거부됨 — $reason")
         throw IllegalStateException(reason)
     }
 
-    override suspend fun read(category: StateCategory): Result<VehicleSnapshot> {
+    override suspend fun read(category: StateCategory): Result<VehicleSnapshot> =
+        readBundle(setOf(category))
+
+    /**
+     * 여러 상태를 한 번에 읽는다.
+     *
+     * 인포테인먼트 상태는 `GetVehicleData` 하나에 묶어 왕복을 줄인다. 다만 차는
+     * 응답을 스스로 쪼개지 못해서, 너무 많이 담으면 RESPONSE_MTU_EXCEEDED를 돌려준다.
+     * 그때는 하나씩 읽기로 물러서고 **그 사실을 기억한다** — 매 사이클 같은 실패를
+     * 되풀이할 이유가 없다. 재연결하면 다시 묶어서 시도한다(차·펌웨어가 바뀔 수 있다).
+     */
+    override suspend fun readBundle(categories: Set<StateCategory>): Result<VehicleSnapshot> {
+        if (categories.isEmpty()) return Result.success(VehicleSnapshot.Empty)
         if (!ensureLinked()) return Result.failure(IllegalStateException("차량과 연결이 끊어졌어요"))
         val active = client ?: return Result.failure(IllegalStateException("차량에 연결되어 있지 않아요"))
         val now = System.currentTimeMillis()
 
+        val wantsVcsec = categories.any { !it.needsInfotainment || it == StateCategory.CLOSURES }
+        val infotainment = categories.filter {
+            it.needsInfotainment && it != StateCategory.CLOSURES
+        }.toSet()
+
         return runCatching {
-            when (category) {
-                // VCSEC은 차가 자고 있어도 응답한다. 주기 폴링이라 전송 로그는 생략(quiet)
-                StateCategory.BODY_CONTROLLER, StateCategory.CLOSURES -> {
-                    val response = active.sendToVcsec(
-                        CommandEncoder.encodeBodyControllerStateRequest(), quiet = true,
-                    )
-                    SnapshotDecoder.fromVcsecStatus(response, now)
-                }
+            var merged = VehicleSnapshot(timestampMillis = now)
 
-                StateCategory.CLIMATE -> {
-                    val bytes = active.sendToInfotainment(
-                        CommandEncoder.encodeClimateStateRequest().toByteArray(), quiet = true,
-                    )
-                    SnapshotDecoder.fromClimateResponse(bytes, now).also {
-                        logParsedIfChanged(
-                            category,
-                            "CLIMATE → 실내=${it.insideTempC} 외부=${it.outsideTempC} 공조=${it.isClimateOn}",
-                        )
-                    }
-                }
+            // 어느 카테고리를 실제로 읽었는지 남긴다 — 낙관 표시를 거두는 기준이라
+            // "요청했다"가 아니라 "읽었다"여야 한다
+            val read = mutableSetOf<StateCategory>()
 
-                StateCategory.CHARGE -> {
-                    val bytes = active.sendToInfotainment(
-                        CommandEncoder.encodeChargeStateRequest().toByteArray(), quiet = true,
-                    )
-                    SnapshotDecoder.fromChargeResponse(bytes, now).also {
-                        logParsedIfChanged(category, "CHARGE → 배터리=${it.batteryLevelPercent}")
-                    }
-                }
-
-                StateCategory.DRIVE -> {
-                    val bytes = active.sendToInfotainment(
-                        CommandEncoder.encodeDriveStateRequest().toByteArray(), quiet = true,
-                    )
-                    SnapshotDecoder.fromDriveResponse(bytes, now)
-                }
+            // 1. VCSEC은 차가 자고 있어도 응답한다. 주기 폴링이라 전송 로그는 생략(quiet)
+            if (wantsVcsec) {
+                val response = active.sendToVcsec(
+                    CommandEncoder.encodeBodyControllerStateRequest(), quiet = true,
+                )
+                merged = merged.overlay(SnapshotDecoder.fromVcsecStatus(response, now))
+                read += categories.filter { !it.needsInfotainment || it == StateCategory.CLOSURES }
             }
-        }.onFailure {
+
+            // 2. 인포테인먼트는 한 번에 묶어 본다 — 실패하면 아래에서 하나씩
+            if (infotainment.isNotEmpty()) {
+                val (snapshot, done) = readInfotainment(active, infotainment, now)
+                merged = merged.overlay(snapshot)
+                read += done
+            }
+            merged.copy(categoryReadAt = read.associateWith { now })
+        }.onFailure { failure ->
             // 같은 실패(차가 자는 동안 무응답 등)는 첫 번째만 — 원인이 바뀌면 다시 남긴다
-            val message = it.message ?: "원인 불명"
-            if (lastReadFailure[category] != message) {
-                lastReadFailure[category] = message
-                com.wemade.teslable.DiagLog.add("$category 읽기 실패: $message")
+            val message = failure.message ?: "원인 불명"
+            val key = categories.sortedBy { it.name }.joinToString("+") { it.name }
+            if (lastReadFailure[key] != message) {
+                lastReadFailure[key] = message
+                com.wemade.teslable.DiagLog.add("$key 읽기 실패: $message")
             }
-        }.onSuccess { lastReadFailure.remove(category) }
+        }.onSuccess {
+            lastReadFailure.remove(categories.sortedBy { it.name }.joinToString("+") { it.name })
+        }
     }
 
-    private val lastReadFailure = mutableMapOf<StateCategory, String>()
+    /**
+     * 묶어서 한 번, 응답이 크다고 하면 하나씩.
+     * 합쳐진 스냅샷과 실제로 읽어낸 카테고리를 함께 돌려준다.
+     */
+    private suspend fun readInfotainment(
+        active: TeslaClient,
+        categories: Set<StateCategory>,
+        nowMillis: Long,
+    ): Pair<VehicleSnapshot, Set<StateCategory>> {
+        if (bundledReadAllowed && categories.size > 1) {
+            try {
+                val bytes = active.sendToInfotainment(
+                    CommandEncoder.encodeVehicleDataRequest(categories).toByteArray(), quiet = true,
+                )
+                val snapshot = SnapshotDecoder.fromVehicleData(bytes, nowMillis)
+                logRead(snapshot)
+                return snapshot to categories
+            } catch (tooLarge: com.wemade.teslable.ResponseTooLargeException) {
+                bundledReadAllowed = false
+                com.wemade.teslable.DiagLog.add("묶음 조회가 응답 한도를 넘음 → 이제부터 하나씩 읽는다")
+            }
+        }
+
+        // 하나씩. 한 카테고리가 실패해도 나머지는 살린다 — 전부 버리면 화면이 통째로 빈다
+        var merged = VehicleSnapshot(timestampMillis = nowMillis)
+        val done = mutableSetOf<StateCategory>()
+        var lastFailure: Throwable? = null
+        categories.forEach { category ->
+            runCatching {
+                val bytes = active.sendToInfotainment(
+                    CommandEncoder.encodeVehicleDataRequest(setOf(category)).toByteArray(),
+                    quiet = true,
+                )
+                merged = merged.overlay(SnapshotDecoder.fromVehicleData(bytes, nowMillis))
+                done += category
+            }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                lastFailure = it
+            }
+        }
+        // 전부 실패했으면 성공으로 위장하지 않는다
+        if (done.isEmpty()) throw (lastFailure ?: IllegalStateException("상태를 읽지 못했어요"))
+        logRead(merged)
+        return merged to done
+    }
+
+    /** 읽은 값 중 눈에 띄는 것만 남긴다. 값이 바뀔 때만 찍힌다 */
+    private fun logRead(snapshot: VehicleSnapshot) {
+        snapshot.insideTempC?.let {
+            logParsedIfChanged(
+                StateCategory.CLIMATE,
+                "CLIMATE → 실내=$it 외부=${snapshot.outsideTempC} 공조=${snapshot.isClimateOn}",
+            )
+        }
+        snapshot.batteryLevelPercent?.let {
+            logParsedIfChanged(StateCategory.CHARGE, "CHARGE → 배터리=$it")
+        }
+    }
+
+    /** 이 차가 묶음 조회를 감당하는가. 한 번 거절당하면 재연결 전까지 접어둔다 */
+    private var bundledReadAllowed = true
+
+    private val lastReadFailure = mutableMapOf<String, String>()
 
     // 파싱 결과는 값이 바뀔 때만 남긴다 — "배터리=99"를 15초마다 반복하면
     // 300줄 버퍼에서 연결·매크로 로그를 밀어낸다
@@ -448,6 +582,12 @@ class BleVehicleGateway(
 
         /** autoConnect 직접 연결은 차가 나타날 때까지 넉넉히 기다린다 */
         const val DIRECT_TIMEOUT_MS = 30_000L
+
+        /**
+         * 깨우기 뒤 다시 보내볼 간격. 짧게 시작해 늘린다 —
+         * 금방 깨면 1초에 끝나고, 늦어도 11초 안에는 판정이 난다 (기존 고정 15초보다 짧다)
+         */
+        val WAKE_RETRY_DELAYS_MS = longArrayOf(1_000L, 2_000L, 3_000L, 5_000L)
     }
 }
 
@@ -460,4 +600,48 @@ internal fun infotainmentRejection(responseBytes: ByteArray): String? {
         .getOrNull() ?: return null // 본문 해석 실패는 여기서 판정하지 않는다
     if (status.result != CarServer.OperationStatus_E.OPERATIONSTATUS_ERROR) return null
     return status.resultReason.plainText.ifBlank { "차량이 거부함 (사유 없음)" }
+}
+
+/**
+ * VCSEC 응답 본문의 실행 결과를 검사한다. 거부가 아니면 null.
+ *
+ * 지금까지는 봉투(UniversalMessage) 계층의 fault만 봤다. 그런데 VCSEC은
+ * 봉투를 정상 처리하고 본문에 거부를 실어 보낸다 — 인포테인먼트에서 겪은
+ * 거짓 성공(0.8.35 창문)이 잠금·트렁크에서도 똑같이 일어난다.
+ */
+internal fun vcsecRejection(response: Vcsec.FromVCSECMessage): String? {
+    // 1. 차가 사유를 따로 실어 보내는 경우 (문 열림·P단 아님 등)
+    if (response.hasNominalError()) {
+        val error = response.nominalError.genericError
+        // "이미 그 상태"는 실패가 아니다 — 원하던 결과가 이미 이뤄져 있다
+        if (error == Errors.GenericError_E.GENERICERROR_ALREADY_ON) return null
+        return nominalErrorText(error)
+    }
+
+    // 2. 명령 처리 상태. OK가 아니면 성공으로 기록하면 안 된다
+    if (!response.hasCommandStatus()) return null
+    return when (response.commandStatus.operationStatus) {
+        Vcsec.OperationStatus_E.OPERATIONSTATUS_ERROR -> signedMessageFaultText(response)
+        Vcsec.OperationStatus_E.OPERATIONSTATUS_WAIT -> "차량이 아직 준비되지 않았어요"
+        else -> null
+    }
+}
+
+/** 차가 보낸 거부 사유를 사람 말로 바꾼다. 모르는 값은 원문을 남겨 진단에 쓴다 */
+private fun nominalErrorText(error: Errors.GenericError_E): String = when (error) {
+    Errors.GenericError_E.GENERICERROR_CLOSURES_OPEN -> "문이 열려 있어요"
+    Errors.GenericError_E.GENERICERROR_VEHICLE_NOT_IN_PARK -> "P단에서만 할 수 있어요"
+    Errors.GenericError_E.GENERICERROR_UNAUTHORIZED -> "이 키에는 권한이 없어요"
+    Errors.GenericError_E.GENERICERROR_DISABLED_FOR_USER_COMMAND -> "차량이 이 명령을 막아뒀어요"
+    Errors.GenericError_E.GENERICERROR_NOT_ALLOWED_OVER_TRANSPORT -> "BLE로는 보낼 수 없는 명령이에요"
+    else -> "차량이 거부함 (${error.name})"
+}
+
+/** 서명 계층 사유는 코드명이 곧 원인이다. 접두어만 걷어내고 그대로 보여준다 */
+private fun signedMessageFaultText(response: Vcsec.FromVCSECMessage): String {
+    val info = response.commandStatus.signedMessageStatus.signedMessageInformation
+    if (info == Vcsec.SignedMessage_information_E.SIGNEDMESSAGE_INFORMATION_NONE) {
+        return "차량이 거부함 (사유 없음)"
+    }
+    return "차량이 거부함 (${info.name.removePrefix("SIGNEDMESSAGE_INFORMATION_FAULT_")})"
 }

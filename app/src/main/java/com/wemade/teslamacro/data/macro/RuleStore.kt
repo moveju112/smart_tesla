@@ -72,6 +72,16 @@ class RuleStore(context: Context) {
 
     suspend fun delete(id: String) = mutate { current -> current.filterNot { it.id == id } }
 
+    /**
+     * 백업에서 되돌린다. 같은 id는 파일 쪽이 이긴다 —
+     * 복원은 "합치기"가 아니라 "그때로 돌아가기"여야 사람이 결과를 예측할 수 있다.
+     * 파일에 없는 기존 매크로는 남긴다(다른 기기에서 만든 것을 지우지 않는다).
+     */
+    suspend fun restore(rules: List<MacroRule>) = mutate { current ->
+        val incoming = rules.associateBy { it.id }
+        current.filterNot { it.id in incoming } + rules
+    }
+
     suspend fun setEnabled(id: String, enabled: Boolean) = mutate { current ->
         current.map { if (it.id == id) it.copy(enabled = enabled) else it }
     }

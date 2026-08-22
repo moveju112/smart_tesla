@@ -12,10 +12,12 @@ import com.wemade.teslamacro.domain.macro.MacroEngine
 import com.wemade.teslamacro.domain.macro.MacroRunner
 import com.wemade.teslamacro.domain.macro.Reading
 import com.wemade.teslamacro.domain.macro.TimeContext
+import com.wemade.teslamacro.domain.macro.WeatherForecast
 import com.wemade.teslamacro.domain.macro.describe
 import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import com.wemade.teslamacro.domain.model.overlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -49,11 +51,20 @@ class StatePoller(
     private val now: () -> Long = System::currentTimeMillis,
     /** 태블릿 위치. "출발지 근처" 조건을 쓰는 매크로가 있을 때만 호출된다 */
     private val locationReader: suspend () -> GeoPoint? = { null },
+    /** 오늘 예보. 예보 조건을 쓰는 매크로가 있을 때만, 한 시간에 한 번 호출된다 */
+    private val forecastReader: suspend (GeoPoint, Long) -> WeatherForecast? = { _, _ -> null },
 ) {
     private var job: Job? = null
 
     private val _snapshot = MutableStateFlow(VehicleSnapshot.Empty)
     val snapshot: StateFlow<VehicleSnapshot> = _snapshot.asStateFlow()
+
+    /**
+     * 주차가 시작된 시각과 그때 배터리. 타고 있는 동안은 null.
+     * 지금 배터리와 견주면 주차 중 소모를 알 수 있다 — 이 앱이 제일 걱정하는 값이다.
+     */
+    private val _parkStart = MutableStateFlow<Pair<Long, Int?>?>(null)
+    val parkStart: StateFlow<Pair<Long, Int?>?> = _parkStart.asStateFlow()
 
     private val lastFiredAt = mutableMapOf<String, Long>()
 
@@ -70,6 +81,10 @@ class StatePoller(
     private suspend fun loop() = coroutineScope {
         // 재시작 전 탑승 상태를 읽어 둔다. 신선할 때만 믿는다 —
         // 밤새 꺼져 있던 태블릿의 기록은 그 사이 타고 내렸을 수 있어 의미가 없다
+        // 앱이 꺼져 있던 사이의 주차도 이어서 센다
+        if (settingsStore.lastPresence()?.first != true) {
+            _parkStart.value = settingsStore.parkStart()
+        }
         settingsStore.lastPresence()?.let { (present, savedAt) ->
             if (now() - savedAt < PRESENCE_TRUST_MILLIS) {
                 presenceBeforeRestart = present
@@ -223,7 +238,7 @@ class StatePoller(
                 // 빈 차가 본령인 룰이 하차 시점 값(몇 시간 전 46℃)으로 판정되는 걸 막는다.
                 // 인포테인먼트 읽기가 차 수면을 방해하는 비용은 그 룰을 켠 사용자의 선택이다
                 else -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories()
-            }
+            } + dueSlowCategories()
             if (needFullRead) {
                 needFullRead = false
                 needDashboardFill = true   // 여분은 다음 사이클에
@@ -231,16 +246,17 @@ class StatePoller(
                 needDashboardFill = false
             }
 
-            // 3. 카테고리는 하나씩 읽어 병합한다 (한 번에 여러 개는 응답 크기 초과)
-            val results = categories.map { it to gateway.read(it) }
-            val merged = results.fold(_snapshot.value) { acc, (category, result) ->
-                result.getOrNull()?.let { merge(acc, category, it) } ?: acc
-            }.let { withRideMinutes(it) }
+            // 3. 한 번에 묶어 읽는다. 게이트웨이가 응답 크기를 보고 알아서 나눈다
+            val result = gateway.readBundle(categories)
+            val merged = result.getOrNull()
+                ?.let { fresh -> merge(_snapshot.value, fresh) }
+                ?.let { withRideMinutes(it) }
+                ?: _snapshot.value
             _snapshot.value = merged
 
             // 3-1. 좀비 GATT 워치독 — 한 사이클이 통째로 실패하는 게 이어지면 강제 재접속.
             //      하나라도 성공했으면 링크는 산 것이다 (빈 차 사이클도 VCSEC는 항상 응답해야 정상)
-            if (results.isNotEmpty() && results.all { it.second.isFailure }) {
+            if (categories.isNotEmpty() && result.isFailure) {
                 failStreak++
                 if (failStreak >= FAIL_STREAK_LIMIT) {
                     com.wemade.teslable.DiagLog.add(
@@ -264,7 +280,10 @@ class StatePoller(
             // 5. 매크로 판정 + 실행.
             //    GPS는 위치 조건이 실제로 걸려 있을 때만 읽는다 — 매 폴링마다 켜면 배터리를 먹는다
             val location = if (needsLocation()) cachedLocation() else null
-            val current = Reading(merged, TimeContext.of(now()), location)
+            // 예보는 예보 조건을 쓰는 매크로가 켜져 있을 때만 받는다.
+            // 좌표가 있어야 하므로 위치를 못 읽으면 조회 자체를 안 한다
+            val weather = if (needsForecast()) cachedForecast(location ?: cachedLocation()) else null
+            val current = Reading(merged, TimeContext.of(now()), location, weather)
             latestReading.value = current
 
             // 재시작해도 "직전 값"을 알 수 있게 남긴다. 바뀔 때만 쓴다 —
@@ -273,6 +292,14 @@ class StatePoller(
             if (presenceNow != null && presenceNow != lastSavedPresence) {
                 lastSavedPresence = presenceNow
                 settingsStore.savePresence(presenceNow)
+                // 내린 순간이 주차의 시작이다. 그때 배터리를 함께 남겨야
+                // 나중에 "주차 동안 얼마나 줄었나"를 말할 수 있다
+                if (!presenceNow) {
+                    settingsStore.saveParkStart(merged.batteryLevelPercent)
+                    _parkStart.value = settingsStore.parkStart()
+                } else {
+                    _parkStart.value = null
+                }
             }
 
             if (settings.automationEnabled) {
@@ -309,7 +336,7 @@ class StatePoller(
             // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지.
             // 단 실패가 낀 사이클은 경과를 빼지 않는다 — 타임아웃(8초×N)이 주기를 넘으면
             // 하한 1초로 떨어져 "느린 차일수록 쉼 없이 재시도"가 된다
-            val elapsed = if (results.any { it.second.isFailure }) 0L else now() - cycleStart
+            val elapsed = if (result.isFailure) 0L else now() - cycleStart
             sleep((interval * 1000L - elapsed).coerceAtLeast(1_000L))
         }
     }
@@ -397,7 +424,48 @@ class StatePoller(
          * 읽으면 차량 수면·배터리에 부담이라, 확인은 이 짧은 창으로 끝낸다
          */
         const val FOCUS_CONFIRM_MS = 10_000L
+
+        /** 타이어 공기압·차량 소프트웨어처럼 하루에 몇 번이면 충분한 상태 */
+        val SLOW_CATEGORIES = setOf(StateCategory.TIRES, StateCategory.SOFTWARE)
+
+        /** 느린 상태를 다시 읽는 간격. 6시간이면 출퇴근마다 한 번씩은 갱신된다 */
+        const val SLOW_READ_INTERVAL_MS = 6L * 60 * 60 * 1000
+
+        /** 예보를 다시 받는 간격. 예보는 분 단위로 바뀌지 않는다 */
+        const val FORECAST_TTL_MS = 60L * 60 * 1000
     }
+
+    /** 예보 조건을 쓰는 켜진 매크로가 있는가 */
+    private fun needsForecast(): Boolean = ruleStore.rules.value.any { rule ->
+        rule.enabled && (
+            rule.conditions.any { it is Condition.ForecastInRange } ||
+                rule.actions.any {
+                    it is ActionStep.WaitUntil && it.condition is Condition.ForecastInRange
+                }
+            )
+    }
+
+    /**
+     * 예보를 한 시간에 한 번만 받는다.
+     *
+     * 예보는 분 단위로 안 바뀌는데 폴링은 15초마다 돈다 — 캐시가 없으면
+     * 남의 무료 API를 하루 수천 번 두드리게 된다.
+     */
+    private suspend fun cachedForecast(at: GeoPoint?): WeatherForecast? {
+        if (at == null) return forecastCache
+        if (now() - forecastFetchedAt < FORECAST_TTL_MS && forecastCache != null) return forecastCache
+        forecastFetchedAt = now()
+        val fresh = forecastReader(at, now())
+        if (fresh == null) {
+            com.wemade.teslable.DiagLog.add("예보 읽기 실패 — 예보 조건은 불충족으로 처리")
+        } else {
+            forecastCache = fresh
+        }
+        return forecastCache
+    }
+
+    private var forecastCache: WeatherForecast? = null
+    private var forecastFetchedAt = 0L
 
     private suspend fun cachedLocation(): GeoPoint? {
         if (now() - locationCachedAt < LOCATION_TTL_MS) return locationCache
@@ -431,6 +499,27 @@ class StatePoller(
             )
     }
 
+    /**
+     * 몇 시간에 한 번이면 충분한 상태(타이어·차량 소프트웨어)를 읽을 때가 됐는지 본다.
+     *
+     * **차가 깨어 있을 때만** 얹는다. 타이어 공기압 때문에 자는 차를 깨우면
+     * 이 앱이 제일 조심하는 방전을 스스로 부른다 — 어차피 급한 값이 아니다.
+     * 묶음 조회가 되는 차라면 이미 도는 요청에 얹혀 가므로 왕복도 안 늘어난다.
+     */
+    private fun dueSlowCategories(): Set<StateCategory> {
+        val snapshot = _snapshot.value
+        val awake = snapshot.isUserPresent == true || snapshot.isCharging == true
+        if (!awake) return emptySet()
+
+        val nowMillis = now()
+        return SLOW_CATEGORIES.filterTo(mutableSetOf()) { category ->
+            nowMillis - (slowReadAt[category] ?: 0L) >= SLOW_READ_INTERVAL_MS
+        }.onEach { slowReadAt[it] = nowMillis }
+    }
+
+    /** 느린 상태를 마지막으로 읽은 시각 */
+    private val slowReadAt = mutableMapOf<StateCategory, Long>()
+
     /** 켜져 있는 매크로가 실제로 필요로 하는 카테고리만 읽는다 */
     private fun requiredCategories(): Set<StateCategory> =
         ruleStore.rules.value
@@ -448,36 +537,25 @@ class StatePoller(
     }
 
     /** 카테고리별 부분 응답을 누적 스냅샷에 덮어쓴다. null인 필드는 기존 값을 지키다 */
-    private fun merge(
-        base: VehicleSnapshot,
-        category: StateCategory,
-        incoming: VehicleSnapshot,
-    ) = base.copy(
-        timestampMillis = incoming.timestampMillis,
-        categoryReadAt = base.categoryReadAt + (category to incoming.timestampMillis),
-        insideTempC = incoming.insideTempC ?: base.insideTempC,
-        outsideTempC = incoming.outsideTempC ?: base.outsideTempC,
-        driverTempSettingC = incoming.driverTempSettingC ?: base.driverTempSettingC,
-        isClimateOn = incoming.isClimateOn ?: base.isClimateOn,
-        isPreconditioning = incoming.isPreconditioning ?: base.isPreconditioning,
+    /**
+     * 새로 읽은 값을 기존 스냅샷에 얹는다.
+     * 필드별 규칙은 [overlay]가 갖고, 여기서는 카테고리 소유권만 덧붙인다 —
+     * 두 곳에 필드 목록을 두면 새 필드를 추가할 때 한쪽이 빠져 값이 조용히 사라진다.
+     */
+    private fun merge(base: VehicleSnapshot, incoming: VehicleSnapshot): VehicleSnapshot {
+        val merged = base.overlay(incoming).copy(
+            categoryReadAt = base.categoryReadAt + incoming.categoryReadAt,
+        )
         // 탑승·잠금은 VCSEC 소유 필드 — VCSEC 읽기가 성공했는데 null(UNKNOWN)이면
         // "모름"이 진실이다. 기존 값을 유지하면 true가 동결돼 깊은 유휴에 영영 못 들고
         // 빈 차의 인포테인먼트를 계속 깨운다 (isCharging에만 있던 가드를 확장)
-        isUserPresent = if (ownsPresence(category)) incoming.isUserPresent else base.isUserPresent,
-        isLocked = if (ownsPresence(category)) incoming.isLocked else base.isLocked,
-        shiftState = if (incoming.shiftState != ShiftState.UNKNOWN) incoming.shiftState
-        else base.shiftState,
-        doorOpen = base.doorOpen + incoming.doorOpen,
-        seatHeater = base.seatHeater + incoming.seatHeater,
-        seatCooler = base.seatCooler + incoming.seatCooler,
-        batteryLevelPercent = incoming.batteryLevelPercent ?: base.batteryLevelPercent,
-        isCharging = incoming.isCharging ?: base.isCharging,
-        chargeLimitPercent = incoming.chargeLimitPercent ?: base.chargeLimitPercent,
-        chargingAmps = incoming.chargingAmps ?: base.chargingAmps,
-        rangeKm = incoming.rangeKm ?: base.rangeKm,
-        isChargePortOpen = incoming.isChargePortOpen ?: base.isChargePortOpen,
-        speedKph = incoming.speedKph ?: base.speedKph,
-    )
+        val vcsecRead = incoming.categoryReadAt.keys.any { ownsPresence(it) }
+        return if (vcsecRead) {
+            merged.copy(isUserPresent = incoming.isUserPresent, isLocked = incoming.isLocked)
+        } else {
+            merged
+        }
+    }
 }
 
 /** 탑승·잠금 필드를 보고하는 카테고리인가 (VCSEC 상태 응답 계열) */

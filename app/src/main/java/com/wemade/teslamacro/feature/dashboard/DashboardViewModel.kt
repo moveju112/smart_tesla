@@ -11,6 +11,8 @@ import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatClimate
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import com.wemade.teslamacro.domain.model.lowTires
+import com.wemade.teslamacro.domain.model.VehicleSoftwareUpdate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +64,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         val pending: VehicleCommand?,
         val error: String?,
         val seats: Map<SeatPosition, SeatClimate>,
+        /** 주차 시작 시각과 그때 배터리. 타고 있으면 null */
+        val parkStart: Pair<Long, Int?>?,
     )
 
     init {
@@ -100,7 +104,10 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         container.poller.snapshot,
         container.settingsStore.settings,
         optimistic,
-        combine(pending, error, container.seatStore.state) { p, e, s -> Aux(p, e, s) },
+        combine(pending, error, container.seatStore.state, container.poller.parkStart) {
+                p, e, s, park ->
+            Aux(p, e, s, park)
+        },
     ) { link, snapshot, settings, overlay, aux ->
         val effective = overlay.applyTo(snapshot)
         DashboardUiState(
@@ -114,6 +121,10 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             isClimateOn = effective.isClimateOn == true,
             isLocked = effective.isLocked == true,
             isSimulated = container.isSimulated,
+            lowTires = effective.lowTires,
+            tireWarning = tireWarningOf(effective),
+            vehicleSoftware = vehicleSoftwareOf(effective),
+            parkSummary = parkSummaryOf(aux.parkStart, effective.batteryLevelPercent),
             // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다.
             // 전역 타임스탬프는 아무 카테고리 하나만 성공해도 갱신되므로,
             // 잠금(VCSEC)·공조(CLIMATE)는 해당 카테고리를 실제로 읽었는지로 따로 가린다
@@ -361,3 +372,58 @@ internal fun seatClimateOf(
 
 /** 소수 한 자리. 아직 못 읽었으면 대시 */
 private fun Double?.format(): String = this?.let { "%.1f".format(it) } ?: "--"
+
+/**
+ * 공기압이 빠진 바퀴를 한 줄로. 정상이면 null —
+ * 화면에 "타이어 정상"을 상시 띄우면 그건 정보가 아니라 배경이 된다.
+ */
+private fun tireWarningOf(snapshot: VehicleSnapshot): String? {
+    val low = snapshot.lowTires
+    if (low.isEmpty()) return null
+    return low.sortedBy { it.ordinal }.joinToString(" · ") { position ->
+        val bar = snapshot.tirePressuresBar[position]
+        if (bar != null) "${position.label} %.1f bar".format(bar) else position.label
+    }
+}
+
+/**
+ * 차량 소프트웨어 상태를 한 줄로. 할 일이 없으면 null —
+ * "최신"이라는 글자는 상시 켜진 화면에서 아무 일도 하지 않는다.
+ */
+private fun vehicleSoftwareOf(snapshot: VehicleSnapshot): String? {
+    val update = snapshot.softwareUpdate ?: return null
+    // 기입란 한 칸에 들어가야 한다. 라벨이 이미 "차량 SW"라 값에 그 말을 또 쓰지 않는다 —
+    // 버전 문자열도 여기선 뺀다(잘려서 앞부분만 남으면 없느니만 못하다)
+    return when (update.status) {
+        VehicleSoftwareUpdate.Status.NONE, VehicleSoftwareUpdate.Status.UNKNOWN -> null
+        VehicleSoftwareUpdate.Status.DOWNLOADING ->
+            update.downloadPercent?.let { "받는 중 $it%" } ?: update.status.label
+        else -> update.status.label
+    }
+}
+
+/**
+ * 주차가 얼마나 이어졌고 그동안 배터리가 얼마나 줄었는지 한 줄로.
+ *
+ * 타고 있으면 null — 주행 중에 "주차 0분"을 띄울 이유가 없다.
+ * 소모가 없으면 시간만 적는다. 이 앱이 제일 걱정하는 건 밤새 빠지는 전기다.
+ */
+internal fun parkSummaryOf(
+    parkStart: Pair<Long, Int?>?,
+    batteryNow: Int?,
+    nowMillis: Long = System.currentTimeMillis(),
+): String? {
+    val (since, batteryThen) = parkStart ?: return null
+    val minutes = (nowMillis - since) / 60_000L
+    if (minutes < 1) return null
+
+    val elapsed = when {
+        minutes < 60 -> "${minutes}분"
+        else -> "${minutes / 60}시간" + (minutes % 60).let { if (it == 0L) "" else " ${it}분" }
+    }
+    val drop = if (batteryThen != null && batteryNow != null) batteryThen - batteryNow else null
+    return when {
+        drop == null || drop <= 0 -> elapsed
+        else -> "$elapsed · -$drop%"
+    }
+}

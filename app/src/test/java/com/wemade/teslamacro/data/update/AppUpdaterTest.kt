@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.data.update
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -46,5 +48,25 @@ class AppUpdaterTest {
         assertTrue(AppUpdater.isNewer("0.8.21-beta", "0.8.20"))
         // 태그를 못 읽었을 때 업데이트를 권하면 안 된다
         assertFalse(AppUpdater.isNewer("", "0.8.20"))
+    }
+
+    @Test
+    fun `릴리스 본문에서 헤딩과 빈 줄을 걷는다`() {
+        val raw = "## 0.9.1\n\n- 잠든 차 자동 깨우기\n\n- 거부 사유 표시\n"
+        assertEquals("0.9.1\n- 잠든 차 자동 깨우기\n- 거부 사유 표시", tidyNotes(raw))
+    }
+
+    @Test
+    fun `쓸 내용이 없으면 표시하지 않는다`() {
+        assertNull(tidyNotes(""))
+        assertNull(tidyNotes("\n\n###\n"))
+    }
+
+    /** 설정 화면은 좁다. 길면 자르되 잘렸다는 걸 숨기지 않는다 */
+    @Test
+    fun `길면 자르고 잘렸음을 표시한다`() {
+        val raw = (1..10).joinToString("\n") { "줄 $it" }
+        val tidied = tidyNotes(raw, maxLines = 3)
+        assertEquals("줄 1\n줄 2\n줄 3\n…", tidied)
     }
 }

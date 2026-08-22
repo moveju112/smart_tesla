@@ -41,6 +41,14 @@ object ConditionEvaluator {
         is Condition.OnDays ->
             condition.days.isEmpty() || reading.time.dayOfWeek in condition.days
 
+        // 예보를 못 받아 왔으면 불충족 — 날씨를 모른다고 차를 멋대로 예열하지 않는다
+        is Condition.ForecastInRange -> {
+            val value = reading.weather?.valueOf(condition.metric)
+            value != null &&
+                (condition.gte == null || value >= condition.gte) &&
+                (condition.lte == null || value <= condition.lte)
+        }
+
         is Condition.NearLocation -> {
             val here = reading.location
             val lat = condition.latitude

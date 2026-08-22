@@ -82,8 +82,7 @@ object MacroPresets {
         triggers = listOf(Trigger.AtTime(minutesOfDay = 18 * 60, days = setOf(1, 2, 3, 4, 5))),
         conditions = listOf(Condition.InRange(Signal.OUTSIDE_TEMP, gte = 28.0)),
         actions = listOf(
-            ActionStep.Run(VehicleCommand.Wake),
-            ActionStep.Wait(seconds = 15),
+            // 깨우기와 대기는 게이트웨이가 알아서 한다 (sendInfotainmentAwake)
             ActionStep.Run(VehicleCommand.ClimateOn),
             ActionStep.Run(VehicleCommand.SetTemperature(22.0)),
             ActionStep.Run(VehicleCommand.SetSeatCooler(SeatPosition.FRONT_LEFT, Level.LOW)),

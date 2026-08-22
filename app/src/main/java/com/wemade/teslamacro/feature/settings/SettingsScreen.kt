@@ -62,6 +62,7 @@ fun SettingsScreen(
     update: UpdateState? = null,
     onCheckUpdate: () -> Unit = {},
     onDownloadUpdate: () -> Unit = {},
+    backup: BackupControls? = null,
 ) {
     val compact = LocalPane.current.isCompact
     Column(
@@ -138,6 +139,11 @@ fun SettingsScreen(
         if (battery != null) {
             SectionHeader("절전")
             BatteryPanel(battery)
+        }
+
+        if (backup != null) {
+            SectionHeader("백업")
+            BackupPanel(backup)
         }
 
         SectionHeader("차량")
@@ -329,6 +335,17 @@ private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: ()
                     )
             }
         }
+
+        // 뭐가 바뀌는지 모르고 설치를 누르게 두지 않는다. 릴리스 본문은 이미 받아온 값이다
+        val notes = (update as? UpdateState.Available)?.notes
+        if (notes != null) {
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                text = notes,
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        }
     }
 }
 
@@ -361,6 +378,52 @@ data class BatteryControls(
     val unrestricted: Boolean,
     val onOpenSettings: () -> Unit,
 )
+
+/**
+ * 매크로·설정 내보내기/되돌리기.
+ * 차량 식별자와 키 등록은 백업에 담기지 않는다 — 파일이 밖으로 나가도 차는 안전하다.
+ */
+data class BackupControls(
+    val onExport: () -> Unit,
+    val onImport: () -> Unit,
+    /** 마지막 시도 결과. 없으면 아무것도 안 뜬다 */
+    val message: String? = null,
+    val onDismissMessage: () -> Unit = {},
+)
+
+@Composable
+private fun BackupPanel(backup: BackupControls) {
+    TCard {
+        Text(
+            text = "매크로와 설정을 파일로 내보내고 되돌립니다.\n" +
+                "차량 등록과 키는 담기지 않아요 — 기기를 바꾸면 등록은 다시 해야 해요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+        )
+        Spacer(Modifier.height(Space.md))
+        Row {
+            TButton("내보내기", fillWidth = false, small = true, onClick = backup.onExport)
+            Spacer(Modifier.width(Space.sm))
+            TButton(
+                text = "되돌리기",
+                tone = ButtonTone.Secondary,
+                fillWidth = false,
+                small = true,
+                onClick = backup.onImport,
+            )
+        }
+        // 결과는 성공이든 실패든 남긴다 — 조용히 끝나면 됐는지 안 됐는지 알 길이 없다
+        backup.message?.let { message ->
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = T.Ink,
+                modifier = Modifier.clickable(onClick = backup.onDismissMessage),
+            )
+        }
+    }
+}
 
 data class VoiceControls(
     val model: VoiceModelState,

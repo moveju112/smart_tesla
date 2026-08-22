@@ -24,6 +24,14 @@ import java.security.SecureRandom
 class TeslaProtocolException(message: String) : Exception(message)
 
 /**
+ * 차량이 "응답이 너무 크다"고 돌려보냈다.
+ *
+ * 차는 응답을 스스로 쪼개지 못한다. 상태를 여러 개 묶어 요청하면 이게 온다.
+ * 호출측이 이 신호를 보고 하나씩 요청으로 물러설 수 있게 따로 둔다.
+ */
+class ResponseTooLargeException(message: String) : Exception(message)
+
+/**
  * 링크 위에 서명 세션을 얹어 실제 명령을 주고받는다.
  *
  * BLE는 응답을 스트림으로 흘려보내므로 요청을 [requestLock]으로 직렬화한다.
@@ -235,6 +243,11 @@ class TeslaClient(
         )
         if (recoverable) throw SessionOutOfSyncException(fault.name)
 
+        // 묶음 조회가 너무 컸다는 뜻일 뿐이다. 호출측이 나눠서 다시 물을 수 있게 따로 알린다
+        if (fault == UniversalMessage.MessageFault_E.MESSAGEFAULT_ERROR_RESPONSE_MTU_EXCEEDED) {
+            throw ResponseTooLargeException("응답이 너무 크다. 상태를 나눠서 요청해라")
+        }
+
         throw TeslaProtocolException(faultMessage(fault))
     }
 
@@ -246,8 +259,6 @@ class TeslaClient(
         UniversalMessage.MessageFault_E.MESSAGEFAULT_ERROR_BUSY,
         UniversalMessage.MessageFault_E.MESSAGEFAULT_ERROR_TIMEOUT ->
             "차량이 바쁘다. 잠시 후 다시 시도해라"
-        UniversalMessage.MessageFault_E.MESSAGEFAULT_ERROR_RESPONSE_MTU_EXCEEDED ->
-            "응답이 너무 크다. 상태를 나눠서 요청해라"
         UniversalMessage.MessageFault_E.MESSAGEFAULT_ERROR_REMOTE_ACCESS_DISABLED ->
             "차량에서 모바일 접근이 꺼져 있다"
         else -> "차량이 명령을 거부했다 (${fault.name})"

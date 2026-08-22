@@ -9,3 +9,10 @@ _workspace/
 .impeccable/
 # Kotlin 빌드 캐시
 .kotlin/
+
+# 브라우저 도구 산출물·미리보기 이미지 — 소스가 아니다
+.playwright-mcp/
+icon-preview.png
+# 참고용 3rd-party APK/번들. 저장소 밖(RND/tepilot-ref)에서 다룬다
+*.apk
+*.apks

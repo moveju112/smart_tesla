@@ -5,6 +5,7 @@ import com.tesla.generated.vcsec.Vcsec
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
+import com.wemade.teslamacro.domain.model.StateCategory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -96,11 +97,40 @@ class CommandEncoderTest {
     }
 
     @Test
-    fun `공조 상태 요청이 climate만 지정한다`() {
-        // 여러 카테고리를 한 번에 요청하면 응답 크기 제한에 걸린다
-        val data = CommandEncoder.encodeClimateStateRequest().vehicleAction.getVehicleData
+    fun `요청한 카테고리만 지정된다`() {
+        val data = CommandEncoder.encodeVehicleDataRequest(setOf(StateCategory.CLIMATE))
+            .vehicleAction.getVehicleData
         assertTrue(data.hasGetClimateState())
         assertTrue(!data.hasGetChargeState())
+    }
+
+    /** 묶음 조회의 요점 — 한 요청에 여러 상태가 함께 실린다 */
+    @Test
+    fun `여러 카테고리를 한 요청에 담는다`() {
+        val data = CommandEncoder.encodeVehicleDataRequest(
+            setOf(
+                StateCategory.CLIMATE,
+                StateCategory.CHARGE,
+                StateCategory.TIRES,
+                StateCategory.LOCATION,
+                StateCategory.SOFTWARE,
+            )
+        ).vehicleAction.getVehicleData
+        assertTrue(data.hasGetClimateState())
+        assertTrue(data.hasGetChargeState())
+        assertTrue(data.hasGetTirePressureState())
+        assertTrue(data.hasGetLocationState())
+        assertTrue(data.hasGetSoftwareUpdateState())
+    }
+
+    /** VCSEC 도메인 카테고리는 인포테인먼트 요청에 섞이면 안 된다 */
+    @Test
+    fun `차체 카테고리는 담기지 않는다`() {
+        val data = CommandEncoder.encodeVehicleDataRequest(
+            setOf(StateCategory.BODY_CONTROLLER, StateCategory.CLOSURES, StateCategory.DRIVE)
+        ).vehicleAction.getVehicleData
+        assertTrue(data.hasGetDriveState())
+        assertTrue(!data.hasGetClosuresState())
     }
 
     @Test

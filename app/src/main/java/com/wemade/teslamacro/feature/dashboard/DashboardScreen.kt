@@ -55,6 +55,7 @@ import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatClimate
 import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatPosition
+import com.wemade.teslamacro.domain.model.TirePosition
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.CalloutNumber
 import com.wemade.teslamacro.ui.component.DraftMark
@@ -508,6 +509,19 @@ private fun DimensionPanel(
                 else -> "꺼짐"
             },
         )
+        // 공기압은 빠졌을 때만 적는다. 정상 타이어는 도면에서 파선으로 조용히 있고,
+        // 여기 "정상"이라고 써 두면 상시 켜진 화면에서 읽히지 않는 배경이 된다
+        state.tireWarning?.let {
+            DimensionRow(label = "공기압", value = it, tone = T.Danger)
+        }
+        // 차량 업데이트도 사람이 결정할 일이 남았을 때만 (예약·다운로드·설치 가능)
+        state.vehicleSoftware?.let {
+            DimensionRow(label = "차량 SW", value = it)
+        }
+        // 주차가 얼마나 됐고 그동안 얼마나 빠졌는지. 방전이 이 앱의 가장 큰 걱정이다
+        state.parkSummary?.let {
+            DimensionRow(label = "주차", value = it)
+        }
 
         // 부품표. 좁은 화면에서는 선도가 없으니 이것이 유일한 값 목록이고,
         // 세로에서는 선도 아래 자리가 남아 함께 싣는다 — 도면은 그림과 부품표를
@@ -584,7 +598,13 @@ private fun SheetStamp(fields: List<Pair<String, String>>) {
  * 점선으로 이어야 눈이 이름에서 값으로 건너간다. 여백만 두면 두 열이 따로 읽힌다.
  */
 @Composable
-private fun DimensionRow(label: String, value: String, number: Int? = null) {
+private fun DimensionRow(
+    label: String,
+    value: String,
+    number: Int? = null,
+    /** 기본은 무채색. 적색은 지금 봐야 할 값에만 든다 */
+    tone: Color? = null,
+) {
     val dotColor = T.Hairline
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 28.dp),
@@ -620,7 +640,7 @@ private fun DimensionRow(label: String, value: String, number: Int? = null) {
         Text(
             text = value,
             style = MaterialTheme.typography.headlineMedium,
-            color = T.InkMuted,
+            color = tone ?: T.InkMuted,
             maxLines = 1,
         )
     }
@@ -1137,6 +1157,7 @@ private fun DashboardUiState.planTones(): CarPlanTones {
     return CarPlanTones(
         states = states,
         openDoors = openings.mapNotNull { it.carDoor }.toSet(),
+        lowTires = lowTires,
         ink = T.Ink,
         inkMuted = T.InkMuted,
         inkFaint = T.InkFaint,
@@ -1194,6 +1215,14 @@ data class DashboardUiState(
     val chargeLimitPercent: Int? = null,
     val chargingAmps: Int? = null,
     val stealthCharging: Boolean = false,
+    /** 공기압이 기준 아래인 바퀴. 있으면 도면의 그 자리가 적색이 된다 */
+    val lowTires: Set<TirePosition> = emptySet(),
+    /** 낮은 바퀴가 있을 때만 채운다 — 정상이면 화면에 한 글자도 안 늘린다 */
+    val tireWarning: String? = null,
+    /** 차량 소프트웨어 상태. 설치 예약·다운로드 중일 때만 채운다 */
+    val vehicleSoftware: String? = null,
+    /** 주차 경과와 그동안의 배터리 소모. 타고 있으면 null */
+    val parkSummary: String? = null,
     val automationEnabled: Boolean = true,
     val runningMacroCount: Int = 0,
     /** 주행 가능 거리(km). 배터리 %만으론 실감이 안 나 함께 보여준다 */

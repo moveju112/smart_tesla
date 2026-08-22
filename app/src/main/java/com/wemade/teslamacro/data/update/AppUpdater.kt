@@ -27,8 +27,15 @@ sealed interface UpdateState {
     /** "알 수 없는 앱 설치"가 꺼져 있다. 설정에서 켜야 넘어간다 */
     data object NeedsInstallPermission : UpdateState
 
-    /** 새 버전이 있다. [apkUrl]이 null이면 릴리스에 APK가 안 붙은 것 */
-    data class Available(val version: String, val apkUrl: String?) : UpdateState
+    /**
+     * 새 버전이 있다. [apkUrl]이 null이면 릴리스에 APK가 안 붙은 것.
+     * [notes]는 릴리스 본문 — 뭐가 바뀌는지 모르고 설치 버튼을 누르게 두지 않는다
+     */
+    data class Available(
+        val version: String,
+        val apkUrl: String?,
+        val notes: String? = null,
+    ) : UpdateState
 
     /** 내려받는 중. [percent]는 0~100 */
     data class Downloading(val version: String, val percent: Int) : UpdateState
@@ -119,9 +126,12 @@ object AppUpdater {
                         ?.content?.takeIf { it.endsWith(".apk") }
                 }
 
+                // 릴리스 본문은 이미 받아온 응답 안에 있다. 안 쓰면 버리는 정보다
+                val notes = (json["body"] as? JsonPrimitive)?.content?.let(::tidyNotes)
+
                 // "다르면 새 버전"이 아니라 실제로 높은지 본다.
                 // 릴리스보다 앞선 로컬 빌드에서 옛 APK를 새 버전이라고 안내하는 사고를 막는다
-                if (isNewer(latest, currentVersion)) UpdateState.Available(latest, apkUrl)
+                if (isNewer(latest, currentVersion)) UpdateState.Available(latest, apkUrl, notes)
                 else UpdateState.UpToDate
             }.getOrElse { UpdateState.Failed("새 버전을 확인하지 못했어요.\n인터넷 연결을 봐주세요.") }
         }
@@ -254,4 +264,23 @@ object AppUpdater {
         }
         return false
     }
+}
+
+/**
+ * 릴리스 본문을 설정 화면에 얹을 수 있게 다듬는다. 쓸 게 없으면 null.
+ *
+ * GitHub 본문은 마크다운이라 그대로 두면 `#`과 빈 줄이 도면 위에 그대로 찍힌다.
+ * 화면이 좁으니 [maxLines]에서 끊고 잘렸다는 표시를 남긴다.
+ */
+internal fun tidyNotes(raw: String, maxLines: Int = 6): String? {
+    // 1. 헤딩 기호를 걷고 빈 줄을 접는다
+    val lines = raw.lineSequence()
+        .map { it.trim().trimStart('#').trim() }
+        .filter { it.isNotEmpty() }
+        .toList()
+    if (lines.isEmpty()) return null
+
+    // 2. 길면 자르고 잘렸음을 알린다 — 조용히 삼키면 뒤에 뭐가 있었는지 모른다
+    if (lines.size <= maxLines) return lines.joinToString("\n")
+    return lines.take(maxLines).joinToString("\n") + "\n…"
 }

@@ -49,6 +49,15 @@ fun describe(condition: Condition): String = when (condition) {
     is Condition.NearLocation ->
         if (condition.latitude == null) "출발지 근처 (위치 미저장)"
         else "저장 위치 반경 ${condition.radiusMeters}m 안"
+
+    is Condition.ForecastInRange -> {
+        val unit = condition.metric.unit
+        when {
+            condition.gte != null -> "${condition.metric.label} ${fmt(condition.gte)}$unit 이상"
+            condition.lte != null -> "${condition.metric.label} ${fmt(condition.lte)}$unit 이하"
+            else -> condition.metric.label
+        }
+    }
 }
 
 /**

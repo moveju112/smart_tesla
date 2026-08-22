@@ -60,4 +60,7 @@ class SwitchingVehicleGateway(
     override suspend fun send(command: VehicleCommand) = delegate.value.send(command)
     override suspend fun read(category: StateCategory): Result<VehicleSnapshot> =
         delegate.value.read(category)
+
+    override suspend fun readBundle(categories: Set<StateCategory>): Result<VehicleSnapshot> =
+        delegate.value.readBundle(categories)
 }

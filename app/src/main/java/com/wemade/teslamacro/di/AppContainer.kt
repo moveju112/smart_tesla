@@ -49,6 +49,9 @@ class AppContainer(private val context: Context) {
 
     val ruleStore = RuleStore(context)
 
+    /** 예보. 계정도 키도 없는 Open-Meteo를 쓴다 */
+    val weatherClient = com.wemade.teslamacro.data.weather.OpenMeteoClient()
+
     /**
      * 초기화 때 읽어 둔 설정.
      *
@@ -90,6 +93,7 @@ class AppContainer(private val context: Context) {
         poller = StatePoller(
             gateway, ruleStore, settingsStore, runner, latestReading,
             locationReader = ::readLocationWithFallback,
+            forecastReader = weatherClient::forecast,
         )
         stealthCharge = com.wemade.teslamacro.data.charge.StealthChargeController(
             gateway, poller, settingsStore,

@@ -287,6 +287,15 @@ private fun AppRoot(factory: ViewModelFactory) {
                         ActivityResultContracts.OpenDocument()
                     ) { uri -> uri?.let(settingsViewModel::installVoiceModel) }
 
+                    // 백업 파일은 사용자가 어디에 둘지 고른다 — 앱이 임의의 위치에 쓰지 않는다
+                    val saveBackup = rememberLauncherForActivityResult(
+                        ActivityResultContracts.CreateDocument("application/json")
+                    ) { uri -> uri?.let(settingsViewModel::exportBackup) }
+                    val openBackup = rememberLauncherForActivityResult(
+                        ActivityResultContracts.OpenDocument()
+                    ) { uri -> uri?.let(settingsViewModel::importBackup) }
+                    val backupMessage by settingsViewModel.backupMessage.collectAsState()
+
                     SettingsScreen(
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
@@ -318,6 +327,16 @@ private fun AppRoot(factory: ViewModelFactory) {
                         update = update,
                         onCheckUpdate = settingsViewModel::checkUpdate,
                         onDownloadUpdate = settingsViewModel::downloadAndInstall,
+                        backup = com.wemade.teslamacro.feature.settings.BackupControls(
+                            onExport = {
+                                saveBackup.launch(
+                                    com.wemade.teslamacro.data.backup.BackupFile.DEFAULT_FILE_NAME
+                                )
+                            },
+                            onImport = { openBackup.launch(arrayOf("application/json", "text/*")) },
+                            message = backupMessage,
+                            onDismissMessage = settingsViewModel::clearBackupMessage,
+                        ),
                     )
                 }
             }

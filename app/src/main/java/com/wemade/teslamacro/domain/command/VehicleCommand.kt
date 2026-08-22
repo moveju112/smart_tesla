@@ -218,6 +218,28 @@ fun VehicleCommand.requiresPark(): Boolean =
         this is VehicleCommand.CloseTrunk
 
 /**
+ * 두 번 실행돼도 결과가 같은 명령인가.
+ *
+ * 응답이 없다고 명령이 안 갔다는 뜻은 아니다 — 도달했는데 응답만 유실될 수 있다.
+ * 그래서 재시도는 절대값을 설정하는 명령만 한다. 개폐·경적·트랙 넘김처럼
+ * 누를 때마다 상태가 바뀌는 명령은 한 번으로 끝낸다.
+ */
+fun VehicleCommand.isIdempotent(): Boolean = when (this) {
+    is VehicleCommand.OpenFrunk,
+    is VehicleCommand.OpenTrunk,
+    is VehicleCommand.CloseTrunk,
+    is VehicleCommand.FlashLights,
+    is VehicleCommand.Honk,
+    is VehicleCommand.ToggleMedia,
+    is VehicleCommand.NextTrack,
+    is VehicleCommand.PreviousTrack,
+    is VehicleCommand.NextFavorite,
+    -> false
+
+    else -> true
+}
+
+/**
  * 명령 결과가 어느 상태 카테고리에 나타나는가.
  * 명령 성공 직후 폴러가 이 카테고리를 집중해서 읽어, 실제 차량 값이
  * 다음 정기 주기(최대 120초)를 기다리지 않고 화면에 확정되게 한다.

@@ -190,4 +190,68 @@ class WideScreenshotTest {
         }
     }
 
+    // 릴리스 노트는 새 버전이 있을 때만 뜬다 — W5(기본 상태)에는 안 잡혀 따로 세운다
+    @Test
+    fun `W8 업데이트 알림`() {
+        paparazzi.snapshot("W8-update-notes") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    settings = com.wemade.teslamacro.data.settings.AppSettings(
+                        vin = "5YJS0000000000000",
+                    ),
+                    update = com.wemade.teslamacro.data.update.UpdateState.Available(
+                        version = "0.9.1",
+                        apkUrl = "https://example.invalid/app.apk",
+                        notes = "잠든 차를 게이트웨이가 깨워서 다시 보낸다\n" +
+                            "차가 거부하면 사유를 그대로 보여준다\n" +
+                            "퇴근 전 예열에서 고정 15초 대기를 걷어냈다",
+                    ),
+                    onAutomationChange = {},
+                    onIdlePollChange = {},
+                    onActivePollChange = {},
+                    onActiveWindowChange = {},
+                    onUnpair = {},
+                    onStartPairing = {},
+                    voice = com.wemade.teslamacro.feature.settings.VoiceControls(
+                        model = com.wemade.teslamacro.data.voice.VoiceModelState.NotInstalled,
+                        onAlwaysOnChange = {},
+                        onInstall = {},
+                        onRemove = {},
+                    ),
+                    battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                        unrestricted = false,
+                        onOpenSettings = {},
+                    ),
+                    backup = com.wemade.teslamacro.feature.settings.BackupControls(
+                        onExport = {},
+                        onImport = {},
+                        message = "매크로 6개를 내보냈어요",
+                    ),
+                )
+            }
+        }
+    }
+
+    // 공기압이 빠진 바퀴는 도면에서 그 자리만 적색 실선이 되고, 몇 bar인지는 배너가 말한다.
+    // 정상일 때 아무것도 안 뜨는지는 W1이 지킨다
+    @Test
+    fun `W9 타이어 공기압 경보`() {
+        paparazzi.snapshot("W9-low-tire") {
+            AppFrame(Destination.Dashboard) {
+                DashboardScreen(
+                    state = wideState().copy(
+                        lowTires = setOf(
+                            com.wemade.teslamacro.domain.model.TirePosition.FRONT_RIGHT,
+                        ),
+                        tireWarning = "앞 우 2.1 bar",
+                        vehicleSoftware = "설치 예약됨",
+                    ),
+                    onCommand = {},
+                    onRetryConnect = {},
+                    onDismissError = {},
+                )
+            }
+        }
+    }
+
 }

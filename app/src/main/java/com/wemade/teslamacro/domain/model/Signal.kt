@@ -23,6 +23,11 @@ enum class Signal(
      * "30분 이상 타고 내렸으면 애프터블로우" 같은 지속시간 조건의 재료다
      */
     RIDE_MINUTES("탑승 시간", SignalKind.NUMBER, "분"),
+    /**
+     * 네 바퀴 중 제일 낮은 공기압. 한 짝만 빠져도 알아야 하므로 최저값을 쓴다.
+     * Model Y 권장은 2.9bar 안팎이라 2.5 이하면 눈으로 볼 값이다
+     */
+    TIRE_PRESSURE_MIN("최저 타이어압", SignalKind.NUMBER, "bar"),
 
     USER_PRESENT("운전자 탑승", SignalKind.BOOLEAN),
     CLIMATE_ON("공조 작동", SignalKind.BOOLEAN),
@@ -43,6 +48,7 @@ enum class Signal(
         RANGE -> snapshot.rangeKm?.toDouble()
         SPEED -> snapshot.speedKph?.toDouble()
         RIDE_MINUTES -> snapshot.rideMinutes
+        TIRE_PRESSURE_MIN -> snapshot.tirePressuresBar.values.minOrNull()?.toDouble()
         else -> null
     }
 
@@ -72,6 +78,7 @@ enum class Signal(
             INSIDE_TEMP, OUTSIDE_TEMP, CLIMATE_ON, PRECONDITIONING -> StateCategory.CLIMATE
             BATTERY_LEVEL, CHARGING, RANGE, CHARGE_PORT_OPEN -> StateCategory.CHARGE
             PARKED, DRIVING, SPEED -> StateCategory.DRIVE
+            TIRE_PRESSURE_MIN -> StateCategory.TIRES
             // 탑승 시간은 isUserPresent에서 파생되므로 같은 카테고리다
             USER_PRESENT, LOCKED, DOOR_DRIVER_FRONT, DOOR_PASSENGER_FRONT, RIDE_MINUTES ->
                 StateCategory.BODY_CONTROLLER

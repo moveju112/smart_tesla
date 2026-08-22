@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.data.gateway
 
 import com.tesla.generated.carserver.server.CarServer
+import com.tesla.generated.errors.Errors
+import com.tesla.generated.vcsec.Vcsec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -48,4 +50,62 @@ class CommandResultTest {
     fun `해석 불가 바이트는 판정하지 않는다`() {
         assertNull(infotainmentRejection(ByteArray(5) { 0x7F }))
     }
+
+    // ---- VCSEC (잠금·트렁크). 봉투 fault만 보면 본문의 거부를 놓친다 ----
+
+    @Test
+    fun `VCSEC 상태가 없으면 거부가 아니다`() {
+        assertNull(vcsecRejection(Vcsec.FromVCSECMessage.newBuilder().build()))
+    }
+
+    @Test
+    fun `VCSEC OK는 거부가 아니다`() {
+        assertNull(vcsecRejection(commandStatus(Vcsec.OperationStatus_E.OPERATIONSTATUS_OK)))
+    }
+
+    @Test
+    fun `VCSEC WAIT를 성공으로 기록하지 않는다`() {
+        assertEquals(
+            "차량이 아직 준비되지 않았어요",
+            vcsecRejection(commandStatus(Vcsec.OperationStatus_E.OPERATIONSTATUS_WAIT)),
+        )
+    }
+
+    @Test
+    fun `VCSEC ERROR는 서명 계층 사유를 붙여 돌려준다`() {
+        val response = Vcsec.FromVCSECMessage.newBuilder()
+            .setCommandStatus(
+                Vcsec.CommandStatus.newBuilder()
+                    .setOperationStatus(Vcsec.OperationStatus_E.OPERATIONSTATUS_ERROR)
+                    .setSignedMessageStatus(
+                        Vcsec.SignedMessage_status.newBuilder().setSignedMessageInformation(
+                            Vcsec.SignedMessage_information_E
+                                .SIGNEDMESSAGE_INFORMATION_FAULT_NOT_ON_WHITELIST,
+                        )
+                    )
+            )
+            .build()
+        assertEquals("차량이 거부함 (NOT_ON_WHITELIST)", vcsecRejection(response))
+    }
+
+    @Test
+    fun `문이 열려 있다는 사유는 사람 말로 바꾼다`() {
+        assertEquals("문이 열려 있어요", vcsecRejection(nominalError(Errors.GenericError_E.GENERICERROR_CLOSURES_OPEN)))
+    }
+
+    /** 이미 원하는 상태면 실패가 아니다 — 매크로가 실패로 기록하면 안 된다 */
+    @Test
+    fun `이미 그 상태라는 응답은 거부가 아니다`() {
+        assertNull(vcsecRejection(nominalError(Errors.GenericError_E.GENERICERROR_ALREADY_ON)))
+    }
+
+    private fun commandStatus(status: Vcsec.OperationStatus_E): Vcsec.FromVCSECMessage =
+        Vcsec.FromVCSECMessage.newBuilder()
+            .setCommandStatus(Vcsec.CommandStatus.newBuilder().setOperationStatus(status))
+            .build()
+
+    private fun nominalError(error: Errors.GenericError_E): Vcsec.FromVCSECMessage =
+        Vcsec.FromVCSECMessage.newBuilder()
+            .setNominalError(Errors.NominalError.newBuilder().setGenericError(error))
+            .build()
 }

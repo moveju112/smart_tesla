@@ -113,6 +113,37 @@ class SettingsStore(private val context: Context) {
         it[KeyLastPresenceAt] = System.currentTimeMillis()
     }
 
+    /**
+     * 백업에서 취향 설정만 되돌린다.
+     * 차량 식별·등록 상태는 백업에 없으므로 여기서도 건드리지 않는다.
+     */
+    suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
+        it[KeyIdlePoll] = backup.idlePollSeconds
+        it[KeyActivePoll] = backup.activePollSeconds
+        it[KeyActiveWindow] = backup.activeWindowSeconds
+        it[KeyAutomation] = backup.automationEnabled
+        it[KeyVoiceAlwaysOn] = backup.voiceAlwaysOn
+        it[KeyStealthCharging] = backup.stealthCharging
+    }
+
+    /**
+     * 주차가 시작된 시각과 그때 배터리를 남긴다.
+     *
+     * 이 앱이 제일 걱정하는 건 방전이다 — "주차 12시간 동안 3% 줄었다"를 알려면
+     * 주차 시작 시점의 배터리가 있어야 하고, 그 값은 앱이 죽어도 살아남아야 한다.
+     */
+    suspend fun saveParkStart(batteryPercent: Int?) = edit {
+        it[KeyParkedAt] = System.currentTimeMillis()
+        if (batteryPercent != null) it[KeyParkedBattery] = batteryPercent else it.remove(KeyParkedBattery)
+    }
+
+    /** 주차 시작 시각과 그때 배터리. 주차 기록이 없으면 null */
+    suspend fun parkStart(): Pair<Long, Int?>? {
+        val prefs = context.dataStore.data.first()
+        val at = prefs[KeyParkedAt] ?: return null
+        return at to prefs[KeyParkedBattery]
+    }
+
     /** 마지막으로 본 탑승 상태와 본 시각. 남긴 적 없으면 null */
     suspend fun lastPresence(): Pair<Boolean, Long>? {
         val prefs = context.dataStore.data.first()
@@ -148,5 +179,7 @@ class SettingsStore(private val context: Context) {
         val KeyLastGeoAt = longPreferencesKey("last_geo_at")
         val KeyLastPresence = booleanPreferencesKey("last_presence")
         val KeyLastPresenceAt = longPreferencesKey("last_presence_at")
+        val KeyParkedAt = longPreferencesKey("parked_at")
+        val KeyParkedBattery = intPreferencesKey("parked_battery")
     }
 }

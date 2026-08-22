@@ -73,6 +73,11 @@ data class CarPlanTones(
     val states: Map<CarPart, PartState> = emptyMap(),
     /** 지금 열려 있는 문. 그 짝만 벌어져 그려진다 */
     val openDoors: Set<CarDoor> = emptySet(),
+    /**
+     * 공기압이 기준 아래인 바퀴. 그 자리만 적색 실선이 된다 —
+     * 정상인 바퀴는 파선 그대로라 이상한 짝이 눈에 먼저 든다
+     */
+    val lowTires: Set<com.wemade.teslamacro.domain.model.TirePosition> = emptySet(),
     val ink: Color,
     val inkMuted: Color,
     val inkFaint: Color,
@@ -337,10 +342,19 @@ private fun DrawScope.drawCarPlan(
             floatArrayOf(hairPx * 4, hairPx * 4)
         ),
     )
-    listOf(Wheels.front, Wheels.rear).forEach { axle ->
-        listOf(Wheels.top(axle), Wheels.bottom(axle)).forEach { n ->
+    val solidTire = Stroke(width = boldPx, cap = StrokeCap.Square)
+    listOf(Wheels.front to true, Wheels.rear to false).forEach { (axle, isFront) ->
+        // y가 작은 쪽이 좌측이다 (0=좌, 1=우)
+        listOf(Wheels.top(axle) to true, Wheels.bottom(axle) to false).forEach { (n, isLeft) ->
             val tire = plan.box(n[0], n[1], n[2], n[3])
-            drawRect(tones.inkMuted, tire.topLeft, tire.size, style = hidden)
+            val position = tirePositionOf(isFront, isLeft)
+            // 공기압이 빠진 바퀴는 덮인 부품이 아니라 "지금 봐야 할 것"이다.
+            // 파선을 굵은 실선 적색으로 바꿔 그 자리만 튀게 한다
+            if (position in tones.lowTires) {
+                drawRect(tones.alert, tire.topLeft, tire.size, style = solidTire)
+            } else {
+                drawRect(tones.inkMuted, tire.topLeft, tire.size, style = hidden)
+            }
         }
         // 휠하우스 개구부 — 차체선 위 두 점에 짧은 턱
         listOf(0.005f, 0.995f).forEach { sideY ->
@@ -548,6 +562,17 @@ private fun DrawScope.drawSeat(
  * 노즈가 왼쪽이다. 가로 화면에서 세로로 세우면 폭이 너무 좁아져
  * 캐빈 안에 아무것도 기입할 수 없다.
  */
+/** 축·좌우를 타이어 자리로 옮긴다 */
+private fun tirePositionOf(
+    isFront: Boolean,
+    isLeft: Boolean,
+): com.wemade.teslamacro.domain.model.TirePosition = when {
+    isFront && isLeft -> com.wemade.teslamacro.domain.model.TirePosition.FRONT_LEFT
+    isFront -> com.wemade.teslamacro.domain.model.TirePosition.FRONT_RIGHT
+    isLeft -> com.wemade.teslamacro.domain.model.TirePosition.REAR_LEFT
+    else -> com.wemade.teslamacro.domain.model.TirePosition.REAR_RIGHT
+}
+
 private fun bodyPath(plan: Rect): Path = Path().apply {
     // 앞을 실제로 좁힌다. 앞뒤 곡률 차이만으론 실기기에서 그냥 둥근 사각형으로 읽혔다 —
     // 노즈 앞면이 최대폭의 56%까지 좁아져야 "앞"으로 보인다.

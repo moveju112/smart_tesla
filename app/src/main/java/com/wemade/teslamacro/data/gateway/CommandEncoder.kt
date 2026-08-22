@@ -10,6 +10,7 @@ import com.wemade.teslamacro.domain.command.ClimateKeeperMode
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
+import com.wemade.teslamacro.domain.model.StateCategory
 
 /** 명령이 어느 도메인으로 가는지 + 실제 페이로드 */
 sealed interface EncodedCommand {
@@ -217,34 +218,44 @@ object CommandEncoder {
         is VehicleCommand.Wake -> rke(Vcsec.RKEAction_E.RKE_ACTION_WAKE_VEHICLE)
     }
 
-    /** 상태 읽기 요청도 인포테인먼트 액션이다 */
-    fun encodeClimateStateRequest(): CarServer.Action = wrap(
-        CarServer.VehicleAction.newBuilder()
-            .setGetVehicleData(
-                CarServer.GetVehicleData.newBuilder()
-                    .setGetClimateState(CarServer.GetClimateState.newBuilder())
-            )
-            .build()
-    )
+    /**
+     * 상태 읽기 요청. 여러 카테고리를 한 요청에 담을 수 있다 —
+     * `GetVehicleData`는 `Get*State`들을 동시에 들고 갈 수 있는 구조다.
+     *
+     * 왕복이 줄면 폴링 한 사이클이 그만큼 빨라진다. 다만 **차는 응답을 못 자른다** —
+     * 너무 많이 담으면 차가 RESPONSE_MTU_EXCEEDED를 돌려주므로,
+     * 게이트웨이가 그 신호를 보고 하나씩 읽기로 물러선다.
+     *
+     * VCSEC으로 읽는 카테고리(차체·도어)는 여기 담기지 않는다 — 도메인이 다르다.
+     */
+    fun encodeVehicleDataRequest(categories: Set<StateCategory>): CarServer.Action {
+        val data = CarServer.GetVehicleData.newBuilder()
+        categories.forEach { category ->
+            when (category) {
+                StateCategory.CLIMATE ->
+                    data.setGetClimateState(CarServer.GetClimateState.newBuilder())
 
-    /** 기어·속도·주행거리. PARKED 조건이 이 값을 쓴다 */
-    fun encodeDriveStateRequest(): CarServer.Action = wrap(
-        CarServer.VehicleAction.newBuilder()
-            .setGetVehicleData(
-                CarServer.GetVehicleData.newBuilder()
-                    .setGetDriveState(CarServer.GetDriveState.newBuilder())
-            )
-            .build()
-    )
+                StateCategory.DRIVE ->
+                    data.setGetDriveState(CarServer.GetDriveState.newBuilder())
 
-    fun encodeChargeStateRequest(): CarServer.Action = wrap(
-        CarServer.VehicleAction.newBuilder()
-            .setGetVehicleData(
-                CarServer.GetVehicleData.newBuilder()
-                    .setGetChargeState(CarServer.GetChargeState.newBuilder())
-            )
-            .build()
-    )
+                StateCategory.CHARGE ->
+                    data.setGetChargeState(CarServer.GetChargeState.newBuilder())
+
+                StateCategory.TIRES ->
+                    data.setGetTirePressureState(CarServer.GetTirePressureState.newBuilder())
+
+                StateCategory.LOCATION ->
+                    data.setGetLocationState(CarServer.GetLocationState.newBuilder())
+
+                StateCategory.SOFTWARE ->
+                    data.setGetSoftwareUpdateState(CarServer.GetSoftwareUpdateState.newBuilder())
+
+                // VCSEC 도메인이라 이 요청에 담지 않는다
+                StateCategory.BODY_CONTROLLER, StateCategory.CLOSURES -> Unit
+            }
+        }
+        return wrap(CarServer.VehicleAction.newBuilder().setGetVehicleData(data).build())
+    }
 
     /** VCSEC 차체 상태 요청 — 차가 자고 있어도 응답한다 */
     fun encodeBodyControllerStateRequest(): Vcsec.UnsignedMessage =

@@ -29,6 +29,7 @@ import com.wemade.teslamacro.data.location.TabletLocation
 import com.wemade.teslamacro.data.nav.NaverNavigator
 import com.wemade.teslamacro.domain.macro.Condition
 import com.wemade.teslamacro.domain.macro.ConditionEvaluator
+import com.wemade.teslamacro.domain.macro.ForecastMetric
 import com.wemade.teslamacro.domain.macro.GeoPoint
 import com.wemade.teslamacro.service.MacroService
 import kotlinx.coroutines.launch
@@ -141,6 +142,8 @@ fun ConditionCard(
             is Condition.OnDays -> DayToggles(condition.days) { onChange(condition.copy(days = it)) }
 
             is Condition.NearLocation -> NearLocationEditor(condition, onChange)
+
+            is Condition.ForecastInRange -> ForecastEditor(condition, onChange)
         }
     }
 }
@@ -484,6 +487,56 @@ private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) ->
                 onChange = { onChange(rebuild(condition.signal, comparison, it)) },
             )
         }
+    }
+}
+
+/** 예보 조건 편집. 숫자 조건과 같은 형태지만 값의 출처가 차가 아니라 예보다 */
+@Composable
+private fun ForecastEditor(
+    condition: Condition.ForecastInRange,
+    onChange: (Condition) -> Unit,
+) {
+    val comparison = if (condition.gte != null) Comparison.GTE else Comparison.LTE
+    val value = condition.gte ?: condition.lte ?: 0.0
+    val range = when (condition.metric) {
+        ForecastMetric.RAIN_CHANCE -> 0.0 to 100.0
+        else -> -20.0 to 45.0
+    }
+    val step = if (condition.metric == ForecastMetric.RAIN_CHANCE) 10.0 else 1.0
+
+    Column {
+        ChipRow(
+            // 예보에 "사이"는 쓸 일이 없다 — 이상/이하 둘이면 충분하다
+            options = listOf(Comparison.GTE, Comparison.LTE),
+            selected = comparison,
+            label = { it.label },
+            onSelect = {
+                onChange(
+                    if (it == Comparison.GTE) {
+                        Condition.ForecastInRange(condition.metric, gte = value)
+                    } else {
+                        Condition.ForecastInRange(condition.metric, lte = value)
+                    }
+                )
+            },
+        )
+        Spacer(Modifier.height(Space.md))
+        NumberStepper(
+            value = value,
+            min = range.first,
+            max = range.second,
+            step = step,
+            unit = condition.metric.unit,
+            onChange = {
+                onChange(
+                    if (comparison == Comparison.GTE) {
+                        Condition.ForecastInRange(condition.metric, gte = it)
+                    } else {
+                        Condition.ForecastInRange(condition.metric, lte = it)
+                    }
+                )
+            },
+        )
     }
 }
 

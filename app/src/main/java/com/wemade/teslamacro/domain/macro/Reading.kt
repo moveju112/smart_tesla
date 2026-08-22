@@ -35,9 +35,11 @@ data class TimeContext(
 /** 위도·경도 한 쌍. 태블릿 GPS에서 온다 */
 data class GeoPoint(val latitude: Double, val longitude: Double)
 
-/** 한 번의 폴링 결과 = 차량 상태 + 그 시점의 시각 + (위치 조건을 쓸 때만) 태블릿 위치 */
+/** 한 번의 폴링 결과 = 차량 상태 + 그 시점의 시각 + (조건이 쓸 때만) 태블릿 위치·예보 */
 data class Reading(
     val snapshot: VehicleSnapshot,
     val time: TimeContext,
     val location: GeoPoint? = null,
+    /** 예보 조건을 쓰는 매크로가 있을 때만 채워진다. 차 상태가 아니라 밖에서 받아 온 값이다 */
+    val weather: WeatherForecast? = null,
 )

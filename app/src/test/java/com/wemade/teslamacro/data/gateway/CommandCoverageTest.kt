@@ -56,6 +56,8 @@ class CommandCoverageTest {
             isChargePortOpen = true,
             speedKph = 0f,
             rideMinutes = 12.0,
+            tirePressuresBar = com.wemade.teslamacro.domain.model.TirePosition.entries
+                .associateWith { 2.9f },
         )
         Signal.entries.forEach { signal ->
             val value: Any? = when (signal.kind) {

@@ -3,6 +3,7 @@ package com.wemade.teslamacro.domain.gateway
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import com.wemade.teslamacro.domain.model.overlay
 import kotlinx.coroutines.flow.StateFlow
 
 /** 연결 진행 상태. 화면은 이 값만 보고 그린다 */
@@ -66,4 +67,18 @@ interface VehicleGateway {
 
     /** 상태 한 묶음을 읽는다. 응답 크기 제한 때문에 카테고리는 하나씩만 요청한다 */
     suspend fun read(category: StateCategory): Result<VehicleSnapshot>
+
+    /**
+     * 여러 상태를 한 번에 읽는다. 구현이 가능하면 한 왕복으로 묶고,
+     * 아니면 하나씩 읽어 합친다 — 어느 쪽이든 결과는 합쳐진 스냅샷 하나다.
+     */
+    suspend fun readBundle(categories: Set<StateCategory>): Result<VehicleSnapshot> {
+        var merged = VehicleSnapshot.Empty
+        var any = false
+        categories.forEach { category ->
+            read(category).getOrNull()?.let { merged = merged.overlay(it); any = true }
+        }
+        return if (any) Result.success(merged)
+        else Result.failure(IllegalStateException("상태를 하나도 읽지 못했어요"))
+    }
 }

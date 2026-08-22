@@ -3,6 +3,8 @@ package com.wemade.teslamacro.feature.settings
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wemade.teslamacro.data.backup.BackupFile
+import com.wemade.teslamacro.data.backup.toBackup
 import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.update.AppUpdater
@@ -10,7 +12,11 @@ import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.di.AppContainer
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -110,6 +116,62 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.settingsStore.setVoiceAlwaysOn(false)
             container.voiceModelStore.remove()
+        }
+    }
+
+    /** 마지막 백업 결과. 사람이 성공 여부를 알아야 다시 시도할지 판단한다 */
+    private val _backupMessage = MutableStateFlow<String?>(null)
+    val backupMessage: StateFlow<String?> = _backupMessage.asStateFlow()
+
+    fun clearBackupMessage() {
+        _backupMessage.value = null
+    }
+
+    /**
+     * 매크로와 취향 설정을 사용자가 고른 파일로 내보낸다.
+     * 차량 식별자와 등록 상태는 담기지 않는다 — [BackupFile] 참조.
+     */
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            val result = runCatching {
+                val backup = BackupFile(
+                    createdAtMillis = System.currentTimeMillis(),
+                    appVersion = com.wemade.teslamacro.BuildConfig.VERSION_NAME,
+                    macros = container.ruleStore.rules.value,
+                    settings = container.settingsStore.settings.first().toBackup(),
+                )
+                withContext(Dispatchers.IO) {
+                    container.appContext.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                        out.write(BackupFile.json.encodeToString(BackupFile.serializer(), backup).toByteArray())
+                    } ?: error("파일을 열지 못했어요")
+                }
+                backup.macros.size
+            }
+            _backupMessage.value = result.fold(
+                onSuccess = { "매크로 ${it}개를 내보냈어요" },
+                onFailure = { "내보내지 못했어요 · ${it.message}" },
+            )
+        }
+    }
+
+    /** 백업 파일에서 매크로와 취향 설정을 되돌린다. 차량 등록은 그대로 둔다 */
+    fun importBackup(uri: Uri) {
+        viewModelScope.launch {
+            val result = runCatching {
+                val text = withContext(Dispatchers.IO) {
+                    container.appContext.contentResolver.openInputStream(uri)?.use {
+                        it.readBytes().decodeToString()
+                    } ?: error("파일을 열지 못했어요")
+                }
+                val backup = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
+                container.ruleStore.restore(backup.macros)
+                container.settingsStore.restore(backup.settings)
+                backup.macros.size
+            }
+            _backupMessage.value = result.fold(
+                onSuccess = { "매크로 ${it}개를 되돌렸어요" },
+                onFailure = { "되돌리지 못했어요 · ${it.message}" },
+            )
         }
     }
 

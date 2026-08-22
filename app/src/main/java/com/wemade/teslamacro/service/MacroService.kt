@@ -5,11 +5,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.wemade.teslamacro.BuildConfig
@@ -44,6 +47,49 @@ class MacroService : LifecycleService() {
 
         // 새 버전 확인은 컨테이너·차량과 무관하니 따로 돈다
         checkForUpdate()
+        watchVehiclePower()
+    }
+
+    /**
+     * 차 시동이 걸리면 즉시 한 사이클 돈다.
+     *
+     * 이 태블릿은 차 USB에 물려 상시 거치돼 있다. 그래서 **전원이 들어오는 순간이
+     * 곧 차가 깬 순간**이다 — 폰이라면 못 쓸 신호지만 이 기기에서는 가장 정확하다.
+     * 안 그러면 깊은 유휴(최대 120초)를 다 자고서야 탑승을 알아챈다.
+     *
+     * 동적 등록이라 서비스가 사는 동안만 듣는다. 매니페스트에 걸면 앱이 죽어도
+     * 깨어나지만, 이 앱은 어차피 FGS로 상주하므로 그 복잡도를 살 이유가 없다.
+     */
+    private fun watchVehiclePower() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_POWER_CONNECTED)
+            addAction(Intent.ACTION_POWER_DISCONNECTED)
+        }
+        ContextCompat.registerReceiver(
+            this,
+            powerReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
+
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val app = application as? TeslaMacroApplication ?: return
+            if (!app.ready.value) return
+            when (intent.action) {
+                // 시동 = 차가 깼다. 낡은 화면으로 사람을 맞이하지 않는다
+                Intent.ACTION_POWER_CONNECTED -> {
+                    com.wemade.teslable.DiagLog.add("차량 전원 연결 — 즉시 상태 확인")
+                    app.container.poller.nudge()
+                }
+                // 시동 꺼짐도 상태가 바뀐 순간이다 — 잠금·탑승을 한 번 확인하고 조용해진다
+                Intent.ACTION_POWER_DISCONNECTED -> {
+                    com.wemade.teslable.DiagLog.add("차량 전원 끊김 — 마지막 상태 확인")
+                    app.container.poller.nudge()
+                }
+            }
+        }
     }
 
     /** 하루 한 번 새 버전을 확인하고, 이번에 찾았으면 알림으로 알린다 */
@@ -127,6 +173,7 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(powerReceiver) }
         (application as TeslaMacroApplication).container.let {
             it.poller.stop()
             it.stealthCharge.stop()

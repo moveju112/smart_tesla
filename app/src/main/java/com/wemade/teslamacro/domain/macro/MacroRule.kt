@@ -105,6 +105,19 @@ sealed interface Condition {
         val longitude: Double? = null,
         val radiusMeters: Int = 400,
     ) : Condition
+
+    /**
+     * 오늘 예보가 범위 안일 때.
+     *
+     * 차의 외기온은 지금만 말한다 — "내일 아침 영하면 예열"처럼 미리 움직이려면
+     * 앞을 보는 값이 필요하다. 예보를 못 받아 왔으면 충족되지 않는다 (fail-closed).
+     */
+    @Serializable @SerialName("forecast")
+    data class ForecastInRange(
+        val metric: ForecastMetric,
+        val gte: Double? = null,
+        val lte: Double? = null,
+    ) : Condition
 }
 
 /** 매크로가 순서대로 실행하는 한 걸음 */
@@ -196,6 +209,8 @@ fun Trigger.signals(): List<Signal> = when (this) {
 fun Condition.signals(): List<Signal> = when (this) {
     is Condition.InRange -> listOf(signal)
     is Condition.SignalIs -> listOf(signal)
-    // 시간·위치 조건은 차량이 아니라 태블릿에서 온다
-    is Condition.TimeWindow, is Condition.OnDays, is Condition.NearLocation -> emptyList()
+    // 시간·위치·예보 조건은 차량이 아니라 태블릿과 바깥에서 온다
+    is Condition.TimeWindow, is Condition.OnDays, is Condition.NearLocation,
+    is Condition.ForecastInRange,
+    -> emptyList()
 }

@@ -332,8 +332,10 @@ private fun VinPrivacyNotice() {
         Spacer(Modifier.height(Space.sm))
         // 네 줄이 결국 같은 말을 반복했다. 서로 다른 사실 세 가지만 남긴다
         NoticeLine("차량 연동 목적으로만 사용합니다")
-        NoticeLine("이 앱은 인터넷을 사용하지 않습니다")
-        NoticeLine("외부에 저장되지 않습니다")
+        // "인터넷을 안 쓴다"고 적어뒀었는데 이제 거짓이다 — 날씨·단속 안내·앱 업데이트가
+        // 망을 탄다. 차 제어만은 여전히 BLE 직통이라는 사실로 바꿔 적는다
+        NoticeLine("차량 제어는 BLE로 직접 합니다")
+        NoticeLine("VIN은 외부로 나가지 않습니다")
     }
 }
 

@@ -64,4 +64,46 @@ class WideFontScaleTest {
             }
         }
     }
+
+    /**
+     * 설정의 중분류 목차 네 칸 + 글자 확대.
+     *
+     * 목차는 `weight(1f)` 균등 분할에 `maxLines = 1`이라, 배율이 오르면
+     * 글자가 잘리거나 말줄임이 된다 — 그 순간 어느 칸인지 못 읽는다.
+     * 기입 치수와 같은 이유로 여기도 **값이 다 들어찬 상태**로 찍는다.
+     */
+    @Test
+    fun `F3 설정 목차 - 글자 확대`() {
+        paparazzi.snapshot("F3-settings-fontscale") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    settings = com.wemade.teslamacro.data.settings.AppSettings(
+                        vin = "5YJS0000000000000",
+                        vehicleName = "내 테슬라",
+                        hudOverlay = true,
+                        safeDrive = true,
+                    ),
+                    onAutomationChange = {},
+                    onIdlePollChange = {},
+                    onActivePollChange = {},
+                    onActiveWindowChange = {},
+                    onUnpair = {},
+                    onStartPairing = {},
+                    battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                        unrestricted = false,
+                        onOpenSettings = {},
+                    ),
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {},
+                        onHudOverlayChange = {},
+                        safeDriveAvailable = true,
+                        installed = setOf("NAVER", "KAKAO", "TMAP"),
+                        overlayPermitted = false,
+                        locationPermitted = false,
+                    ),
+                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                )
+            }
+        }
+    }
 }

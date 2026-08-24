@@ -24,6 +24,9 @@ object DiagLog {
         val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         // 최근 것만 남긴다. 오래 켜둬도 메모리를 먹지 않게
         _lines.update { (it + "$time $message").takeLast(MAX_LINES) }
+        // 화면 버퍼에만 있으면 개발 중에 adb로 볼 길이 없다. 같은 줄을 logcat에도 흘린다 —
+        // 태그 하나로 필터되고, 실기기에서도 붙여서 볼 수 있다
+        android.util.Log.i(TAG, message)
     }
 
     /** 복사용 전체 덤프 */
@@ -34,4 +37,7 @@ object DiagLog {
     }
 
     private const val MAX_LINES = 300
+
+    /** logcat 필터용 태그. `adb logcat -s SmartTesla` 하나면 앱의 진단 로그만 본다 */
+    private const val TAG = "SmartTesla"
 }

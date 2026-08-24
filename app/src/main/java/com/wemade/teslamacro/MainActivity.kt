@@ -87,7 +87,16 @@ class MainActivity : ComponentActivity() {
         // 화면에 앱이 나온 순간(대개 탑승 직후)은 사용자가 최신 값을 기대하는 순간이다.
         // 깊은 유휴 120초를 기다리지 않고 폴러를 바로 깨운다
         (application as TeslaMacroApplication).let { app ->
-            if (app.ready.value) app.container.poller.nudge()
+            if (!app.ready.value) return@let
+            app.container.poller.nudge()
+
+            // 부팅 직후 시작된 서비스는 앱이 앞에 나오기 전까지 위치를 못 받는다 —
+            // 백그라운드에서 시작된 포그라운드 서비스에는 while-in-use 권한이 없다.
+            // 백그라운드 위치 권한을 더 받는 대신, 앞에 나온 지금 다시 세운다
+            if (app.container.safeDrive.state.value.stalled) {
+                com.wemade.teslable.DiagLog.add("앱이 앞으로 나와 안전운전 안내를 다시 세웁니다")
+                app.container.notifyLocationPermissionChanged()
+            }
         }
     }
 
@@ -296,6 +305,33 @@ private fun AppRoot(factory: ViewModelFactory) {
                     ) { uri -> uri?.let(settingsViewModel::importBackup) }
                     val backupMessage by settingsViewModel.backupMessage.collectAsState()
 
+                    // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
+                    val overlayPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
+                        android.provider.Settings.canDrawOverlays(context)
+                    }
+
+                    // 안드로이드 12부터 BLE는 위치 권한 없이도 돌아서, 첫 실행 요청 목록에
+                    // 위치가 빠져 있다. 그 결과 HUD·과속 안내는 GPS를 한 번도 못 받았다 —
+                    // 주행 기능을 켜는 이 자리에서 따로 받는다
+                    // 권한 대화상자는 액티비티를 잠깐 내리므로 돌아올 때 다시 읽힌다
+                    val locationPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
+                        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                    }
+                    val askLocation = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        if (granted) {
+                            // GPS 스트림은 구독하는 순간 권한을 본다 — 지금 알려주지 않으면
+                            // 토글을 껐다 켜기 전까지 HUD도 과속 판정도 계속 멈춘 채다
+                            (context.applicationContext as TeslaMacroApplication)
+                                .container.notifyLocationPermissionChanged()
+                            // 서비스의 포그라운드 타입에 location을 붙이려면 다시 승격해야 한다.
+                            // 실패해도 위치 신호는 이미 갔으니 감시는 계속된다
+                            runCatching { MacroService.start(context) }
+                        }
+                    }
+
                     SettingsScreen(
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
@@ -336,6 +372,33 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onImport = { openBackup.launch(arrayOf("application/json", "text/*")) },
                             message = backupMessage,
                             onDismissMessage = settingsViewModel::clearBackupMessage,
+                        ),
+                        navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                            onAppChange = settingsViewModel::setNavigatorApp,
+                            onHudOverlayChange = settingsViewModel::setHudOverlay,
+                            onSafeDriveChange = settingsViewModel::setSafeDrive,
+                            onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
+                            onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
+                            safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
+                            installed = remember { settingsViewModel.installedNavigators() },
+                            // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
+                            // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
+                            overlayPermitted = overlayPermitted,
+                            locationPermitted = locationPermitted,
+                            onRequestLocationPermission = {
+                                askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                            },
+                            onRequestOverlayPermission = {
+                                // 매크로 편집기의 지도 띄우기와 같은 인텐트다
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:${context.packageName}"),
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
                         ),
                     )
                 }

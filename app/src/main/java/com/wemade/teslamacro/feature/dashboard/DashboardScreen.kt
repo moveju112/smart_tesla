@@ -518,6 +518,20 @@ private fun DimensionPanel(
         state.vehicleSoftware?.let {
             DimensionRow(label = "차량 SW", value = it)
         }
+        // 달리는 중에만. 세워둔 차에 "0 km/h"를 띄우면 읽히지 않는 배경이 된다
+        state.speedKph?.let {
+            DimensionRow(label = "속도", value = "$it km/h")
+        }
+        // 다가오는 단속·보호구역. 오버레이는 다른 앱 위에만 뜨니 여기에도 같은 말을 적는다.
+        // 적색은 이 한 줄에만 든다 — 속도까지 같이 물들이면 기입란에 붉은 줄이 둘이 되고,
+        // 공기압 경보까지 겹치면 "지금 봐야 할 것"이 셋이 되어 아무것도 안 보인다
+        if (state.safetyLabel != null && state.safetyValue != null) {
+            DimensionRow(
+                label = state.safetyLabel,
+                value = state.safetyValue,
+                tone = if (state.safetyAlarming) T.Danger else null,
+            )
+        }
         // 주차가 얼마나 됐고 그동안 얼마나 빠졌는지. 방전이 이 앱의 가장 큰 걱정이다
         state.parkSummary?.let {
             DimensionRow(label = "주차", value = it)
@@ -1223,6 +1237,14 @@ data class DashboardUiState(
     val vehicleSoftware: String? = null,
     /** 주차 경과와 그동안의 배터리 소모. 타고 있으면 null */
     val parkSummary: String? = null,
+    /** 달리는 중일 때만 채운다. 차가 보고한 속도라 GPS HUD보다 갱신이 느리다 */
+    val speedKph: Int? = null,
+    /** 다가오는 단속·보호구역의 종류(라벨 자리). 안내할 게 없으면 null */
+    val safetyLabel: String? = null,
+    /** 그 제한속도와 남은 거리(값 자리) */
+    val safetyValue: String? = null,
+    /** 그 경보가 지금 지켜야 할 제한속도를 넘긴 상태인가 — 넘겼을 때만 적색 */
+    val safetyAlarming: Boolean = false,
     val automationEnabled: Boolean = true,
     val runningMacroCount: Int = 0,
     /** 주행 가능 거리(km). 배터리 %만으론 실감이 안 나 함께 보여준다 */

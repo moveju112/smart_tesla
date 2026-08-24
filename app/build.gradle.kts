@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +7,13 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.paparazzi)
 }
+
+// 카카오내비 앱 키는 소스에 박지 않는다. local.properties(git 제외)에서 읽어
+// BuildConfig로 넘긴다 — 없으면 빈 문자열이고, 앱은 "키 없음" 상태로 조용히 돈다
+val kakaoNativeAppKey: String = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}.getProperty("kakaoNativeAppKey").orEmpty()
 
 android {
     namespace = "com.wemade.teslamacro"
@@ -14,8 +23,10 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 114
-        versionName = "0.9.1"
+        versionCode = 115
+        versionName = "0.9.2"
+
+        buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
     }
 
     // 음성 인식 네이티브 라이브러리가 ABI마다 10MB씩 붙는다.
@@ -51,6 +62,10 @@ android {
 
 dependencies {
     implementation(project(":tesla-ble"))
+
+    // 카카오내비 SDK — 과속·구간단속·보호구역 안내의 유일한 출처.
+    // 공개 저장소라 자격증명은 없고, 앱 키만 local.properties에서 온다
+    implementation("com.kakaomobility.knsdk:knsdk:1.12.8-hotfix03")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

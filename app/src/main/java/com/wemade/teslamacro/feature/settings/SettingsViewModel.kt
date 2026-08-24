@@ -119,6 +119,41 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    fun setNavigatorApp(name: String) {
+        viewModelScope.launch { container.settingsStore.setNavigatorApp(name) }
+    }
+
+    fun setHudOverlay(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setHudOverlay(enabled) }
+    }
+
+    fun setSafeDrive(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSafeDrive(enabled) }
+    }
+
+    /** 경보를 소리로도 알릴지 */
+    fun setSafeDriveSound(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSafeDriveSound(enabled) }
+    }
+
+    /** 경보 음량 1~3 */
+    fun setSafeDriveVolume(level: Int) {
+        viewModelScope.launch { container.settingsStore.setSafeDriveVolume(level) }
+    }
+
+    /** 카카오내비 앱 키가 꽂혀 있는가. 없으면 과속·단속 안내를 켤 수 없다 */
+    fun safeDriveAvailable(): Boolean = container.safeDrive.hasKey
+
+    /** 이 기기에 실제로 깔린 내비 앱. 안 깔린 걸 고르면 매크로가 실행 순간에 실패한다 */
+    fun installedNavigators(): Set<String> =
+        com.wemade.teslamacro.data.nav.NavigatorApp.entries.filterTo(mutableSetOf()) { app ->
+            app.packages.any { pkg ->
+                runCatching {
+                    container.appContext.packageManager.getPackageInfo(pkg, 0)
+                }.isSuccess
+            }
+        }.mapTo(mutableSetOf()) { it.name }
+
     /** 마지막 백업 결과. 사람이 성공 여부를 알아야 다시 시도할지 판단한다 */
     private val _backupMessage = MutableStateFlow<String?>(null)
     val backupMessage: StateFlow<String?> = _backupMessage.asStateFlow()

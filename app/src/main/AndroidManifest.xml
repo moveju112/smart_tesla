@@ -46,10 +46,28 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
-        <!-- 네이버 지도 길안내 스킴 -->
+        <!-- 내비 앱 4종. 패키지를 못 보면 "설치 안 됨"으로 잘못 판정한다 (Android 11+) -->
+        <package android:name="com.nhn.android.nmap" />
+        <package android:name="com.locnall.KimGiSa" />
+        <package android:name="com.skt.tmap.ku" />
+        <package android:name="com.skt.skaf.l001mtm091" />
+        <package android:name="com.google.android.apps.maps" />
+        <!-- 길안내 스킴 -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="nmap" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="kakaonavi" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tmap" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="google.navigation" />
         </intent>
     </queries>
 

@@ -31,42 +31,70 @@ class NaverNavigator(private val context: Context) {
     /** 권한이 이미 있는가. 편집 화면이 안내 문구를 띄울지 판단할 때 쓴다 */
     val hasOverlayPermission: Boolean get() = Settings.canDrawOverlays(context)
 
-    // 1. 권한 확인 → 2. 주소를 좌표로 → 3. 네이버 지도 길안내 인텐트
-    suspend fun navigate(name: String, address: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                if (!hasOverlayPermission) {
-                    error("'다른 앱 위에 표시' 권한이 없어요.\n매크로 편집에서 허용해 주세요")
-                }
-                if (address.isBlank()) error("주소가 비어 있어요")
+    // 1. 권한 확인 → 2. 주소를 좌표로 → 3. 고른 내비 앱에 길안내 인텐트
+    suspend fun navigate(
+        name: String,
+        address: String,
+        app: NavigatorApp = NavigatorApp.Default,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!hasOverlayPermission) {
+                error("'다른 앱 위에 표시' 권한이 없어요.\n매크로 편집에서 허용해 주세요")
+            }
+            if (address.isBlank()) error("주소가 비어 있어요")
 
-                // 좌표는 캐시를 먼저 본다. 지오코딩은 인터넷을 타서 실측 400~500ms가 걸리고,
-                // 지하주차장처럼 망이 없으면 아예 실패한다 — 탑승 순간에 둘 다 치명적이다.
-                // 캐시 키가 주소 문자열이라 주소를 고치면 자동으로 다시 푼다
-                //   (이사·오타 수정이 먹어야 한다는 원래 의도 유지)
-                val point = cachedPoint(address)
-                    ?: geocode(address)?.also { cachePoint(address, it) }
-                    ?: error("주소를 좌표로 못 바꿨어요: $address")
-                val label = name.ifBlank { address }
-                val uri = Uri.parse(
-                    "nmap://navigation?dlat=${point.latitude}&dlng=${point.longitude}" +
-                        "&dname=${Uri.encode(label)}&appname=${context.packageName}"
-                )
-                launchFromBackground(
-                    Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-                com.wemade.teslable.DiagLog.add("네이버 지도 안내 시작 → $label")
-            }.recoverCatching { throwable ->
-                // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
-                // 잘못 기록되고, 취소가 상위로 전파되지 않는다
-                if (throwable is kotlinx.coroutines.CancellationException) throw throwable
-                // 네이버 지도가 없을 때의 안내를 사람이 읽을 말로 바꾼다
-                if (throwable is android.content.ActivityNotFoundException) {
-                    error("네이버 지도 앱이 설치되어 있지 않아요")
-                }
-                throw throwable
-            }.map { }
+            // 좌표는 캐시를 먼저 본다. 지오코딩은 인터넷을 타서 실측 400~500ms가 걸리고,
+            // 지하주차장처럼 망이 없으면 아예 실패한다 — 탑승 순간에 둘 다 치명적이다.
+            // 캐시 키가 주소 문자열이라 주소를 고치면 자동으로 다시 푼다
+            //   (이사·오타 수정이 먹어야 한다는 원래 의도 유지)
+            val point = cachedPoint(address)
+                ?: geocode(address)?.also { cachePoint(address, it) }
+                ?: error("주소를 좌표로 못 바꿨어요: $address")
+            val label = name.ifBlank { address }
+
+            val installed = installedPackage(app)
+                ?: error("${app.label} 앱이 설치되어 있지 않아요")
+            launchAny(app, installed, point.latitude, point.longitude, label)
+            com.wemade.teslable.DiagLog.add("${app.label} 안내 시작 → $label")
+        }.recoverCatching { throwable ->
+            // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
+            // 잘못 기록되고, 취소가 상위로 전파되지 않는다
+            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+            throw throwable
+        }.map { }
+    }
+
+    /** 설치된 패키지 중 첫 번째. 티맵처럼 패키지가 둘인 앱이 있다 */
+    private fun installedPackage(app: NavigatorApp): String? = app.packages.firstOrNull { pkg ->
+        runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+    }
+
+    /**
+     * URI 후보를 순서대로 던진다.
+     *
+     * 같은 앱도 버전에 따라 받는 스킴이 갈린다 — 하나만 박아두면 앱이 조용히 안 뜨고
+     * 로그에는 성공으로 남는다. 대상 패키지를 지정해 다른 앱이 가로채는 것도 막는다.
+     */
+    private suspend fun launchAny(
+        app: NavigatorApp,
+        packageName: String,
+        latitude: Double,
+        longitude: Double,
+        label: String,
+    ) {
+        val candidates = app.uris(latitude, longitude, label, context.packageName)
+        var lastFailure: Throwable? = null
+        candidates.forEach { uri ->
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+                .setPackage(packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val handled = runCatching { launchFromBackground(intent) }
+                .onFailure { lastFailure = it }
+                .isSuccess
+            if (handled) return
         }
+        throw lastFailure ?: IllegalStateException("${app.label}가 길안내를 받지 못했어요")
+    }
 
     /**
      * 배경에서 다른 앱 화면을 띄운다.

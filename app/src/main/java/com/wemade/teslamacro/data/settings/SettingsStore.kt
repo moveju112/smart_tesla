@@ -56,6 +56,19 @@ data class AppSettings(
      * 기본 꺼짐. 켜면 충전이 느려지는 대가가 있다 (평균 전류가 내려가고 쉬는 구간이 생김).
      */
     val stealthCharging: Boolean = false,
+    /** 길안내를 넘길 내비 앱. 기기에 깔린 것 중 사용자가 고른다 */
+    val navigatorApp: String = "NAVER",
+    /** HUD 속도를 다른 앱 위에 띄울지. 끄면 제어 화면 안에만 나온다 */
+    val hudOverlay: Boolean = false,
+    /** 과속·구간단속·보호구역 안내. 켜면 주행 중 GPS와 망을 계속 쓴다 */
+    val safeDrive: Boolean = false,
+    /**
+     * 경보를 소리로도 알릴지. 기본 켜짐 —
+     * 주행 중엔 화면을 볼 수 없는 순간이 있고, 그때 침묵하면 경보가 없는 것과 같다.
+     */
+    val safeDriveSound: Boolean = true,
+    /** 경보 음량 1~3. 내비 음성과 겹쳐 들리므로 사람이 균형을 맞출 수 있어야 한다 */
+    val safeDriveVolume: Int = 2,
 ) {
     /** 차량을 특정할 수 있는가 (연결 시도 가능) */
     val isPaired: Boolean get() = vin.isNotBlank()
@@ -78,6 +91,11 @@ class SettingsStore(private val context: Context) {
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
             stealthCharging = prefs[KeyStealthCharging] ?: false,
+            navigatorApp = prefs[KeyNavigatorApp] ?: "NAVER",
+            hudOverlay = prefs[KeyHudOverlay] ?: false,
+            safeDrive = prefs[KeySafeDrive] ?: false,
+            safeDriveSound = prefs[KeySafeDriveSound] ?: true,
+            safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
         )
     }
 
@@ -91,6 +109,12 @@ class SettingsStore(private val context: Context) {
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
+    suspend fun setNavigatorApp(name: String) = edit { it[KeyNavigatorApp] = name }
+    suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
+    suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
+    suspend fun setSafeDriveSound(enabled: Boolean) = edit { it[KeySafeDriveSound] = enabled }
+    // 범위를 저장 직전에 한 번 가둔다 — 백업 파일이 손으로 고쳐져 들어올 수 있다
+    suspend fun setSafeDriveVolume(level: Int) = edit { it[KeySafeDriveVolume] = level.coerceIn(1, 3) }
 
     // 마지막으로 성공한 측위 좌표를 남긴다 — 다음 측위 실패 때 대체값으로 쓴다.
     // 태블릿은 차에 상주하므로 마지막 좌표가 곧 차의 위치다
@@ -124,6 +148,12 @@ class SettingsStore(private val context: Context) {
         it[KeyAutomation] = backup.automationEnabled
         it[KeyVoiceAlwaysOn] = backup.voiceAlwaysOn
         it[KeyStealthCharging] = backup.stealthCharging
+        // 옛 백업(version 1)엔 아래 값이 없다 — 그때는 BackupSettings의 기본값이 들어온다.
+        // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
+        it[KeyHudOverlay] = backup.hudOverlay
+        it[KeySafeDrive] = backup.safeDrive
+        it[KeySafeDriveSound] = backup.safeDriveSound
+        it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
     }
 
     /**
@@ -179,6 +209,11 @@ class SettingsStore(private val context: Context) {
         val KeyLastGeoAt = longPreferencesKey("last_geo_at")
         val KeyLastPresence = booleanPreferencesKey("last_presence")
         val KeyLastPresenceAt = longPreferencesKey("last_presence_at")
+        val KeyNavigatorApp = stringPreferencesKey("navigator_app")
+        val KeyHudOverlay = booleanPreferencesKey("hud_overlay")
+        val KeySafeDrive = booleanPreferencesKey("safe_drive")
+        val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")
+        val KeySafeDriveVolume = intPreferencesKey("safe_drive_volume")
         val KeyParkedAt = longPreferencesKey("parked_at")
         val KeyParkedBattery = intPreferencesKey("parked_battery")
     }

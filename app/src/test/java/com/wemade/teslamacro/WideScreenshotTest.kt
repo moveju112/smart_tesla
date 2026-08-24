@@ -13,6 +13,7 @@ import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.feature.dashboard.DashboardScreen
 import com.wemade.teslamacro.feature.dashboard.DashboardUiState
+import com.wemade.teslamacro.feature.settings.SettingsGroup
 import com.wemade.teslamacro.ui.nav.Destination
 import org.junit.Rule
 import org.junit.Test
@@ -112,13 +113,31 @@ class WideScreenshotTest {
         }
     }
 
+    // 설정은 중분류 4칸으로 갈렸다 — 한 장만 찍으면 나머지 세 칸은 아무도 본 적이 없게 된다.
+    // 실기기 폭에서 칸마다 카드가 접히거나 글자가 잘리는지는 여기서만 잡힌다
     @Test
-    fun `W5 설정`() {
-        paparazzi.snapshot("W5-settings") {
+    fun `W5 설정 - 주행`() = settingsSnapshot("W5-settings-driving", SettingsGroup.DRIVING)
+
+    @Test
+    fun `W5b 설정 - 자동화`() = settingsSnapshot("W5b-settings-automation", SettingsGroup.AUTOMATION)
+
+    @Test
+    fun `W5c 설정 - 차량`() = settingsSnapshot("W5c-settings-vehicle", SettingsGroup.VEHICLE)
+
+    @Test
+    fun `W5d 설정 - 기기`() = settingsSnapshot("W5d-settings-device", SettingsGroup.DEVICE)
+
+    /** 값이 다 들어찬 설정 화면 한 칸. 빈 상태만 찍으면 글자가 잘리는 걸 못 잡는다 */
+    private fun settingsSnapshot(name: String, group: SettingsGroup) {
+        paparazzi.snapshot(name) {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
                         vin = "5YJS0000000000000",
+                        vehicleName = "내 테슬라",
+                        vehicleAddress = "AA:BB:CC:DD:EE:FF",
+                        hudOverlay = true,
+                        safeDrive = true,
                     ),
                     onAutomationChange = {},
                     onIdlePollChange = {},
@@ -136,6 +155,20 @@ class WideScreenshotTest {
                         unrestricted = false,
                         onOpenSettings = {},
                     ),
+                    backup = com.wemade.teslamacro.feature.settings.BackupControls(
+                        onExport = {},
+                        onImport = {},
+                    ),
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {},
+                        onHudOverlayChange = {},
+                        safeDriveAvailable = true,
+                        installed = setOf("NAVER", "KAKAO", "TMAP"),
+                        // 권한이 빠진 모습이 가장 글자가 많다 — 잘림은 여기서 난다
+                        overlayPermitted = false,
+                        locationPermitted = false,
+                    ),
+                    initialGroup = group,
                 )
             }
         }
@@ -227,6 +260,11 @@ class WideScreenshotTest {
                         onImport = {},
                         message = "매크로 6개를 내보냈어요",
                     ),
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {},
+                        onHudOverlayChange = {},
+                        installed = setOf("NAVER", "KAKAO", "TMAP"),
+                    ),
                 )
             }
         }
@@ -244,6 +282,7 @@ class WideScreenshotTest {
                             com.wemade.teslamacro.domain.model.TirePosition.FRONT_RIGHT,
                         ),
                         tireWarning = "앞 우 2.1 bar",
+                        speedKph = 68,
                         vehicleSoftware = "설치 예약됨",
                     ),
                     onCommand = {},
@@ -254,4 +293,50 @@ class WideScreenshotTest {
         }
     }
 
+
+    // 단속 카메라가 다가오고 제한속도를 넘긴 상태. 기입란에 적색 한 줄이 서는지,
+    // 그 줄이 공기압 경보와 겹쳐 붉은 줄이 둘이 되지 않는지를 여기서 본다
+    @Test
+    fun `W10 과속 경보`() {
+        paparazzi.snapshot("W10-over-speed") {
+            AppFrame(Destination.Dashboard) {
+                DashboardScreen(
+                    state = wideState().copy(
+                        speedKph = 96,
+                        safetyLabel = "과속 단속",
+                        safetyValue = "80 · 320m",
+                        safetyAlarming = true,
+                        // 공기압 경보와 겹치는 순간이 실제로 있다 —
+                        // 기입란에 적색 줄이 둘 서는 모습을 눈으로 확인해 둔다
+                        lowTires = setOf(com.wemade.teslamacro.domain.model.TirePosition.REAR_LEFT),
+                        tireWarning = "뒤좌 2.1 bar",
+                    ),
+                    onCommand = {},
+                    onRetryConnect = {},
+                    onDismissError = {},
+                )
+            }
+        }
+    }
+
+    // 안내는 켜져 있는데 위성을 못 잡은 상태. "안내할 게 없다"와 구별돼야 한다 —
+    // 이걸 침묵으로 두면 사용자는 없는 안내를 믿는다
+    @Test
+    fun `W11 안전 안내 - 위치 없음`() {
+        paparazzi.snapshot("W11-safety-stalled") {
+            AppFrame(Destination.Dashboard) {
+                DashboardScreen(
+                    state = wideState().copy(
+                        speedKph = 62,
+                        safetyLabel = "안전 안내",
+                        safetyValue = "위치 없음",
+                        safetyAlarming = true,
+                    ),
+                    onCommand = {},
+                    onRetryConnect = {},
+                    onDismissError = {},
+                )
+            }
+        }
+    }
 }

@@ -37,6 +37,32 @@ class AppContainer(private val context: Context) {
     /** 매크로의 "지도 안내" 걸음을 처리한다 */
     val navigator = com.wemade.teslamacro.data.nav.NaverNavigator(context)
 
+    /** HUD 속도. 차량 폴링보다 빠르고 차를 안 깨운다 */
+    val speedMeter = com.wemade.teslamacro.data.location.SpeedMeter(context)
+
+    /**
+     * 위치 권한이 방금 바뀌었다는 신호.
+     *
+     * GPS 스트림은 **구독하는 순간** 권한을 본다 — 권한이 없으면 그 자리에서 닫히고,
+     * 나중에 사용자가 허용해도 아무도 다시 구독하지 않는다. 설정값은 그대로라
+     * 설정 흐름도 다시 흐르지 않는다. 그래서 "허용했다"를 흘려보낼 통로를 하나 둔다.
+     */
+    val locationPermissionRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** 사용자가 위치 권한 화면에서 돌아왔을 때 부른다. 값이 뭐든 바뀌기만 하면 된다 */
+    fun notifyLocationPermissionChanged() {
+        locationPermissionRevision.value += 1
+    }
+
+    /**
+     * 과속·구간단속·보호구역 안내. 앱 키는 local.properties에서 BuildConfig로 온다 —
+     * 키가 비어 있으면 스스로 비활성으로 남는다
+     */
+    val safeDrive = com.wemade.teslamacro.data.safety.SafeDriveGuide(
+        context.applicationContext as android.app.Application,
+        com.wemade.teslamacro.BuildConfig.KAKAO_NATIVE_APP_KEY,
+    )
+
     /** 매크로의 "출발지 근처" 조건용 태블릿 위치 */
     val tabletLocation = com.wemade.teslamacro.data.location.TabletLocation(context)
 
@@ -89,7 +115,17 @@ class AppContainer(private val context: Context) {
             scope = appScope,
         )
 
-        runner = MacroRunner(gateway, appScope, latestReading, navigator::navigate)
+        // 어느 내비로 보낼지는 실행 순간의 설정을 따른다 — 컨테이너 조립 시점에 굳히면
+        // 사용자가 설정을 바꿔도 재시작 전까지 옛 앱으로 나간다
+        runner = MacroRunner(
+            gateway, appScope, latestReading,
+            navigator = { name, address ->
+                val chosen = com.wemade.teslamacro.data.nav.NavigatorApp.of(
+                    settingsStore.settings.first().navigatorApp
+                )
+                navigator.navigate(name, address, chosen)
+            },
+        )
         poller = StatePoller(
             gateway, ruleStore, settingsStore, runner, latestReading,
             locationReader = ::readLocationWithFallback,

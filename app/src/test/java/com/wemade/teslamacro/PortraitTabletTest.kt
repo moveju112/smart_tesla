@@ -64,4 +64,41 @@ class PortraitTabletTest {
             }
         }
     }
+
+    /**
+     * 세로에서의 설정. 600dp는 `Pane.Medium`이라 여기도 2단인데,
+     * 중분류 목차 네 칸이 그 폭에서 접히지 않는지를 본 적이 없었다.
+     */
+    @Test
+    fun `V3 설정 - 세로`() {
+        paparazzi.snapshot("V3-settings-portrait") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    settings = com.wemade.teslamacro.data.settings.AppSettings(
+                        vin = "5YJS0000000000000",
+                        vehicleName = "내 테슬라",
+                        hudOverlay = true,
+                        safeDrive = true,
+                    ),
+                    onAutomationChange = {},
+                    onIdlePollChange = {},
+                    onActivePollChange = {},
+                    onActiveWindowChange = {},
+                    onUnpair = {},
+                    onStartPairing = {},
+                    battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                        unrestricted = false,
+                        onOpenSettings = {},
+                    ),
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {},
+                        onHudOverlayChange = {},
+                        safeDriveAvailable = true,
+                        installed = setOf("NAVER", "KAKAO", "TMAP"),
+                    ),
+                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                )
+            }
+        }
+    }
 }

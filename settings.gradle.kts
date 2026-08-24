@@ -17,6 +17,9 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // 카카오내비 SDK(KNSDK) — 자격증명 없이 받는 공개 저장소다
+        maven { url = uri("https://devrepo.kakaomobility.com/repository/kakao-mobility-android-knsdk-public/") }
+        maven { url = uri("https://www.jitpack.io") }
     }
 }
 

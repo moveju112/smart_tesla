@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  진단 로그를 공유 시트로 내보낼 때만 쓴다.
+  캐시의 logs 폴더 하나만 연다 — 내부 저장소 전체를 열면 VIN이 든 설정 파일까지 나간다.
+-->
+<paths>
+    <cache-path name="logs" path="logs/" />
+</paths>

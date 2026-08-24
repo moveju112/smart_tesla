@@ -140,6 +140,20 @@
             </intent-filter>
         </receiver>
 
+        <!--
+          진단 로그 파일을 공유 시트에 넘기기 위한 통로.
+          텍스트로 붙여 보내면 긴 로그가 메신저에서 잘린다 — 파일로 보낸다.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

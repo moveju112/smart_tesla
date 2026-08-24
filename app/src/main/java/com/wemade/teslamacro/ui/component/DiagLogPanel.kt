@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -68,14 +69,15 @@ fun DiagLogPanel(
                 small = true,
                 enabled = lines.isNotEmpty(),
                 onClick = {
-                    // 공유 시트로 바로 보낸다 — 복사→메신저→붙여넣기 삼단을 한 번으로
-                    val text = listOf(shareExtra(), DiagLog.dump())
+                    // 공유 시트로 바로 보낸다 — 복사→메신저→붙여넣기 삼단을 한 번으로.
+                    // 파일에 남은 것까지 전부 싣는다: 화면 버퍼만 보내면
+                    // 재시작 전 기록이 빠지는데 원인은 대개 그 앞에 있다
+                    val text = listOf(shareExtra(), DiagLog.dumpAll())
                         .filter { it.isNotBlank() }
                         .joinToString("\n\n")
-                    val send = Intent(Intent.ACTION_SEND)
-                        .setType("text/plain")
-                        .putExtra(Intent.EXTRA_TEXT, text)
-                    context.startActivity(Intent.createChooser(send, "진단 로그 보내기"))
+                    context.startActivity(
+                        Intent.createChooser(shareIntentFor(context, text), "진단 로그 보내기")
+                    )
                 },
             )
             TButton(
@@ -84,7 +86,7 @@ fun DiagLogPanel(
                 fillWidth = false,
                 small = true,
                 enabled = lines.isNotEmpty(),
-                onClick = { clipboard.setText(AnnotatedString(DiagLog.dump())) },
+                onClick = { clipboard.setText(AnnotatedString(DiagLog.dumpAll())) },
             )
             TButton(
                 text = "지우기",
@@ -100,9 +102,16 @@ fun DiagLogPanel(
         if (!showLines) {
             // 줄을 늘어놓지 않는다 — 사용자가 읽을 내용이 아니고, 여기가 화면을 제일 많이 먹었다.
             // 공유 한 번으로 전체가 나가므로 몇 줄 쌓였는지만 알려준다
+            // 화면 줄 수만 적으면 "300줄뿐"으로 읽힌다 — 파일에 얼마나 쌓였는지가
+            // 공유로 실제 나가는 양이다
+            val storedKb = remember(lines.size) { DiagLog.storedBytes() / 1024 }
             Text(
-                text = if (lines.isEmpty()) "아직 기록이 없어요."
-                else "기록 ${lines.size}줄. 문제가 생기면 공유를 눌러 보내주세요.",
+                text = when {
+                    lines.isEmpty() && storedKb <= 0 -> "아직 기록이 없어요."
+                    storedKb > 0 -> "기록 ${lines.size}줄 (파일 ${storedKb}KB). " +
+                        "문제가 생기면 공유를 눌러 파일로 보내주세요."
+                    else -> "기록 ${lines.size}줄. 문제가 생기면 공유를 눌러 보내주세요."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -137,3 +146,36 @@ fun DiagLogPanel(
 }
 
 private const val VISIBLE_LINES = 14
+
+/**
+ * 로그를 파일 첨부로 내보내는 인텐트.
+ *
+ * 텍스트로 붙여 보내면 긴 로그가 메신저에서 **말없이 잘린다** —
+ * 받은 쪽은 잘린 줄 모르고 원인을 엉뚱한 데서 찾는다.
+ * 파일이 안 되는 기기·앱을 위해 본문에도 같은 내용을 함께 싣는다.
+ */
+private fun shareIntentFor(context: android.content.Context, text: String): Intent {
+    val base = Intent(Intent.ACTION_SEND)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_SUBJECT, "Smart Tesla 진단 로그")
+        .putExtra(Intent.EXTRA_TEXT, text)
+
+    val uri = runCatching {
+        // 공유 전용 폴더 하나만 FileProvider에 열려 있다 — 내부 저장소 전체를 열면
+        // VIN이 든 설정 파일까지 나갈 수 있다
+        val dir = java.io.File(context.cacheDir, "logs").apply { mkdirs() }
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
+            .format(java.util.Date())
+        val file = java.io.File(dir, "smart-tesla-$stamp.txt")
+        file.writeText(text)
+        androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file,
+        )
+    }.getOrNull() ?: return base
+
+    return base
+        .putExtra(Intent.EXTRA_STREAM, uri)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+}

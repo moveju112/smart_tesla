@@ -21,6 +21,7 @@
 - **UI를 바꿨으면 반드시 `WideScreenshotTest`(실기기 크기)로 눈으로 확인한다.** 기본 `ScreenshotTest`는 PIXEL_C(1280×900dp)라 실기기보다 가로 320dp·세로 300dp가 더 넓다 — 여기서만 보면 실기기에서 칩이 접히고 글자가 잘리는 걸 못 잡는다 (0.8.22·0.8.29에서 두 번 새어 나감)
 - `./gradlew test`에 Paparazzi는 없다 — UI 변경 시 `recordPaparazziDebug` 별도
 - 배포마다 versionCode +1, 실기기는 arm64 split APK (universal 없음)
+- **실기기 로그는 `adb`가 아니라 앱의 "설정 → 기기 → 진단 로그 → 공유"로 받는다** — 차내 태블릿은 PC에 안 물려 있다. 로그는 `filesDir/diag/`에 파일로 남아 앱 재시작을 견딘다 (docs/tasks/RELEASE_BUILD.md)
 - 주석은 한국어 "왜" 중심, 새 함수 위 설명 주석 필수
 - 프레임워크 선제 도입 금지(Hilt/Room 등 의도적 미채택) — 전환 조건은 주석으로
 

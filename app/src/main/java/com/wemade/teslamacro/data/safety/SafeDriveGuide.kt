@@ -228,15 +228,19 @@ class SafeDriveGuide(
             // `location`은 **경로에 붙인 위치**다 — 경로 없이 도는 free-drive에서는
             // 비어 있을 수 있고, 그러면 거리를 영영 못 재 경보가 하나도 안 뜬다.
             // 그래서 원시 GPS로 물러난다. 셋 다 같은 KATEC 좌표라 섞어 써도 된다
-            val pos = aLocationGuide.location?.pos
-                ?: aLocationGuide.gpsMatched?.takeIf { it.valid }?.pos
-                ?: aLocationGuide.gpsOrigin?.takeIf { it.valid }?.pos
+            // 경로에 붙인 좌표 → 도로에 정합된 GPS → 원시 GPS 순으로 물러난다
+            val fix = aLocationGuide.location?.pos?.let { "경로" to it }
+                ?: aLocationGuide.gpsMatched?.takeIf { it.valid }?.pos?.let { "정합" to it }
+                ?: aLocationGuide.gpsOrigin?.takeIf { it.valid }?.pos?.let { "원시" to it }
                 ?: return
+            val (source, pos) = fix
             currentPos = pos.x to pos.y
             if (!locationSeen) {
                 locationSeen = true
-                // 좌표 원문은 남기지 않는다 — 진단 로그는 공유되는 통로다
-                DiagLog.add("안전운전 안내 · 위치 수신 시작")
+                // 좌표 원문은 남기지 않는다 — 진단 로그는 공유되는 통로다.
+                // 어느 소스에서 왔는지는 남긴다: 실차에서 "경로"가 영영 안 오는지를
+                // 이 한 줄로 가릴 수 있다
+                DiagLog.add("안전운전 안내 · 위치 수신 시작 ($source 좌표)")
                 // 늦게라도 잡혔으면 "못 받는 중" 표시를 거둔다
                 if (_state.value.stalled) _state.value = _state.value.copy(stalled = false)
                 // 측위 전에 도착한 안전물은 거리를 못 재 전부 버려졌다 — 이제 다시 잰다

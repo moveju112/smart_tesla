@@ -28,6 +28,17 @@ class AppContainer(private val context: Context) {
     /** ViewModel에서 파일 저장·인텐트 발사가 필요할 때 쓰는 앱 컨텍스트 */
     val appContext: Context = context.applicationContext
 
+    init {
+        // 진단 로그를 파일에도 남긴다. 이 앱이 사는 곳은 차내 태블릿이라
+        // adb를 붙일 수 없고, 메모리에만 두면 앱이 재시작하는 순간
+        // 정작 알고 싶은 "죽기 직전"이 통째로 사라진다
+        val logDir = java.io.File(appContext.filesDir, "diag")
+        com.wemade.teslable.DiagLog.attachFile(
+            logFile = java.io.File(logDir, "diag.log"),
+            previousFile = java.io.File(logDir, "diag-prev.log"),
+        )
+    }
+
     val settingsStore = SettingsStore(context)
     val seatStore = com.wemade.teslamacro.data.settings.SeatStore(context)
 

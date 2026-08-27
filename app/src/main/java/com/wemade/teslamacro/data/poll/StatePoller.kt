@@ -88,6 +88,7 @@ class StatePoller(
         settingsStore.lastPresence()?.let { (present, savedAt) ->
             if (now() - savedAt < PRESENCE_TRUST_MILLIS) {
                 presenceBeforeRestart = present
+                presenceObservedAt = savedAt
                 lastSavedPresence = present
                 if (present) {
                     com.wemade.teslable.DiagLog.add(
@@ -248,7 +249,8 @@ class StatePoller(
 
             // 3. 한 번에 묶어 읽는다. 게이트웨이가 응답 크기를 보고 알아서 나눈다
             val result = gateway.readBundle(categories)
-            val merged = result.getOrNull()
+            val fresh = result.getOrNull()
+            val merged = fresh
                 ?.let { fresh -> merge(_snapshot.value, fresh) }
                 ?.let { withRideMinutes(it) }
                 ?: _snapshot.value
@@ -286,21 +288,14 @@ class StatePoller(
             val current = Reading(merged, TimeContext.of(now()), location, weather)
             latestReading.value = current
 
-            // 재시작해도 "직전 값"을 알 수 있게 남긴다. 바뀔 때만 쓴다 —
-            // 15초마다 DataStore를 두드릴 이유가 없다
-            val presenceNow = merged.isUserPresent
-            if (presenceNow != null && presenceNow != lastSavedPresence) {
-                lastSavedPresence = presenceNow
-                settingsStore.savePresence(presenceNow)
-                // 내린 순간이 주차의 시작이다. 그때 배터리를 함께 남겨야
-                // 나중에 "주차 동안 얼마나 줄었나"를 말할 수 있다
-                if (!presenceNow) {
-                    settingsStore.saveParkStart(merged.batteryLevelPercent)
-                    _parkStart.value = settingsStore.parkStart()
-                } else {
-                    _parkStart.value = null
-                }
-            }
+            // 현재 응답으로 덮기 전에 직전 확인값의 유효시간을 판정한다.
+            // 오래 끊긴 뒤의 true는 새 탑승이고, 주행 중 짧은 재연결의 true는 기존 탑승이다.
+            val knownPresence = trustedPresence(
+                presence = presenceBeforeRestart,
+                observedAtMillis = presenceObservedAt,
+                nowMillis = now(),
+                trustMillis = PRESENCE_TRUST_MILLIS,
+            )
 
             if (settings.automationEnabled) {
                 engine.evaluate(
@@ -308,7 +303,7 @@ class StatePoller(
                     previous = previous,
                     current = current,
                     lastFiredAtMillis = lastFiredAt,
-                    knownPresenceBeforeRestart = presenceBeforeRestart,
+                    knownPresenceBeforeRestart = knownPresence,
                     // 트리거는 발동했는데 조건이 막았으면 무엇이 막았는지 남긴다
                     onBlocked = { rule, unmet ->
                         com.wemade.teslable.DiagLog.add(
@@ -321,6 +316,30 @@ class StatePoller(
                 ).forEach { rule ->
                     lastFiredAt[rule.id] = current.time.epochMillis
                     runner.launch(rule, current.time.epochMillis)
+                }
+            }
+
+            // 이번 VCSEC 응답은 다음 판정부터 직전값으로 쓴다.
+            // 실패 때 합쳐 둔 옛 스냅샷으로 시각을 갱신하면 오래된 true가 다시 신선해진다.
+            val observedPresence = fresh
+                ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
+                ?.isUserPresent
+            if (observedPresence != null) {
+                presenceBeforeRestart = observedPresence
+                presenceObservedAt = now()
+
+                // 재시작해도 직전 값을 알 수 있게 남기되, 바뀔 때만 DataStore에 쓴다.
+                if (observedPresence != lastSavedPresence) {
+                    lastSavedPresence = observedPresence
+                    settingsStore.savePresence(observedPresence)
+                    // 내린 순간이 주차의 시작이다. 그때 배터리를 함께 남겨야
+                    // 나중에 "주차 동안 얼마나 줄었나"를 말할 수 있다
+                    if (!observedPresence) {
+                        settingsStore.saveParkStart(merged.batteryLevelPercent)
+                        _parkStart.value = settingsStore.parkStart()
+                    } else {
+                        _parkStart.value = null
+                    }
                 }
             }
 
@@ -400,12 +419,16 @@ class StatePoller(
     private var lastSavedPresence: Boolean? = null
 
     /**
-     * 재시작 전에 마지막으로 본 탑승 상태. 신선할 때만 채운다.
+     * 마지막으로 **실제로 읽어서** 확인한 탑승 상태. 직전 값이 없을 때의 판정 근거다.
      *
-     * 오래된 값(밤새 꺼져 있던 태블릿)은 의미가 없다 — 그 사이 타고 내렸을 수 있으니
-     * null로 두어 예전처럼 1회 발동에 맡긴다.
+     * 앱 시작 시엔 저장된 값으로 채우되 신선할 때만 — 오래된 값(밤새 꺼져 있던 태블릿)은
+     * 그 사이 타고 내렸을 수 있어 null로 두고 1회 발동에 맡긴다.
+     * 그 뒤로는 폴링이 읽는 대로 갱신한다. 안 하면 시작 시각의 값에 하루 종일 갇힌다.
      */
     private var presenceBeforeRestart: Boolean? = null
+
+    /** [presenceBeforeRestart]를 차량에서 마지막으로 확인한 시각 */
+    private var presenceObservedAt: Long? = null
 
     private companion object {
         /**
@@ -561,6 +584,16 @@ class StatePoller(
 /** 탑승·잠금 필드를 보고하는 카테고리인가 (VCSEC 상태 응답 계열) */
 private fun ownsPresence(category: StateCategory): Boolean =
     category == StateCategory.BODY_CONTROLLER || category == StateCategory.CLOSURES
+
+/** 직전 탑승값이 재연결 판정에 쓸 만큼 최근인지 확인한다 */
+internal fun trustedPresence(
+    presence: Boolean?,
+    observedAtMillis: Long?,
+    nowMillis: Long,
+    trustMillis: Long,
+): Boolean? = presence?.takeIf {
+    observedAtMillis != null && nowMillis - observedAtMillis < trustMillis
+}
 
 /** 깊은 유휴 주기. 사용자가 평상시를 이보다 길게 잡았으면 그 값을 따른다 */
 internal const val DEEP_IDLE_SECONDS = 120

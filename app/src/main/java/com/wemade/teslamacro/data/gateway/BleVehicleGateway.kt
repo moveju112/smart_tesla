@@ -87,8 +87,6 @@ class BleVehicleGateway(
                 lastConnectFailure = null
                 com.wemade.teslable.DiagLog.add("직행 연결 성공 $saved")
                 client = TeslaClient(context, link, vin)
-            // 새 연결이면 묶음 조회를 다시 시도해 본다 — 차·펌웨어가 바뀌었을 수 있다
-            bundledReadAllowed = true
                 _linkState.value = LinkState.Ready
                 return@runCatching
             }
@@ -160,8 +158,6 @@ class BleVehicleGateway(
 
             // 4. 프로토콜 클라이언트 준비 (핸드셰이크는 첫 명령 때 지연 수행)
             client = TeslaClient(context, link, vin)
-            // 새 연결이면 묶음 조회를 다시 시도해 본다 — 차·펌웨어가 바뀌었을 수 있다
-            bundledReadAllowed = true
             _linkState.value = LinkState.Ready
         }.onFailure { throwable ->
             // 같은 실패가 이어지면 첫 번째만 남긴다 — 원인이 바뀌는 순간은 반드시 남긴다
@@ -207,8 +203,6 @@ class BleVehicleGateway(
             scanner.bondedTesla()?.let { settingsStore.setVehicleName(it.name) }
 
             client = TeslaClient(context, link, vin)
-            // 새 연결이면 묶음 조회를 다시 시도해 본다 — 차·펌웨어가 바뀌었을 수 있다
-            bundledReadAllowed = true
             _linkState.value = LinkState.Ready
             com.wemade.teslable.DiagLog.add("직접 연결 성공 $address")
         }.onFailure { throwable ->
@@ -469,25 +463,49 @@ class BleVehicleGateway(
                 read += categories.filter { !it.needsInfotainment || it == StateCategory.CLOSURES }
             }
 
-            // 2. 인포테인먼트는 한 번에 묶어 본다 — 실패하면 아래에서 하나씩
+            // 2. 인포테인먼트는 한 번에 묶어 본다 — 실패하면 아래에서 하나씩.
+            //    여기서 던져도 1번의 성공은 살린다 — 자는 차는 인포테인먼트만 무응답이고
+            //    VCSEC은 멀쩡히 답한다. 같이 버리면 탑승·잠금이 몇 분씩 낡은 채 굳고,
+            //    사이클 전멸로 집계돼 좀비 워치독이 자는 차를 계속 두드린다 (0.9.3 실차)
+            var infotainmentFailure: Throwable? = null
             if (infotainment.isNotEmpty()) {
-                val (snapshot, done) = readInfotainment(active, infotainment, now)
-                merged = merged.overlay(snapshot)
-                read += done
+                runCatching { readInfotainment(active, infotainment, now) }
+                    .onSuccess { (snapshot, done) ->
+                        merged = merged.overlay(snapshot)
+                        read += done
+                    }
+                    .onFailure {
+                        if (it is kotlinx.coroutines.CancellationException) throw it
+                        infotainmentFailure = it
+                    }
             }
+            // 한 카테고리도 못 읽었으면 성공으로 위장하지 않는다
+            if (read.isEmpty()) {
+                throw (infotainmentFailure ?: IllegalStateException("상태를 읽지 못했어요"))
+            }
+            // 일부만 실패한 것도 알린다 — 안 남기면 "왜 공조만 안 보이지"를 추적할 수 없다
+            infotainmentFailure?.let { logReadFailure(infotainment, it) }
             merged.copy(categoryReadAt = read.associateWith { now })
         }.onFailure { failure ->
-            // 같은 실패(차가 자는 동안 무응답 등)는 첫 번째만 — 원인이 바뀌면 다시 남긴다
-            val message = failure.message ?: "원인 불명"
-            val key = categories.sortedBy { it.name }.joinToString("+") { it.name }
-            if (lastReadFailure[key] != message) {
-                lastReadFailure[key] = message
-                com.wemade.teslable.DiagLog.add("$key 읽기 실패: $message")
-            }
+            logReadFailure(categories, failure)
         }.onSuccess {
-            lastReadFailure.remove(categories.sortedBy { it.name }.joinToString("+") { it.name })
+            lastReadFailure.remove(keyOf(categories))
         }
     }
+
+    /** 같은 실패(차가 자는 동안 무응답 등)는 첫 번째만 남긴다 — 원인이 바뀌면 다시 남긴다 */
+    private fun logReadFailure(categories: Set<StateCategory>, failure: Throwable) {
+        val message = failure.message ?: "원인 불명"
+        val key = keyOf(categories)
+        if (lastReadFailure[key] != message) {
+            lastReadFailure[key] = message
+            com.wemade.teslable.DiagLog.add("$key 읽기 실패: $message")
+        }
+    }
+
+    /** 실패 로그 중복 억제용 키 — 요청 묶음이 같으면 같은 키다 */
+    private fun keyOf(categories: Set<StateCategory>): String =
+        categories.sortedBy { it.name }.joinToString("+") { it.name }
 
     /**
      * 묶어서 한 번, 응답이 크다고 하면 하나씩.
@@ -548,7 +566,13 @@ class BleVehicleGateway(
         }
     }
 
-    /** 이 차가 묶음 조회를 감당하는가. 한 번 거절당하면 재연결 전까지 접어둔다 */
+    /**
+     * 이 차가 묶음 조회를 감당하는가. 한 번 거절당하면 앱이 살아 있는 동안 접어둔다.
+     *
+     * 재연결마다 되살리지 않는다 — 이 차는 늘 초과해서, 하루 수십 번 끊기는 태블릿에선
+     * 재연결마다 사이클 하나를 확정 실패에 버렸다. 차·펌웨어가 바뀌는 드문 경우는
+     * 앱 재시작이 true로 되돌려 준다
+     */
     private var bundledReadAllowed = true
 
     private val lastReadFailure = mutableMapOf<String, String>()

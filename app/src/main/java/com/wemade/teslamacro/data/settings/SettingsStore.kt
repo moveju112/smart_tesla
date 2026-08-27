@@ -53,6 +53,7 @@ data class AppSettings(
     val vehicleName: String = "",
     /**
      * 스텔스 충전 — 충전 중 전류를 난수로 흔들어 부하 지문을 흐린다.
+     * 흔드는 범위의 상한은 차가 보고하는 충전기 최대 전류다 (사용자 설정이 아니다).
      * 기본 꺼짐. 켜면 충전이 느려지는 대가가 있다 (평균 전류가 내려가고 쉬는 구간이 생김).
      */
     val stealthCharging: Boolean = false,

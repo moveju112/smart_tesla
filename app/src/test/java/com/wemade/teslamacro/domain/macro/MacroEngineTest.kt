@@ -190,6 +190,32 @@ class MacroEngineTest {
     }
 
     @Test
+    fun `링크 끊김으로 직전 탑승이 비워져도 마지막으로 확인된 값이 없던 탑승이면 발동한다`() {
+        // 0.9.3 실차: 밤새 링크가 끊겨 스냅샷의 탑승이 null로 비워진 채 아침에 재연결됐다.
+        // previous는 있지만 그 안이 null이라 판정은 "직전 값 없음"으로 떨어진다 —
+        // 이때 쓰는 기록이 앱 시작 시각의 true에 갇혀 있어 출근 안내가 하루 종일 안 터졌다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
+            previous = reading(userPresent = null),
+            current = reading(userPresent = true),
+            knownPresenceBeforeRestart = false,
+        )
+        assertEquals(1, fired.size)
+    }
+
+    @Test
+    fun `링크 끊김으로 직전 탑승이 비워져도 타고 있던 중이었으면 발동하지 않는다`() {
+        // 주행 중 잠깐 끊겼다 붙은 경우 — 재연결마다 탑승 매크로가 다시 터지면 안 된다
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, true)))),
+            previous = reading(userPresent = null),
+            current = reading(userPresent = true),
+            knownPresenceBeforeRestart = true,
+        )
+        assertEquals(0, fired.size)
+    }
+
+    @Test
     fun `기록이 오래돼 없으면 예전처럼 1회 발동한다`() {
         // 호출부가 신선하지 않은 기록을 null로 걸러 넣는다
         val fired = evaluate(

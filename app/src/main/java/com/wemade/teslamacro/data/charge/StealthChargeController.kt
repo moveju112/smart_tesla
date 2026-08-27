@@ -23,7 +23,8 @@ class StealthChargeController(
     private val gateway: VehicleGateway,
     private val poller: StatePoller,
     private val settingsStore: SettingsStore,
-    private val maxAmps: Int = DEFAULT_MAX_AMPS,
+    /** 차가 상한을 안 알려줄 때만 쓰는 값. 실제 상한은 매 스텝 스냅샷에서 읽는다 */
+    private val fallbackMaxAmps: Int = DEFAULT_MAX_AMPS,
 ) {
     private var job: Job? = null
 
@@ -55,9 +56,11 @@ class StealthChargeController(
     /** 활성인 동안 전류를 계속 흔든다. 조건이 깨지면 collectLatest가 이 코루틴을 취소한다 */
     private suspend fun runLoop() {
         // 시작값은 차가 보고한 현재 전류, 없으면 상한
-        var current = poller.snapshot.value.chargingAmps ?: maxAmps
+        var current = poller.snapshot.value.chargingAmps ?: currentMaxAmps()
         var stepCount = 0
         while (true) {
+            // 상한은 매 스텝 다시 본다 — 같은 밤에도 충전기를 바꿔 물면 값이 달라진다
+            val maxAmps = currentMaxAmps()
             val step = StealthChargePlan.next(current, MIN_AMPS, maxAmps)
             val sent = gateway.send(VehicleCommand.SetChargingAmps(step.amps))
             current = step.amps
@@ -69,15 +72,35 @@ class StealthChargeController(
                     "스텔스 충전 전송 실패 — ${sent.exceptionOrNull()?.message}"
                 )
                 stepCount == 1 || stepCount % 10 == 0 -> com.wemade.teslable.DiagLog.add(
-                    "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A)"
+                    "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A / 상한 ${maxAmps}A)"
                 )
             }
             delay(step.holdSeconds * 1000L)   // 취소되면 여기서 CancellationException으로 빠져나간다
         }
     }
 
+    /**
+     * 지금 쓸 수 있는 상한(A). 차가 알려준 값을 쓰고, 없을 때만 폴백.
+     *
+     * 16A 콘센트에 물렸는데 5~32A로 흔들면 위쪽 절반이 통째로 헛값이라
+     * "16A에 눌러앉음"이 되어 위장이 아니라 그냥 상한 고정이 된다
+     */
+    private fun currentMaxAmps(): Int =
+        effectiveMaxChargingAmps(
+            reportedMaxAmps = poller.snapshot.value.maxChargingAmps,
+            fallbackMaxAmps = fallbackMaxAmps,
+            minAmps = MIN_AMPS,
+        )
+
     private companion object {
         const val MIN_AMPS = 5
         const val DEFAULT_MAX_AMPS = 32
     }
 }
+
+/** 차량 상한을 우선하고, 누락됐을 때만 폴백을 쓰되 명령 가능한 최솟값은 지킨다 */
+internal fun effectiveMaxChargingAmps(
+    reportedMaxAmps: Int?,
+    fallbackMaxAmps: Int,
+    minAmps: Int,
+): Int = (reportedMaxAmps ?: fallbackMaxAmps).coerceAtLeast(minAmps)

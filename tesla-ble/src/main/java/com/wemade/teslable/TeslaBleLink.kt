@@ -57,6 +57,9 @@ class TeslaBleLink(private val context: Context) {
     @Volatile
     private var dead = false
 
+    /** 이번 연결에서 서비스 탐색을 이미 시작했나 — 중복 MTU 콜백이 두 번 돌리는 걸 막는다 */
+    private var discovering = false
+
     /**
      * 사망 처리 공통 지점: 플래그를 세우고 끊김 이벤트를 즉시 방출한다.
      * 방출 덕에 게이트웨이가 다음 ensureLinked를 기다리지 않고 바로 상태를 내린다.
@@ -109,6 +112,7 @@ class TeslaBleLink(private val context: Context) {
         connectResult = deferred
         reassembler.reset()
         dead = false   // 새 연결의 생사는 새로 판정한다
+        discovering = false
 
         if (!quiet) {
             DiagLog.add("GATT 접속 시도 ${device.address}" + if (autoConnect) " (autoConnect)" else "")
@@ -237,6 +241,11 @@ class TeslaBleLink(private val context: Context) {
             if (isStale(gatt)) return
             // MTU 협상 실패는 치명적이지 않다. 기본값으로 계속 간다
             mtu = if (status == BluetoothGatt.GATT_SUCCESS) negotiated else DEFAULT_MTU
+            // 일부 스택은 requestMtu 콜백을 두 번 준다. 그대로 흘리면 서비스 탐색과
+            // 알림 구독이 통째로 두 번 돌아 GATT 큐가 겹치고, 곧장 쓰기가 busy로 거부된다
+            // (0.9.3 실차: 중복 로그 두 줄 뒤 "GATT busy" → 끊김 → 재연결 루프)
+            if (discovering) return
+            discovering = true
             DiagLog.add("MTU=$mtu → 서비스 탐색")
             gatt.discoverServices()
         }

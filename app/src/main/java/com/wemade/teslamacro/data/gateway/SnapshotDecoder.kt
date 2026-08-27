@@ -69,6 +69,7 @@ object SnapshotDecoder {
         isCharging = charge.takeIf { it.hasChargerPower() }?.let { it.chargerPower > 0 },
         chargeLimitPercent = charge.takeIf { it.hasChargeLimitSoc() }?.chargeLimitSoc,
         chargingAmps = charge.takeIf { it.hasChargingAmps() }?.chargingAmps,
+        maxChargingAmps = charge.takeIf { it.hasChargeCurrentRequestMax() }?.chargeCurrentRequestMax,
         rangeKm = charge.takeIf { it.hasBatteryRange() }?.let { it.batteryRange * MILES_TO_KM },
         isChargePortOpen = charge.takeIf { it.hasChargePortDoorOpen() }?.chargePortDoorOpen,
     )

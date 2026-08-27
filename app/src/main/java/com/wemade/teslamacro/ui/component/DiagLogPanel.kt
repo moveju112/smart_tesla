@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.ui.component
 
+import android.content.ClipData
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -75,9 +77,14 @@ fun DiagLogPanel(
                     val text = listOf(shareExtra(), DiagLog.dumpAll())
                         .filter { it.isNotBlank() }
                         .joinToString("\n\n")
-                    context.startActivity(
-                        Intent.createChooser(shareIntentFor(context, text), "진단 로그 보내기")
-                    )
+                    runCatching {
+                        context.startActivity(
+                            Intent.createChooser(shareIntentFor(context, text), "진단 로그 보내기")
+                        )
+                    }.onFailure { failure ->
+                        DiagLog.add("진단 로그 공유 실패 — ${failure.message ?: failure.javaClass.simpleName}")
+                        Toast.makeText(context, "진단 로그를 공유하지 못했어요.", Toast.LENGTH_SHORT).show()
+                    }
                 },
             )
             TButton(
@@ -158,7 +165,6 @@ private fun shareIntentFor(context: android.content.Context, text: String): Inte
     val base = Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_SUBJECT, "Smart Tesla 진단 로그")
-        .putExtra(Intent.EXTRA_TEXT, text)
 
     val uri = runCatching {
         // 공유 전용 폴더 하나만 FileProvider에 열려 있다 — 내부 저장소 전체를 열면
@@ -173,9 +179,22 @@ private fun shareIntentFor(context: android.content.Context, text: String): Inte
             "${context.packageName}.fileprovider",
             file,
         )
-    }.getOrNull() ?: return base
+    }.getOrNull() ?: return base.putExtra(Intent.EXTRA_TEXT, fallbackShareText(text))
 
     return base
+        // 전체 로그는 파일에만 둔다. 1MB 가까운 본문을 Intent에 중복하면
+        // Binder 한도를 넘어 공유 시트 자체가 열리지 않는다.
+        .putExtra(Intent.EXTRA_TEXT, "Smart Tesla 진단 로그 파일을 첨부했습니다.")
         .putExtra(Intent.EXTRA_STREAM, uri)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // EXTRA_STREAM만 보는 앱과 ClipData 권한만 받는 앱을 모두 지원한다.
+        .apply {
+            clipData = ClipData.newUri(context.contentResolver, "Smart Tesla 진단 로그", uri)
+        }
 }
+
+/** 파일 생성 실패 때 Intent가 커지지 않도록 본문으로 보내는 최근 로그 상한 */
+private const val FALLBACK_TEXT_CHARS = 32_000
+
+/** 파일 첨부를 만들지 못해도 Binder 한도를 넘지 않는 최근 로그만 남긴다 */
+internal fun fallbackShareText(text: String): String = text.takeLast(FALLBACK_TEXT_CHARS)

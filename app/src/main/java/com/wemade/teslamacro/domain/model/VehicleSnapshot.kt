@@ -88,6 +88,11 @@ data class VehicleSnapshot(
     val chargeLimitPercent: Int? = null,
     /** 충전 전류 설정값(A). 충전 화면 슬라이더의 현재 위치가 된다 */
     val chargingAmps: Int? = null,
+    /**
+     * 지금 물린 충전기가 받아주는 최대 전류(A).
+     * 벽 콘센트냐 완속기냐에 따라 달라서, 상한을 코드에 박으면 절반이 헛값이 된다
+     */
+    val maxChargingAmps: Int? = null,
     val rangeKm: Float? = null,
     val isChargePortOpen: Boolean? = null,
     val speedKph: Float? = null,
@@ -163,6 +168,7 @@ fun VehicleSnapshot.overlay(fresh: VehicleSnapshot): VehicleSnapshot = copy(
     isCharging = fresh.isCharging ?: isCharging,
     chargeLimitPercent = fresh.chargeLimitPercent ?: chargeLimitPercent,
     chargingAmps = fresh.chargingAmps ?: chargingAmps,
+    maxChargingAmps = fresh.maxChargingAmps ?: maxChargingAmps,
     rangeKm = fresh.rangeKm ?: rangeKm,
     isChargePortOpen = fresh.isChargePortOpen ?: isChargePortOpen,
     speedKph = fresh.speedKph ?: speedKph,

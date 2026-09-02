@@ -50,6 +50,10 @@
 
 ## 런타임
 
+- **Symptom:** 빅스비 루틴의 "앱을 열거나 앱 동작 바로 실행"에 `Smart Tesla 열기`만 보임
+  - Cause: APK의 정적 바로가기는 삼성 루틴 목록에 앱 동작으로 수집되지 않음 (갤럭시 실기기 2026-09-02)
+  - Fix: `MacroShortcutPublisher`가 저장 매크로를 런타임 동적 바로가기로 발행한다. 시스템 슬롯이 적으면 애프터블로우와 수동 매크로를 우선한다 (0.9.7, 실기기 미확인)
+
 - **Symptom:** 음성 상시 대기를 켜도 서비스가 안 올라옴
   - Cause: 마이크 포그라운드 서비스는 앱이 화면에 떠 있을 때만 시작 가능 (Android 제약)
   - Fix: 앱 실행 중 토글 — `app/src/main/java/com/wemade/teslamacro/MainActivity.kt:130` 주석 참조

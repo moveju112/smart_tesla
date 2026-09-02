@@ -8,6 +8,7 @@
     <shortcut
         android:shortcutId="open_frunk"
         android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
         android:shortcutShortLabel="@string/shortcut_frunk_short"
         android:shortcutLongLabel="@string/shortcut_frunk_long">
         <intent
@@ -23,6 +24,7 @@
     <shortcut
         android:shortcutId="open_trunk"
         android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
         android:shortcutShortLabel="@string/shortcut_trunk_short"
         android:shortcutLongLabel="@string/shortcut_trunk_long">
         <intent
@@ -38,6 +40,7 @@
     <shortcut
         android:shortcutId="vent_windows"
         android:enabled="true"
+        android:icon="@drawable/ic_launcher_foreground"
         android:shortcutShortLabel="@string/shortcut_vent_short"
         android:shortcutLongLabel="@string/shortcut_vent_long">
         <intent

@@ -4,17 +4,20 @@ import android.content.Context
 import com.wemade.teslamacro.data.gateway.BleVehicleGateway
 import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
 import com.wemade.teslamacro.data.gateway.SwitchingVehicleGateway
+import com.wemade.teslamacro.data.macro.MacroShortcutPublisher
 import com.wemade.teslamacro.data.macro.RuleStore
 import com.wemade.teslamacro.data.poll.StatePoller
 import com.wemade.teslamacro.data.settings.SettingsStore
 import com.wemade.teslamacro.domain.macro.MacroRunner
 import com.wemade.teslamacro.domain.macro.Reading
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.plus
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
 
 /**
  * 의존성 그래프. 객체가 스무 개도 안 되는 규모라 DI 프레임워크를 쓰지 않는다.
@@ -85,6 +88,7 @@ class AppContainer(private val context: Context) {
     val scanner = com.wemade.teslable.TeslaBleScanner(context)
 
     val ruleStore = RuleStore(context)
+    private val macroShortcutPublisher = MacroShortcutPublisher(context)
 
     /** 예보. 계정도 키도 없는 Open-Meteo를 쓴다 */
     val weatherClient = com.wemade.teslamacro.data.weather.OpenMeteoClient()
@@ -115,6 +119,10 @@ class AppContainer(private val context: Context) {
     /** VIN 등록 여부에 따라 실차/시뮬레이터를 고른다 */
     suspend fun initialize() {
         ruleStore.load()
+        // 저장·삭제·이름 변경 직후 빅스비 루틴 목록도 같은 매크로를 보게 한다.
+        appScope.launch {
+            ruleStore.rules.collect(macroShortcutPublisher::publish)
+        }
 
         val settings = settingsStore.settings.first()
         initialSettings = settings

@@ -6,6 +6,7 @@ import android.widget.Toast
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.command.confirmCategory
+import com.wemade.teslable.DiagLog
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
  * - 홈 화면 바로가기 / 런처 아이콘 길게 누르기
  * - 구글 어시스턴트 ("보닛 열기 실행")
  * - 빅스비 루틴 · Tasker · MacroDroid 같은 자동화 앱
+ * - 저장 매크로 동적 바로가기
  *
  * 창을 띄우지 않고 실행 후 즉시 끝난다.
  */
@@ -25,11 +27,13 @@ class QuickActionActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val macroId = intent?.getStringExtra(EXTRA_MACRO_ID)
+            ?: intent?.data?.getQueryParameter(QUERY_MACRO_ID)
         val action = intent?.getStringExtra(EXTRA_ACTION)
             ?: intent?.data?.getQueryParameter("action")
         val command = ACTIONS[action]
 
-        if (command == null) {
+        if (macroId == null && command == null) {
             toast("알 수 없는 동작: $action")
             finish()
             return
@@ -44,7 +48,28 @@ class QuickActionActivity : Activity() {
             // isReady(키 등록까지 완료) — isPaired만 보면 등록 핸드셰이크 도중에 끼어든다
             if (settings.isReady) app.container.gateway.connect(settings.vin)
 
-            val result = app.container.gateway.send(command)
+            if (macroId != null) {
+                val rule = app.container.ruleStore.rules.value.firstOrNull { it.id == macroId }
+                if (rule == null) {
+                    toast("삭제된 매크로예요")
+                    finish()
+                    return@launch
+                }
+
+                // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
+                app.container.runner.launch(
+                    rule,
+                    System.currentTimeMillis(),
+                    restartIfRunning = true,
+                )
+                app.container.poller.recordFired(rule.id)
+                DiagLog.add("빅스비 매크로 [${rule.name}] 실행")
+                toast("${rule.name} 실행")
+                finish()
+                return@launch
+            }
+
+            val result = app.container.gateway.send(checkNotNull(command))
             // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다
             if (result.isSuccess) app.container.poller.focusOn(command.confirmCategory())
             toast(
@@ -61,6 +86,8 @@ class QuickActionActivity : Activity() {
 
     companion object {
         const val EXTRA_ACTION = "action"
+        const val EXTRA_MACRO_ID = "macro_id"
+        const val QUERY_MACRO_ID = "macro"
 
         /**
          * 외부에 노출하는 동작 목록.

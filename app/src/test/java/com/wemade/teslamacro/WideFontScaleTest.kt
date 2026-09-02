@@ -106,4 +106,22 @@ class WideFontScaleTest {
             }
         }
     }
+
+    /** 등록 안내와 하단 두 동작이 글자 확대에서도 잘리지 않는지 본다 */
+    @Test
+    fun `F4 차량 등록 - 글자 확대`() {
+        paparazzi.snapshot("F4-pairing-fontscale") {
+            FullScreenFrame {
+                com.wemade.teslamacro.feature.pairing.PairingScreen(
+                    state = com.wemade.teslamacro.feature.pairing.PairingUiState(
+                        detectedName = "Tesla Model Y",
+                    ),
+                    onVinChange = {},
+                    onFindVehicle = {},
+                    onRequestEnrollment = {},
+                    onSkip = {},
+                )
+            }
+        }
+    }
 }

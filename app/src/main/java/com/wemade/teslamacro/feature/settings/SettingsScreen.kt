@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.settings.AppSettings
@@ -69,6 +68,7 @@ fun SettingsScreen(
     update: UpdateState? = null,
     onCheckUpdate: () -> Unit = {},
     onDownloadUpdate: () -> Unit = {},
+    onRequestInstallPermission: () -> Unit = {},
     backup: BackupControls? = null,
     navigation: NavigationControls? = null,
     /**
@@ -146,7 +146,12 @@ fun SettingsScreen(
 
                     SettingsGroup.DEVICE -> {
                         SectionHeader("업데이트", topPadding = Space.md)
-                        UpdatePanel(update = update, onCheck = onCheckUpdate, onInstall = onDownloadUpdate)
+                        UpdatePanel(
+                            update = update,
+                            onCheck = onCheckUpdate,
+                            onInstall = onDownloadUpdate,
+                            onRequestPermission = onRequestInstallPermission,
+                        )
 
                         if (battery != null) {
                             SectionHeader("절전")
@@ -335,8 +340,12 @@ private fun BatteryPanel(battery: BatteryControls) {
 
 /** 현재 버전 표시 + GitHub 최신 릴리스 확인/원클릭 설치 */
 @Composable
-private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: () -> Unit) {
-    val context = LocalContext.current
+private fun UpdatePanel(
+    update: UpdateState?,
+    onCheck: () -> Unit,
+    onInstall: () -> Unit,
+    onRequestPermission: () -> Unit,
+) {
     TCard {
         LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
         Spacer(Modifier.height(Space.md))
@@ -350,7 +359,7 @@ private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: ()
                     is UpdateState.UpToDate -> "최신 버전이에요."
                     is UpdateState.Failed -> update.message
                     is UpdateState.NeedsInstallPermission ->
-                        "앱 설치 권한이 필요해요.\n한 번만 켜주면 다음부터는 저절로 끝나요."
+                        "앱 설치 권한이 필요해요.\n허용하고 돌아오면 설치를 자동으로 이어가요."
                     is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
                     is UpdateState.Downloading -> "내려받는 중… ${update.percent}%"
                     is UpdateState.Installing -> "설치 중…"
@@ -374,14 +383,12 @@ private fun UpdatePanel(update: UpdateState?, onCheck: () -> Unit, onInstall: ()
                     TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
                 // 권한 화면으로 직접 보낸다. 어디서 켜는지 찾게 만들지 않는다
                 is UpdateState.NeedsInstallPermission ->
-                    TButton("권한 켜기", fillWidth = false, small = true) {
-                        context.startActivity(
-                            android.content.Intent(
-                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                android.net.Uri.parse("package:${context.packageName}"),
-                            )
-                        )
-                    }
+                    TButton(
+                        "권한 켜기",
+                        fillWidth = false,
+                        small = true,
+                        onClick = onRequestPermission,
+                    )
                 else ->
                     TButton(
                         text = "업데이트 확인",

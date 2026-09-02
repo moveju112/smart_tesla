@@ -61,6 +61,9 @@ object AppUpdater {
 
     private const val PREFS = "updater"
     private const val KEY_LAST_CHECK = "lastCheck"
+    private const val KEY_PENDING_VERSION = "pendingVersion"
+    private const val KEY_PENDING_APK_URL = "pendingApkUrl"
+    private const val KEY_PENDING_NOTES = "pendingNotes"
 
     /** 스스로 확인하는 간격. 하루 한 번이면 충분하다 */
     private const val CHECK_INTERVAL_MS = 24L * 60 * 60 * 1000
@@ -161,6 +164,7 @@ object AppUpdater {
         // 권한이 없으면 시스템이 설치를 아예 시작하지 않는다.
         // 수십 MB를 받은 뒤에 막히지 않도록 내려받기 전에 먼저 본다
         if (!canInstallPackages(context)) {
+            savePendingPermission(context, target)
             state.value = UpdateState.NeedsInstallPermission
             return
         }
@@ -220,6 +224,73 @@ object AppUpdater {
     /** "알 수 없는 앱 설치"가 이 앱에 허용돼 있는지 */
     fun canInstallPackages(context: Context): Boolean =
         runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
+
+    /** 설치 권한 설정에서 돌아오면 중단했던 다운로드를 자동으로 이어간다 */
+    suspend fun resumeAfterInstallPermission(context: Context) {
+        val permitted = canInstallPackages(context)
+        val persisted = readPendingPermission(context)
+        // 설정 앱에서 프로세스가 재생성된 뒤 권한을 안 켜고 돌아온 경우에도
+        // 왜 업데이트가 멈췄는지 다시 보여준다
+        if (!permitted) {
+            if (state.value == null && persisted != null) {
+                state.value = UpdateState.NeedsInstallPermission
+            }
+            return
+        }
+        val target = permissionResumeTarget(state.value, lastAvailable, persisted, permitted)
+            ?: return
+
+        clearPendingPermission(context)
+        lastAvailable = target
+        state.value = target
+        DiagLog.add("업데이트 · 설치 권한 허용, 설치 자동 재개")
+        downloadAndInstall(context)
+    }
+
+    /** 현재 상태와 저장된 대기 정보를 보고 재개할 릴리스를 고른다 */
+    internal fun permissionResumeTarget(
+        current: UpdateState?,
+        inMemory: UpdateState.Available?,
+        persisted: UpdateState.Available?,
+        permitted: Boolean,
+    ): UpdateState.Available? {
+        if (!permitted) return null
+        return when (current) {
+            is UpdateState.NeedsInstallPermission -> inMemory ?: persisted
+            null -> persisted
+            else -> null
+        }
+    }
+
+    /** 설정 앱으로 이동하는 동안 프로세스가 사라져도 업데이트 대상을 복구한다 */
+    private fun savePendingPermission(context: Context, target: UpdateState.Available) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_PENDING_VERSION, target.version)
+            .putString(KEY_PENDING_APK_URL, target.apkUrl)
+            .putString(KEY_PENDING_NOTES, target.notes)
+            .apply()
+    }
+
+    /** 권한 대기 중이던 릴리스를 기기 저장소에서 읽는다 */
+    private fun readPendingPermission(context: Context): UpdateState.Available? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val version = prefs.getString(KEY_PENDING_VERSION, null) ?: return null
+        val apkUrl = prefs.getString(KEY_PENDING_APK_URL, null) ?: return null
+        return UpdateState.Available(
+            version = version,
+            apkUrl = apkUrl,
+            notes = prefs.getString(KEY_PENDING_NOTES, null),
+        )
+    }
+
+    /** 설치 재개 또는 완료 뒤 남은 권한 대기 정보를 지운다 */
+    internal fun clearPendingPermission(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .remove(KEY_PENDING_VERSION)
+            .remove(KEY_PENDING_APK_URL)
+            .remove(KEY_PENDING_NOTES)
+            .apply()
+    }
 
     /** 세션에 APK 바이트를 부어 넣고 커밋한다. 결과는 리시버로 돌아온다 */
     private fun handToInstaller(context: Context, apk: File) {

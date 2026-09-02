@@ -69,4 +69,56 @@ class AppUpdaterTest {
         val tidied = tidyNotes(raw, maxLines = 3)
         assertEquals("줄 1\n줄 2\n줄 3\n…", tidied)
     }
+
+    @Test
+    fun `설치 권한을 허용하면 중단했던 릴리스를 복구한다`() {
+        val release = UpdateState.Available("0.9.8", "https://example.com/app.apk")
+
+        assertEquals(
+            release,
+            AppUpdater.permissionResumeTarget(
+                current = UpdateState.NeedsInstallPermission,
+                inMemory = release,
+                persisted = null,
+                permitted = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `프로세스가 재생성돼도 저장된 릴리스로 복구한다`() {
+        val persisted = UpdateState.Available("0.9.8", "https://example.com/app.apk")
+
+        assertEquals(
+            persisted,
+            AppUpdater.permissionResumeTarget(
+                current = null,
+                inMemory = null,
+                persisted = persisted,
+                permitted = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `권한을 허용하지 않았거나 다른 상태면 자동 재개하지 않는다`() {
+        val release = UpdateState.Available("0.9.8", "https://example.com/app.apk")
+
+        assertNull(
+            AppUpdater.permissionResumeTarget(
+                current = UpdateState.NeedsInstallPermission,
+                inMemory = release,
+                persisted = null,
+                permitted = false,
+            ),
+        )
+        assertNull(
+            AppUpdater.permissionResumeTarget(
+                current = UpdateState.UpToDate,
+                inMemory = release,
+                persisted = release,
+                permitted = true,
+            ),
+        )
+    }
 }

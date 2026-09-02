@@ -49,10 +49,13 @@ import com.wemade.teslamacro.feature.pairing.PairingViewModel
 import com.wemade.teslamacro.feature.settings.SettingsScreen
 import com.wemade.teslamacro.feature.settings.SettingsViewModel
 import com.wemade.teslamacro.feature.settings.VoiceControls
+import com.wemade.teslamacro.data.update.AppUpdater
+import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.service.MacroService
 import com.wemade.teslamacro.service.VoiceService
 import com.wemade.teslamacro.ui.ViewModelFactory
 import com.wemade.teslamacro.ui.component.AppSplash
+import com.wemade.teslamacro.ui.component.openOverlayPermissionSettings
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.layout.Pane
 import com.wemade.teslamacro.ui.nav.Destination
@@ -291,6 +294,12 @@ private fun AppRoot(factory: ViewModelFactory) {
                         ActivityResultContracts.StartActivityForResult()
                     ) { settingsViewModel.refreshBatteryUnrestricted() }
 
+                    // 제조사 설정 화면에서 돌아온 순간 실제 권한을 다시 보고 업데이트를 잇는다.
+                    // 결과 코드만 믿으면 허용했어도 취소로 오는 기기에서 멈춘다
+                    val installPermissionDialog = rememberLauncherForActivityResult(
+                        ActivityResultContracts.StartActivityForResult()
+                    ) { settingsViewModel.resumeUpdateAfterInstallPermission() }
+
                     // 음성 모델 zip 고르기. 앱이 직접 내려받지 않으므로 파일을 받아 오는 건 사용자 몫이다
                     val pickModel = rememberLauncherForActivityResult(
                         ActivityResultContracts.OpenDocument()
@@ -308,6 +317,17 @@ private fun AppRoot(factory: ViewModelFactory) {
                     // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
                     val overlayPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
                         android.provider.Settings.canDrawOverlays(context)
+                    }
+
+                    // 설정 화면에서 프로세스가 재생성돼도 저장해 둔 업데이트를 복구한다.
+                    // ActivityResult 콜백이 빠지는 제조사 화면도 ON_RESUME 재조회로 보완한다
+                    val installPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
+                        AppUpdater.canInstallPackages(context)
+                    }
+                    LaunchedEffect(update, installPermitted) {
+                        if (update == null || update is UpdateState.NeedsInstallPermission) {
+                            settingsViewModel.resumeUpdateAfterInstallPermission()
+                        }
                     }
 
                     // 안드로이드 12부터 BLE는 위치 권한 없이도 돌아서, 첫 실행 요청 목록에
@@ -363,6 +383,9 @@ private fun AppRoot(factory: ViewModelFactory) {
                         update = update,
                         onCheckUpdate = settingsViewModel::checkUpdate,
                         onDownloadUpdate = settingsViewModel::downloadAndInstall,
+                        onRequestInstallPermission = {
+                            requestInstallPermission(context, installPermissionDialog)
+                        },
                         backup = com.wemade.teslamacro.feature.settings.BackupControls(
                             onExport = {
                                 saveBackup.launch(
@@ -389,15 +412,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                             },
                             onRequestOverlayPermission = {
-                                // 매크로 편집기의 지도 띄우기와 같은 인텐트다
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(
-                                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            android.net.Uri.parse("package:${context.packageName}"),
-                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    )
-                                }
+                                openOverlayPermissionSettings(context)
                             },
                         ),
                     )
@@ -424,7 +439,38 @@ private fun requestBatteryUnrestricted(
             launcher.launch(
                 Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
             )
+        }.onFailure {
+            com.wemade.teslable.DiagLog.add("절전 · 설정 화면을 열지 못함")
+            android.widget.Toast.makeText(
+                context,
+                "절전 설정 화면을 열지 못했어요.",
+                android.widget.Toast.LENGTH_LONG,
+            ).show()
         }
+    }
+}
+
+/**
+ * 이 앱의 APK 설치 권한 화면을 연다.
+ *
+ * 제조사 설정 앱이 앱별 화면을 제공하지 않으면 보안 설정으로 보낸다.
+ */
+private fun requestInstallPermission(
+    context: android.content.Context,
+    launcher: androidx.activity.result.ActivityResultLauncher<Intent>,
+) {
+    val direct = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+        .setData(android.net.Uri.parse("package:${context.packageName}"))
+    runCatching { launcher.launch(direct) }.onFailure {
+        runCatching { launcher.launch(Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)) }
+            .onFailure {
+                com.wemade.teslable.DiagLog.add("업데이트 · 설치 권한 화면을 열지 못함")
+                android.widget.Toast.makeText(
+                    context,
+                    "설정 → 보안 → 알 수 없는 앱 설치에서 Smart Tesla를 허용해 주세요.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
     }
 }
 

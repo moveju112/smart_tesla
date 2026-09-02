@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +35,7 @@ import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.ChipRow
 import com.wemade.teslamacro.ui.component.NumberStepper
+import com.wemade.teslamacro.ui.component.openOverlayPermissionSettings
 import com.wemade.teslamacro.ui.component.rememberOnResume
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
@@ -252,12 +251,7 @@ private fun parameterEditor(
                 )
                 Spacer(Modifier.height(Space.sm))
                 TButton("권한 허용하러 가기", ButtonTone.Secondary, fillWidth = false, small = true) {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}"),
-                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                    openOverlayPermissionSettings(context)
                 }
             }
         }

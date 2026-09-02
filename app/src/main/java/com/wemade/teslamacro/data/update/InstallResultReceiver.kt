@@ -33,6 +33,7 @@ class InstallResultReceiver : BroadcastReceiver() {
             PackageInstaller.STATUS_SUCCESS -> {
                 DiagLog.add("업데이트 설치 완료")
                 AppUpdater.clearPendingApk(context)
+                AppUpdater.clearPendingPermission(context)
             }
 
             else -> {

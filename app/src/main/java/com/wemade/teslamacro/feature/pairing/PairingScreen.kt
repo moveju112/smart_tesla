@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,15 +47,15 @@ import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/** 등록 절차 3단계. 사용자는 지금 어디쯤인지 항상 알아야 한다 */
+/** 등록 절차 4단계. 사용자는 지금 어디쯤인지 항상 알아야 한다 */
 enum class PairingStep(val title: String, val hint: String) {
     EnterVin(
-        "차량 식별번호 입력",
-        "차량 화면 → 제어 → 소프트웨어, 또는 테슬라 앱에서 확인할 수 있어요",
+        "VIN 입력",
+        "",
     ),
     FindVehicle(
         "차량 검색",
-        "블루투스가 닿아야 해요.\n차에 탄 상태에서 진행하세요",
+        "차량 가까이에서 연결합니다",
     ),
     TapCard(
         "카드키 태그",
@@ -83,44 +84,38 @@ fun PairingScreen(
         compact = compact,
         modifier = modifier,
         guide = {
-            Text(
-                text = "차량 등록",
-                style = MaterialTheme.typography.headlineLarge,
-                color = T.Ink,
-            )
-
-            Spacer(Modifier.height(Space.md))
             BoardingNotice()
 
             // 페어링 목록에서 차를 찾았으면 알려준다. 별칭이 곧 내 차라는 확인이다
             if (state.detectedName != null && state.step == PairingStep.EnterVin) {
-                Spacer(Modifier.height(Space.md))
                 DetectedVehicleNotice(state.detectedName)
             }
 
-            Spacer(Modifier.height(Space.lg))
+            Spacer(Modifier.height(Space.md))
             StepIndicator(state.step)
         },
         form = {
-            TCard {
-                DraftField(
-                    value = state.vin,
-                    onValueChange = onVinChange,
-                    label = "VIN (17자)",
-                    singleLine = true,
-                    enabled = state.step == PairingStep.EnterVin,
-                    isError = state.vin.isNotEmpty() && !state.isVinValid,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            // VIN 입력을 끝낸 뒤에는 이미 완료한 입력·앱 이동을 다시 보여주지 않는다.
+            if (state.step == PairingStep.EnterVin) {
+                TCard {
+                    DraftField(
+                        value = state.vin,
+                        onValueChange = onVinChange,
+                        label = "VIN (17자)",
+                        singleLine = true,
+                        isError = state.vin.isNotEmpty() && !state.isVinValid,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
-                Spacer(Modifier.height(Space.md))
-                OpenTeslaAppButton(enabled = state.step == PairingStep.EnterVin)
+                    Spacer(Modifier.height(Space.md))
+                    OpenTeslaAppButton()
 
-                Spacer(Modifier.height(Space.md))
-                VinPrivacyNotice()
+                    Spacer(Modifier.height(Space.sm))
+                    VinPrivacyNotice()
+                }
             }
 
             if (state.message != null) {
@@ -146,13 +141,14 @@ fun PairingScreen(
                 Spacer(Modifier.height(Space.md))
                 DiagLogPanel()
             }
-
-            Spacer(Modifier.height(Space.lg))
-            PrimaryActions(compact) {
+        },
+        actions = {
+            PrimaryActions {
                 TButton(
                     text = state.primaryLabel,
                     enabled = state.isPrimaryEnabled,
-                    modifier = if (compact) Modifier.fillMaxWidth() else Modifier.weight(1f),
+                    fillWidth = false,
+                    modifier = Modifier.weight(1f),
                     onClick = {
                         when (state.step) {
                             PairingStep.EnterVin -> onFindVehicle()
@@ -165,11 +161,10 @@ fun PairingScreen(
                 TButton(
                     text = "나중에",
                     tone = ButtonTone.Ghost,
-                    fillWidth = compact,
+                    fillWidth = false,
                     onClick = onSkip,
                 )
             }
-            Spacer(Modifier.height(Space.xl))
         },
     )
 }
@@ -186,17 +181,31 @@ private fun TwoPaneOrColumn(
     modifier: Modifier,
     guide: @Composable ColumnScope.() -> Unit,
     form: @Composable ColumnScope.() -> Unit,
+    actions: @Composable ColumnScope.() -> Unit,
 ) {
     if (compact) {
         Column(
-            modifier = modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(Space.lg),
+            modifier = modifier.fillMaxSize(),
         ) {
-            guide()
-            Spacer(Modifier.height(Space.lg))
-            form()
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = Space.lg, vertical = Space.md),
+            ) {
+                guide()
+                Spacer(Modifier.height(Space.md))
+                form()
+                Spacer(Modifier.height(Space.md))
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Space.lg)
+                    .draftBlock()
+                    .padding(vertical = Space.sm),
+                content = actions,
+            )
         }
         return
     }
@@ -211,8 +220,12 @@ private fun TwoPaneOrColumn(
         )
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            content = form,
-        )
+        ) {
+            form()
+            Spacer(Modifier.height(Space.lg))
+            actions()
+            Spacer(Modifier.height(Space.xl))
+        }
     }
 }
 
@@ -223,25 +236,23 @@ private fun TwoPaneOrColumn(
  */
 @Composable
 private fun BoardingNotice() {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .draftBlock()
+            .draftBlock(tone = T.Warn)
             .padding(horizontal = Space.md, vertical = Space.md),
     ) {
-        Column {
-            Text(
-                text = "차량에 탑승한 뒤 진행하세요",
-                style = MaterialTheme.typography.titleSmall,
-                color = T.Ink,
-            )
-            Text(
-                text = "블루투스 조회, 카드키 태그가 필요합니다",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.xs),
-            )
-        }
+        Text(
+            text = "차량에서 진행해 주세요",
+            style = MaterialTheme.typography.titleLarge,
+            color = T.WarnText,
+        )
+        Text(
+            text = "차량 화면과 카드키가 필요합니다",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.Ink,
+            modifier = Modifier.padding(top = Space.xs),
+        )
     }
 }
 
@@ -253,26 +264,12 @@ private fun BoardingNotice() {
  */
 @Composable
 private fun DetectedVehicleNotice(name: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .draftBlock()
-            .padding(Space.md),
-    ) {
-        Column {
-            Text(
-                text = "이 폰에 연결된 차: $name",
-                style = MaterialTheme.typography.titleSmall,
-                color = T.Ink,
-            )
-            Text(
-                text = "블루투스에 저장된 이름이에요.\n제어를 위해 아래에 VIN을 넣어 주세요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.xs),
-            )
-        }
-    }
+    Text(
+        text = "감지된 차량 · $name",
+        style = MaterialTheme.typography.bodySmall,
+        color = T.InkMuted,
+        modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+    )
 }
 
 /**
@@ -282,7 +279,7 @@ private fun DetectedVehicleNotice(name: String) {
  * 등록 흐름이 거기서 끊긴다.
  */
 @Composable
-private fun OpenTeslaAppButton(enabled: Boolean) {
+private fun OpenTeslaAppButton() {
     val context = LocalContext.current
     val installed = remember { TeslaAppLauncher.isInstalled(context) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -291,7 +288,6 @@ private fun OpenTeslaAppButton(enabled: Boolean) {
         TButton(
             text = if (installed) "테슬라 앱에서 VIN 확인" else "테슬라 앱 설치",
             tone = ButtonTone.Secondary,
-            enabled = enabled,
             onClick = {
                 notice = if (TeslaAppLauncher.open(context)) null
                 else "테슬라 앱을 열 수 없어요.\n차량 화면에서 확인해 주세요"
@@ -311,62 +307,26 @@ private fun OpenTeslaAppButton(enabled: Boolean) {
 /**
  * VIN을 어떻게 다루는지 밝힌다.
  *
- * 차대번호는 민감한 식별정보다. 어디로 가는지 안 밝히면 입력하기 꺼려진다.
- * 여기 적힌 내용은 전부 검증 가능한 사실이어야 한다 —
- * 앱에 인터넷 권한이 없어서 애초에 전송이 불가능하다.
+ * 차대번호는 민감한 식별정보다. 입력을 망설이지 않도록 필요한 약속만 한 줄로 밝힌다.
+ * 인터넷 기능과 별개로 VIN은 로컬 차량 연결에만 사용한다.
  */
 @Composable
 private fun VinPrivacyNotice() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 채운 면을 쓰지 않는다. 시트 3이 이미 채움을 버렸고, 이 세계의 구획은 괘선이다
-            .draftBlock()
-            .padding(Space.md),
+    Text(
+        text = "VIN은 차량 연결에만 쓰고 외부로 보내지 않아요.",
+        style = MaterialTheme.typography.bodySmall,
+        color = T.InkMuted,
+    )
+}
+
+/** 주 동작과 나중에를 한 줄에 두어 어느 화면에서도 함께 보이게 한다 */
+@Composable
+private fun PrimaryActions(content: @Composable RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Text(
-            text = "VIN은 어디에 쓰이나요",
-            style = MaterialTheme.typography.titleSmall,
-            color = T.InkMuted,
-        )
-        Spacer(Modifier.height(Space.sm))
-        // 네 줄이 결국 같은 말을 반복했다. 서로 다른 사실 세 가지만 남긴다
-        NoticeLine("차량 연동 목적으로만 사용합니다")
-        // "인터넷을 안 쓴다"고 적어뒀었는데 이제 거짓이다 — 날씨·단속 안내·앱 업데이트가
-        // 망을 탄다. 차 제어만은 여전히 BLE 직통이라는 사실로 바꿔 적는다
-        NoticeLine("차량 제어는 BLE로 직접 합니다")
-        NoticeLine("VIN은 외부로 나가지 않습니다")
-    }
-}
-
-@Composable
-private fun NoticeLine(text: String) {
-    Row(modifier = Modifier.padding(vertical = 2.dp)) {
-        Text(
-            text = "·",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-            modifier = Modifier.padding(end = Space.sm),
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            // 프라이버시 안내는 읽혀야 의미가 있다 — InkFaint는 대비 미달
-            color = T.InkMuted,
-        )
-    }
-}
-
-/** 좁으면 세로로 쌓고 넓으면 한 줄에 둔다 */
-@Composable
-private fun PrimaryActions(compact: Boolean, content: @Composable () -> Unit) {
-    if (compact) {
-        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) { content() }
-    } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            // Row 안에서 weight를 쓰려면 RowScope가 필요해 그대로 흘려보낸다
-            content()
-        }
+        content()
     }
 }
 
@@ -407,14 +367,14 @@ private fun StepIndicator(current: PairingStep) {
                 color = T.InkMuted,
                 modifier = Modifier.padding(top = Space.sm),
             )
-            // 단계별 안내는 여기 붙인다. 제목 아래 큰 덩어리로 두면 화면 위가 비어 보인다
-            Text(
-                text = current.hint,
-                style = MaterialTheme.typography.bodySmall,
-                // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.xs),
-            )
+            if (current.hint.isNotBlank()) {
+                Text(
+                    text = current.hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkMuted,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+            }
         }
         return
     }
@@ -443,13 +403,14 @@ private fun StepIndicator(current: PairingStep) {
                 }
             }
         }
-        Text(
-            text = current.hint,
-            style = MaterialTheme.typography.bodySmall,
-            // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
-            color = T.InkMuted,
-            modifier = Modifier.padding(top = Space.sm),
-        )
+        if (current.hint.isNotBlank()) {
+            Text(
+                text = current.hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkMuted,
+                modifier = Modifier.padding(top = Space.sm),
+            )
+        }
     }
 }
 

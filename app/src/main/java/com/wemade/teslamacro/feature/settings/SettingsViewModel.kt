@@ -77,6 +77,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { AppUpdater.downloadAndInstall(container.appContext) }
     }
 
+    /** 설치 권한 설정에서 돌아오면 멈췄던 업데이트를 이어간다 */
+    fun resumeUpdateAfterInstallPermission() {
+        viewModelScope.launch { AppUpdater.resumeAfterInstallPermission(container.appContext) }
+    }
+
     // ---- 절전 제외 ----
 
     /**

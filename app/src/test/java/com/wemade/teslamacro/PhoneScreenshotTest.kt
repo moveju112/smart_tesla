@@ -43,7 +43,10 @@ class PhoneScreenshotTest {
         paparazzi.snapshot("P1-pairing") {
             FullScreenFrame {
                 PairingScreen(
-                    state = PairingUiState(step = PairingStep.EnterVin),
+                    state = PairingUiState(
+                        step = PairingStep.EnterVin,
+                        detectedName = "Tesla Model Y",
+                    ),
                     onVinChange = {},
                     onFindVehicle = {},
                     onRequestEnrollment = {},

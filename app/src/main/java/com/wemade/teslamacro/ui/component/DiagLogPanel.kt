@@ -1,6 +1,5 @@
 package com.wemade.teslamacro.ui.component
 
-import android.content.ClipData
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
@@ -79,7 +78,7 @@ fun DiagLogPanel(
                         .joinToString("\n\n")
                     runCatching {
                         context.startActivity(
-                            Intent.createChooser(shareIntentFor(context, text), "진단 로그 보내기")
+                            Intent.createChooser(shareIntentFor(text), "진단 로그 보내기")
                         )
                     }.onFailure { failure ->
                         DiagLog.add("진단 로그 공유 실패 — ${failure.message ?: failure.javaClass.simpleName}")
@@ -108,15 +107,15 @@ fun DiagLogPanel(
 
         if (!showLines) {
             // 줄을 늘어놓지 않는다 — 사용자가 읽을 내용이 아니고, 여기가 화면을 제일 많이 먹었다.
-            // 공유 한 번으로 전체가 나가므로 몇 줄 쌓였는지만 알려준다
-            // 화면 줄 수만 적으면 "300줄뿐"으로 읽힌다 — 파일에 얼마나 쌓였는지가
-            // 공유로 실제 나가는 양이다
+            // 공유 한 번으로 최근 기록이 나가므로 몇 줄 쌓였는지만 알려준다
+            // 화면 줄 수만 적으면 "300줄뿐"으로 읽힌다 — 저장량도 함께 보여야
+            // 텍스트 공유가 최근 기록만 보내는 이유를 알 수 있다
             val storedKb = remember(lines.size) { DiagLog.storedBytes() / 1024 }
             Text(
                 text = when {
                     lines.isEmpty() && storedKb <= 0 -> "아직 기록이 없어요."
                     storedKb > 0 -> "기록 ${lines.size}줄 (파일 ${storedKb}KB). " +
-                        "문제가 생기면 공유를 눌러 파일로 보내주세요."
+                        "문제가 생기면 공유를 눌러 최근 로그를 텍스트로 보내주세요."
                     else -> "기록 ${lines.size}줄. 문제가 생기면 공유를 눌러 보내주세요."
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -155,46 +154,19 @@ fun DiagLogPanel(
 private const val VISIBLE_LINES = 14
 
 /**
- * 로그를 파일 첨부로 내보내는 인텐트.
+ * 로그를 메신저 본문으로 내보내는 인텐트.
  *
- * 텍스트로 붙여 보내면 긴 로그가 메신저에서 **말없이 잘린다** —
- * 받은 쪽은 잘린 줄 모르고 원인을 엉뚱한 데서 찾는다.
- * 파일이 안 되는 기기·앱을 위해 본문에도 같은 내용을 함께 싣는다.
+ * 파일 첨부는 카카오톡에서 안내 문구만 보여 로그 확인이 막힌다.
+ * Binder 한도를 넘지 않도록 최근 로그만 텍스트로 싣는다.
  */
-private fun shareIntentFor(context: android.content.Context, text: String): Intent {
-    val base = Intent(Intent.ACTION_SEND)
+private fun shareIntentFor(text: String): Intent =
+    Intent(Intent.ACTION_SEND)
         .setType("text/plain")
         .putExtra(Intent.EXTRA_SUBJECT, "Smart Tesla 진단 로그")
+        .putExtra(Intent.EXTRA_TEXT, fallbackShareText(text))
 
-    val uri = runCatching {
-        // 공유 전용 폴더 하나만 FileProvider에 열려 있다 — 내부 저장소 전체를 열면
-        // VIN이 든 설정 파일까지 나갈 수 있다
-        val dir = java.io.File(context.cacheDir, "logs").apply { mkdirs() }
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
-            .format(java.util.Date())
-        val file = java.io.File(dir, "smart-tesla-$stamp.txt")
-        file.writeText(text)
-        androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file,
-        )
-    }.getOrNull() ?: return base.putExtra(Intent.EXTRA_TEXT, fallbackShareText(text))
-
-    return base
-        // 전체 로그는 파일에만 둔다. 1MB 가까운 본문을 Intent에 중복하면
-        // Binder 한도를 넘어 공유 시트 자체가 열리지 않는다.
-        .putExtra(Intent.EXTRA_TEXT, "Smart Tesla 진단 로그 파일을 첨부했습니다.")
-        .putExtra(Intent.EXTRA_STREAM, uri)
-        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        // EXTRA_STREAM만 보는 앱과 ClipData 권한만 받는 앱을 모두 지원한다.
-        .apply {
-            clipData = ClipData.newUri(context.contentResolver, "Smart Tesla 진단 로그", uri)
-        }
-}
-
-/** 파일 생성 실패 때 Intent가 커지지 않도록 본문으로 보내는 최근 로그 상한 */
+/** Intent가 커지지 않도록 본문으로 보내는 최근 로그 상한 */
 private const val FALLBACK_TEXT_CHARS = 32_000
 
-/** 파일 첨부를 만들지 못해도 Binder 한도를 넘지 않는 최근 로그만 남긴다 */
+/** Binder 한도를 넘지 않는 최근 로그만 남긴다 */
 internal fun fallbackShareText(text: String): String = text.takeLast(FALLBACK_TEXT_CHARS)

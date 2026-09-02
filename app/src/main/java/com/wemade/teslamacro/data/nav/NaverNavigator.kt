@@ -2,15 +2,18 @@ package com.wemade.teslamacro.data.nav
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.location.Geocoder
 import android.net.Uri
 import android.provider.Settings
-import android.graphics.PixelFormat
-import android.view.View
+import android.view.Gravity
 import android.view.WindowManager
-import kotlinx.coroutines.delay
+import android.widget.TextView
 import com.wemade.teslamacro.domain.macro.GeoPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -20,8 +23,11 @@ import java.util.Locale
  * 주소 → 좌표는 안드로이드 내장 지오코더로 푼다 — 네이버 API 키가 필요 없다.
  * 백그라운드에서 다른 앱(지도)을 띄우려면 "다른 앱 위에 표시" 권한이 필수다 (안드로이드 제약).
  */
-/** 창이 실제로 붙는 데 걸리는 시간. 너무 짧으면 예외가 안 열린다 */
-private const val WINDOW_ATTACH_MILLIS = 120L
+/** 시스템이 실제 보이는 오버레이로 인식할 때까지 기다리는 시간 */
+private const val WINDOW_ATTACH_MILLIS = 500L
+
+/** 화면 전환 판정이 끝날 때까지 실행 창을 유지하는 시간 */
+private const val WINDOW_KEEP_MILLIS = 1_000L
 
 /** 주소 → 좌표 캐시 저장소 이름 */
 private const val GEOCODE_CACHE = "geocode_cache"
@@ -55,7 +61,8 @@ class NaverNavigator(private val context: Context) {
             val installed = installedPackage(app)
                 ?: error("${app.label} 앱이 설치되어 있지 않아요")
             launchAny(app, installed, point.latitude, point.longitude, label)
-            com.wemade.teslable.DiagLog.add("${app.label} 안내 시작 → $label")
+            // startActivity는 화면이 안 떠도 예외를 안 던진다 — 실제로 증명한 것은 요청까지다
+            com.wemade.teslable.DiagLog.add("${app.label} 안내 실행 요청 → $label")
         }.recoverCatching { throwable ->
             // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
             // 잘못 기록되고, 취소가 상위로 전파되지 않는다
@@ -88,7 +95,7 @@ class NaverNavigator(private val context: Context) {
             val intent = Intent(Intent.ACTION_VIEW, uri)
                 .setPackage(packageName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val handled = runCatching { launchFromBackground(intent) }
+            val handled = runCatching { launchFromBackground(intent, app.label) }
                 .onFailure { lastFailure = it }
                 .isSuccess
             if (handled) return
@@ -103,33 +110,61 @@ class NaverNavigator(private val context: Context) {
      * 실제로 떠 있는 창이 있어야 배경 실행 예외가 열린다 —
      * 권한만 믿고 startActivity를 부르면 예외도 안 나고 그냥 무시된다(로그엔 성공으로 남는다).
      *
-     * 그래서 1×1 투명 창을 잠깐 올렸다가 인텐트를 던지고 곧바로 내린다.
-     * 창 조작은 메인 스레드에서만 되고, 붙는 데 한 프레임이 걸려 짧게 기다린다.
+     * 1×1 투명 창은 addView가 성공해도 배경 화면 전환 예외를 안정적으로 열지 못했다(0.9.5 실차).
+     * 그래서 작은 안내 창을 실제로 보여 주고, 시스템 판정이 끝날 때까지 유지한다.
+     * 창 조작은 메인 스레드에서만 한다.
      *
      * 실차 증거(0.8.31): 앱을 최근에 켠 뒤에는 떴고, 배경에 55분 있었을 땐 안 떴다 —
      * 포그라운드 유예 시간에만 통하고 있었다는 뜻이다.
      */
-    private suspend fun launchFromBackground(intent: Intent) = withContext(Dispatchers.Main) {
-        val manager = context.getSystemService(WindowManager::class.java)
-        val anchor = View(context)
-        val params = WindowManager.LayoutParams(
-            1,
-            1,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-            PixelFormat.TRANSLUCENT,
-        )
-        val attached = runCatching { manager.addView(anchor, params) }.isSuccess
-        // 창을 못 올렸으면 배경 실행이 막힐 공산이 크다. 나중에 원인을 찾을 수 있게 남긴다
-        if (!attached) {
-            com.wemade.teslable.DiagLog.add("지도 안내 · 오버레이 창 실패 — 배경 실행이 막힐 수 있음")
+    private suspend fun launchFromBackground(intent: Intent, appLabel: String) =
+        withContext(Dispatchers.Main) {
+            val manager = context.getSystemService(WindowManager::class.java)
+            val anchor = createLaunchAnchor(appLabel)
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                y = (24 * context.resources.displayMetrics.density).toInt()
+            }
+            val attached = runCatching { manager.addView(anchor, params) }.isSuccess
+            if (!attached) {
+                error("지도 실행 창을 올리지 못했어요")
+            }
+            try {
+                delay(WINDOW_ATTACH_MILLIS)
+                if (!anchor.isAttachedToWindow || !anchor.isShown) {
+                    error("지도 실행 창이 화면에 붙지 않았어요")
+                }
+                context.startActivity(intent)
+                delay(WINDOW_KEEP_MILLIS)
+            } finally {
+                runCatching { manager.removeView(anchor) }
+            }
         }
-        try {
-            if (attached) delay(WINDOW_ATTACH_MILLIS)
-            context.startActivity(intent)
-        } finally {
-            if (attached) runCatching { manager.removeView(anchor) }
+
+    /** 백그라운드 화면 전환 예외를 열기 위한 실제 보이는 일회성 창 */
+    private fun createLaunchAnchor(appLabel: String): TextView {
+        val density = context.resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        return TextView(context).apply {
+            text = "$appLabel 여는 중"
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(Color.parseColor("#1A1A17"))
+            textSize = 18f
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F2F0E9"))
+                cornerRadius = 0f
+                setStroke(maxOf(1, dp(1)), Color.parseColor("#1A1A17"))
+            }
         }
     }
 

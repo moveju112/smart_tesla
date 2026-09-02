@@ -223,7 +223,8 @@ class MacroRunner(
                 isError = true,
             )
         } else {
-            append(now(), rule.name, "${step.destinationName} 안내 시작")
+            // 화면 표시 여부는 Android가 알려주지 않는다 — 인텐트를 보낸 사실만 기록한다
+            append(now(), rule.name, "${step.destinationName} 안내 실행 요청")
         }
     }
 

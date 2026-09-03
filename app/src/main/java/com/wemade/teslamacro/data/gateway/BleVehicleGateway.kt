@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -104,7 +105,9 @@ class BleVehicleGateway(
             val weak = mutableSetOf<String>()
 
             val exact = withTimeoutOrNull(NAME_WINDOW_MS) {
-                scanner.scanNearby().first { candidate ->
+                // 광고가 한 건도 없으면 Flow가 정상 종료된다. first는 이 경우 예외를 던져
+                // 아래의 후보 없음 안내까지 못 가므로 null로 받아 정상 실패 흐름을 탄다.
+                scanner.scanNearby().firstOrNull { candidate ->
                     if (targetNames.any { candidate.localName.equals(it, ignoreCase = true) }) {
                         true
                     } else {

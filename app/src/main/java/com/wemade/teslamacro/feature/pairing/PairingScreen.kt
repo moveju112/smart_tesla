@@ -97,11 +97,14 @@ fun PairingScreen(
         form = {
             // VIN 입력을 끝낸 뒤에는 이미 완료한 입력·앱 이동을 다시 보여주지 않는다.
             if (state.step == PairingStep.EnterVin) {
-                TCard {
+                // 빈 밑줄만 있으면 입력칸이 아니라 구분선처럼 보인다.
+                // 주 입력만 굵은 괘선으로 떼고 값이 들어갈 자리를 문장으로 가리킨다.
+                TCard(outlined = true) {
                     DraftField(
                         value = state.vin,
                         onValueChange = onVinChange,
-                        label = "VIN (17자)",
+                        label = "차량 식별번호 (VIN)",
+                        placeholder = "여기를 눌러 VIN 17자 입력",
                         singleLine = true,
                         isError = state.vin.isNotEmpty() && !state.isVinValid,
                         keyboardOptions = KeyboardOptions(
@@ -109,13 +112,13 @@ fun PairingScreen(
                         ),
                         modifier = Modifier.fillMaxWidth(),
                     )
-
-                    Spacer(Modifier.height(Space.md))
-                    OpenTeslaAppButton()
-
-                    Spacer(Modifier.height(Space.sm))
-                    VinPrivacyNotice()
                 }
+
+                Spacer(Modifier.height(Space.md))
+                OpenTeslaAppButton()
+
+                Spacer(Modifier.height(Space.sm))
+                VinPrivacyNotice()
             }
 
             if (state.message != null) {

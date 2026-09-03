@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
 import com.wemade.teslamacro.ui.theme.Space
@@ -260,6 +261,8 @@ fun DraftField(
     suffix: String? = null,
     /** 주기(註記). 밑줄 아래 작게 붙는다 */
     note: String? = null,
+    /** 빈 기입란이 공백처럼 보이지 않도록 값이 들어갈 자리를 직접 알려준다 */
+    placeholder: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val rule = if (focused) Stroke.bold else Stroke.thin
@@ -277,34 +280,52 @@ fun DraftField(
         )
         Spacer(Modifier.height(Space.xs))
         Row(verticalAlignment = Alignment.Bottom) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            singleLine = singleLine,
-            keyboardOptions = keyboardOptions,
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                color = if (enabled) T.Ink else T.InkFaint,
-            ),
-            cursorBrush = SolidColor(T.Ink),
-            interactionSource = remember { MutableInteractionSource() }
-                .also { source ->
-                    val isFocused by source.collectIsFocusedAsState()
-                    focused = isFocused
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                singleLine = singleLine,
+                keyboardOptions = keyboardOptions,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = if (enabled) T.Ink else T.InkFaint,
+                ),
+                cursorBrush = SolidColor(T.Ink),
+                interactionSource = remember { MutableInteractionSource() }
+                    .also { source ->
+                        val isFocused by source.collectIsFocusedAsState()
+                        focused = isFocused
+                    },
+                decorationBox = { innerTextField ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = Space.sm),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        if (value.isEmpty() && placeholder != null) {
+                            Text(
+                                text = placeholder,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = T.InkMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        innerTextField()
+                    }
                 },
-            modifier = Modifier
-                .weight(1f)
-                .heightIn(min = 40.dp)
-                .padding(vertical = Space.sm),
-        )
-        if (suffix != null) {
-            Text(
-                text = suffix,
-                style = MaterialTheme.typography.bodyMedium,
-                color = T.InkFaint,
-                modifier = Modifier.padding(start = Space.sm, bottom = Space.sm),
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 40.dp),
             )
-        }
+            if (suffix != null) {
+                Text(
+                    text = suffix,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = T.InkFaint,
+                    modifier = Modifier.padding(start = Space.sm, bottom = Space.sm),
+                )
+            }
         }
         Box(
             Modifier

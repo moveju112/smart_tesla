@@ -20,6 +20,8 @@
 - 실기기는 **ALLDOCUBE iPlay 60 mini Pro** (8.4" 1920×1200 ≈ 960×600dp) — 세로가 짧다. UI는 폭에 따라 칸이 바뀌는 반응형이어야 한다
 - **UI를 바꿨으면 반드시 `WideScreenshotTest`(실기기 크기)로 눈으로 확인한다.** 기본 `ScreenshotTest`는 PIXEL_C(1280×900dp)라 실기기보다 가로 320dp·세로 300dp가 더 넓다 — 여기서만 보면 실기기에서 칩이 접히고 글자가 잘리는 걸 못 잡는다 (0.8.22·0.8.29에서 두 번 새어 나감)
 - `./gradlew test`에 Paparazzi는 없다 — UI 변경 시 `recordPaparazziDebug` 별도
+- **사용자가 승인한 코드 변경은 검증 통과 후 자동 릴리즈한다.** 별도 확인 없이 다음 패치 버전 선택 → versionCode +1 → 테스트·Paparazzi·arm64 빌드 → 관련 파일만 커밋 → 현재 추적 브랜치 푸시 → annotated 태그 → GitHub Release·APK 첨부 → 원격 HEAD·태그·APK SHA-256 검증까지 [RELEASE_BUILD.md](docs/tasks/RELEASE_BUILD.md)대로 완료한다. 사용자가 릴리즈 제외를 명시했거나 검증 실패·실 VIN/비밀값·무관한 변경 혼입이 있으면 중단한다
+- 자동 릴리즈 상시 권한은 `moveju112/smart_tesla`의 현재 추적 브랜치·일치 태그·GitHub Release에만 적용한다. force-push·merge/rebase·브랜치 삭제·의존성 업그레이드·기기 설치·스토어 배포·DB/데이터/서비스·이슈/PR 변경은 포함하지 않으며, BLE는 사용자 실차 로그 전까지 미확인이다
 - 배포마다 versionCode +1, 실기기는 arm64 split APK (universal 없음)
 - **실기기 로그는 `adb`가 아니라 앱의 "설정 → 기기 → 진단 로그 → 공유"로 받는다** — 차내 태블릿은 PC에 안 물려 있다. 로그는 `filesDir/diag/`에 파일로 남아 앱 재시작을 견딘다 (docs/tasks/RELEASE_BUILD.md)
 - 주석은 한국어 "왜" 중심, 새 함수 위 설명 주석 필수

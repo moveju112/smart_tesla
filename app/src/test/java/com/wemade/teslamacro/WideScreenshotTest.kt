@@ -223,6 +223,24 @@ class WideScreenshotTest {
         }
     }
 
+    /** 가로 실기기에서도 VIN 기입란과 주 동작이 한 화면에 함께 보이는지 확인한다 */
+    @Test
+    fun `W6b 차량 등록 - VIN 입력`() {
+        paparazzi.snapshot("W6b-pairing-vin") {
+            FullScreenFrame {
+                com.wemade.teslamacro.feature.pairing.PairingScreen(
+                    state = com.wemade.teslamacro.feature.pairing.PairingUiState(
+                        detectedName = "Tesla Model Y",
+                    ),
+                    onVinChange = {},
+                    onFindVehicle = {},
+                    onRequestEnrollment = {},
+                    onSkip = {},
+                )
+            }
+        }
+    }
+
     // 릴리스 노트는 새 버전이 있을 때만 뜬다 — W5(기본 상태)에는 안 잡혀 따로 세운다
     @Test
     fun `W8 업데이트 알림`() {

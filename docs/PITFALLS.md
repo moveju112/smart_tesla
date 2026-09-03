@@ -6,6 +6,10 @@
   - Cause: Smart Tesla는 무필터·확장·필터 스캔 3개를 동시에 열었고, 같은 폰에서 테파일럿의 단일 스캔만 발견에 성공함
   - Fix: 테파일럿과 같은 단일 무필터 BALANCED 스캔을 legacy → extended 순서로 실행. 이식 후 실차 재확인 필요. 검증된 저장 MAC은 autoConnect=true 직행 — [BLE_RULES.md](BLE_RULES.md) 연결 정책
 
+- **Symptom:** 스캔 0대 뒤 `Expected at least one element matching the predicate`로 연결 실패
+  - Cause: 빈 스캔 Flow가 정상 종료됐는데 `first {}`가 예외를 던져 후보 없음 처리까지 못 감
+  - Fix: `firstOrNull {}`로 받아 후보 0대 안내와 정상 실패 흐름을 계속 탄다 — `BleVehicleGateway.kt`
+
 - **Symptom:** VCSEC 명령(잠금 등)이 계속 "응답 시간 초과"
   - Cause: VCSEC 응답에 request_uuid가 비어 와서 엄격 매칭이 전부 버림
   - Fix: `tesla-ble/src/main/java/com/wemade/teslable/TeslaClient.kt:271` 빈 uuid 허용 폴백 유지 + 요청 직렬화(requestLock) 절대 깨지 말 것

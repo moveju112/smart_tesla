@@ -62,6 +62,10 @@
   - Cause: `Theme.NoDisplay`인 `QuickActionActivity`가 BLE 연결이 끝날 때까지 `finish()`를 미뤄 Android가 `onResume`에서 강제 종료함. 직접 명령은 수신·결과 로그도 없었음
   - Fix: 숨은 화면은 요청을 `MacroService`에 넘기고 즉시 종료한다. 서비스가 명시적 사용자 요청으로 연결·명령을 처리하며 수신/성공/실패를 모두 진단 로그에 남긴다
 
+- **Symptom:** 빅스비 보닛 열기 요청은 수신됐지만 `기어=null`로 차단됨
+  - Cause: 보닛 안전검사가 잠든 차량의 인포테인먼트에 곧바로 DRIVE 상태를 요청해, 차량을 깨우기도 전에 조회 실패를 P단 아님으로 처리함
+  - Fix: 기존 `sendInfotainmentAwake()` 경로로 DRIVE 상태를 읽는다. 첫 조회가 실패하면 VCSEC으로 차량을 깨우고 재조회하며, 끝까지 P단을 확인하지 못했을 때만 차단한다
+
 - **Symptom:** 음성 상시 대기를 켜도 서비스가 안 올라옴
   - Cause: 마이크 포그라운드 서비스는 앱이 화면에 떠 있을 때만 시작 가능 (Android 제약)
   - Fix: 앱 실행 중 토글 — `app/src/main/java/com/wemade/teslamacro/MainActivity.kt:130` 주석 참조

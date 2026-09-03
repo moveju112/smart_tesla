@@ -326,9 +326,19 @@ class BleVehicleGateway(
         val active = client ?: return Result.failure(IllegalStateException("차량에 연결되어 있지 않아요"))
 
         // 1. 보닛/트렁크는 주행 중 열리면 치명적이다. P단이 확인될 때만 차량에 보낸다.
-        //    기어를 못 읽으면(차가 잠듦 등) 여는 쪽이 아니라 막는 쪽으로 넘어진다
+        //    잠든 차는 DRIVE 조회 전에 VCSEC으로 깨워 다시 확인하되, 끝내 못 읽으면 막는다
         if (command.requiresPark()) {
-            val shift = read(StateCategory.DRIVE).getOrNull()?.shiftState
+            val shift = runCatching {
+                val request = CommandEncoder.encodeVehicleDataRequest(setOf(StateCategory.DRIVE))
+                val response = sendInfotainmentAwake(
+                    active = active,
+                    command = VehicleCommand.Wake,
+                    action = request.toByteArray(),
+                )
+                SnapshotDecoder.fromVehicleData(response, System.currentTimeMillis()).shiftState
+            }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+            }.getOrNull()
             if (shift != ShiftState.PARK) {
                 com.wemade.teslable.DiagLog.add("${command.label} 차단 — 기어=$shift")
                 val reason = if (shift == null || shift == ShiftState.UNKNOWN) {

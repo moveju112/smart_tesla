@@ -9,10 +9,11 @@
   - ✅ `app/src/main/java/com/wemade/teslamacro/data/gateway/BleVehicleGateway.kt:156` (direct), `:179` (saved)
 - **[NEVER]** ScanFilter에 serviceUuid와 deviceName을 함께 걸지 않는다 — 아예 필터 없이 스캔하고 코드에서 거른다
   - why: UUID는 ADV 패킷, 이름은 SCAN_RSP 패킷에 나뉘어 옴. 한 필터에 묶으면 한 패킷 안 동시 매칭을 요구해 영영 못 잡음
-  - ✅ `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleScanner.kt:35` 주석 + `:186` `startScan(null, ...)`
-- **[MUST]** 스캔은 legacy + extended 광고 양쪽을 켠다
-  - why: 하나만 켜면 반대쪽 광고를 놓친다 (`TeslaBleScanner.kt:107`)
-- 광고 이름 공식: `"S" + SHA1(VIN)[:8].hex + "C"` (18자) — `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleSpec.kt:32`
+  - ✅ `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleScanner.kt` `startScan(emptyList(), ...)`
+- **[MUST]** 테파일럿처럼 한 번에 스캔 하나만 연다: 무필터·BALANCED로 legacy 7.5초 후 extended 7.5초
+  - why: 같은 갤럭시에서 테파일럿은 발견했지만 기존 3중 동시 스캔은 결과가 0건이었다. 이식 후 실차 재확인 필요 (`TeslaBleScanner.kt`)
+- 광고 이름 후보: `"S" + SHA1(VIN)[:8].hex + [C/D/R/P]` (18자) — `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleSpec.kt`
+- **[NEVER]** 페어링 목록의 `Tesla Model …` 주소로 키 연결을 시도하지 않는다. 110B/110E/111E UUID는 음악·통화용 클래식 BT다
 - 차량 닉네임(대소문자 그대로)은 `getBondedDevices()`에서 온다 — 스캔 불필요, BLUETOOTH_CONNECT만 필요 (`TeslaBleScanner.kt:59`)
 
 ## 도메인 · 요청 규율

@@ -24,16 +24,24 @@ object TeslaBleSpec {
     /** 차량이 받아들이는 단일 메시지 최대 길이 */
     const val MAX_MESSAGE_LENGTH = 1024
 
+    /** 테파일럿이 실제 차량 검색에 사용하는 광고 이름 접미사 */
+    private const val BLE_NAME_SUFFIXES = "CDRP"
+
     /**
      * VIN에서 BLE 광고 이름을 만든다.
      * 규칙: "S" + SHA1(VIN) 앞 8바이트 소문자 hex + "C"
      * 예) 5YJS0000000000000 -> S1a87a5a75f3df858C
      */
     fun bleLocalName(vin: String): String {
+        return bleLocalNames(vin).first()
+    }
+
+    /** 같은 VIN에서 파생되는 차량 광고 이름 후보를 테파일럿 순서로 만든다 */
+    fun bleLocalNames(vin: String): List<String> {
         val normalized = normalizeVin(vin)
         val digest = MessageDigest.getInstance("SHA-1").digest(normalized.toByteArray(Charsets.US_ASCII))
         val hex = digest.take(8).joinToString("") { "%02x".format(it) }
-        return "S${hex}C"
+        return BLE_NAME_SUFFIXES.map { suffix -> "S$hex$suffix" }
     }
 
     /** VIN 형식 검증 후 대문자로 정규화한다 (17자, I/O/Q 제외) */

@@ -8,9 +8,16 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.os.SystemClock
+import java.io.IOException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** 폰에 이미 페어링된 기기 하나 */
 data class BondedDevice(
@@ -35,10 +42,8 @@ data class DiscoveredVehicle(
 /**
  * 테슬라 차량을 BLE로 찾는다.
  *
- * 시스템 스캔 필터(ScanFilter)를 쓰지 않는다.
- * 차량은 서비스 UUID를 광고 패킷에, 이름을 스캔 응답 패킷에 나눠 싣는데
- * 둘을 한 필터에 묶으면 한 패킷 안에서 둘 다 찾다가 영영 못 만난다.
- * 그래서 다 받아서 코드에서 거른다. 스캔은 길어야 15초라 부담이 없다.
+ * 테파일럿처럼 시스템 필터 없이 BALANCED 모드로 legacy와 extended를 차례로 훑는다.
+ * 여러 스캔을 동시에 열면 일부 삼성 기기에서 시작은 성공하지만 결과가 0건으로 끝난다.
  */
 class TeslaBleScanner(context: Context) {
 
@@ -77,18 +82,11 @@ class TeslaBleScanner(context: Context) {
      * 호출 전에 BLUETOOTH_SCAN 권한을 확보해야 한다.
      */
     fun scan(vin: String): Flow<DiscoveredVehicle> {
-        val targetName = TeslaBleSpec.bleLocalName(vin)
-        // 서비스 UUID 필터는 rawScan이 항상 건다. 여기서는 이름 필터만 추가로 얹는다.
-        // 단, 필터 하나에 UUID+이름을 같이 걸면 안 된다(패킷 단위 평가) — 반드시 한 필터 한 조건
-        val hardwareFilters = listOf(
-            android.bluetooth.le.ScanFilter.Builder()
-                .setDeviceName(targetName)
-                .build(),
-        )
+        val targetNames = TeslaBleSpec.bleLocalNames(vin)
         // 이름이 맞으면 확정, 아니어도 테슬라 서비스를 광고하면 후보로 흘린다.
         // 신형 펌웨어가 이름 규칙을 바꿔도 서비스 UUID는 프로토콜이라 못 바꾼다
-        return rawScan(hardwareFilters) { name, hasTeslaService ->
-            name.equals(targetName, ignoreCase = true) || hasTeslaService
+        return rawScan { name, hasTeslaService ->
+            targetNames.any { name.equals(it, ignoreCase = true) } || hasTeslaService
         }
     }
 
@@ -100,14 +98,39 @@ class TeslaBleScanner(context: Context) {
      */
     fun scanNearby(): Flow<DiscoveredVehicle> = rawScan { _, _ -> true }
 
-    /** 이름이 "S…C" 18자 꼴인가. 차량 광고 이름 규칙이다 */
+    /** 이름이 테파일럿에서 확인한 "S…[CDRP]" 18자 꼴인가 */
     fun isTeslaNamePattern(name: String): Boolean =
-        name.length == 18 && name.startsWith("S") && name.endsWith("C") &&
+        name.length == 18 && name.startsWith("S") && name.last() in "CDRP" &&
             name.substring(1, 17).all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
 
-    @SuppressLint("MissingPermission")
+    /** 앱 전체에서 스캔을 하나씩만 열고 legacy → extended 순서로 실행한다 */
     private fun rawScan(
-        hardwareFilters: List<android.bluetooth.le.ScanFilter> = emptyList(),
+        accept: (name: String, hasTeslaService: Boolean) -> Boolean,
+    ): Flow<DiscoveredVehicle> = flow {
+        scanMutex.lock()
+        try {
+            val elapsed = SystemClock.elapsedRealtime() - lastScanStartedAt
+            val cooldown = (SCAN_COOLDOWN_MS - elapsed).coerceAtLeast(0L)
+            if (lastScanStartedAt > 0L && cooldown > 0L) {
+                DiagLog.add("BLE 스캔 재시도 제한 — ${cooldown / 1000 + 1}초 대기")
+                delay(cooldown)
+            }
+            lastScanStartedAt = SystemClock.elapsedRealtime()
+
+            ScanMode.entries.forEach { mode ->
+                withTimeoutOrNull(MODE_SCAN_MS) {
+                    scanMode(mode, accept).collect { emit(it) }
+                }
+            }
+        } finally {
+            scanMutex.unlock()
+        }
+    }
+
+    /** 테파일럿과 같은 설정으로 한 광고 방식만 스캔한다 */
+    @SuppressLint("MissingPermission")
+    private fun scanMode(
+        mode: ScanMode,
         accept: (name: String, hasTeslaService: Boolean) -> Boolean,
     ): Flow<DiscoveredVehicle> = callbackFlow {
         val scanner = adapter?.bluetoothLeScanner
@@ -116,25 +139,21 @@ class TeslaBleScanner(context: Context) {
                 return@callbackFlow
             }
 
-        // 광고 방식을 추측하지 않는다. 옛날식(legacy)과 확장(extended) 스캔을 둘 다 돌려
-        // 어느 쪽으로 뿌리든 받는다. legacy 하나만 켜면 확장 광고를 놓치고, 그 반대도 마찬가지다.
-        val legacySettings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
             .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-            .build()
-        val extendedSettings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-            .setLegacy(false)
-            .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+            .setReportDelay(0L)
+            .apply {
+                if (mode == ScanMode.EXTENDED) {
+                    setLegacy(false)
+                    setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+                }
+            }
             .build()
 
-        // 테슬라형 이름을 처음 받는 순간 한 번씩만 찍는다. 광고가 콜백에 도달하는지 증거.
-        // 두 스캐너가 공유하므로 동기화한다
-        val teslaSeen = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        val teslaSeen = mutableSetOf<String>()
 
-        // 모든 스캐너의 결과를 한 곳에서 처리한다
-        val handle = { label: String, result: ScanResult ->
+        val handle = { result: ScanResult ->
             val record = result.scanRecord
             // 테슬라 서비스 UUID는 세 곳 중 아무 데나 실려 올 수 있다 — 검증된 참고 앱(테파일럿)이
             // 셋 다 본다. 광고 UUID만 보면 solicitation/service-data로만 광고하는 차를 놓친다
@@ -151,9 +170,9 @@ class TeslaBleScanner(context: Context) {
 
             if (name != null) {
                 // accept 필터 전에, 테슬라형 광고면 무조건 로그로 남긴다.
-                // 어느 경로(무필터/필터)로 들어왔는지가 스캔 문제 진단의 핵심 증거다
+                // 어느 광고 방식으로 들어왔는지가 스캔 문제 진단의 핵심 증거다
                 if ((isTeslaNamePattern(name) || hasService) && teslaSeen.add(result.device.address)) {
-                    DiagLog.add("★수신($label) $name · ${result.device.address} · ${result.rssi}dBm" +
+                    DiagLog.add("★수신(${mode.label}) $name · ${result.device.address} · ${result.rssi}dBm" +
                         (if (hasService) " svc:00000211" else ""))
                 }
 
@@ -185,43 +204,43 @@ class TeslaBleScanner(context: Context) {
             Unit
         }
 
-        fun callbackFor(label: String) = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) { handle(label, result) }
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) = handle(result)
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                results.forEach(handle)
+            }
+
             override fun onScanFailed(errorCode: Int) {
-                // 확장 스캔은 기기가 지원 안 하면 실패할 수 있다. 로그만 남기고 계속 간다
-                DiagLog.add("BLE 스캔($label) 실패 code=$errorCode")
+                val message = "BLE 스캔 실패 code=$errorCode (${mode.label})"
+                DiagLog.add(message)
+                close(IOException(message))
             }
         }
 
-        val legacyCb = callbackFor("legacy")
-        val extendedCb = callbackFor("ext")
-        val filteredCb = callbackFor("filtered")
-
-        DiagLog.add("BLE 스캔 시작 (legacy+ext+filtered)")
-        // 무필터 스캔: 다 받아서 코드에서 거른다.
-        // 권한 거부 등으로 터지면 앱이 죽지 않게 감싸고 로그만 남긴다
-        runCatching { scanner.startScan(null, legacySettings, legacyCb) }
-            .onFailure { DiagLog.add("스캔 시작 불가: ${it.message}") }
-        runCatching { scanner.startScan(null, extendedSettings, extendedCb) }
-            .onFailure { DiagLog.add("확장 스캔 시작 불가: ${it.message}") }
-        // 필터 스캔: 무필터를 제한하는 제조사 스택 우회용.
-        // 테슬라 서비스 UUID 필터는 **항상** 건다 — 진단(scanNearby)·연결(게이트웨이) 어느
-        // 경로로 스캔해도 차 광고가 이 경로로는 들어올 기회를 갖게 한다
-        val filters = buildList {
-            add(
-                android.bluetooth.le.ScanFilter.Builder()
-                    .setServiceUuid(android.os.ParcelUuid(TeslaBleSpec.SERVICE_UUID))
-                    .build()
-            )
-            addAll(hardwareFilters)
-        }
-        runCatching { scanner.startScan(filters, legacySettings, filteredCb) }
-            .onFailure { DiagLog.add("필터 스캔 시작 불가: ${it.message}") }
+        DiagLog.add("BLE 스캔 시작 (${mode.label}, balanced, unfiltered)")
+        runCatching { scanner.startScan(emptyList(), settings, callback) }
+            .onFailure {
+                DiagLog.add("BLE 스캔 시작 불가(${mode.label}): ${it.message}")
+                close(it)
+            }
 
         awaitClose {
-            runCatching { scanner.stopScan(legacyCb) }
-            runCatching { scanner.stopScan(extendedCb) }
-            runCatching { scanner.stopScan(filteredCb) }
+            runCatching { scanner.stopScan(callback) }
         }
+    }
+
+    private enum class ScanMode(val label: String) {
+        LEGACY("legacy"),
+        EXTENDED("extended"),
+    }
+
+    private companion object {
+        const val MODE_SCAN_MS = 7_500L
+        const val SCAN_COOLDOWN_MS = 8_000L
+        val scanMutex = Mutex()
+
+        @Volatile
+        var lastScanStartedAt = 0L
     }
 }

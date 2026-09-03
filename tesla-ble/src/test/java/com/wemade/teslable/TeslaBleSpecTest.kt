@@ -16,6 +16,19 @@ class TeslaBleSpecTest {
     }
 
     @Test
+    fun `테파일럿과 같은 접미사 후보를 순서대로 만든다`() {
+        assertEquals(
+            listOf(
+                "S1a87a5a75f3df858C",
+                "S1a87a5a75f3df858D",
+                "S1a87a5a75f3df858R",
+                "S1a87a5a75f3df858P",
+            ),
+            TeslaBleSpec.bleLocalNames("5YJS0000000000000"),
+        )
+    }
+
+    @Test
     fun `소문자 VIN도 같은 결과를 낸다`() {
         assertEquals(
             TeslaBleSpec.bleLocalName("5YJS0000000000000"),

@@ -41,11 +41,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             // 시뮬레이터가 붙어 있으면 가짜로 성공해버린다. 실차로 갈아끼운다
             container.useRealVehicle()
 
-            var result = container.gateway.connect(vin, allowProbe = true)
-
-            // 스캔이 차 광고를 아예 못 받는 폰이 있다 (실기기 확인).
-            // 그런 폰을 위해 페어링 목록의 테슬라 후보 주소로 직행을 이어서 시도한다
-            if (result.isFailure) result = connectViaBonded(vin) ?: result
+            val result = container.gateway.connect(vin, allowProbe = true)
 
             // 차를 실제로 찾았을 때만 VIN을 저장한다.
             // 실패했는데 저장하면 "등록된 차"로 남아 백그라운드가 헛돌고,
@@ -73,7 +69,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                         step = PairingStep.FindVehicle,
                         isBusy = false,
                         isError = true,
-                        message = "$reason\n(검색한 이름 ${TeslaBleSpec.bleLocalName(vin)})",
+                        message = "$reason\n(검색한 이름 ${TeslaBleSpec.bleLocalNames(vin).joinToString("|")})",
                     )
                 }
             }
@@ -92,8 +88,8 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                 it.copy(isBusy = true, nearby = null, message = "주변 기기를 훑는 중…", isError = false)
             }
 
-            val expected = TeslaBleSpec.bleLocalName(_uiState.value.vin)
-            com.wemade.teslable.DiagLog.add("전체 스캔 시작 — 찾는 이름 $expected")
+            val expected = TeslaBleSpec.bleLocalNames(_uiState.value.vin)
+            com.wemade.teslable.DiagLog.add("전체 스캔 시작 — 찾는 이름 ${expected.joinToString("|")}")
 
             // 진단이므로 주소로 묶어 하나도 빠뜨리지 않는다. 이름 없는 기기도 남긴다.
             // 목표: 내 앱의 스캔 콜백이 그 이름/주소를 받는지 눈으로 확인하는 것
@@ -102,7 +98,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             withTimeoutOrNull(DIAG_SCAN_MS) {
                 container.scanner.scanNearby().collect { found ->
                     val addr = found.device.address
-                    val isMine = found.localName.equals(expected, ignoreCase = true)
+                    val isMine = expected.any { found.localName.equals(it, ignoreCase = true) }
                     // 찾는 이름이 실제로 콜백에 도착하는 순간을 놓치지 않고 찍는다
                     if (isMine && !matchedRaw) {
                         matchedRaw = true
@@ -121,7 +117,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             }
 
             val all = seen.values.sortedByDescending { it.rssi }
-            val mine = all.any { it.name.equals(expected, ignoreCase = true) }
+            val mine = all.any { found -> expected.any { found.name.equals(it, ignoreCase = true) } }
 
             // 받은 걸 전부 로그로 덤프한다. nRF이 보는 것과 대조할 수 있게
             com.wemade.teslable.DiagLog.add("전체 스캔 결과 ${all.size}대:")
@@ -140,40 +136,6 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                 )
             }
         }
-    }
-
-    /**
-     * 스캔 실패 시 마지막 수단 — 페어링 목록에서 테슬라로 보이는 기기 주소로 직행한다.
-     *
-     * 페어링 목록은 저장된 데이터라 광고 수신이 안 되는 폰에서도 읽힌다.
-     * connectDirect는 테슬라 서비스가 없으면 실패하므로 엉뚱한 기기에 붙을 걱정은 없다.
-     * 후보가 하나도 없으면 null — 원래 실패를 그대로 쓰라는 뜻이다.
-     */
-    private suspend fun connectViaBonded(vin: String): Result<Unit>? {
-        val candidates = container.scanner.bondedDevices()
-            .filter { device ->
-                device.name.contains("tesla", ignoreCase = true) ||
-                    container.scanner.isTeslaNamePattern(device.name) ||
-                    // 테슬라 차량 서비스 UUID(00000211-…)가 캐시에 남아 있는 경우
-                    device.uuids.any { it.startsWith("00000211") }
-            }
-            .take(MAX_BONDED_TRIES)
-
-        if (candidates.isEmpty()) {
-            com.wemade.teslable.DiagLog.add("페어링 목록에 테슬라 후보 없음 — 폴백 생략")
-            return null
-        }
-
-        // 1. 후보를 순서대로 붙어본다. autoConnect라 한 대에 최대 30초 걸린다
-        var last: Result<Unit>? = null
-        for (device in candidates) {
-            _uiState.update {
-                it.copy(message = "스캔 실패 → 페어링된 ${device.name}(으)로 직접 연결 중…")
-            }
-            last = container.gateway.connectDirect(vin, device.address)
-            if (last.isSuccess) return last
-        }
-        return last
     }
 
     /**
@@ -294,14 +256,11 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private companion object {
-        // 진단 스캔은 넉넉히. 광고 주기가 길면 짧은 창에서 놓친다
-        const val DIAG_SCAN_MS = 12_000L
+        // 첫 스캔 15초 + 직전 스캔이 일찍 끝난 경우의 재시도 제한 최대 8초
+        const val DIAG_SCAN_MS = 24_000L
 
         // 카드키 태그 대기: 3초 간격 × 30회 = 90초. 카드 꺼내는 시간까지 넉넉히
         const val TAP_POLL_SECONDS = 3
         const val TAP_WAIT_TRIES = 30
-
-        // 페어링 폴백은 가장 그럴듯한 후보 몇 대만. 한 대에 최대 30초라 늘리면 하세월이다
-        const val MAX_BONDED_TRIES = 2
     }
 }

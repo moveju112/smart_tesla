@@ -3,8 +3,8 @@
 ## BLE
 
 - **Symptom:** 앱 스캔에 차가 안 잡힘 — nRF Connect/TePilot에서는 바로 보임
-  - Cause: 일부 폰(개발자 삼성 실기기)에서 앱 스캔 콜백에 차 광고가 아예 안 옴. 원인 미해명
-  - Fix: 스캔에 매달리지 말 것. 저장 MAC 직행 + autoConnect=true가 정본 — [BLE_RULES.md](BLE_RULES.md) 연결 정책
+  - Cause: Smart Tesla는 무필터·확장·필터 스캔 3개를 동시에 열었고, 같은 폰에서 테파일럿의 단일 스캔만 발견에 성공함
+  - Fix: 테파일럿과 같은 단일 무필터 BALANCED 스캔을 legacy → extended 순서로 실행. 이식 후 실차 재확인 필요. 검증된 저장 MAC은 autoConnect=true 직행 — [BLE_RULES.md](BLE_RULES.md) 연결 정책
 
 - **Symptom:** VCSEC 명령(잠금 등)이 계속 "응답 시간 초과"
   - Cause: VCSEC 응답에 request_uuid가 비어 와서 엄격 매칭이 전부 버림

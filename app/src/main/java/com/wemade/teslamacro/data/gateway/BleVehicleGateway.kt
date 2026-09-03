@@ -73,8 +73,9 @@ class BleVehicleGateway(
             // 이어지는 동안은 시작·실패 로그를 생략해 버퍼(300줄)를 지킨다
             val repeatAttempt = lastConnectFailure != null
             if (!repeatAttempt) {
+                val searchNames = com.wemade.teslable.TeslaBleSpec.bleLocalNames(vin)
                 com.wemade.teslable.DiagLog.add(
-                    "연결 시작 (검색 이름 ${com.wemade.teslable.TeslaBleSpec.bleLocalName(vin)})"
+                    "연결 시작 (검색 이름 ${searchNames.joinToString("|")})"
                 )
             }
 
@@ -91,20 +92,20 @@ class BleVehicleGateway(
                 return@runCatching
             }
 
-            // 0-1. 백그라운드 재시도는 여기서 끝낸다 — 이 폰 스캔은 차 광고를 못 받아(BLE_RULES)
-            //      아래 12초 스캔이 귀머거리 시간일 뿐이고, allowProbe=false라 후보 검증도 못 쓴다
+            // 0-1. 검증된 저장 주소가 있는 백그라운드 재시도는 여기서 끝낸다.
+            //      매번 새 스캔을 열면 배터리를 쓰고 주변 차 후보까지 건드리게 된다
             if (!allowProbe && saved.isNotBlank()) error("차량이 보이지 않아요")
 
             // 1. VIN으로 계산한 이름을 잠깐 찾아보고, 그동안 주변 후보도 모아둔다.
             //    규칙대로 광고하는 차(주로 구형)는 여기서 몇 초 만에 끝난다.
             //    신형은 광고 이름이 규칙과 달라 이 단계로는 못 찾는다 (실측 확인)
-            val targetName = com.wemade.teslable.TeslaBleSpec.bleLocalName(vin)
+            val targetNames = com.wemade.teslable.TeslaBleSpec.bleLocalNames(vin)
             val candidates = linkedMapOf<String, com.wemade.teslable.DiscoveredVehicle>()
             val weak = mutableSetOf<String>()
 
             val exact = withTimeoutOrNull(NAME_WINDOW_MS) {
                 scanner.scanNearby().first { candidate ->
-                    if (candidate.localName.equals(targetName, ignoreCase = true)) {
+                    if (targetNames.any { candidate.localName.equals(it, ignoreCase = true) }) {
                         true
                     } else {
                         // 너무 먼 기기는 후보에서 뺀다. 옆 주차칸 차를 잡으면 안 된다
@@ -588,11 +589,11 @@ class BleVehicleGateway(
 
     private companion object {
         /**
-         * 계산된 이름을 기다리는 시간.
-         * 규칙대로 광고하는 차는 이 안에 잡히고, 아닌 차는 아무리 기다려도 안 잡힌다.
-         * 길게 잡을수록 신형에서 접속 검증 시작만 늦어진다
+         * 테파일럿처럼 legacy와 extended를 각각 7.5초 확인한다.
+         * 직전 스캔 뒤 8초 재시도 제한까지 포함해 최대 24초를 허용한다.
+         * 첫 시도는 제한이 없어 15초 안에 끝난다.
          */
-        const val NAME_WINDOW_MS = 12_000L
+        const val NAME_WINDOW_MS = 24_000L
 
         /** 이름 없이 후보로 삼을 최소 신호. 옆 주차칸 차를 잡으면 안 된다 */
         const val NEARBY_RSSI_FLOOR = -70

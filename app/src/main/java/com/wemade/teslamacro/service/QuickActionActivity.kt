@@ -3,13 +3,8 @@ package com.wemade.teslamacro.service
 import android.app.Activity
 import android.os.Bundle
 import android.widget.Toast
-import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.domain.command.VehicleCommand
-import com.wemade.teslamacro.domain.command.confirmCategory
 import com.wemade.teslable.DiagLog
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 
 /**
  * 앱 화면을 열지 않고 명령 하나만 실행하는 진입점.
@@ -20,7 +15,7 @@ import kotlinx.coroutines.launch
  * - 빅스비 루틴 · Tasker · MacroDroid 같은 자동화 앱
  * - 저장 매크로 동적 바로가기
  *
- * 창을 띄우지 않고 실행 후 즉시 끝난다.
+ * 창을 띄우지 않고 감시 서비스에 요청을 넘긴 뒤 즉시 끝난다.
  */
 class QuickActionActivity : Activity() {
 
@@ -33,51 +28,23 @@ class QuickActionActivity : Activity() {
             ?: intent?.data?.getQueryParameter("action")
         val command = ACTIONS[action]
 
-        if (macroId == null && command == null) {
+        val requestLabel = macroId?.let { "매크로 $it" } ?: command?.label
+        if (requestLabel == null) {
+            DiagLog.add("빅스비 바로가기 거부 — 알 수 없는 동작: $action")
             toast("알 수 없는 동작: $action")
             finish()
             return
         }
 
-        val app = application as TeslaMacroApplication
-        MainScope().launch {
-            // 컨테이너 초기화 전에 눌릴 수 있다 (부팅 직후 바로가기)
-            app.ready.first { it }
-
-            val settings = app.container.settingsStore.settings.first()
-            // isReady(키 등록까지 완료) — isPaired만 보면 등록 핸드셰이크 도중에 끼어든다
-            if (settings.isReady) app.container.gateway.connect(settings.vin)
-
-            if (macroId != null) {
-                val rule = app.container.ruleStore.rules.value.firstOrNull { it.id == macroId }
-                if (rule == null) {
-                    toast("삭제된 매크로예요")
-                    finish()
-                    return@launch
-                }
-
-                // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
-                app.container.runner.launch(
-                    rule,
-                    System.currentTimeMillis(),
-                    restartIfRunning = true,
-                )
-                app.container.poller.recordFired(rule.id)
-                DiagLog.add("빅스비 매크로 [${rule.name}] 실행")
-                toast("${rule.name} 실행")
-                finish()
-                return@launch
+        // NoDisplay 화면은 onResume 전에 끝나야 한다. BLE 작업은 이미 살아 있는
+        // 감시 서비스에 넘겨야 연결을 기다리는 동안 시스템이 화면을 강제 종료하지 않는다.
+        DiagLog.add("빅스비 바로가기 수신 — $requestLabel")
+        runCatching { MacroService.runQuickAction(this, action, macroId) }
+            .onFailure { error ->
+                DiagLog.add("빅스비 바로가기 전달 실패 — $requestLabel: ${error.message}")
+                toast("$requestLabel 실행 실패")
             }
-
-            val result = app.container.gateway.send(checkNotNull(command))
-            // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다
-            if (result.isSuccess) app.container.poller.focusOn(command.confirmCategory())
-            toast(
-                if (result.isSuccess) "${command.label} 완료"
-                else "${command.label} 실패 — ${result.exceptionOrNull()?.message}"
-            )
-            finish()
-        }
+        finish()
     }
 
     private fun toast(message: String) {

@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
@@ -20,6 +21,7 @@ import com.wemade.teslamacro.MainActivity
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
+import com.wemade.teslamacro.domain.command.confirmCategory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -251,7 +253,80 @@ class MacroService : LifecycleService() {
     /** 위치 권한을 나중에 받아도 start()를 다시 부르면 여기서 타입이 갱신된다 */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         promote()
+        if (intent?.action == ACTION_RUN_QUICK_ACTION) {
+            val action = intent.getStringExtra(QuickActionActivity.EXTRA_ACTION)
+            val macroId = intent.getStringExtra(QuickActionActivity.EXTRA_MACRO_ID)
+            lifecycleScope.launch { handleQuickAction(action, macroId) }
+        }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
+    private suspend fun handleQuickAction(action: String?, macroId: String?) {
+        val app = application as TeslaMacroApplication
+        app.ready.first { it }
+
+        val command = QuickActionActivity.ACTIONS[action]
+        val rule = macroId?.let { id ->
+            app.container.ruleStore.rules.value.firstOrNull { it.id == id }
+        }
+        val requestLabel = rule?.name ?: command?.label
+        if (requestLabel == null) {
+            quickActionFailed("알 수 없는 동작", "삭제되었거나 지원하지 않는 바로가기예요")
+            return
+        }
+
+        com.wemade.teslable.DiagLog.add("빅스비 요청 처리 시작 — $requestLabel")
+        val settings = app.container.settingsStore.settings.first()
+        if (!settings.isReady) {
+            quickActionFailed(requestLabel, "차량 키 등록을 먼저 완료해 주세요")
+            return
+        }
+
+        // 사람이 방금 누른 요청이므로 저장 주소 직행이 한 번 실패하면 주변 검색까지 시도한다.
+        // 자동 폴링과 달리 후보 검증을 생략하면 일시적인 GATT 오류 한 번에 명령이 유실된다.
+        val connection = app.container.gateway.connect(settings.vin, allowProbe = true)
+        if (connection.isFailure) {
+            quickActionFailed(requestLabel, connection.exceptionOrNull()?.message ?: "차량 연결 실패")
+            return
+        }
+
+        if (rule != null) {
+            // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
+            app.container.runner.launch(
+                rule,
+                System.currentTimeMillis(),
+                restartIfRunning = true,
+            )
+            app.container.poller.recordFired(rule.id)
+            com.wemade.teslable.DiagLog.add("빅스비 매크로 [${rule.name}] 실행 요청 완료")
+            showQuickActionToast("${rule.name} 실행")
+            return
+        }
+
+        val result = app.container.gateway.send(checkNotNull(command))
+        if (result.isSuccess) {
+            // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다.
+            app.container.poller.focusOn(command.confirmCategory())
+            com.wemade.teslable.DiagLog.add("빅스비 명령 [${command.label}] 완료")
+            showQuickActionToast("${command.label} 완료")
+        } else {
+            quickActionFailed(
+                command.label,
+                result.exceptionOrNull()?.message ?: "차량이 명령을 거부했어요",
+            )
+        }
+    }
+
+    /** 빅스비 요청 실패를 진단 로그와 짧은 화면 안내에 함께 남긴다. */
+    private fun quickActionFailed(label: String, reason: String) {
+        com.wemade.teslable.DiagLog.add("빅스비 명령 [$label] 실패 — $reason")
+        showQuickActionToast("$label 실패 — $reason")
+    }
+
+    /** 숨은 실행 화면이 이미 끝난 뒤에도 결과를 사용자에게 알린다. */
+    private fun showQuickActionToast(message: String) {
+        Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
     }
 
     /**
@@ -334,6 +409,8 @@ class MacroService : LifecycleService() {
     companion object {
         private const val CHANNEL_ID = "macro_watch_min"
         private const val NOTIFICATION_ID = 1001
+        private const val ACTION_RUN_QUICK_ACTION =
+            "com.wemade.teslamacro.action.RUN_QUICK_ACTION"
 
         /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
         private const val UPDATE_CHANNEL_ID = "update_available"
@@ -341,6 +418,15 @@ class MacroService : LifecycleService() {
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, MacroService::class.java))
+        }
+
+        /** 숨은 바로가기 화면에서 받은 요청을 포그라운드 서비스에 안전하게 넘긴다. */
+        fun runQuickAction(context: Context, action: String?, macroId: String?) {
+            val intent = Intent(context, MacroService::class.java)
+                .setAction(ACTION_RUN_QUICK_ACTION)
+                .putExtra(QuickActionActivity.EXTRA_ACTION, action)
+                .putExtra(QuickActionActivity.EXTRA_MACRO_ID, macroId)
+            context.startForegroundService(intent)
         }
 
         fun stop(context: Context) {

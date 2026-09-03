@@ -58,6 +58,10 @@
   - Cause: APK의 정적 바로가기는 삼성 루틴 목록에 앱 동작으로 수집되지 않음 (갤럭시 실기기 2026-09-02)
   - Fix: `MacroShortcutPublisher`가 저장 매크로를 런타임 동적 바로가기로 발행한다. 시스템 슬롯이 적으면 애프터블로우와 수동 매크로를 우선한다 (0.9.7, 실기기 미확인)
 
+- **Symptom:** 빅스비 루틴에서 보닛 열기를 수동 실행해도 차량과 진단 로그가 모두 조용함
+  - Cause: `Theme.NoDisplay`인 `QuickActionActivity`가 BLE 연결이 끝날 때까지 `finish()`를 미뤄 Android가 `onResume`에서 강제 종료함. 직접 명령은 수신·결과 로그도 없었음
+  - Fix: 숨은 화면은 요청을 `MacroService`에 넘기고 즉시 종료한다. 서비스가 명시적 사용자 요청으로 연결·명령을 처리하며 수신/성공/실패를 모두 진단 로그에 남긴다
+
 - **Symptom:** 음성 상시 대기를 켜도 서비스가 안 올라옴
   - Cause: 마이크 포그라운드 서비스는 앱이 화면에 떠 있을 때만 시작 가능 (Android 제약)
   - Fix: 앱 실행 중 토글 — `app/src/main/java/com/wemade/teslamacro/MainActivity.kt:130` 주석 참조

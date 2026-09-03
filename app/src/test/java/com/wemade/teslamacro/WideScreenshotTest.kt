@@ -179,7 +179,18 @@ class WideScreenshotTest {
     @Test
     fun `W7 진단 로그 카드`() {
         com.wemade.teslable.DiagLog.clear()
-        repeat(5) { com.wemade.teslable.DiagLog.add("직행 연결 성공 (표본 $it)") }
+        val previousTimeZone = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"))
+            listOf(0L, 1L, 1L, 1L, 2L).forEachIndexed { index, offset ->
+                com.wemade.teslable.DiagLog.addAt(
+                    "직행 연결 성공 (표본 $index)",
+                    timestampMillis = 1_787_578_339_132L + offset,
+                )
+            }
+        } finally {
+            java.util.TimeZone.setDefault(previousTimeZone)
+        }
         paparazzi.snapshot("W7-diaglog") {
             AppFrame(Destination.Settings) {
                 androidx.compose.foundation.layout.Column(

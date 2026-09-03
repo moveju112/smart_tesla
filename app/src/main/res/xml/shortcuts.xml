@@ -13,6 +13,7 @@
         android:shortcutLongLabel="@string/shortcut_frunk_long">
         <intent
             android:action="android.intent.action.VIEW"
+            android:data="teslamacro://run?action=open_frunk"
             android:targetPackage="com.wemade.teslamacro"
             android:targetClass="com.wemade.teslamacro.service.QuickActionActivity">
             <extra
@@ -29,6 +30,7 @@
         android:shortcutLongLabel="@string/shortcut_trunk_long">
         <intent
             android:action="android.intent.action.VIEW"
+            android:data="teslamacro://run?action=open_trunk"
             android:targetPackage="com.wemade.teslamacro"
             android:targetClass="com.wemade.teslamacro.service.QuickActionActivity">
             <extra
@@ -45,6 +47,7 @@
         android:shortcutLongLabel="@string/shortcut_vent_long">
         <intent
             android:action="android.intent.action.VIEW"
+            android:data="teslamacro://run?action=vent_windows"
             android:targetPackage="com.wemade.teslamacro"
             android:targetClass="com.wemade.teslamacro.service.QuickActionActivity">
             <extra

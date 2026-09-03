@@ -52,7 +52,12 @@ object DiagLog {
     }
 
     fun add(message: String) {
-        val time = SimpleDateFormat(TIME_FORMAT, Locale.US).format(Date())
+        addAt(message, System.currentTimeMillis())
+    }
+
+    /** 스냅샷·파일 테스트가 실행 시각과 무관하게 같은 로그를 만들도록 시간을 받는다. */
+    fun addAt(message: String, timestampMillis: Long) {
+        val time = SimpleDateFormat(TIME_FORMAT, Locale.US).format(Date(timestampMillis))
         val line = "$time $message"
         // 최근 것만 화면에 남긴다. 오래 켜둬도 메모리를 먹지 않게
         _lines.update { (it + line).takeLast(MAX_LINES) }

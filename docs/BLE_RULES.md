@@ -12,6 +12,9 @@
   - ✅ `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleScanner.kt` `startScan(emptyList(), ...)`
 - **[MUST]** 테파일럿처럼 한 번에 스캔 하나만 연다: 무필터·BALANCED로 legacy 7.5초 후 extended 7.5초
   - why: 같은 갤럭시에서 테파일럿은 발견했지만 기존 3중 동시 스캔은 결과가 0건이었다. 이식 후 실차 재확인 필요 (`TeslaBleScanner.kt`)
+- **[MUST]** Android 12+에서도 `BLUETOOTH_SCAN`·`BLUETOOTH_CONNECT`와 정확한·대략적 위치를 런타임에 함께 요청한다
+  - why: `neverForLocation`을 쓰지 않아 위치 권한 선언만으로는 스캔 결과가 보장되지 않는다. 테파일럿도 네 권한을 함께 요청하며, Smart Tesla는 위치를 선언만 하고 12+에서 요청하지 않아 동일 스캔 설정으로도 0건이었다
+  - ✅ `app/src/main/java/com/wemade/teslamacro/MainActivity.kt` `runtimePermissionsFor()`
 - 광고 이름 후보: `"S" + SHA1(VIN)[:8].hex + [C/D/R/P]` (18자) — `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleSpec.kt`
 - **[NEVER]** 페어링 목록의 `Tesla Model …` 주소로 키 연결을 시도하지 않는다. 110B/110E/111E UUID는 음악·통화용 클래식 BT다
 - 차량 닉네임(대소문자 그대로)은 `getBondedDevices()`에서 온다 — 스캔 불필요, BLUETOOTH_CONNECT만 필요 (`TeslaBleScanner.kt:59`)

@@ -3,8 +3,8 @@
 ## BLE
 
 - **Symptom:** 앱 스캔에 차가 안 잡힘 — nRF Connect/TePilot에서는 바로 보임
-  - Cause: Smart Tesla는 무필터·확장·필터 스캔 3개를 동시에 열었고, 같은 폰에서 테파일럿의 단일 스캔만 발견에 성공함
-  - Fix: 테파일럿과 같은 단일 무필터 BALANCED 스캔을 legacy → extended 순서로 실행. 이식 후 실차 재확인 필요. 검증된 저장 MAC은 autoConnect=true 직행 — [BLE_RULES.md](BLE_RULES.md) 연결 정책
+  - Cause: 3중 동시 스캔을 단일 스캔으로 바꾼 뒤에도 0건. 테파일럿은 Android 12+에서 BLE 두 권한과 위치 두 권한을 함께 요청하지만 Smart Tesla는 위치를 manifest에 선언만 하고 런타임 요청에서 빠뜨림
+  - Fix: 테파일럿과 같은 네 권한을 함께 요청하고 단일 무필터 BALANCED 스캔을 legacy → extended 순서로 실행. 이식 후 실차 재확인 필요 — [BLE_RULES.md](BLE_RULES.md) 연결 정책
 
 - **Symptom:** 스캔 0대 뒤 `Expected at least one element matching the predicate`로 연결 실패
   - Cause: 빈 스캔 Flow가 정상 종료됐는데 `first {}`가 예외를 던져 후보 없음 처리까지 못 감

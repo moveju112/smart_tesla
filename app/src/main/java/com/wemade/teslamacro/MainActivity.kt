@@ -68,10 +68,20 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+            com.wemade.teslable.DiagLog.add(
+                "앱 권한 확인 — BLE스캔=${permissionGranted(Manifest.permission.BLUETOOTH_SCAN)}" +
+                    " · BLE연결=${permissionGranted(Manifest.permission.BLUETOOTH_CONNECT)}" +
+                    " · 정확한위치=${permissionGranted(Manifest.permission.ACCESS_FINE_LOCATION)}" +
+                    " · 대략위치=${permissionGranted(Manifest.permission.ACCESS_COARSE_LOCATION)}"
+            )
             // BLE 권한만 있으면 감시는 올린다 — 마이크(음성)·알림을 거부해도 매크로가 죽으면 안 된다.
             // 콜백 맵 대신 실제 권한 상태를 다시 본다: 이미 허용된 항목은 맵에 안 실릴 수 있다
             if (hasBlePermission()) MacroService.start(this)
         }
+
+    /** 권한 콜백 로그에서 현재 승인 상태를 다시 읽는다 */
+    private fun permissionGranted(permission: String): Boolean =
+        checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
     /** 감시 서비스의 최소 요건: BLE 스캔·연결 (12 미만은 위치) */
     private fun hasBlePermission(): Boolean {
@@ -151,23 +161,27 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestRuntimePermissions() {
-        val required = buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(Manifest.permission.BLUETOOTH_SCAN)
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                // 안드로이드 11 이하는 위치 권한이 있어야 스캔 결과가 온다
-                add(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            // 음성 명령용. 거부해도 앱의 나머지는 정상 동작한다
-            add(Manifest.permission.RECORD_AUDIO)
-        }
+        val required = runtimePermissionsFor(Build.VERSION.SDK_INT)
         if (required.isEmpty()) MacroService.start(this)
         else permissionLauncher.launch(required.toTypedArray())
     }
+}
+
+/** 테파일럿과 같은 BLE·위치 권한 묶음을 OS 버전에 맞춰 요청한다 */
+internal fun runtimePermissionsFor(sdkInt: Int): List<String> = buildList {
+    if (sdkInt >= Build.VERSION_CODES.S) {
+        add(Manifest.permission.BLUETOOTH_SCAN)
+        add(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+    // neverForLocation을 쓰지 않는 스캔은 위치 권한도 런타임 승인이 필요하다.
+    // 정확한 위치만 단독 요청하면 Android 12+에서 무시될 수 있어 둘을 함께 요청한다.
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
+        add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    // 음성 명령용. 거부해도 앱의 나머지는 정상 동작한다
+    add(Manifest.permission.RECORD_AUDIO)
 }
 
 /**

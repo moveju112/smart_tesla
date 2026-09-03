@@ -23,8 +23,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 123
-        versionName = "0.9.10"
+        versionCode = 124
+        versionName = "0.9.11"
 
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
     }

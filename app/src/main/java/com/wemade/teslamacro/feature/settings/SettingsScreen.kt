@@ -396,6 +396,7 @@ data class BatteryControls(
 /** 길안내를 넘길 내비 앱, HUD 속도 표시, 과속·단속 안내와 그 소리 */
 data class NavigationControls(
     val onAppChange: (String) -> Unit,
+    val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -467,6 +468,50 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             selected = settings.navigatorApp,
             onSelect = controls.onAppChange,
         )
+
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        val selected = NavigatorApp.of(settings.navigatorApp)
+        if (!selected.supportsSafeDrive) {
+            Text(
+                text = "구글 지도는 목적지 없는 안심운전 자동 실행을 지원하지 않아요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        } else {
+            ToggleRow(
+                title = "탑승하면 안심운전 자동 실행",
+                subtitle = "운전자를 감지하면 ${selected.label}의 안심운전을 열어요",
+                checked = settings.autoStartNavigatorSafeDrive,
+                onCheckedChange = controls.onAutoStartSafeDriveChange,
+            )
+            if (settings.autoStartNavigatorSafeDrive && !controls.overlayPermitted) {
+                OverlayPermissionNotice(controls)
+            }
+        }
+    }
+}
+
+/** 배경에서 내비 화면을 띄우는 데 필요한 오버레이 권한 안내 */
+@Composable
+private fun OverlayPermissionNotice(controls: NavigationControls) {
+    Spacer(Modifier.height(Space.md))
+    Hairline()
+    Spacer(Modifier.height(Space.md))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "'다른 앱 위에 표시' 권한이 없어 자동으로 열 수 없어요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.Danger,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(Space.md))
+        TButton(
+            text = "권한 허용",
+            fillWidth = false,
+            onClick = controls.onRequestOverlayPermission,
+        )
     }
 }
 
@@ -486,23 +531,7 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
             LocationPermissionNotice(controls)
         }
         if (settings.hudOverlay && !controls.overlayPermitted) {
-            Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "'다른 앱 위에 표시' 권한이 없어 창이 뜨지 않아요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.Danger,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(Space.md))
-                TButton(
-                    text = "권한 허용",
-                    fillWidth = false,
-                    onClick = controls.onRequestOverlayPermission,
-                )
-            }
+            OverlayPermissionNotice(controls)
         }
     }
 }
@@ -716,6 +745,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     )
     append(
         "내비=${settings.navigatorApp} · HUD 오버레이=${settings.hudOverlay}" +
+            " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 과속안내=${settings.safeDrive}" +
             " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})",
     )

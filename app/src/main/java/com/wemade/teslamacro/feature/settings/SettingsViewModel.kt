@@ -90,7 +90,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setNavigatorApp(name: String) {
-        viewModelScope.launch { container.settingsStore.setNavigatorApp(name) }
+        viewModelScope.launch {
+            container.settingsStore.setNavigatorApp(name)
+            // 구글 지도로 바꾸면 숨은 켜짐값이 남아 다음 탑승 때 실패하지 않게 함께 끈다
+            if (!com.wemade.teslamacro.data.nav.NavigatorApp.of(name).supportsSafeDrive) {
+                container.settingsStore.setAutoStartNavigatorSafeDrive(false)
+            }
+        }
+    }
+
+    fun setAutoStartNavigatorSafeDrive(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setAutoStartNavigatorSafeDrive(enabled) }
     }
 
     fun setHudOverlay(enabled: Boolean) {

@@ -73,4 +73,15 @@ class NavigatorAppTest {
         assertTrue(NavigatorApp.TMAP.packages.size >= 2)
         assertTrue(NavigatorApp.TMAP.packages.contains("com.skt.skaf.l001mtm091"))
     }
+
+    @Test
+    fun `3사 안심운전 URI를 목적지 없이 연다`() {
+        assertEquals("nmap://navigation?appname=$pkg", NavigatorApp.NAVER.safeDriveUri(pkg).toString())
+        assertEquals(
+            "kakaonavi://widget?action=SafetyDrive",
+            NavigatorApp.KAKAO.safeDriveUri(pkg).toString(),
+        )
+        assertEquals("tmap://navi", NavigatorApp.TMAP.safeDriveUri(pkg).toString())
+        assertEquals(null, NavigatorApp.GOOGLE.safeDriveUri(pkg))
+    }
 }

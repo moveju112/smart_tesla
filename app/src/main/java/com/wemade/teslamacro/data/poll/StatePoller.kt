@@ -22,11 +22,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -58,6 +60,10 @@ class StatePoller(
 
     private val _snapshot = MutableStateFlow(VehicleSnapshot.Empty)
     val snapshot: StateFlow<VehicleSnapshot> = _snapshot.asStateFlow()
+
+    /** 신선한 차량 응답에서 실제 탑승 엣지가 확인될 때 한 번만 흐른다 */
+    private val boardingChannel = Channel<Unit>(Channel.CONFLATED)
+    val boardingEvents: Flow<Unit> = boardingChannel.receiveAsFlow()
 
     /**
      * 주차가 시작된 시각과 그때 배터리. 타고 있는 동안은 null.
@@ -297,6 +303,16 @@ class StatePoller(
                 trustMillis = PRESENCE_TRUST_MILLIS,
             )
 
+            // 옛 병합값으로는 외부 앱을 열지 않는다. 이번 VCSEC 응답에서 탑승이 확인된 경우만 보낸다
+            val observedPresence = fresh
+                ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
+                ?.isUserPresent
+            if (observedPresence == true &&
+                engine.userBecamePresent(previous, current, knownPresence)
+            ) {
+                boardingChannel.trySend(Unit)
+            }
+
             if (settings.automationEnabled) {
                 engine.evaluate(
                     rules = ruleStore.rules.value,
@@ -321,9 +337,6 @@ class StatePoller(
 
             // 이번 VCSEC 응답은 다음 판정부터 직전값으로 쓴다.
             // 실패 때 합쳐 둔 옛 스냅샷으로 시각을 갱신하면 오래된 true가 다시 신선해진다.
-            val observedPresence = fresh
-                ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
-                ?.isUserPresent
             if (observedPresence != null) {
                 presenceBeforeRestart = observedPresence
                 presenceObservedAt = now()

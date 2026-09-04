@@ -21,6 +21,7 @@ import com.wemade.teslamacro.MainActivity
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
+import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.domain.command.confirmCategory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -56,6 +57,7 @@ class MacroService : LifecycleService() {
         watchVehiclePower()
         watchSpeedOverlay()
         watchSafeDrive()
+        watchNavigatorSafeDrive()
     }
 
     /**
@@ -183,6 +185,25 @@ class MacroService : LifecycleService() {
                 com.wemade.teslable.DiagLog.add("위치 권한이 바뀌어 안전운전 안내를 다시 세웁니다")
                 app.container.safeDrive.stop()
                 app.container.safeDrive.start()
+            }
+        }
+    }
+
+    /** 신선한 탑승 엣지마다 사용자가 고른 내비의 목적지 없는 안심운전을 한 번 연다 */
+    private fun watchNavigatorSafeDrive() {
+        val app = application as TeslaMacroApplication
+        lifecycleScope.launch {
+            app.ready.first { it }
+            app.container.poller.boardingEvents.collect {
+                val settings = app.container.settingsStore.settings.first()
+                if (!settings.autoStartNavigatorSafeDrive) return@collect
+
+                val navigatorApp = NavigatorApp.of(settings.navigatorApp)
+                app.container.navigator.startSafeDrive(navigatorApp).onFailure { error ->
+                    com.wemade.teslable.DiagLog.add(
+                        "${navigatorApp.label} 안심운전 자동 실행 실패 — ${error.message}"
+                    )
+                }
             }
         }
     }

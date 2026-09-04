@@ -45,6 +45,8 @@ data class AppSettings(
     val stealthCharging: Boolean = false,
     /** 길안내를 넘길 내비 앱. 기기에 깔린 것 중 사용자가 고른다 */
     val navigatorApp: String = "NAVER",
+    /** 탑승을 감지하면 선택한 내비의 목적지 없는 안심운전을 자동으로 연다 */
+    val autoStartNavigatorSafeDrive: Boolean = false,
     /** HUD 속도를 다른 앱 위에 띄울지. 끄면 제어 화면 안에만 나온다 */
     val hudOverlay: Boolean = false,
     /** 과속·구간단속·보호구역 안내. 켜면 주행 중 GPS와 망을 계속 쓴다 */
@@ -75,6 +77,7 @@ class SettingsStore(private val context: Context) {
             vehicleName = prefs[KeyVehicleName] ?: "",
             stealthCharging = prefs[KeyStealthCharging] ?: false,
             navigatorApp = prefs[KeyNavigatorApp] ?: "NAVER",
+            autoStartNavigatorSafeDrive = prefs[KeyAutoStartNavigatorSafeDrive] ?: false,
             hudOverlay = prefs[KeyHudOverlay] ?: false,
             safeDrive = prefs[KeySafeDrive] ?: false,
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
@@ -89,6 +92,9 @@ class SettingsStore(private val context: Context) {
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
     suspend fun setNavigatorApp(name: String) = edit { it[KeyNavigatorApp] = name }
+    suspend fun setAutoStartNavigatorSafeDrive(enabled: Boolean) = edit {
+        it[KeyAutoStartNavigatorSafeDrive] = enabled
+    }
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
     suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
     suspend fun setSafeDriveSound(enabled: Boolean) = edit { it[KeySafeDriveSound] = enabled }
@@ -193,6 +199,7 @@ class SettingsStore(private val context: Context) {
         val KeyLastPresence = booleanPreferencesKey("last_presence")
         val KeyLastPresenceAt = longPreferencesKey("last_presence_at")
         val KeyNavigatorApp = stringPreferencesKey("navigator_app")
+        val KeyAutoStartNavigatorSafeDrive = booleanPreferencesKey("auto_start_navigator_safe_drive")
         val KeyHudOverlay = booleanPreferencesKey("hud_overlay")
         val KeySafeDrive = booleanPreferencesKey("safe_drive")
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")

@@ -138,6 +138,7 @@ class WideScreenshotTest {
                         vehicleAddress = "AA:BB:CC:DD:EE:FF",
                         hudOverlay = true,
                         safeDrive = true,
+                        autoStartNavigatorSafeDrive = true,
                     ),
                     onAutomationChange = {},
                     onUnpair = {},
@@ -152,6 +153,7 @@ class WideScreenshotTest {
                     ),
                     navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                         onAppChange = {},
+                        onAutoStartSafeDriveChange = {},
                         onHudOverlayChange = {},
                         safeDriveAvailable = true,
                         installed = setOf("NAVER", "KAKAO", "TMAP"),

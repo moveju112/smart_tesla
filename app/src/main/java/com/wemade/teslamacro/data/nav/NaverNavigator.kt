@@ -2,6 +2,7 @@ package com.wemade.teslamacro.data.nav
 
 import android.content.Context
 import android.content.Intent
+import android.content.ComponentName
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -31,6 +32,9 @@ private const val WINDOW_KEEP_MILLIS = 1_000L
 
 /** 주소 → 좌표 캐시 저장소 이름 */
 private const val GEOCODE_CACHE = "geocode_cache"
+
+/** 카카오내비가 자체 안전운전 위젯에서도 사용하는 외부 딥링크 진입점 */
+private const val KAKAO_DEEP_LINK_ACTIVITY = "com.locnall.KimGiSa.Engine.SMS.CremoteActivity"
 
 class NaverNavigator(private val context: Context) {
 
@@ -71,6 +75,25 @@ class NaverNavigator(private val context: Context) {
         }.map { }
     }
 
+    // 1. 권한·설치 확인 → 2. 앱별 안심운전 인텐트 생성 → 3. 화면 전환
+    suspend fun startSafeDrive(app: NavigatorApp): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (!hasOverlayPermission) {
+                error("'다른 앱 위에 표시' 권한이 없어요.\n설정 → 주행에서 허용해 주세요")
+            }
+            val packageName = installedPackage(app)
+                ?: error("${app.label} 앱이 설치되어 있지 않아요")
+            val uri = app.safeDriveUri(context.packageName)
+                ?: error("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
+
+            launchFirst(app.label, safeDriveIntents(app, packageName, uri))
+            com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
+        }.recoverCatching { throwable ->
+            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+            throw throwable
+        }.map { }
+    }
+
     /** 설치된 패키지 중 첫 번째. 티맵처럼 패키지가 둘인 앱이 있다 */
     private fun installedPackage(app: NavigatorApp): String? = app.packages.firstOrNull { pkg ->
         runCatching { context.packageManager.getPackageInfo(pkg, 0) }.isSuccess
@@ -89,18 +112,56 @@ class NaverNavigator(private val context: Context) {
         longitude: Double,
         label: String,
     ) {
-        val candidates = app.uris(latitude, longitude, label, context.packageName)
-        var lastFailure: Throwable? = null
-        candidates.forEach { uri ->
-            val intent = Intent(Intent.ACTION_VIEW, uri)
+        val candidates = app.uris(latitude, longitude, label, context.packageName).map { uri ->
+            Intent(Intent.ACTION_VIEW, uri)
                 .setPackage(packageName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            val handled = runCatching { launchFromBackground(intent, app.label) }
+        }
+        launchFirst(app.label, candidates)
+    }
+
+    /** 앱이 실제로 쓰는 안심운전 진입 형태를 우선하고, 공개 스킴을 대체 경로로 둔다 */
+    private fun safeDriveIntents(
+        app: NavigatorApp,
+        packageName: String,
+        uri: Uri,
+    ): List<Intent> {
+        val schemeIntent = Intent(Intent.ACTION_VIEW, uri)
+            .setPackage(packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return when (app) {
+            // 카카오내비 안전운전 위젯의 내부 URI는 매니페스트 필터에 없어 명시 진입점이 필요하다
+            NavigatorApp.KAKAO -> listOf(
+                Intent(Intent.ACTION_VIEW, uri)
+                    .setComponent(ComponentName(packageName, KAKAO_DEEP_LINK_ACTIVITY))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                schemeIntent,
+            )
+
+            // 티맵 자체 블루투스 자동 실행도 런처 인텐트의 url extra로 tmap://navi를 넘긴다
+            NavigatorApp.TMAP -> listOfNotNull(
+                context.packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                    putExtra("url", uri.toString())
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+                schemeIntent,
+            )
+
+            NavigatorApp.NAVER -> listOf(schemeIntent)
+            NavigatorApp.GOOGLE -> emptyList()
+        }
+    }
+
+    /** 준비된 인텐트 후보를 순서대로 화면에 띄운다 */
+    private suspend fun launchFirst(appLabel: String, candidates: List<Intent>) {
+        var lastFailure: Throwable? = null
+        candidates.forEach { intent ->
+            val handled = runCatching { launchFromBackground(intent, appLabel) }
                 .onFailure { lastFailure = it }
                 .isSuccess
             if (handled) return
         }
-        throw lastFailure ?: IllegalStateException("${app.label}가 길안내를 받지 못했어요")
+        throw lastFailure ?: IllegalStateException("$appLabel 앱을 열 수 없어요")
     }
 
     /**

@@ -19,6 +19,9 @@ enum class NavigatorApp(
     TMAP("티맵", listOf("com.skt.tmap.ku", "com.skt.skaf.l001mtm091")),
     GOOGLE("구글 지도", listOf("com.google.android.apps.maps"));
 
+    /** 목적지 없이 안심운전만 시작할 수 있는 앱인가 */
+    val supportsSafeDrive: Boolean get() = this != GOOGLE
+
     /**
      * 좌표로 길안내를 시작하는 URI 후보들. 앞에서부터 시도한다.
      *
@@ -50,6 +53,14 @@ enum class NavigatorApp(
             )
         }.map(Uri::parse)
     }
+
+    /** 목적지 없이 각 내비의 안심운전 화면을 여는 URI. 구글 지도는 이 모드를 제공하지 않는다 */
+    fun safeDriveUri(appPackage: String): Uri? = when (this) {
+        NAVER -> "nmap://navigation?appname=$appPackage"
+        KAKAO -> "kakaonavi://widget?action=SafetyDrive"
+        TMAP -> "tmap://navi"
+        GOOGLE -> null
+    }?.let(Uri::parse)
 
     companion object {
         /** 저장된 값이 깨졌거나 처음이면 네이버. 이 기기에 이미 깔려 있던 기본값이다 */

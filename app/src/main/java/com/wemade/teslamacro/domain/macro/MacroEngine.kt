@@ -86,21 +86,18 @@ class MacroEngine {
         when (trigger) {
 
             is Trigger.SignalBecomes -> {
-                val now = trigger.signal.booleanOf(current.snapshot)
-                val before = previous?.let { trigger.signal.booleanOf(it.snapshot) }
-                when {
-                    now != trigger.to -> false
-                    before != null -> before != trigger.to
-                    // 재시작 직후(직전 값 없음)의 "탑승" 트리거는 이미 타 있어도 1회 발동 —
-                    // 태블릿이 밤새 재부팅되면 첫 판정이 곧 탑승 순간인데 엣지만 고집하면 영영 놓친다.
-                    // 탑승 외 신호는 제외: 재시작 오발동(예: 주차 중 앱 시작 → 잠금 명령)이 더 해롭다.
-                    //
-                    // 단 재시작 직전에 이미 타 있었다는 기록이 있으면 방금 탄 게 아니다 —
-                    // 주행 중 업데이트로 앱이 되살아나면 탑승 매크로가 통째로 다시 터졌다(0.8.22 실차).
-                    // 예전엔 기어(D)로 걸렀는데 DRIVE 카테고리를 평소에 안 읽어 판정이 항상
-                    // UNKNOWN이었고, 그래서 가드가 통과해 버렸다(0.8.36 검토에서 발견).
-                    else -> trigger.signal == Signal.USER_PRESENT && trigger.to &&
-                        knownPresenceBeforeRestart != true
+                if (trigger.signal == Signal.USER_PRESENT && trigger.to) {
+                    userBecamePresent(previous, current, knownPresenceBeforeRestart)
+                } else {
+                    val now = trigger.signal.booleanOf(current.snapshot)
+                    val before = previous?.let { trigger.signal.booleanOf(it.snapshot) }
+                    when {
+                        now != trigger.to -> false
+                        before != null -> before != trigger.to
+                        // 재시작 직후에는 탑승 외 신호를 발동하지 않는다 —
+                        // 앱 시작만으로 문·잠금 매크로가 실행되는 오발동이 더 해롭다.
+                        else -> false
+                    }
                 }
             }
 
@@ -141,6 +138,20 @@ class MacroEngine {
                 }
             }
         }
+
+    /** 재시작·짧은 재연결 기록까지 반영해 이번 판정이 실제 탑승인지 가린다 */
+    fun userBecamePresent(
+        previous: Reading?,
+        current: Reading,
+        knownPresenceBeforeRestart: Boolean? = null,
+    ): Boolean {
+        if (current.snapshot.isUserPresent != true) return false
+        return when (previous?.snapshot?.isUserPresent) {
+            true -> false
+            false -> true
+            null -> knownPresenceBeforeRestart != true
+        }
+    }
 
     /** 조건은 "지금 그런 상태인가요"만 본다. 대기 해제와 같은 규칙을 쓴다 */
     private fun holds(condition: Condition, current: Reading): Boolean =

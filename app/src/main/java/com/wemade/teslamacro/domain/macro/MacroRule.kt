@@ -45,7 +45,7 @@ sealed interface Trigger {
 
     /**
      * 호출될 때만. 자동으로는 절대 발동하지 않는다.
-     * 음성(매크로 이름 부르기)이나 목록의 "지금 실행"으로만 도는 매크로용이다.
+     * 바로가기나 목록의 "지금 실행"으로만 도는 매크로용이다.
      */
     @Serializable @SerialName("manual")
     data object Manual : Trigger

@@ -40,13 +40,22 @@ class AppContainer(private val context: Context) {
             logFile = java.io.File(logDir, "diag.log"),
             previousFile = java.io.File(logDir, "diag-prev.log"),
         )
+
+        // 제거된 오프라인 음성 기능이 설치했던 대용량 모델과 알림 채널을 업데이트 뒤에도 남기지 않는다.
+        val legacyVoiceModel = java.io.File(appContext.filesDir, "vosk-ko")
+        if (legacyVoiceModel.exists() && !legacyVoiceModel.deleteRecursively()) {
+            com.wemade.teslable.DiagLog.add("사용하지 않는 음성 모델 삭제 실패")
+        }
+        appContext.getSystemService(android.app.NotificationManager::class.java)
+            .deleteNotificationChannel("voice_listen")
+        appContext.getSystemService(android.app.NotificationManager::class.java)
+            .deleteNotificationChannel("voice_listen_min")
+        appContext.getSystemService(android.app.NotificationManager::class.java)
+            .deleteNotificationChannel("boot_notice")
     }
 
     val settingsStore = SettingsStore(context)
     val seatStore = com.wemade.teslamacro.data.settings.SeatStore(context)
-
-    /** 하이브리드 정밀 인식용 — 호출어 감지 후 문장을 받는 내장(구글) 인식기 */
-    val voiceRecognizer = com.wemade.teslamacro.data.voice.VoiceRecognizer(context)
 
     /** 매크로의 "지도 안내" 걸음을 처리한다 */
     val navigator = com.wemade.teslamacro.data.nav.NaverNavigator(context)
@@ -79,10 +88,6 @@ class AppContainer(private val context: Context) {
 
     /** 매크로의 "출발지 근처" 조건용 태블릿 위치 */
     val tabletLocation = com.wemade.teslamacro.data.location.TabletLocation(context)
-
-    /** 상시 대기용. 기기 안에서만 도는 오프라인 인식 */
-    val voiceModelStore = com.wemade.teslamacro.data.voice.VoiceModelStore(context)
-    val hotwordListener = com.wemade.teslamacro.data.voice.HotwordListener(voiceModelStore)
 
     /** 등록 화면 진단용 스캐너. 게이트웨이와 별개로 주변을 그냥 훑는다 */
     val scanner = com.wemade.teslable.TeslaBleScanner(context)
@@ -124,6 +129,7 @@ class AppContainer(private val context: Context) {
             ruleStore.rules.collect(macroShortcutPublisher::publish)
         }
 
+        settingsStore.removeObsoleteSettings()
         val settings = settingsStore.settings.first()
         initialSettings = settings
         // 차를 등록했으면 실차, 아니면 시뮬레이터로 시작한다.

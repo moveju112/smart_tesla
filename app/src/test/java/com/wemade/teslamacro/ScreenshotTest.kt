@@ -13,7 +13,6 @@ import com.android.resources.NightMode
 import com.android.resources.ScreenOrientation
 import com.wemade.teslamacro.data.macro.MacroPresets
 import com.wemade.teslamacro.data.settings.AppSettings
-import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.macro.MacroLogEntry
 import com.wemade.teslamacro.domain.model.Level
@@ -27,7 +26,6 @@ import com.wemade.teslamacro.feature.pairing.PairingScreen
 import com.wemade.teslamacro.feature.pairing.PairingStep
 import com.wemade.teslamacro.feature.pairing.PairingUiState
 import com.wemade.teslamacro.feature.settings.SettingsScreen
-import com.wemade.teslamacro.feature.settings.VoiceControls
 import com.wemade.teslamacro.feature.settings.SimulatorControls
 import com.wemade.teslamacro.ui.component.AppSplash
 import com.wemade.teslamacro.ui.nav.Destination
@@ -226,17 +224,8 @@ class ScreenshotTest {
             SettingsScreen(
                 settings = AppSettings(vin = ""),
                 onAutomationChange = {},
-                onIdlePollChange = {},
-                onActivePollChange = {},
-                onActiveWindowChange = {},
                 onUnpair = {},
                 onStartPairing = {},
-                voice = VoiceControls(
-                    model = VoiceModelState.NotInstalled,
-                    onAlwaysOnChange = {},
-                    onInstall = {},
-                    onRemove = {},
-                ),
                 battery = com.wemade.teslamacro.feature.settings.BatteryControls(
                     unrestricted = true,
                     onOpenSettings = {},

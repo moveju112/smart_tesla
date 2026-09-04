@@ -131,7 +131,7 @@ class StatePoller(
 
         while (isActive) {
             // 주기 계산용 사이클 시작 시각 — 읽기 소요(실패 시 8초 타임아웃 포함)를
-            // 주기에서 빼지 않으면 30초 설정이 31~49초로 들쭉날쭉해진다 (실차 로그 제보)
+            // 주기에서 빼지 않으면 15초 주기가 읽기 시간만큼 들쭉날쭉해진다 (실차 로그 제보)
             val cycleStart = now()
             val settings = settingsStore.settings.first()
 
@@ -172,10 +172,10 @@ class StatePoller(
                     }
                 }
                 // 등록 전엔 느긋하게. 재연결 대기 중엔 백오프가 끝나는 시점까지만 잔다 —
-                // idle 주기(30초)를 통째로 자면 백오프 0초여도 30초 귀머거리가 된다
+                // 평상시 주기(15초)를 통째로 자면 백오프 0초여도 15초 귀머거리가 된다
                 val sleepMs =
                     if (settings.isReady) (reconnectHoldUntil - now()).coerceAtLeast(1_000L)
-                    else settings.idlePollSeconds * 1000L
+                    else NORMAL_POLL_SECONDS * 1000L
                 sleep(sleepMs)
                 continue
             }
@@ -193,7 +193,7 @@ class StatePoller(
             if (focusRequested.isNotEmpty()) {
                 focusCategories = focusCategories + focusRequested
                 focusUntil = now() + FOCUS_CONFIRM_MS
-                // 집중 창은 확인 창 길이만큼만 — 명령 한 번에 3~5분짜리 고빈도 창이 열리면
+                // 집중 창은 확인 창 길이만큼만 — 명령 한 번에 3분짜리 고빈도 창이 열리면
                 // FOCUS_CONFIRM_MS로 아끼려던 인포테인먼트 비용이 그대로 나간다
                 activeUntil = maxOf(activeUntil, focusUntil)
             }
@@ -275,7 +275,7 @@ class StatePoller(
             //    위치 캐시도 버린다 — 탑승 직전 실패(null)가 캐시에 남아 있으면
             //    "출발지 근처" 조건이 탑승 순간(1회성 엣지)에 오판되어 매크로가 영영 안 터진다
             if (isWakeEvent(previous?.snapshot, merged)) {
-                activeUntil = now() + settings.activeWindowSeconds * 1000L
+                activeUntil = now() + ACTIVE_WINDOW_MILLIS
                 locationCachedAt = 0L
             }
 
@@ -345,12 +345,12 @@ class StatePoller(
 
             previous = current
             // 이번 사이클에 사건이 감지돼 창이 열렸으면 바로 짧은 주기로 — 낡은 판정을 쓰면
-            // 문 열림 직후 한 사이클(기본 30초)을 통째로 기다리게 된다
+            // 문 열림 직후 한 사이클(15초)을 통째로 기다리게 된다
             val interval = nextIntervalSeconds(
                 inActiveWindow = now() < activeUntil,
                 snapshot = merged,
-                activeSeconds = settings.activePollSeconds,
-                idleSeconds = settings.idlePollSeconds,
+                activeSeconds = ACTIVE_POLL_SECONDS,
+                idleSeconds = NORMAL_POLL_SECONDS,
             )
             // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지.
             // 단 실패가 낀 사이클은 경과를 빼지 않는다 — 타임아웃(8초×N)이 주기를 넘으면
@@ -386,7 +386,7 @@ class StatePoller(
     private val pendingFocus =
         java.util.concurrent.atomic.AtomicReference<Set<StateCategory>>(emptySet())
 
-    /** 수동 실행(목록·음성)도 쿨다운에 기록한다 — 방금 돈 매크로가 트리거로 곧장 또 돌지 않게 */
+    /** 수동 실행(목록·바로가기)도 쿨다운에 기록한다 — 방금 돈 매크로가 트리거로 곧장 또 돌지 않게 */
     fun recordFired(ruleId: String) {
         lastFiredAt[ruleId] = now()
     }
@@ -443,7 +443,7 @@ class StatePoller(
         const val FAIL_STREAK_LIMIT = 3
 
         /**
-         * 명령 후 확인 읽기 창. 집중 창(기본 300초) 내내 인포테인먼트를 2초마다
+         * 명령 후 확인 읽기 창. 집중 창(180초) 내내 인포테인먼트를 2초마다
          * 읽으면 차량 수면·배터리에 부담이라, 확인은 이 짧은 창으로 끝낸다
          */
         const val FOCUS_CONFIRM_MS = 10_000L
@@ -595,8 +595,11 @@ internal fun trustedPresence(
     observedAtMillis != null && nowMillis - observedAtMillis < trustMillis
 }
 
-/** 깊은 유휴 주기. 사용자가 평상시를 이보다 길게 잡았으면 그 값을 따른다 */
+/** 깊은 유휴 주기. 평상시 주기보다 길게 쉬어 차량 수면을 보호한다. */
 internal const val DEEP_IDLE_SECONDS = 120
+internal const val NORMAL_POLL_SECONDS = 15
+internal const val ACTIVE_POLL_SECONDS = 2
+internal const val ACTIVE_WINDOW_MILLIS = 3 * 60 * 1000L
 
 /**
  * 다음 폴링까지 몇 초 쉴지 정한다 — 순수 함수라 단위 테스트로 검증한다.

@@ -8,7 +8,6 @@
 4. **테스트** — `./gradlew :app:test`
    - `app/src/test/java/com/wemade/teslamacro/data/gateway/CommandCoverageTest.kt:18` "카탈로그의 모든 명령이 실제로 인코딩된다"가 3↔2 누락을 자동 검출
    - 인코딩 바이트 검증이 필요하면 `CommandEncoderTest.kt`에 케이스 추가
-5. **(선택) 음성 명령** — 말로 부를 명령이면 `app/src/main/java/com/wemade/teslamacro/domain/voice/VoiceCommandParser.kt:23`에 패턴 추가 + `VoiceCommandParserTest.kt` 케이스
-6. **(선택) 대시보드 노출** — UI에 올릴 거면 `DashboardScreen.kt` + Paparazzi 갱신(`recordPaparazziDebug`)
+5. **(선택) 대시보드 노출** — UI에 올릴 거면 `DashboardScreen.kt` + Paparazzi 갱신(`recordPaparazziDebug`)
 
 주의: 프로토콜 정답 벡터 테스트(`tesla-ble/src/test/java/com/wemade/teslable/crypto/ProtocolVectorTest.kt`)는 절대 수정 대상이 아니다.

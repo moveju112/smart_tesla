@@ -91,8 +91,8 @@ fun TriggerCard(
             }
 
             is Trigger.Manual -> Text(
-                text = "자동으로 발동하지 않아요.\n음성으로 매크로 이름을 부르거나 " +
-                    "목록에서 \"지금 실행\"을 눌러 주세요.",
+                text = "자동으로 발동하지 않아요.\n" +
+                    "바로가기나 목록에서 \"지금 실행\"을 눌러 주세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )

@@ -78,7 +78,7 @@ private val STEPS = listOf(
     WizardStep("언제 실행할까요?", "이 사건이 일어나는 순간 발동해요 (하나라도)"),
     WizardStep("어떤 조건이면요?", "모두 만족해야 실행해요.\n없으면 무조건 실행해요."),
     WizardStep("무엇을 실행할까요?", "위에서 아래로 순서대로 실행해요"),
-    WizardStep("마무리", "이름을 정하면 음성 명령으로도 부를 수 있어요"),
+    WizardStep("마무리", "이름과 실행 옵션을 정해요"),
 )
 
 /**
@@ -343,7 +343,7 @@ private fun WidePage(
 ) {
     Column(modifier = modifier.fillMaxSize().padding(horizontal = Space.lg, vertical = Space.md)) {
 
-        // 머리줄 — 닫기 · 이름 · 저장. 이름은 곧 음성 명령이라 가장 먼저 눈에 둔다
+        // 머리줄 — 닫기 · 이름 · 저장. 목록에서 식별할 이름이라 가장 먼저 눈에 둔다
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = DraftMark.Close,
@@ -359,7 +359,7 @@ private fun WidePage(
             DraftField(
                 value = draft.name,
                 onValueChange = { onChange(draft.copy(name = it)) },
-                label = "매크로 이름 (음성 명령으로도 쓰여요)",
+                label = "매크로 이름",
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
@@ -546,7 +546,7 @@ private fun StepFinish(
             value = draft.name,
             onValueChange = { onChange(draft.copy(name = it)) },
             label = "매크로 이름",
-            note = "이 이름이 곧 음성 명령이에요",
+            note = "바로가기에도 이 이름을 써요",
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -599,7 +599,7 @@ private fun TriggerPicker(onDismiss: () -> Unit, onPick: (Trigger) -> Unit) {
                     )
                     PickerRow(
                         label = "호출될 때만",
-                        detail = "자동 발동 없음.\n음성으로 이름을 부르거나 직접 실행",
+                        detail = "자동 발동 없음.\n바로가기나 목록에서 직접 실행",
                         onClick = { onPick(Trigger.Manual) },
                     )
                     PickerRow(
@@ -722,4 +722,3 @@ private fun ActionPicker(
         }
     }
 }
-

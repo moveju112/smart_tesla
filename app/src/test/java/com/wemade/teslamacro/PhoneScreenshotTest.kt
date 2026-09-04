@@ -5,7 +5,6 @@ import app.cash.paparazzi.Paparazzi
 import com.android.resources.NightMode
 import com.wemade.teslamacro.data.macro.MacroPresets
 import com.wemade.teslamacro.data.settings.AppSettings
-import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
@@ -18,7 +17,6 @@ import com.wemade.teslamacro.feature.pairing.PairingScreen
 import com.wemade.teslamacro.feature.pairing.PairingStep
 import com.wemade.teslamacro.feature.pairing.PairingUiState
 import com.wemade.teslamacro.feature.settings.SettingsScreen
-import com.wemade.teslamacro.feature.settings.VoiceControls
 import com.wemade.teslamacro.ui.nav.Destination
 import org.junit.Rule
 import org.junit.Test
@@ -130,19 +128,10 @@ class PhoneScreenshotTest {
         paparazzi.snapshot("P6-settings") {
             AppFrame(Destination.Settings) {
                 SettingsScreen(
-                    settings = AppSettings(vin = "5YJS0000000000000", voiceAlwaysOn = true),
+                    settings = AppSettings(vin = "5YJS0000000000000"),
                     onAutomationChange = {},
-                    onIdlePollChange = {},
-                    onActivePollChange = {},
-                    onActiveWindowChange = {},
                     onUnpair = {},
                     onStartPairing = {},
-                    voice = VoiceControls(
-                        model = VoiceModelState.Installed,
-                        onAlwaysOnChange = {},
-                        onInstall = {},
-                        onRemove = {},
-                    ),
                 battery = com.wemade.teslamacro.feature.settings.BatteryControls(
                     unrestricted = false,
                     onOpenSettings = {},

@@ -15,10 +15,6 @@
     -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- 음성 명령. 상시 대기는 마이크 타입 포그라운드 서비스로만 허용된다 -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-
     <!--
       Android 11+는 다른 앱의 존재를 기본으로 숨긴다.
       선언하지 않으면 테슬라 앱이 깔려 있어도 "없음"으로 보여 스토어로 보내버린다.
@@ -120,11 +116,6 @@
             android:name=".service.MacroService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
-
-        <service
-            android:name=".service.VoiceService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
         <!-- 업데이트 설치 결과를 받는다. PackageInstaller가 직접 부르므로 exported 불필요 -->
         <receiver

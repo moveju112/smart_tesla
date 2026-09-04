@@ -48,11 +48,9 @@ import com.wemade.teslamacro.feature.pairing.PairingStep
 import com.wemade.teslamacro.feature.pairing.PairingViewModel
 import com.wemade.teslamacro.feature.settings.SettingsScreen
 import com.wemade.teslamacro.feature.settings.SettingsViewModel
-import com.wemade.teslamacro.feature.settings.VoiceControls
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.service.MacroService
-import com.wemade.teslamacro.service.VoiceService
 import com.wemade.teslamacro.ui.ViewModelFactory
 import com.wemade.teslamacro.ui.component.AppSplash
 import com.wemade.teslamacro.ui.component.openOverlayPermissionSettings
@@ -74,7 +72,7 @@ class MainActivity : ComponentActivity() {
                     " · 정확한위치=${permissionGranted(Manifest.permission.ACCESS_FINE_LOCATION)}" +
                     " · 대략위치=${permissionGranted(Manifest.permission.ACCESS_COARSE_LOCATION)}"
             )
-            // BLE 권한만 있으면 감시는 올린다 — 마이크(음성)·알림을 거부해도 매크로가 죽으면 안 된다.
+            // BLE 권한만 있으면 감시는 올린다 — 알림을 거부해도 매크로가 죽으면 안 된다.
             // 콜백 맵 대신 실제 권한 상태를 다시 본다: 이미 허용된 항목은 맵에 안 실릴 수 있다
             if (hasBlePermission()) MacroService.start(this)
         }
@@ -180,8 +178,6 @@ internal fun runtimePermissionsFor(sdkInt: Int): List<String> = buildList {
     if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
         add(Manifest.permission.POST_NOTIFICATIONS)
     }
-    // 음성 명령용. 거부해도 앱의 나머지는 정상 동작한다
-    add(Manifest.permission.RECORD_AUDIO)
 }
 
 /**
@@ -196,12 +192,7 @@ private fun AppRoot(factory: ViewModelFactory) {
     var skippedPairing by rememberSaveable { mutableStateOf(false) }
     var current by rememberSaveable { mutableStateOf(Destination.Dashboard) }
 
-    // 상시 대기 스위치를 그대로 서비스 생사에 연결한다.
-    // 앱이 떠 있는 동안 켜야 한다 — 마이크 서비스는 백그라운드에서 시작할 수 없다
     val context = LocalContext.current
-    LaunchedEffect(settings.voiceAlwaysOn) {
-        if (settings.voiceAlwaysOn) VoiceService.start(context) else VoiceService.stop(context)
-    }
 
     // 등록을 해제하면 "나중에" 상태를 풀어 등록 화면으로 되돌린다.
     // 안 풀면 본 화면에 갇혀 다시 등록할 방법이 없어진다
@@ -298,7 +289,6 @@ private fun AppRoot(factory: ViewModelFactory) {
 
                 Destination.Settings -> {
                     val simulated = settingsViewModel.simulatedState?.collectAsState()?.value
-                    val voiceModel by settingsViewModel.voiceModel.collectAsState()
                     val update by settingsViewModel.update.collectAsState()
                     val batteryUnrestricted by settingsViewModel.batteryUnrestricted.collectAsState()
 
@@ -313,11 +303,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val installPermissionDialog = rememberLauncherForActivityResult(
                         ActivityResultContracts.StartActivityForResult()
                     ) { settingsViewModel.resumeUpdateAfterInstallPermission() }
-
-                    // 음성 모델 zip 고르기. 앱이 직접 내려받지 않으므로 파일을 받아 오는 건 사용자 몫이다
-                    val pickModel = rememberLauncherForActivityResult(
-                        ActivityResultContracts.OpenDocument()
-                    ) { uri -> uri?.let(settingsViewModel::installVoiceModel) }
 
                     // 백업 파일은 사용자가 어디에 둘지 고른다 — 앱이 임의의 위치에 쓰지 않는다
                     val saveBackup = rememberLauncherForActivityResult(
@@ -369,9 +354,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                     SettingsScreen(
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
-                        onIdlePollChange = settingsViewModel::setIdlePollSeconds,
-                        onActivePollChange = settingsViewModel::setActivePollSeconds,
-                        onActiveWindowChange = settingsViewModel::setActiveWindowSeconds,
                         onUnpair = settingsViewModel::unpair,
                         onStartPairing = { skippedPairing = false },
                         simulator = simulated?.let {
@@ -384,12 +366,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 onLeave = { settingsViewModel.simulateLeaving() },
                             )
                         },
-                        voice = VoiceControls(
-                            model = voiceModel,
-                            onAlwaysOnChange = settingsViewModel::setVoiceAlwaysOn,
-                            onInstall = { pickModel.launch(arrayOf("*/*")) },
-                            onRemove = settingsViewModel::removeVoiceModel,
-                        ),
                         battery = com.wemade.teslamacro.feature.settings.BatteryControls(
                             unrestricted = batteryUnrestricted,
                             onOpenSettings = { requestBatteryUnrestricted(context, batteryDialog) },

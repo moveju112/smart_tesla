@@ -35,14 +35,13 @@ class BackupFileTest {
             createdAtMillis = 1_700_000_000_000L,
             appVersion = "0.9.1",
             macros = listOf(rule),
-            settings = BackupSettings(idlePollSeconds = 60, automationEnabled = false),
+            settings = BackupSettings(automationEnabled = false),
         )
         val text = BackupFile.json.encodeToString(BackupFile.serializer(), original)
         val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
 
         assertEquals(original, restored)
         assertEquals("여름 탑승 쿨링", restored.macros.single().name)
-        assertEquals(60, restored.settings.idlePollSeconds)
         assertFalse(restored.settings.automationEnabled)
     }
 
@@ -54,7 +53,6 @@ class BackupFileTest {
             vehicleAddress = "AA:BB:CC:DD:EE:FF",
             vehicleName = "내 차",
             isEnrolled = true,
-            idlePollSeconds = 15,
         )
         val text = BackupFile.json.encodeToString(
             BackupFile.serializer(),
@@ -66,7 +64,7 @@ class BackupFileTest {
         assertFalse(text.contains("내 차"))
         assertFalse(text.contains("isEnrolled"))
         // 담기로 한 취향은 제대로 들어간다
-        assertTrue(text.contains("15"))
+        assertTrue(text.contains("automationEnabled"))
     }
 
     /** 앱이 새 필드를 추가해도 옛 파일이 열려야 한다 */
@@ -74,6 +72,6 @@ class BackupFileTest {
     fun `모르는 필드가 있어도 읽는다`() {
         val text = """{"version":1,"macros":[],"settings":{"idlePollSeconds":45},"미래필드":true}"""
         val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
-        assertEquals(45, restored.settings.idlePollSeconds)
+        assertTrue(restored.settings.automationEnabled)
     }
 }

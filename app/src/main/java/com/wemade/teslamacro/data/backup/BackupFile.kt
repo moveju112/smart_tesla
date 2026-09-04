@@ -47,11 +47,7 @@ data class BackupFile(
  */
 @Serializable
 data class BackupSettings(
-    val idlePollSeconds: Int = 30,
-    val activePollSeconds: Int = 2,
-    val activeWindowSeconds: Int = 180,
     val automationEnabled: Boolean = true,
-    val voiceAlwaysOn: Boolean = false,
     val stealthCharging: Boolean = false,
     // 내비 앱은 담지 않는다 — 새 기기에 그 앱이 없으면 선택값이 화면에서 사라지고
     // 매크로의 지도 안내가 실행 순간에 실패한다. 다시 고르는 건 한 번의 탭이다
@@ -63,11 +59,7 @@ data class BackupSettings(
 
 /** 지금 설정에서 백업에 담을 부분만 뽑는다 */
 fun AppSettings.toBackup(): BackupSettings = BackupSettings(
-    idlePollSeconds = idlePollSeconds,
-    activePollSeconds = activePollSeconds,
-    activeWindowSeconds = activeWindowSeconds,
     automationEnabled = automationEnabled,
-    voiceAlwaysOn = voiceAlwaysOn,
     stealthCharging = stealthCharging,
     hudOverlay = hudOverlay,
     safeDrive = safeDrive,

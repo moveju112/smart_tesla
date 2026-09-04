@@ -14,7 +14,7 @@
 
 ```
 di/AppContainer.kt      유일한 조립 지점 (수동 DI, Hilt 없음)
-domain/                 Android 의존 0 — command/ gateway/ macro/ model/ voice/
+domain/                 Android 의존 0 — command/ gateway/ macro/ model/
 data/
   gateway/              BleVehicleGateway, SimulatedVehicleGateway, SwitchingVehicleGateway,
                         CommandEncoder(명령→protobuf), SnapshotDecoder(응답→VehicleSnapshot)
@@ -22,10 +22,9 @@ data/
   charge/               StealthChargePlan(다음 전류 순수함수), StealthChargeController(실행부)
   settings/             SettingsStore(설정), SeatStore(좌석 통풍/열선 클라 저장)
   macro/RuleStore.kt    매크로 JSON 파일 저장 (DataStore 아님 — filesDir/macros.json)
-  voice/                VoiceRecognizer, HotwordListener, VoiceModelStore (Vosk 오프라인)
 feature/<화면>/         XxxScreen.kt + XxxViewModel.kt 쌍 (dashboard, macro, pairing, settings)
   macro/edit/           매크로 편집 분리 — MacroEditScreen, ActionEditor, ConditionEditor, MacroDraft
-service/                MacroService(FGS connectedDevice), VoiceService(FGS microphone), BootReceiver
+service/                MacroService(FGS connectedDevice), BootReceiver
 ui/                     ViewModelFactory, component/, layout/(Pane 반응형), nav/, theme/(토큰)
 ```
 
@@ -39,7 +38,6 @@ StatePoller ↔ MacroRunner: latestReading(StateFlow) 공유 — `app/src/main/j
 ```
 
 - 등록 완료 시 `useRealVehicle()`로 실차 게이트웨이 교체 필수 — `app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:74`
-- 음성: `VoiceService`(상시)와 대시보드 버튼(1회) 둘 다 `VoiceCommandParser`로 합류
 - 스텔스 충전: `MacroService`가 `StealthChargeController`를 start/stop — 설정·연결·충전중 셋이 다 참일 때만 전류를 흔든다 (`app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:79`, `app/src/main/java/com/wemade/teslamacro/service/MacroService.kt:40`)
 - 폴링 카테고리는 `StateCategory` enum (BODY_CONTROLLER=VCSEC 상시 / CLIMATE·CLOSURES·DRIVE·CHARGE=INFOTAINMENT 깨어 있어야) — `app/src/main/java/com/wemade/teslamacro/domain/model/VehicleSnapshot.kt:75`
 
@@ -47,9 +45,8 @@ StatePoller ↔ MacroRunner: latestReading(StateFlow) 공유 — `app/src/main/j
 
 | 스토어 | 저장소 | 내용 |
 |---|---|---|
-| `app/src/main/java/com/wemade/teslamacro/data/settings/SettingsStore.kt` | DataStore "settings" | VIN, isPaired/isEnrolled, 폴링 주기, 음성 상시 |
+| `app/src/main/java/com/wemade/teslamacro/data/settings/SettingsStore.kt` | DataStore "settings" | VIN, isPaired/isEnrolled, 자동화·주행 설정 |
 | `app/src/main/java/com/wemade/teslamacro/data/settings/SeatStore.kt` | DataStore "seat_climate" | 좌석별 통풍/열선 모드+단계 (차에서 못 읽어서 클라 저장) |
-| `app/src/main/java/com/wemade/teslamacro/data/voice/VoiceModelStore.kt` | filesDir | Vosk 모델 zip 설치 (APK 미포함, 사용자가 파일 선택) |
 | `app/src/main/java/com/wemade/teslamacro/data/macro/RuleStore.kt` | filesDir/macros.json | 매크로 룰 (kotlinx.serialization) |
 
 ## 테스트 배치
@@ -58,7 +55,7 @@ StatePoller ↔ MacroRunner: latestReading(StateFlow) 공유 — `app/src/main/j
 |---|---|---|
 | `tesla-ble/src/test/java/com/wemade/teslable/TeslaBleSpecTest.kt` | VIN→BLE 이름 공식 벡터 + 프레이밍 | 7 |
 | `tesla-ble/src/test/java/com/wemade/teslable/crypto/ProtocolVectorTest.kt` | ECDH/AES-GCM/TLV 공식 벡터 | 10 |
-| `app/src/test/java/com/wemade/teslamacro/` 하위 domain/macro · domain/voice · data/gateway · data/settings · data/charge(StealthChargePlanTest) | 단위 | 다수 |
+| `app/src/test/java/com/wemade/teslamacro/` 하위 domain/macro · data/gateway · data/settings · data/charge(StealthChargePlanTest) | 단위 | 다수 |
 | `app/src/test/java/com/wemade/teslamacro/ScreenshotTest.kt` | Paparazzi PIXEL_C 가로 | 10컷 |
 | `app/src/test/java/com/wemade/teslamacro/PhoneScreenshotTest.kt` | Paparazzi PIXEL_6 세로 | 6컷 |
 
@@ -67,6 +64,6 @@ StatePoller ↔ MacroRunner: latestReading(StateFlow) 공유 — `app/src/main/j
 
 ## 빌드 산출물
 
-- ABI split: arm64-v8a + armeabi-v7a, universal APK 없음 (Vosk 네이티브 10MB/ABI) — `app/build.gradle.kts:24`
+- ABI split: arm64-v8a + armeabi-v7a, universal APK 없음 — `app/build.gradle.kts:24`
 - 실기기 배포는 arm64 APK: `app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`
 - 버전: `app/build.gradle.kts:17` (versionCode / versionName)

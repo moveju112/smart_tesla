@@ -9,7 +9,6 @@ import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.update.UpdateState
-import com.wemade.teslamacro.data.voice.VoiceModelState
 import com.wemade.teslamacro.di.AppContainer
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import kotlinx.coroutines.Dispatchers
@@ -45,19 +44,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setAutomationEnabled(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
-    }
-
-    fun setIdlePollSeconds(seconds: Int) {
-        viewModelScope.launch { container.settingsStore.setIdlePollSeconds(seconds) }
-    }
-
-    fun setActivePollSeconds(seconds: Int) {
-        viewModelScope.launch { container.settingsStore.setActivePollSeconds(seconds) }
-    }
-
-    // 집중 폴링을 얼마나 오래 유지할지 — 길수록 반응은 좋지만 차가 늦게 잔다
-    fun setActiveWindowSeconds(seconds: Int) {
-        viewModelScope.launch { container.settingsStore.setActiveWindowSeconds(seconds) }
     }
 
     // ---- 업데이트 ----
@@ -101,27 +87,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private fun readBatteryUnrestricted(): Boolean {
         val power = container.appContext.getSystemService(android.os.PowerManager::class.java)
         return power?.isIgnoringBatteryOptimizations(container.appContext.packageName) == true
-    }
-
-    // ---- 음성 ----
-
-    val voiceModel: StateFlow<VoiceModelState> = container.voiceModelStore.state
-
-    fun setVoiceAlwaysOn(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setVoiceAlwaysOn(enabled) }
-    }
-
-    /** 사용자가 고른 zip에서 음성 모델을 푼다 */
-    fun installVoiceModel(uri: Uri) {
-        viewModelScope.launch { container.voiceModelStore.installFromZip(uri) }
-    }
-
-    /** 모델을 지우면 상시 대기도 같이 끈다. 켜둔 채로 두면 계속 실패한다 */
-    fun removeVoiceModel() {
-        viewModelScope.launch {
-            container.settingsStore.setVoiceAlwaysOn(false)
-            container.voiceModelStore.remove()
-        }
     }
 
     fun setNavigatorApp(name: String) {

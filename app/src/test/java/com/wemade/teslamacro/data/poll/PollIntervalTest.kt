@@ -4,7 +4,7 @@ import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** 폴링 주기 선택 검증 — 깊은 유휴(잠김+빈차+비충전)와 충전 중 예외가 핵심 */
+/** 고정 폴링 전략 검증 — 깊은 유휴(잠김+빈차+비충전)와 충전 중 예외가 핵심 */
 class PollIntervalTest {
 
     private fun snapshot(locked: Boolean?, present: Boolean?, charging: Boolean?) =
@@ -51,7 +51,7 @@ class PollIntervalTest {
     }
 
     @Test
-    fun `사용자가 평상시를 깊은 유휴보다 길게 잡았으면 그 값을 따른다`() {
+    fun `평상시 주기가 깊은 유휴보다 길면 그 값을 따른다`() {
         val result = nextIntervalSeconds(
             inActiveWindow = false,
             snapshot = snapshot(locked = true, present = false, charging = false),

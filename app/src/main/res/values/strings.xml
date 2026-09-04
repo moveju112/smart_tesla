@@ -4,8 +4,6 @@
     <string name="service_channel_name">차량 감시</string>
     <string name="service_title">차량 감시 중</string>
     <string name="update_channel_name">새 버전 알림</string>
-    <string name="voice_channel_name">음성 대기</string>
-    <string name="voice_title">음성 명령</string>
     <string name="shortcut_frunk_short">보닛 열기</string>
     <string name="shortcut_frunk_long">보닛(프렁크) 열기</string>
     <string name="shortcut_trunk_short">트렁크 열기</string>

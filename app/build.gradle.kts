@@ -23,14 +23,13 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 126
-        versionName = "0.9.13"
+        versionCode = 127
+        versionName = "0.9.14"
 
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
     }
 
-    // 음성 인식 네이티브 라이브러리가 ABI마다 10MB씩 붙는다.
-    // 안드로이드 태블릿은 ARM이므로 x86은 빼고, 남은 둘도 따로 뽑는다
+    // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.
     splits {
         abi {
             isEnable = true
@@ -75,9 +74,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-
-    // 오프라인 음성 인식. 모델은 APK에 넣지 않고 기기에서 따로 설치한다
-    implementation(libs.vosk.android)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

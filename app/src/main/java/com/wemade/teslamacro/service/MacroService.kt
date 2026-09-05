@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.BatteryManager
 import android.os.Build
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -47,7 +48,9 @@ class MacroService : LifecycleService() {
         lifecycleScope.launch {
             // 컨테이너 초기화가 끝난 뒤에만 폴링을 시작한다
             app.ready.first { it }
+            app.container.poller.setVehiclePowerConnected(isExternalPowerConnected())
             app.container.poller.start(lifecycleScope)
+            app.container.poller.enforceConnectionGuard()
             // 스텔스 충전도 같은 서비스 수명에 맞춰 돈다. 안에서 설정·충전 여부를 스스로 게이트한다
             app.container.stealthCharge.start(lifecycleScope)
         }
@@ -216,15 +219,22 @@ class MacroService : LifecycleService() {
                 // 시동 = 차가 깼다. 낡은 화면으로 사람을 맞이하지 않는다
                 Intent.ACTION_POWER_CONNECTED -> {
                     com.wemade.teslable.DiagLog.add("차량 전원 연결 — 즉시 상태 확인")
-                    app.container.poller.nudge()
+                    app.container.poller.setVehiclePowerConnected(true)
                 }
-                // 시동 꺼짐도 상태가 바뀐 순간이다 — 잠금·탑승을 한 번 확인하고 조용해진다
+                // 시동이 꺼지면 공식 휴대폰 키만 남도록 앱의 인증 BLE를 바로 놓는다
                 Intent.ACTION_POWER_DISCONNECTED -> {
-                    com.wemade.teslable.DiagLog.add("차량 전원 끊김 — 마지막 상태 확인")
-                    app.container.poller.nudge()
+                    com.wemade.teslable.DiagLog.add("차량 전원 끊김 — 휴대폰 키 보호 확인")
+                    app.container.poller.setVehiclePowerConnected(false, endAppSession = true)
+                    lifecycleScope.launch { app.container.poller.enforceConnectionGuard() }
                 }
             }
         }
+    }
+
+    /** 서비스 시작 시 현재 USB 전원 상태를 읽어 첫 연결부터 보호 정책을 지킨다. */
+    private fun isExternalPowerConnected(): Boolean {
+        val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
     }
 
     /** 하루 한 번 새 버전을 확인하고, 이번에 찾았으면 알림으로 알린다 */
@@ -304,38 +314,47 @@ class MacroService : LifecycleService() {
             return
         }
 
-        // 사람이 방금 누른 요청이므로 저장 주소 직행이 한 번 실패하면 주변 검색까지 시도한다.
-        // 자동 폴링과 달리 후보 검증을 생략하면 일시적인 GATT 오류 한 번에 명령이 유실된다.
-        val connection = app.container.gateway.connect(settings.vin, allowProbe = true)
-        if (connection.isFailure) {
-            quickActionFailed(requestLabel, connection.exceptionOrNull()?.message ?: "차량 연결 실패")
-            return
-        }
+        app.container.poller.beginCommandConnection()
+        try {
+            // 사람이 방금 누른 요청이므로 저장 주소 직행이 한 번 실패하면 주변 검색까지 시도한다.
+            // 자동 폴링과 달리 후보 검증을 생략하면 일시적인 GATT 오류 한 번에 명령이 유실된다.
+            val connection = app.container.gateway.connect(settings.vin, allowProbe = true)
+            if (connection.isFailure) {
+                quickActionFailed(requestLabel, connection.exceptionOrNull()?.message ?: "차량 연결 실패")
+                return
+            }
 
-        if (rule != null) {
-            // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
-            app.container.runner.launch(
-                rule,
-                System.currentTimeMillis(),
-                restartIfRunning = true,
-            )
-            app.container.poller.recordFired(rule.id)
-            com.wemade.teslable.DiagLog.add("빅스비 매크로 [${rule.name}] 실행 요청 완료")
-            showQuickActionToast("${rule.name} 실행")
-            return
-        }
+            if (rule != null) {
+                // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
+                app.container.runner.launch(
+                    rule,
+                    System.currentTimeMillis(),
+                    restartIfRunning = true,
+                )
+                app.container.poller.recordFired(rule.id)
+                // launch는 비동기다. 러너가 연결 사용권을 이어받은 뒤에 단발 사용권을 놓는다
+                kotlinx.coroutines.withTimeoutOrNull(2_000L) {
+                    app.container.runner.running.first { running -> rule.id in running }
+                }
+                com.wemade.teslable.DiagLog.add("빅스비 매크로 [${rule.name}] 실행 요청 완료")
+                showQuickActionToast("${rule.name} 실행")
+                return
+            }
 
-        val result = app.container.gateway.send(checkNotNull(command))
-        if (result.isSuccess) {
-            // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다.
-            app.container.poller.focusOn(command.confirmCategory())
-            com.wemade.teslable.DiagLog.add("빅스비 명령 [${command.label}] 완료")
-            showQuickActionToast("${command.label} 완료")
-        } else {
-            quickActionFailed(
-                command.label,
-                result.exceptionOrNull()?.message ?: "차량이 명령을 거부했어요",
-            )
+            val result = app.container.gateway.send(checkNotNull(command))
+            if (result.isSuccess) {
+                // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다.
+                app.container.poller.focusOn(command.confirmCategory())
+                com.wemade.teslable.DiagLog.add("빅스비 명령 [${command.label}] 완료")
+                showQuickActionToast("${command.label} 완료")
+            } else {
+                quickActionFailed(
+                    command.label,
+                    result.exceptionOrNull()?.message ?: "차량이 명령을 거부했어요",
+                )
+            }
+        } finally {
+            app.container.poller.endCommandConnection()
         }
     }
 

@@ -46,6 +46,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
     }
 
+    /** 휴대폰 키 보호 설정을 저장하고 현재 연결 정책을 즉시 다시 적용한다. */
+    fun setProtectPhoneKey(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsStore.setProtectPhoneKey(enabled)
+            if (enabled) container.poller.enforceConnectionGuard() else container.poller.nudge()
+        }
+    }
+
     // ---- 업데이트 ----
 
     /** 확인·설치 진행 상태. 리시버가 갱신하므로 정본은 [AppUpdater]에 있다 */

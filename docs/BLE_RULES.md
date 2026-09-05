@@ -18,6 +18,10 @@
 - 광고 이름 후보: `"S" + SHA1(VIN)[:8].hex + [C/D/R/P]` (18자) — `tesla-ble/src/main/java/com/wemade/teslable/TeslaBleSpec.kt`
 - **[NEVER]** 페어링 목록의 `Tesla Model …` 주소로 키 연결을 시도하지 않는다. 110B/110E/111E UUID는 음악·통화용 클래식 BT다
 - 차량 닉네임(대소문자 그대로)은 `getBondedDevices()`에서 온다 — 스캔 불필요, BLUETOOTH_CONNECT만 필요 (`TeslaBleScanner.kt:59`)
+- **[MUST]** 휴대폰 키 간섭 방지가 켜졌으면 차량 USB 전원·앱 전면·단발 명령·실행 중 매크로가
+  모두 없을 때 인증 GATT를 끊고 자동 재연결을 막는다 (`StatePoller.shouldKeepVehicleConnection`)
+  - why: 앱 키가 빈 차에 계속 연결된 상태와 공식 휴대폰 키의 이탈 잠금 실패가 함께 관찰됐다.
+    인과관계는 아직 실차 A/B 미확인이므로 직접 잠금 명령 버그로 단정하지 않는다.
 
 ## 도메인 · 요청 규율
 
@@ -43,6 +47,7 @@
 | 온도/배터리 읽기 값 표시 | ⚠️ 0.3.9 수정(matchesRequest 완화 + 접속 시 전체 읽기) 후 실차 미확인 |
 | 앱 자체 스캔으로 차 발견 | ❌ 미해결 — 직행 연결로 우회 중 |
 | 좀비 GATT 워치독(3연속 전멸 시 강제 재연결, 0.8.2) | ⚠️ 실차 미확인 — 밤샘 후 아침 탑승 시나리오로 검증 필요 |
+| 휴대폰 키 간섭 방지(USB 해제 후 GATT 종료) | ⚠️ 실차 미확인 — 보호 켜짐/꺼짐으로 이탈 잠금 A/B 필요 |
 
 - BLE 전용이므로 **차 근처(~수십 m)에서만** 동작. Fleet API는 안 쓴다(정책). 원격이 필요해지면 차내 태블릿 릴레이 방식으로 간다
 - 좌석 통풍/열선 상태는 차에서 읽을 수 없다 → `SeatStore`에 클라 저장, 통풍/열선은 상호배타 토글(반대 모드 끄는 명령 동시 전송), 운전석·동승석은 통합 컨트롤 — `app/src/main/java/com/wemade/teslamacro/feature/dashboard/DashboardViewModel.kt:152`

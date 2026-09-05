@@ -21,6 +21,8 @@ data class AppSettings(
     val vin: String = "",
     /** 매크로 자동 실행 on/off — 정비·세차 때 통째로 끄는 스위치 */
     val automationEnabled: Boolean = true,
+    /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
+    val protectPhoneKey: Boolean = true,
     /**
      * 키 등록까지 끝났는지.
      *
@@ -72,6 +74,7 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             vin = prefs[KeyVin] ?: "",
             automationEnabled = prefs[KeyAutomation] ?: true,
+            protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             isEnrolled = prefs[KeyEnrolled] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
@@ -90,6 +93,7 @@ class SettingsStore(private val context: Context) {
     suspend fun setVin(vin: String) = edit { it[KeyVin] = vin }
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
+    suspend fun setProtectPhoneKey(enabled: Boolean) = edit { it[KeyProtectPhoneKey] = enabled }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
@@ -130,6 +134,7 @@ class SettingsStore(private val context: Context) {
      */
     suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
         it[KeyAutomation] = backup.automationEnabled
+        it[KeyProtectPhoneKey] = backup.protectPhoneKey
         it[KeyStealthCharging] = backup.stealthCharging
         // 옛 백업(version 1)엔 아래 값이 없다 — 그때는 BackupSettings의 기본값이 들어온다.
         // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
@@ -191,6 +196,7 @@ class SettingsStore(private val context: Context) {
         val KeyLegacyActivePoll = intPreferencesKey("active_poll_seconds")
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
         val KeyAutomation = booleanPreferencesKey("automation_enabled")
+        val KeyProtectPhoneKey = booleanPreferencesKey("protect_phone_key")
         val KeyEnrolled = booleanPreferencesKey("enrolled")
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")

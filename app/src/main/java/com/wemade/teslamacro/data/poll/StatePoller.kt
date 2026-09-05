@@ -58,6 +58,15 @@ class StatePoller(
 ) {
     private var job: Job? = null
 
+    @Volatile
+    private var vehiclePowerConnected = false
+
+    @Volatile
+    private var appVisibleUntil = 0L
+
+    /** 빅스비처럼 화면 밖에서 연결을 빌려 쓰는 요청 수 */
+    private val commandConnections = java.util.concurrent.atomic.AtomicInteger(0)
+
     private val _snapshot = MutableStateFlow(VehicleSnapshot.Empty)
     val snapshot: StateFlow<VehicleSnapshot> = _snapshot.asStateFlow()
 
@@ -122,6 +131,15 @@ class StatePoller(
             }
         }
 
+        // 매크로가 끝난 뒤 남은 연결을 즉시 정리한다.
+        // 전원 해제 시점에 실행 중이던 긴 대기 매크로도 마지막 단계까지 연결을 쓸 수 있다
+        launch {
+            runner.running.collect { running ->
+                nudge()
+                if (running.isEmpty()) enforceConnectionGuard()
+            }
+        }
+
         var previous: Reading? = null
         var activeUntil = 0L
         var needFullRead = true   // 연결 직후 첫 사이클 — 매크로에 필요한 것만
@@ -140,6 +158,14 @@ class StatePoller(
             // 주기에서 빼지 않으면 15초 주기가 읽기 시간만큼 들쭉날쭉해진다 (실차 로그 제보)
             val cycleStart = now()
             val settings = settingsStore.settings.first()
+
+            // 기본 보호 모드에서는 사람이 앱·명령·매크로를 쓰지 않는 빈 차와 인증 연결을
+            // 유지하지 않는다. 공식 휴대폰 키가 유일한 근접 키로 판정될 여지를 남긴다
+            if (!shouldKeepConnection(settings.protectPhoneKey)) {
+                enforceConnectionGuard()
+                sleep(NORMAL_POLL_SECONDS * 1000L)
+                continue
+            }
 
             // 1. 연결이 안 됐으면 붙이고 다시 돈다.
             //    키 등록까지 끝난 차만 — 등록 중인 차를 백그라운드가 건드리면 안 되고,
@@ -385,6 +411,54 @@ class StatePoller(
     @Volatile
     private var reconnectHoldUntil = 0L
 
+    /** 차량 USB 전원 상태를 연결 정책에 반영한다. */
+    fun setVehiclePowerConnected(connected: Boolean, endAppSession: Boolean = false) {
+        vehiclePowerConnected = connected
+        // 상시 켜진 차내 화면은 Activity가 계속 전면일 수 있다.
+        // 차량 전원이 끊긴 뒤까지 그 상태를 연결 사유로 쓰지 않는다
+        if (!connected && endAppSession) appVisibleUntil = 0L
+        nudge()
+    }
+
+    /** 앱을 연 직후에는 조회·수동 명령을 위해 짧게 연결을 허용한다. */
+    fun setAppVisible(visible: Boolean) {
+        appVisibleUntil = if (visible) now() + APP_CONNECTION_WINDOW_MILLIS else 0L
+        nudge()
+    }
+
+    /** 화면 밖의 단발 명령이 연결을 쓰는 동안 보호 해제를 잠시 미룬다. */
+    fun beginCommandConnection() {
+        commandConnections.incrementAndGet()
+        nudge()
+    }
+
+    /** 단발 명령이 끝나면 남은 사용자가 없는 연결을 정리한다. */
+    suspend fun endCommandConnection() {
+        commandConnections.updateAndGet { count -> (count - 1).coerceAtLeast(0) }
+        nudge()
+        enforceConnectionGuard()
+    }
+
+    /** 보호 모드가 연결을 허용하지 않는 상태면 GATT를 즉시 끊는다. */
+    suspend fun enforceConnectionGuard() {
+        val settings = settingsStore.settings.first()
+        if (shouldKeepConnection(settings.protectPhoneKey)) return
+        if (gateway.linkState.value !is LinkState.Idle) {
+            com.wemade.teslable.DiagLog.add("휴대폰 키 간섭 방지 — 차량 BLE 연결 해제")
+            gateway.disconnect()
+        }
+    }
+
+    /** 현재 연결을 필요로 하는 실제 사용자가 하나라도 있는지 판정한다. */
+    private fun shouldKeepConnection(protectPhoneKey: Boolean): Boolean =
+        shouldKeepVehicleConnection(
+            protectPhoneKey = protectPhoneKey,
+            vehiclePowerConnected = vehiclePowerConnected,
+            appVisible = now() < appVisibleUntil,
+            commandActive = commandConnections.get() > 0,
+            macroRunning = runner.running.value.isNotEmpty(),
+        )
+
     /** 자고 있는 폴러를 지금 깨운다. 돌고 있는 중이면 다음 잠만 짧아질 뿐 부작용 없다 */
     fun nudge() {
         reconnectHoldUntil = 0L   // 사용자가 왔다 — 백오프 무시하고 즉시 시도
@@ -594,6 +668,16 @@ class StatePoller(
     }
 }
 
+/** 휴대폰 키 보호와 차량 연결 사용 사유를 한곳에서 판정한다. */
+internal fun shouldKeepVehicleConnection(
+    protectPhoneKey: Boolean,
+    vehiclePowerConnected: Boolean,
+    appVisible: Boolean,
+    commandActive: Boolean,
+    macroRunning: Boolean,
+): Boolean =
+    !protectPhoneKey || vehiclePowerConnected || appVisible || commandActive || macroRunning
+
 /** 탑승·잠금 필드를 보고하는 카테고리인가 (VCSEC 상태 응답 계열) */
 private fun ownsPresence(category: StateCategory): Boolean =
     category == StateCategory.BODY_CONTROLLER || category == StateCategory.CLOSURES
@@ -613,6 +697,7 @@ internal const val DEEP_IDLE_SECONDS = 120
 internal const val NORMAL_POLL_SECONDS = 15
 internal const val ACTIVE_POLL_SECONDS = 2
 internal const val ACTIVE_WINDOW_MILLIS = 3 * 60 * 1000L
+internal const val APP_CONNECTION_WINDOW_MILLIS = 2 * 60 * 1000L
 
 /**
  * 다음 폴링까지 몇 초 쉴지 정한다 — 순수 함수라 단위 테스트로 검증한다.

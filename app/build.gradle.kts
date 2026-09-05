@@ -14,8 +14,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 129
-        versionName = "0.9.16"
+        versionCode = 130
+        versionName = "0.9.17"
 
         // 공개 버전에서는 외부 네이버 지도만 사용하므로 KNSDK 키를 포함하지 않는다.
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"\"")

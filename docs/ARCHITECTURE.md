@@ -38,6 +38,8 @@ StatePoller ↔ MacroRunner: latestReading(StateFlow) 공유 — `app/src/main/j
 ```
 
 - 등록 완료 시 `useRealVehicle()`로 실차 게이트웨이 교체 필수 — `app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:74`
+- 연결 수명은 `StatePoller`가 차량 USB 전원·앱을 연 직후의 짧은 세션·단발 명령·실행 중 매크로를 합쳐 판정한다.
+  `protectPhoneKey=true`이고 네 사유가 모두 없으면 GATT를 끊고 수동 요청 전까지 재연결하지 않는다.
 - 스텔스 충전: `MacroService`가 `StealthChargeController`를 start/stop — 설정·연결·충전중 셋이 다 참일 때만 전류를 흔든다 (`app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:79`, `app/src/main/java/com/wemade/teslamacro/service/MacroService.kt:40`)
 - 폴링 카테고리는 `StateCategory` enum (BODY_CONTROLLER=VCSEC 상시 / CLIMATE·CLOSURES·DRIVE·CHARGE=INFOTAINMENT 깨어 있어야) — `app/src/main/java/com/wemade/teslamacro/domain/model/VehicleSnapshot.kt:75`
 

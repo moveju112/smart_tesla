@@ -52,6 +52,7 @@ import com.wemade.teslamacro.ui.theme.T
 fun SettingsScreen(
     settings: AppSettings,
     onAutomationChange: (Boolean) -> Unit,
+    onProtectPhoneKeyChange: (Boolean) -> Unit = {},
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
     modifier: Modifier = Modifier,
@@ -173,6 +174,9 @@ fun SettingsScreen(
                                 onBoard = simulator.onBoard,
                                 onLeave = simulator.onLeave,
                             )
+                        } else if (settings.isPaired) {
+                            SectionHeader("연결 안전", topPadding = Space.md)
+                            PhoneKeyProtectionPanel(settings, onProtectPhoneKeyChange)
                         }
                     }
 
@@ -197,6 +201,33 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(Space.xxl))
+    }
+}
+
+/** 빈 차에서 앱의 인증 BLE를 놓아 공식 휴대폰 키의 근접 판정을 방해하지 않게 한다. */
+@Composable
+private fun PhoneKeyProtectionPanel(
+    settings: AppSettings,
+    onProtectPhoneKeyChange: (Boolean) -> Unit,
+) {
+    TCard {
+        ToggleRow(
+            title = "휴대폰 키 간섭 방지",
+            subtitle = "차량 전원이 꺼지면 앱의 BLE 연결을 끊어요",
+            checked = settings.protectPhoneKey,
+            onCheckedChange = onProtectPhoneKeyChange,
+        )
+        if (settings.protectPhoneKey) {
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            Text(
+                text = "주차 중 상시 상태 감시·스텔스 충전·예약 매크로는 멈춥니다. " +
+                    "앱과 빅스비 명령은 필요할 때 다시 연결해요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        }
     }
 }
 
@@ -718,6 +749,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
     appendLine(
         "매크로 자동 실행=${settings.automationEnabled}" +
+            " · 휴대폰 키 간섭 방지=${settings.protectPhoneKey}" +
             " · 스텔스 충전=${settings.stealthCharging}",
     )
     append(

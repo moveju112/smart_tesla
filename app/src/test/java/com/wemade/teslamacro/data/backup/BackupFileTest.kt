@@ -35,7 +35,7 @@ class BackupFileTest {
             createdAtMillis = 1_700_000_000_000L,
             appVersion = "0.9.1",
             macros = listOf(rule),
-            settings = BackupSettings(automationEnabled = false),
+            settings = BackupSettings(automationEnabled = false, protectPhoneKey = false),
         )
         val text = BackupFile.json.encodeToString(BackupFile.serializer(), original)
         val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
@@ -43,6 +43,7 @@ class BackupFileTest {
         assertEquals(original, restored)
         assertEquals("여름 탑승 쿨링", restored.macros.single().name)
         assertFalse(restored.settings.automationEnabled)
+        assertFalse(restored.settings.protectPhoneKey)
     }
 
     /** 차를 특정하거나 여는 정보는 파일에 한 글자도 없어야 한다 */
@@ -65,6 +66,7 @@ class BackupFileTest {
         assertFalse(text.contains("isEnrolled"))
         // 담기로 한 취향은 제대로 들어간다
         assertTrue(text.contains("automationEnabled"))
+        assertTrue(text.contains("protectPhoneKey"))
     }
 
     /** 앱이 새 필드를 추가해도 옛 파일이 열려야 한다 */

@@ -1,14 +1,18 @@
 package com.wemade.teslamacro.data.nav
 
+import android.app.ActivityOptions
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.location.Geocoder
 import android.net.Uri
 import android.provider.Settings
+import android.os.Build
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
@@ -202,12 +206,46 @@ class NaverNavigator(private val context: Context) {
                 if (!anchor.isAttachedToWindow || !anchor.isShown) {
                     error("지도 실행 창이 화면에 붙지 않았어요")
                 }
-                context.startActivity(intent)
+                launchExternalActivity(intent, appLabel)
                 delay(WINDOW_KEEP_MILLIS)
             } finally {
                 runCatching { manager.removeView(anchor) }
             }
         }
+
+    /** Android 14+가 요구하는 백그라운드 Activity 시작 허용을 명시해 외부 내비에 전달한다. */
+    private fun launchExternalActivity(intent: Intent, appLabel: String) {
+        val resolved = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            ?: error("$appLabel 앱이 안전운전 주소를 받지 않아요")
+        val target = resolved.activityInfo?.name ?: "알 수 없는 화면"
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            context.startActivity(intent)
+            com.wemade.teslable.DiagLog.add("$appLabel 시스템 전달 완료 — $target · startActivity")
+            return
+        }
+
+        val options = ActivityOptions.makeBasic().apply {
+            setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                setPendingIntentCreatorBackgroundActivityStartMode(
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+                )
+            }
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            intent.dataString?.hashCode() ?: intent.hashCode(),
+            intent,
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            options.toBundle(),
+        )
+        pendingIntent.send(context, 0, null, null, null, null, options.toBundle())
+        // 시스템이 인텐트를 받았다는 뜻일 뿐 화면 표시 성공으로 과장하지 않는다
+        com.wemade.teslable.DiagLog.add("$appLabel 시스템 전달 완료 — $target · PendingIntent")
+    }
 
     /** 백그라운드 화면 전환 예외를 열기 위한 실제 보이는 일회성 창 */
     private fun createLaunchAnchor(appLabel: String): TextView {

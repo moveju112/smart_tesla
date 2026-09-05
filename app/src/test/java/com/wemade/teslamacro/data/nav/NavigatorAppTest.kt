@@ -76,7 +76,7 @@ class NavigatorAppTest {
 
     @Test
     fun `3사 안심운전 URI를 목적지 없이 연다`() {
-        assertEquals("nmap://navigation?appname=$pkg", NavigatorApp.NAVER.safeDriveUri(pkg).toString())
+        assertEquals("nmap://navigation?&appname=$pkg", NavigatorApp.NAVER.safeDriveUri(pkg).toString())
         assertEquals(
             "kakaonavi://widget?action=SafetyDrive",
             NavigatorApp.KAKAO.safeDriveUri(pkg).toString(),

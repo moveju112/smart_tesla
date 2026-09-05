@@ -56,7 +56,8 @@ enum class NavigatorApp(
 
     /** 목적지 없이 각 내비의 안심운전 화면을 여는 URI. 구글 지도는 이 모드를 제공하지 않는다 */
     fun safeDriveUri(appPackage: String): Uri? = when (this) {
-        NAVER -> "nmap://navigation?appname=$appPackage"
+        // 네이버 공식 예제의 빈 첫 쿼리까지 그대로 보낸다. 내부 파서 버전 차이를 피한다
+        NAVER -> "nmap://navigation?&appname=$appPackage"
         KAKAO -> "kakaonavi://widget?action=SafetyDrive"
         TMAP -> "tmap://navi"
         GOOGLE -> null

@@ -64,6 +64,12 @@ class StatePoller(
     @Volatile
     private var appVisibleUntil = 0L
 
+    /** 짧은 전원 출렁임과 실제 하차 후 재탑승을 가르는 전원 해제 시작 시각 */
+    private val vehiclePowerDisconnectedAt = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /** 충분히 오래 꺼졌다 켜진 뒤 첫 신선한 VCSEC 응답은 새 탑승 세션으로 본다 */
+    private val resetBoardingSession = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** 빅스비처럼 화면 밖에서 연결을 빌려 쓰는 요청 수 */
     private val commandConnections = java.util.concurrent.atomic.AtomicInteger(0)
 
@@ -333,8 +339,15 @@ class StatePoller(
             val observedPresence = fresh
                 ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
                 ?.isUserPresent
+            // 보호 모드는 전원 해제 때 하차(false)를 읽지 않고 곧바로 GATT를 놓는다.
+            // 충분히 오래 꺼졌다 다시 켜진 세션은 직전 true를 이어 쓰지 않아야
+            // 첫 응답 true도 새 탑승으로 판정된다. 짧은 전원 출렁임은 이 표식을 만들지 않는다
+            val startsNewVehicleSession = observedPresence != null &&
+                resetBoardingSession.getAndSet(false)
+            val evaluationPrevious = previous.takeUnless { startsNewVehicleSession }
+            val evaluationKnownPresence = if (startsNewVehicleSession) false else knownPresence
             if (observedPresence == true &&
-                engine.userBecamePresent(previous, current, knownPresence)
+                engine.userBecamePresent(evaluationPrevious, current, evaluationKnownPresence)
             ) {
                 boardingChannel.trySend(Unit)
             }
@@ -342,10 +355,10 @@ class StatePoller(
             if (settings.automationEnabled) {
                 engine.evaluate(
                     rules = ruleStore.rules.value,
-                    previous = previous,
+                    previous = evaluationPrevious,
                     current = current,
                     lastFiredAtMillis = lastFiredAt,
-                    knownPresenceBeforeRestart = knownPresence,
+                    knownPresenceBeforeRestart = evaluationKnownPresence,
                     // 트리거는 발동했는데 조건이 막았으면 무엇이 막았는지 남긴다
                     onBlocked = { rule, unmet ->
                         com.wemade.teslable.DiagLog.add(
@@ -414,6 +427,17 @@ class StatePoller(
     /** 차량 USB 전원 상태를 연결 정책에 반영한다. */
     fun setVehiclePowerConnected(connected: Boolean, endAppSession: Boolean = false) {
         vehiclePowerConnected = connected
+        if (connected) {
+            val disconnectedAt = vehiclePowerDisconnectedAt.getAndSet(0L)
+            if (startsNewVehicleSession(disconnectedAt, now())) {
+                resetBoardingSession.set(true)
+                com.wemade.teslable.DiagLog.add("차량 전원 복귀 — 새 탑승 세션으로 확인")
+            }
+        } else {
+            // 동일한 해제 방송이 반복돼도 최초 시각을 지킨다. 매번 갱신하면 실제 하차가
+            // 오래 이어져도 마지막 방송 기준 30초를 못 채워 다음 탑승을 놓칠 수 있다
+            vehiclePowerDisconnectedAt.compareAndSet(0L, now())
+        }
         // 상시 켜진 차내 화면은 Activity가 계속 전면일 수 있다.
         // 차량 전원이 끊긴 뒤까지 그 상태를 연결 사유로 쓰지 않는다
         if (!connected && endAppSession) appVisibleUntil = 0L
@@ -678,6 +702,14 @@ internal fun shouldKeepVehicleConnection(
 ): Boolean =
     !protectPhoneKey || vehiclePowerConnected || appVisible || commandActive || macroRunning
 
+/** 전원이 충분히 오래 끊겼다가 돌아왔으면 새 탑승 세션으로 시작한다. */
+internal fun startsNewVehicleSession(
+    disconnectedAtMillis: Long,
+    connectedAtMillis: Long,
+    minimumOffMillis: Long = VEHICLE_POWER_BOUNCE_MILLIS,
+): Boolean = disconnectedAtMillis > 0L &&
+    connectedAtMillis - disconnectedAtMillis >= minimumOffMillis
+
 /** 탑승·잠금 필드를 보고하는 카테고리인가 (VCSEC 상태 응답 계열) */
 private fun ownsPresence(category: StateCategory): Boolean =
     category == StateCategory.BODY_CONTROLLER || category == StateCategory.CLOSURES
@@ -698,6 +730,7 @@ internal const val NORMAL_POLL_SECONDS = 15
 internal const val ACTIVE_POLL_SECONDS = 2
 internal const val ACTIVE_WINDOW_MILLIS = 3 * 60 * 1000L
 internal const val APP_CONNECTION_WINDOW_MILLIS = 2 * 60 * 1000L
+internal const val VEHICLE_POWER_BOUNCE_MILLIS = 30 * 1000L
 
 /**
  * 다음 폴링까지 몇 초 쉴지 정한다 — 순수 함수라 단위 테스트로 검증한다.

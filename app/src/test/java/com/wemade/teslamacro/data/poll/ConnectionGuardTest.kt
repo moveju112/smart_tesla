@@ -23,4 +23,19 @@ class ConnectionGuardTest {
         assertTrue(shouldKeepVehicleConnection(true, false, false, true, false))
         assertTrue(shouldKeepVehicleConnection(true, false, false, false, true))
     }
+
+    @Test
+    fun `30초 미만 전원 출렁임은 새 탑승으로 보지 않는다`() {
+        assertFalse(startsNewVehicleSession(10_000L, 39_999L))
+    }
+
+    @Test
+    fun `30초 이상 전원 해제 뒤 복귀는 새 탑승으로 본다`() {
+        assertTrue(startsNewVehicleSession(10_000L, 40_000L))
+    }
+
+    @Test
+    fun `전원 해제 기록이 없으면 새 탑승으로 보지 않는다`() {
+        assertFalse(startsNewVehicleSession(0L, 40_000L))
+    }
 }

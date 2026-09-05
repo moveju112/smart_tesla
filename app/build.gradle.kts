@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -7,13 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.paparazzi)
 }
-
-// 카카오내비 앱 키는 소스에 박지 않는다. local.properties(git 제외)에서 읽어
-// BuildConfig로 넘긴다 — 없으면 빈 문자열이고, 앱은 "키 없음" 상태로 조용히 돈다
-val kakaoNativeAppKey: String = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
-}.getProperty("kakaoNativeAppKey").orEmpty()
 
 android {
     namespace = "com.wemade.teslamacro"
@@ -23,10 +14,11 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 128
-        versionName = "0.9.15"
+        versionCode = 129
+        versionName = "0.9.16"
 
-        buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"$kakaoNativeAppKey\"")
+        // 공개 버전에서는 외부 네이버 지도만 사용하므로 KNSDK 키를 포함하지 않는다.
+        buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"\"")
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.

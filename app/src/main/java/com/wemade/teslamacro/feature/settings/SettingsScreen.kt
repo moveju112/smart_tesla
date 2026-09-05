@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
@@ -109,8 +108,6 @@ fun SettingsScreen(
                         if (navigation != null) {
                             SectionHeader("길안내", topPadding = Space.md)
                             NavigatorPanel(settings, navigation)
-                            SectionHeader("속도 표시")
-                            SpeedPanel(settings, navigation)
                         } else {
                             EmptyGroupNote("길안내를 넘길 내비 앱이 이 기기에 없어요.")
                         }
@@ -157,8 +154,8 @@ fun SettingsScreen(
                 when (group) {
                     SettingsGroup.DRIVING -> {
                         if (navigation != null) {
-                            SectionHeader("과속·단속 안내", topPadding = Space.md)
-                            SafeDrivePanel(settings, navigation)
+                            SectionHeader("속도 표시", topPadding = Space.md)
+                            SpeedPanel(settings, navigation)
                         }
                     }
 
@@ -454,41 +451,21 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
     TCard {
         Text(
-            text = "매크로의 '지도 안내'를 어느 앱으로 넘길지 고릅니다.",
+            text = "지도 안내와 탑승 시 안심운전은 네이버 지도로 실행합니다.",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )
         Spacer(Modifier.height(Space.md))
-        // 안 깔린 앱을 고르면 매크로가 실행 순간에 실패한다 — 아예 못 고르게 막는다
-        val apps = NavigatorApp.entries.filter {
-            controls.installed.isEmpty() || it.name in controls.installed
-        }
-        ChoiceRow(
-            options = apps.map { it.name to it.label },
-            selected = settings.navigatorApp,
-            onSelect = controls.onAppChange,
-        )
-
-        Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
-        val selected = NavigatorApp.of(settings.navigatorApp)
-        if (!selected.supportsSafeDrive) {
-            Text(
-                text = "구글 지도는 목적지 없는 안심운전 자동 실행을 지원하지 않아요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-            )
-        } else {
-            ToggleRow(
-                title = "탑승하면 안심운전 자동 실행",
-                subtitle = "운전자를 감지하면 ${selected.label}의 안심운전을 열어요",
-                checked = settings.autoStartNavigatorSafeDrive,
-                onCheckedChange = controls.onAutoStartSafeDriveChange,
-            )
-            if (settings.autoStartNavigatorSafeDrive && !controls.overlayPermitted) {
-                OverlayPermissionNotice(controls)
-            }
+        ToggleRow(
+            title = "탑승하면 안심운전 자동 실행",
+            subtitle = "운전자를 감지하면 네이버 지도의 안심운전을 열어요",
+            checked = settings.autoStartNavigatorSafeDrive,
+            onCheckedChange = controls.onAutoStartSafeDriveChange,
+        )
+        if (settings.autoStartNavigatorSafeDrive && !controls.overlayPermitted) {
+            OverlayPermissionNotice(controls)
         }
     }
 }

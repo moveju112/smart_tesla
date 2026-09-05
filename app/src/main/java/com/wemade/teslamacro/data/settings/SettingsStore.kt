@@ -76,10 +76,12 @@ class SettingsStore(private val context: Context) {
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
             stealthCharging = prefs[KeyStealthCharging] ?: false,
-            navigatorApp = prefs[KeyNavigatorApp] ?: "NAVER",
+            // 공개 버전은 네이버 지도만 사용한다. 저장된 예전 선택값은 나중 확장 때 다시 쓸 수 있게 둔다.
+            navigatorApp = "NAVER",
             autoStartNavigatorSafeDrive = prefs[KeyAutoStartNavigatorSafeDrive] ?: false,
             hudOverlay = prefs[KeyHudOverlay] ?: false,
-            safeDrive = prefs[KeySafeDrive] ?: false,
+            // 카카오 KNSDK 과금 경로는 공개 버전에서 실행하지 않는다.
+            safeDrive = false,
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
         )

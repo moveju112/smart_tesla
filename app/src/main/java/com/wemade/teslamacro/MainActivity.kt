@@ -411,6 +411,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onAppChange = settingsViewModel::setNavigatorApp,
                             onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
                             onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
+                            onScheduleSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
+                            onCancelSafeDriveTest = settingsViewModel::cancelSafeDriveTest,
                             onHudOverlayChange = settingsViewModel::setHudOverlay,
                             onSafeDriveChange = settingsViewModel::setSafeDrive,
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,

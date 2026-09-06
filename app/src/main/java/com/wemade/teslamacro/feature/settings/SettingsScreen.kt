@@ -426,6 +426,8 @@ data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
+    val onScheduleSafeDriveTest: (Long) -> Unit = {},
+    val onCancelSafeDriveTest: () -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -481,6 +483,7 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
 /** 길안내를 넘길 내비 앱 하나 */
 @Composable
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
+    var testDelaySeconds by rememberSaveable { mutableStateOf("10") }
     TCard {
         Text(
             text = "지도 안내와 탑승 시 안심운전은 네이버 지도로 실행합니다.",
@@ -523,6 +526,39 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                     .of(settings.navigatorSafeDriveLaunchMode)
                     .settingValue,
                 onSelect = controls.onSafeDriveLaunchModeChange,
+            )
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            Text(
+                text = "잠금 화면 예약 테스트",
+                style = MaterialTheme.typography.titleMedium,
+                color = T.Ink,
+            )
+            Text(
+                text = "차량 없이 예약 후 화면을 잠그면 같은 실행 경로를 시험해요",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.sm))
+            ChoiceRow(
+                options = listOf("5" to "5초", "10" to "10초", "15" to "15초"),
+                selected = testDelaySeconds,
+                onSelect = { testDelaySeconds = it },
+            )
+            Spacer(Modifier.height(Space.sm))
+            TButton(
+                text = "${testDelaySeconds}초 뒤 테스트 예약",
+                small = true,
+                onClick = { controls.onScheduleSafeDriveTest(testDelaySeconds.toLong() * 1_000L) },
+            )
+            Spacer(Modifier.height(Space.sm))
+            TButton(
+                text = "예약 취소",
+                tone = ButtonTone.Secondary,
+                small = true,
+                onClick = controls.onCancelSafeDriveTest,
             )
         }
     }

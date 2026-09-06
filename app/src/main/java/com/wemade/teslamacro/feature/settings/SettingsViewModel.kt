@@ -115,6 +115,25 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setNavigatorSafeDriveLaunchMode(mode) }
     }
 
+    /** 차량 상태와 무관하게 잠금·백그라운드 내비 실행만 예약해 확인한다. */
+    fun scheduleSafeDriveTest(delayMillis: Long) {
+        runCatching {
+            com.wemade.teslamacro.service.MacroService.scheduleSafeDriveTest(
+                container.appContext,
+                delayMillis,
+            )
+        }.onFailure { error ->
+            com.wemade.teslable.DiagLog.add("안심운전 예약 테스트 시작 실패 — ${error.message}")
+        }
+    }
+
+    fun cancelSafeDriveTest() {
+        runCatching { com.wemade.teslamacro.service.MacroService.cancelSafeDriveTest(container.appContext) }
+            .onFailure { error ->
+                com.wemade.teslable.DiagLog.add("안심운전 예약 테스트 취소 실패 — ${error.message}")
+            }
+    }
+
     fun setHudOverlay(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setHudOverlay(enabled) }
     }

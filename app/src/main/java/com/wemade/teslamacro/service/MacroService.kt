@@ -24,6 +24,8 @@ import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.domain.command.confirmCategory
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -38,6 +40,9 @@ import kotlinx.coroutines.launch
  * connectedDevice 타입이라 BLE 연결을 유지할 수 있다.
  */
 class MacroService : LifecycleService() {
+
+    /** 차량 탑승 없이 잠금·백그라운드 내비 실행만 재현하는 예약 작업 */
+    private var safeDriveTestJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -288,12 +293,66 @@ class MacroService : LifecycleService() {
     /** 위치 권한을 나중에 받아도 start()를 다시 부르면 여기서 타입이 갱신된다 */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         promote()
-        if (intent?.action == ACTION_RUN_QUICK_ACTION) {
-            val action = intent.getStringExtra(QuickActionActivity.EXTRA_ACTION)
-            val macroId = intent.getStringExtra(QuickActionActivity.EXTRA_MACRO_ID)
-            lifecycleScope.launch { handleQuickAction(action, macroId) }
+        when (intent?.action) {
+            ACTION_RUN_QUICK_ACTION -> {
+                val action = intent.getStringExtra(QuickActionActivity.EXTRA_ACTION)
+                val macroId = intent.getStringExtra(QuickActionActivity.EXTRA_MACRO_ID)
+                lifecycleScope.launch { handleQuickAction(action, macroId) }
+            }
+
+            ACTION_SCHEDULE_SAFE_DRIVE_TEST -> {
+                scheduleSafeDriveTest(intent.getLongExtra(EXTRA_SAFE_DRIVE_TEST_DELAY, 0L))
+            }
+
+            ACTION_CANCEL_SAFE_DRIVE_TEST -> cancelSafeDriveTest()
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * 1. 화면에서 고른 시간 대기 → 2. 잠금 상태 그대로 같은 내비 경로 호출 → 3. 예약·실행 시각 기록.
+     *
+     * 탑승 이벤트를 흉내 내면 BLE 결과와 섞여 원인을 못 가린다. 이 경로는 그 이후의
+     * 배경 실행만 그대로 재현하므로 집에서도 잠금 화면 문제를 분리해 확인할 수 있다.
+     */
+    private fun scheduleSafeDriveTest(requestedDelayMillis: Long) {
+        val delayMillis = normalizedSafeDriveTestDelay(requestedDelayMillis)
+        if (safeDriveTestJob?.isActive == true) {
+            safeDriveTestJob?.cancel()
+            com.wemade.teslable.DiagLog.add("안심운전 예약 테스트 — 기존 예약을 새 예약으로 교체")
+        }
+        safeDriveTestJob = lifecycleScope.launch {
+            val app = application as TeslaMacroApplication
+            app.ready.first { it }
+            val settings = app.container.settingsStore.settings.first()
+            val navigatorApp = NavigatorApp.of(settings.navigatorApp)
+            val mode = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
+                .of(settings.navigatorSafeDriveLaunchMode)
+            val seconds = delayMillis / 1_000L
+            com.wemade.teslable.DiagLog.add(
+                "${navigatorApp.label} 안심운전 예약 테스트 — ${seconds}초 뒤 · 방식=${mode.label}"
+            )
+            delay(delayMillis)
+            com.wemade.teslable.DiagLog.add(
+                "${navigatorApp.label} 안심운전 예약 테스트 실행 — 방식=${mode.label}"
+            )
+            app.container.navigator.startSafeDrive(navigatorApp, mode).onFailure { error ->
+                com.wemade.teslable.DiagLog.add(
+                    "${navigatorApp.label} 안심운전 예약 테스트 실패 — ${error.message}"
+                )
+            }
+        }
+    }
+
+    /** 예약 취소도 로그로 남겨, 잠금 전에 화면이 뜰 불안을 없앤다. */
+    private fun cancelSafeDriveTest() {
+        if (safeDriveTestJob?.isActive == true) {
+            safeDriveTestJob?.cancel()
+            com.wemade.teslable.DiagLog.add("안심운전 예약 테스트 취소")
+        } else {
+            com.wemade.teslable.DiagLog.add("안심운전 예약 테스트 취소 — 예약 없음")
+        }
+        safeDriveTestJob = null
     }
 
     /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
@@ -410,6 +469,7 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        safeDriveTestJob?.cancel()
         overlay.hide()
         runCatching { (application as TeslaMacroApplication).container.safeDrive.stop() }
         runCatching { unregisterReceiver(powerReceiver) }
@@ -455,6 +515,11 @@ class MacroService : LifecycleService() {
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_RUN_QUICK_ACTION =
             "com.wemade.teslamacro.action.RUN_QUICK_ACTION"
+        private const val ACTION_SCHEDULE_SAFE_DRIVE_TEST =
+            "com.wemade.teslamacro.action.SCHEDULE_SAFE_DRIVE_TEST"
+        private const val ACTION_CANCEL_SAFE_DRIVE_TEST =
+            "com.wemade.teslamacro.action.CANCEL_SAFE_DRIVE_TEST"
+        private const val EXTRA_SAFE_DRIVE_TEST_DELAY = "safe_drive_test_delay"
 
         /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
         private const val UPDATE_CHANNEL_ID = "update_available"
@@ -473,11 +538,33 @@ class MacroService : LifecycleService() {
             context.startForegroundService(intent)
         }
 
+        /** 설정 화면의 사용자 동작에서만 시작한다 — 백그라운드 예약 권한을 우회하지 않는다. */
+        fun scheduleSafeDriveTest(context: Context, delayMillis: Long) {
+            context.startForegroundService(
+                Intent(context, MacroService::class.java)
+                    .setAction(ACTION_SCHEDULE_SAFE_DRIVE_TEST)
+                    .putExtra(EXTRA_SAFE_DRIVE_TEST_DELAY, normalizedSafeDriveTestDelay(delayMillis)),
+            )
+        }
+
+        fun cancelSafeDriveTest(context: Context) {
+            context.startForegroundService(
+                Intent(context, MacroService::class.java).setAction(ACTION_CANCEL_SAFE_DRIVE_TEST),
+            )
+        }
+
         fun stop(context: Context) {
             context.stopService(Intent(context, MacroService::class.java))
         }
     }
 }
+
+/** 잠금 전에 누르고 이동할 시간이라 너무 짧거나 긴 예약은 여기서 가둔다. */
+internal fun normalizedSafeDriveTestDelay(delayMillis: Long): Long =
+    delayMillis.coerceIn(SAFE_DRIVE_TEST_MIN_MILLIS, SAFE_DRIVE_TEST_MAX_MILLIS)
+
+private const val SAFE_DRIVE_TEST_MIN_MILLIS = 5_000L
+private const val SAFE_DRIVE_TEST_MAX_MILLIS = 30_000L
 
 /** 이 속도를 넘으면 달리는 중으로 본다. 보행 속도는 정지로 친다 */
 private const val MOVING_KPH = 5.0

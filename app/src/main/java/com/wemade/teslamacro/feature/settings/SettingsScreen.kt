@@ -425,7 +425,7 @@ data class BatteryControls(
 data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
-    val onSafeDriveDiagnosticsChange: (Boolean) -> Unit = {},
+    val onSafeDriveLaunchModeChange: (String) -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -503,11 +503,26 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             Spacer(Modifier.height(Space.md))
             Hairline()
             Spacer(Modifier.height(Space.md))
-            ToggleRow(
-                title = "안심운전 다중 실행 진단",
-                subtitle = "두 실행 방식을 차례로 보내고 시도별 로그를 남겨요",
-                checked = settings.navigatorSafeDriveDiagnostics,
-                onCheckedChange = controls.onSafeDriveDiagnosticsChange,
+            Text(
+                text = "안심운전 실행 방식",
+                style = MaterialTheme.typography.titleMedium,
+                color = T.Ink,
+            )
+            Text(
+                text = "전체 진단 뒤 기본·직접 실행을 각각 시험해 성공 통로를 가려요",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+            Spacer(Modifier.height(Space.sm))
+            ChoiceRow(
+                options = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode.entries.map {
+                    it.settingValue to it.label
+                },
+                selected = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
+                    .of(settings.navigatorSafeDriveLaunchMode)
+                    .settingValue,
+                onSelect = controls.onSafeDriveLaunchModeChange,
             )
         }
     }
@@ -767,6 +782,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     append(
         "내비=${settings.navigatorApp} · HUD 오버레이=${settings.hudOverlay}" +
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
+            " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
             " · 과속안내=${settings.safeDrive}" +
             " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})",
     )

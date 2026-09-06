@@ -85,20 +85,24 @@ class NavigatorAppTest {
         assertEquals(null, NavigatorApp.GOOGLE.safeDriveUri(pkg))
     }
 
-    /** 진단은 Android 14+에서만 두 통로를 모두 보내고, 평상시 동작은 하나로 유지한다. */
+    /** 전체 진단 뒤에는 기본과 직접 실행을 단독 재현해 실제 성공 통로를 가린다. */
     @Test
-    fun `안심운전 진단은 Android 14 이상에서 두 실행 통로를 남긴다`() {
+    fun `안심운전 진단은 전체와 단독 실행 통로를 구분한다`() {
         assertEquals(
             listOf(BackgroundLaunchMethod.PENDING_INTENT, BackgroundLaunchMethod.DIRECT_ACTIVITY),
-            backgroundLaunchMethods(sdkInt = 34, diagnosticsEnabled = true),
+            backgroundLaunchMethods(sdkInt = 34, mode = SafeDriveLaunchMode.ALL),
         )
         assertEquals(
             listOf(BackgroundLaunchMethod.PENDING_INTENT),
-            backgroundLaunchMethods(sdkInt = 34, diagnosticsEnabled = false),
+            backgroundLaunchMethods(sdkInt = 34, mode = SafeDriveLaunchMode.DEFAULT),
         )
         assertEquals(
             listOf(BackgroundLaunchMethod.DIRECT_ACTIVITY),
-            backgroundLaunchMethods(sdkInt = 33, diagnosticsEnabled = true),
+            backgroundLaunchMethods(sdkInt = 34, mode = SafeDriveLaunchMode.DIRECT_ACTIVITY),
+        )
+        assertEquals(
+            SafeDriveLaunchMode.DEFAULT,
+            SafeDriveLaunchMode.of("깨진값"),
         )
     }
 }

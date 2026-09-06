@@ -40,17 +40,37 @@ internal enum class BackgroundLaunchMethod(val logLabel: String) {
     DIRECT_ACTIVITY("직접 startActivity"),
 }
 
-/** Android 버전과 진단 설정에 맞는 실행 통로. 진단은 14+에서 둘을 모두 기록한다. */
-internal fun backgroundLaunchMethods(sdkInt: Int, diagnosticsEnabled: Boolean): List<BackgroundLaunchMethod> {
+/** 안심운전 실행 통로. 전체 진단 뒤에는 각 통로를 단독으로 재현해 원인을 가린다. */
+enum class SafeDriveLaunchMode(val settingValue: String, val label: String) {
+    DEFAULT("DEFAULT", "기본"),
+    ALL("ALL", "전체 진단"),
+    DIRECT_ACTIVITY("DIRECT_ACTIVITY", "직접 실행");
+
+    companion object {
+        fun of(value: String?): SafeDriveLaunchMode =
+            entries.firstOrNull { it.settingValue == value } ?: DEFAULT
+    }
+}
+
+/** Android 버전과 고른 진단 단계에 맞는 실행 통로. 전체 진단은 14+에서 둘을 모두 기록한다. */
+internal fun backgroundLaunchMethods(
+    sdkInt: Int,
+    mode: SafeDriveLaunchMode,
+): List<BackgroundLaunchMethod> {
     val normal = if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         BackgroundLaunchMethod.PENDING_INTENT
     } else {
         BackgroundLaunchMethod.DIRECT_ACTIVITY
     }
-    return if (diagnosticsEnabled && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        listOf(BackgroundLaunchMethod.PENDING_INTENT, BackgroundLaunchMethod.DIRECT_ACTIVITY)
-    } else {
-        listOf(normal)
+    return when (mode) {
+        SafeDriveLaunchMode.DEFAULT -> listOf(normal)
+        SafeDriveLaunchMode.ALL -> if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            listOf(BackgroundLaunchMethod.PENDING_INTENT, BackgroundLaunchMethod.DIRECT_ACTIVITY)
+        } else {
+            listOf(normal)
+        }
+
+        SafeDriveLaunchMode.DIRECT_ACTIVITY -> listOf(BackgroundLaunchMethod.DIRECT_ACTIVITY)
     }
 }
 
@@ -105,7 +125,7 @@ class NaverNavigator(private val context: Context) {
     // 1. 권한·설치 확인 → 2. 앱별 안심운전 인텐트 생성 → 3. 화면 전환
     suspend fun startSafeDrive(
         app: NavigatorApp,
-        diagnosticsEnabled: Boolean = false,
+        launchMode: SafeDriveLaunchMode = SafeDriveLaunchMode.DEFAULT,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (!hasOverlayPermission) {
@@ -117,13 +137,13 @@ class NaverNavigator(private val context: Context) {
                 ?: error("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
 
             val intents = safeDriveIntents(app, packageName, uri)
-            if (diagnosticsEnabled) {
+            if (launchMode == SafeDriveLaunchMode.ALL) {
                 launchSafeDriveForDiagnostics(app.label, intents)
             } else {
                 launchFirst(
                     app.label,
                     intents,
-                    backgroundLaunchMethods(Build.VERSION.SDK_INT, diagnosticsEnabled).single(),
+                    backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
                 )
             }
             com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
@@ -159,7 +179,7 @@ class NaverNavigator(private val context: Context) {
         launchFirst(
             app.label,
             candidates,
-            backgroundLaunchMethods(Build.VERSION.SDK_INT, diagnosticsEnabled = false).single(),
+            backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(),
         )
     }
 
@@ -219,7 +239,7 @@ class NaverNavigator(private val context: Context) {
      */
     private suspend fun launchSafeDriveForDiagnostics(appLabel: String, candidates: List<Intent>) {
         val traceId = System.currentTimeMillis().toString(36)
-        val methods = backgroundLaunchMethods(Build.VERSION.SDK_INT, diagnosticsEnabled = true)
+        val methods = backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.ALL)
         var delivered = false
         var lastFailure: Throwable? = null
 

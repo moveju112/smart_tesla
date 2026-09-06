@@ -111,8 +111,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setAutoStartNavigatorSafeDrive(enabled) }
     }
 
-    fun setNavigatorSafeDriveDiagnostics(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setNavigatorSafeDriveDiagnostics(enabled) }
+    fun setNavigatorSafeDriveLaunchMode(mode: String) {
+        viewModelScope.launch { container.settingsStore.setNavigatorSafeDriveLaunchMode(mode) }
     }
 
     fun setHudOverlay(enabled: Boolean) {

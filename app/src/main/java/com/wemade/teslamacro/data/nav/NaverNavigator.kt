@@ -225,24 +225,27 @@ class NaverNavigator(private val context: Context) {
             return
         }
 
-        val options = ActivityOptions.makeBasic().apply {
+        // sender 권한은 PendingIntent 생성 때 넣으면 Android 14+가 예외로 거부한다.
+        val senderOptions = ActivityOptions.makeBasic().apply {
             setPendingIntentBackgroundActivityStartMode(
                 ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
             )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        }
+        val creatorOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            ActivityOptions.makeBasic().apply {
                 setPendingIntentCreatorBackgroundActivityStartMode(
                     ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
                 )
             }
-        }
+        } else null
         val pendingIntent = PendingIntent.getActivity(
             context,
             intent.dataString?.hashCode() ?: intent.hashCode(),
             intent,
             PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            options.toBundle(),
+            creatorOptions?.toBundle(),
         )
-        pendingIntent.send(context, 0, null, null, null, null, options.toBundle())
+        pendingIntent.send(context, 0, null, null, null, null, senderOptions.toBundle())
         // 시스템이 인텐트를 받았다는 뜻일 뿐 화면 표시 성공으로 과장하지 않는다
         com.wemade.teslable.DiagLog.add("$appLabel 시스템 전달 완료 — $target · PendingIntent")
     }

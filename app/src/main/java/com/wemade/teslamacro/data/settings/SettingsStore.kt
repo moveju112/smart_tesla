@@ -49,6 +49,8 @@ data class AppSettings(
     val navigatorApp: String = "NAVER",
     /** 탑승을 감지하면 선택한 내비의 목적지 없는 안심운전을 자동으로 연다 */
     val autoStartNavigatorSafeDrive: Boolean = false,
+    /** 여러 Android 실행 통로를 순차 전달하고 진단 로그에 시도 순서를 남긴다 */
+    val navigatorSafeDriveDiagnostics: Boolean = false,
     /** HUD 속도를 다른 앱 위에 띄울지. 끄면 제어 화면 안에만 나온다 */
     val hudOverlay: Boolean = false,
     /** 과속·구간단속·보호구역 안내. 켜면 주행 중 GPS와 망을 계속 쓴다 */
@@ -82,6 +84,7 @@ class SettingsStore(private val context: Context) {
             // 공개 버전은 네이버 지도만 사용한다. 저장된 예전 선택값은 나중 확장 때 다시 쓸 수 있게 둔다.
             navigatorApp = "NAVER",
             autoStartNavigatorSafeDrive = prefs[KeyAutoStartNavigatorSafeDrive] ?: false,
+            navigatorSafeDriveDiagnostics = prefs[KeyNavigatorSafeDriveDiagnostics] ?: false,
             hudOverlay = prefs[KeyHudOverlay] ?: false,
             // 카카오 KNSDK 과금 경로는 공개 버전에서 실행하지 않는다.
             safeDrive = false,
@@ -100,6 +103,9 @@ class SettingsStore(private val context: Context) {
     suspend fun setNavigatorApp(name: String) = edit { it[KeyNavigatorApp] = name }
     suspend fun setAutoStartNavigatorSafeDrive(enabled: Boolean) = edit {
         it[KeyAutoStartNavigatorSafeDrive] = enabled
+    }
+    suspend fun setNavigatorSafeDriveDiagnostics(enabled: Boolean) = edit {
+        it[KeyNavigatorSafeDriveDiagnostics] = enabled
     }
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
     suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
@@ -208,6 +214,7 @@ class SettingsStore(private val context: Context) {
         val KeyLastPresenceAt = longPreferencesKey("last_presence_at")
         val KeyNavigatorApp = stringPreferencesKey("navigator_app")
         val KeyAutoStartNavigatorSafeDrive = booleanPreferencesKey("auto_start_navigator_safe_drive")
+        val KeyNavigatorSafeDriveDiagnostics = booleanPreferencesKey("navigator_safe_drive_diagnostics")
         val KeyHudOverlay = booleanPreferencesKey("hud_overlay")
         val KeySafeDrive = booleanPreferencesKey("safe_drive")
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")

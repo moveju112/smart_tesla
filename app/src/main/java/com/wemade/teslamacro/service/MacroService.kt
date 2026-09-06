@@ -202,7 +202,10 @@ class MacroService : LifecycleService() {
                 if (!settings.autoStartNavigatorSafeDrive) return@collect
 
                 val navigatorApp = NavigatorApp.of(settings.navigatorApp)
-                app.container.navigator.startSafeDrive(navigatorApp).onFailure { error ->
+                app.container.navigator.startSafeDrive(
+                    app = navigatorApp,
+                    diagnosticsEnabled = settings.navigatorSafeDriveDiagnostics,
+                ).onFailure { error ->
                     com.wemade.teslable.DiagLog.add(
                         "${navigatorApp.label} 안심운전 자동 실행 실패 — ${error.message}"
                     )

@@ -425,6 +425,7 @@ data class BatteryControls(
 data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
+    val onSafeDriveDiagnosticsChange: (Boolean) -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -495,8 +496,19 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             checked = settings.autoStartNavigatorSafeDrive,
             onCheckedChange = controls.onAutoStartSafeDriveChange,
         )
-        if (settings.autoStartNavigatorSafeDrive && !controls.overlayPermitted) {
-            OverlayPermissionNotice(controls)
+        if (settings.autoStartNavigatorSafeDrive) {
+            if (!controls.overlayPermitted) {
+                OverlayPermissionNotice(controls)
+            }
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            ToggleRow(
+                title = "안심운전 다중 실행 진단",
+                subtitle = "두 실행 방식을 차례로 보내고 시도별 로그를 남겨요",
+                checked = settings.navigatorSafeDriveDiagnostics,
+                onCheckedChange = controls.onSafeDriveDiagnosticsChange,
+            )
         }
     }
 }

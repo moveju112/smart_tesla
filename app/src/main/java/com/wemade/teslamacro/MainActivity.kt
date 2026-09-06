@@ -410,6 +410,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                             onAppChange = settingsViewModel::setNavigatorApp,
                             onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
+                            onSafeDriveDiagnosticsChange = settingsViewModel::setNavigatorSafeDriveDiagnostics,
                             onHudOverlayChange = settingsViewModel::setHudOverlay,
                             onSafeDriveChange = settingsViewModel::setSafeDrive,
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,

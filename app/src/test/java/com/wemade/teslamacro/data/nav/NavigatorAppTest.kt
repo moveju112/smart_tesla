@@ -84,4 +84,21 @@ class NavigatorAppTest {
         assertEquals("tmap://navi", NavigatorApp.TMAP.safeDriveUri(pkg).toString())
         assertEquals(null, NavigatorApp.GOOGLE.safeDriveUri(pkg))
     }
+
+    /** 진단은 Android 14+에서만 두 통로를 모두 보내고, 평상시 동작은 하나로 유지한다. */
+    @Test
+    fun `안심운전 진단은 Android 14 이상에서 두 실행 통로를 남긴다`() {
+        assertEquals(
+            listOf(BackgroundLaunchMethod.PENDING_INTENT, BackgroundLaunchMethod.DIRECT_ACTIVITY),
+            backgroundLaunchMethods(sdkInt = 34, diagnosticsEnabled = true),
+        )
+        assertEquals(
+            listOf(BackgroundLaunchMethod.PENDING_INTENT),
+            backgroundLaunchMethods(sdkInt = 34, diagnosticsEnabled = false),
+        )
+        assertEquals(
+            listOf(BackgroundLaunchMethod.DIRECT_ACTIVITY),
+            backgroundLaunchMethods(sdkInt = 33, diagnosticsEnabled = true),
+        )
+    }
 }

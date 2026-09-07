@@ -429,13 +429,20 @@ class StatePoller(
         vehiclePowerConnected = connected
         if (connected) {
             val disconnectedAt = vehiclePowerDisconnectedAt.getAndSet(0L)
-            if (startsNewVehicleSession(disconnectedAt, now())) {
+            val connectedAt = now()
+            if (startsNewVehicleSession(disconnectedAt, connectedAt)) {
                 resetBoardingSession.set(true)
                 com.wemade.teslable.DiagLog.add("차량 전원 복귀 — 새 탑승 세션으로 확인")
+            } else if (disconnectedAt > 0L) {
+                val disconnectedSeconds =
+                    ((connectedAt - disconnectedAt).coerceAtLeast(0L) / 1_000L)
+                com.wemade.teslable.DiagLog.add(
+                    "차량 전원 복귀 — ${disconnectedSeconds}초 끊김, 기존 탑승 세션 유지"
+                )
             }
         } else {
             // 동일한 해제 방송이 반복돼도 최초 시각을 지킨다. 매번 갱신하면 실제 하차가
-            // 오래 이어져도 마지막 방송 기준 30초를 못 채워 다음 탑승을 놓칠 수 있다
+            // 오래 이어져도 마지막 방송 기준 10분을 못 채워 다음 탑승을 놓칠 수 있다
             vehiclePowerDisconnectedAt.compareAndSet(0L, now())
         }
         // 상시 켜진 차내 화면은 Activity가 계속 전면일 수 있다.
@@ -706,7 +713,7 @@ internal fun shouldKeepVehicleConnection(
 internal fun startsNewVehicleSession(
     disconnectedAtMillis: Long,
     connectedAtMillis: Long,
-    minimumOffMillis: Long = VEHICLE_POWER_BOUNCE_MILLIS,
+    minimumOffMillis: Long = RIDE_SESSION_GRACE_MILLIS,
 ): Boolean = disconnectedAtMillis > 0L &&
     connectedAtMillis - disconnectedAtMillis >= minimumOffMillis
 
@@ -730,7 +737,6 @@ internal const val NORMAL_POLL_SECONDS = 15
 internal const val ACTIVE_POLL_SECONDS = 2
 internal const val ACTIVE_WINDOW_MILLIS = 3 * 60 * 1000L
 internal const val APP_CONNECTION_WINDOW_MILLIS = 2 * 60 * 1000L
-internal const val VEHICLE_POWER_BOUNCE_MILLIS = 30 * 1000L
 
 /**
  * 다음 폴링까지 몇 초 쉴지 정한다 — 순수 함수라 단위 테스트로 검증한다.

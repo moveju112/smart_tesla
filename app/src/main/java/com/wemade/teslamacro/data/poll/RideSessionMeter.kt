@@ -1,5 +1,8 @@
 package com.wemade.teslamacro.data.poll
 
+/** 실제 하차와 차량 전원 출렁임을 가르는 탑승 세션 유예 시간 */
+internal const val RIDE_SESSION_GRACE_MILLIS = 10 * 60 * 1000L
+
 /**
  * 탑승 세션 길이를 잰다 — "탑승 시간(분)" 신호의 원천.
  *
@@ -19,7 +22,7 @@ class RideSessionMeter(private val now: () -> Long = System::currentTimeMillis) 
      * 이번 폴링의 탑승 여부를 반영하고, 스냅샷에 실을 값을 돌려준다.
      * 탑승 중이면 지금까지 흐른 분, 하차 직후엔 직전 세션 길이, 아직 아무것도 모르면 null.
      *
-     * 하차 후 값은 [EXIT_GRACE_MILLIS] 동안만 산다 — 하차 트리거의 조건 판정에는 충분하고,
+     * 하차 후 값은 [RIDE_SESSION_GRACE_MILLIS] 동안만 산다 — 하차 트리거의 조건 판정에는 충분하고,
      * 다음 날 문만 열어도 "30분 이상 탔음"이 참이 되는 오염은 막는다.
      */
     fun update(isUserPresent: Boolean?): Double? {
@@ -38,14 +41,9 @@ class RideSessionMeter(private val now: () -> Long = System::currentTimeMillis) 
         }
         return when {
             sinceMillis != null -> (now() - sinceMillis!!) / 60_000.0
-            exitedAtMillis != null && now() - exitedAtMillis!! < EXIT_GRACE_MILLIS ->
+            exitedAtMillis != null && now() - exitedAtMillis!! < RIDE_SESSION_GRACE_MILLIS ->
                 lastSessionMinutes
             else -> null
         }
-    }
-
-    private companion object {
-        /** 하차 후 세션 길이를 조건 판정에 쓸 수 있는 시간 */
-        const val EXIT_GRACE_MILLIS = 10 * 60 * 1000L
     }
 }

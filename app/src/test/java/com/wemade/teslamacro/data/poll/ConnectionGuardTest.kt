@@ -25,13 +25,25 @@ class ConnectionGuardTest {
     }
 
     @Test
-    fun `30초 미만 전원 출렁임은 새 탑승으로 보지 않는다`() {
-        assertFalse(startsNewVehicleSession(10_000L, 39_999L))
+    fun `10분 미만 전원 출렁임은 새 탑승으로 보지 않는다`() {
+        val disconnectedAt = 10_000L
+        assertFalse(
+            startsNewVehicleSession(
+                disconnectedAt,
+                disconnectedAt + RIDE_SESSION_GRACE_MILLIS - 1L,
+            )
+        )
     }
 
     @Test
-    fun `30초 이상 전원 해제 뒤 복귀는 새 탑승으로 본다`() {
-        assertTrue(startsNewVehicleSession(10_000L, 40_000L))
+    fun `10분 이상 전원 해제 뒤 복귀는 새 탑승으로 본다`() {
+        val disconnectedAt = 10_000L
+        assertTrue(
+            startsNewVehicleSession(
+                disconnectedAt,
+                disconnectedAt + RIDE_SESSION_GRACE_MILLIS,
+            )
+        )
     }
 
     @Test

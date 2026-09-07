@@ -105,4 +105,15 @@ class NavigatorAppTest {
             SafeDriveLaunchMode.of("깨진값"),
         )
     }
+
+    /** 실제 탑승은 전체 진단 설정이어도 한 통로만 쓰고, 명시한 단독 통로는 유지한다. */
+    @Test
+    fun `탑승 자동 실행은 진단용 연속 호출을 제거한다`() {
+        assertEquals(SafeDriveLaunchMode.DEFAULT, SafeDriveLaunchMode.ALL.forAutomaticStart())
+        assertEquals(SafeDriveLaunchMode.DEFAULT, SafeDriveLaunchMode.DEFAULT.forAutomaticStart())
+        assertEquals(
+            SafeDriveLaunchMode.DIRECT_ACTIVITY,
+            SafeDriveLaunchMode.DIRECT_ACTIVITY.forAutomaticStart(),
+        )
+    }
 }

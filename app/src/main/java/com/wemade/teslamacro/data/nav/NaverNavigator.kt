@@ -52,6 +52,10 @@ enum class SafeDriveLaunchMode(val settingValue: String, val label: String) {
     }
 }
 
+/** 실제 탑승 자동 실행은 한 통로만 써서 사용자가 끈 안심운전을 다시 열지 않는다. */
+internal fun SafeDriveLaunchMode.forAutomaticStart(): SafeDriveLaunchMode =
+    if (this == SafeDriveLaunchMode.ALL) SafeDriveLaunchMode.DEFAULT else this
+
 /** Android 버전과 고른 진단 단계에 맞는 실행 통로. 전체 진단은 14+에서 둘을 모두 기록한다. */
 internal fun backgroundLaunchMethods(
     sdkInt: Int,

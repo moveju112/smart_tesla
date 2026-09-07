@@ -23,6 +23,7 @@ import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.nav.NavigatorApp
+import com.wemade.teslamacro.data.nav.forAutomaticStart
 import com.wemade.teslamacro.domain.command.confirmCategory
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -207,10 +208,18 @@ class MacroService : LifecycleService() {
                 if (!settings.autoStartNavigatorSafeDrive) return@collect
 
                 val navigatorApp = NavigatorApp.of(settings.navigatorApp)
+                val configuredLaunchMode = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
+                    .of(settings.navigatorSafeDriveLaunchMode)
+                val automaticLaunchMode = configuredLaunchMode.forAutomaticStart()
+                if (configuredLaunchMode != automaticLaunchMode) {
+                    com.wemade.teslable.DiagLog.add(
+                        "${navigatorApp.label} 안심운전 전체 진단 설정 — " +
+                            "탑승 자동 실행은 ${automaticLaunchMode.label} 통로 1회만 사용"
+                    )
+                }
                 app.container.navigator.startSafeDrive(
                     app = navigatorApp,
-                    launchMode = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
-                        .of(settings.navigatorSafeDriveLaunchMode),
+                    launchMode = automaticLaunchMode,
                 ).onFailure { error ->
                     com.wemade.teslable.DiagLog.add(
                         "${navigatorApp.label} 안심운전 자동 실행 실패 — ${error.message}"

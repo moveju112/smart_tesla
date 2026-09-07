@@ -512,7 +512,7 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                 color = T.Ink,
             )
             Text(
-                text = "전체 진단 뒤 기본·직접 실행을 각각 시험해 성공 통로를 가려요",
+                text = "전체 진단은 예약 테스트에서만 두 통로를 쓰고, 실제 탑승은 한 번만 열어요",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
                 modifier = Modifier.padding(top = Space.xs),

@@ -134,12 +134,20 @@ class WideScreenshotTest {
     @Test
     fun `W5d 설정 - 기기`() = settingsSnapshot("W5d-settings-device", SettingsGroup.DEVICE)
 
+    @Test
+    fun `W5d2 설정 - 기기 절전 제한 없음`() = settingsSnapshot(
+        "W5d2-settings-device-unrestricted",
+        SettingsGroup.DEVICE,
+        batteryUnrestricted = true,
+    )
+
     /** 값이 다 들어찬 설정 화면 한 칸. 빈 상태만 찍으면 글자가 잘리는 걸 못 잡는다 */
     private fun settingsSnapshot(
         name: String,
         group: SettingsGroup,
         deviceRole: com.wemade.teslamacro.data.settings.DeviceRole =
             com.wemade.teslamacro.data.settings.DeviceRole.CAR_TABLET,
+        batteryUnrestricted: Boolean = false,
     ) {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings) {
@@ -157,7 +165,7 @@ class WideScreenshotTest {
                     onUnpair = {},
                     onStartPairing = {},
                     battery = com.wemade.teslamacro.feature.settings.BatteryControls(
-                        unrestricted = false,
+                        unrestricted = batteryUnrestricted,
                         onOpenSettings = {},
                     ),
                     backup = com.wemade.teslamacro.feature.settings.BackupControls(

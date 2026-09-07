@@ -147,7 +147,7 @@ fun SettingsScreen(
                             onRequestPermission = onRequestInstallPermission,
                         )
 
-                        if (battery != null) {
+                        if (battery?.unrestricted == false) {
                             SectionHeader("절전")
                             BatteryPanel(battery)
                         }
@@ -335,42 +335,27 @@ private fun TwoColumns(
 /**
  * 절전 제외 안내.
  *
- * 설정돼 있으면 조용한 확인 한 줄, 안 돼 있으면 경고색 + 버튼.
- * 제조사 자체 절전은 표준 인텐트가 없어 코드로 못 켠다 — 어디를 봐야 하는지만 적는다.
+ * 시스템 절전이 걸렸을 때만 경고와 해제 버튼을 보여 준다.
+ * 이미 제한이 없으면 해결된 항목을 남기지 않아 기기 설정 화면을 짧게 유지한다.
  */
 @Composable
 private fun BatteryPanel(battery: BatteryControls) {
     TCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (battery.unrestricted) {
-                    "제한 없음으로 설정돼 있어요.\n매크로 대기와 위치 확인이 밀리지 않아요."
-                } else {
-                    "절전이 걸려 있어요.\n매크로 대기가 늘어지고 위치·업데이트 확인이 밀릴 수 있어요."
-                },
+                text = "절전이 걸려 있어요.\n매크로 대기가 늘어지고 위치·업데이트 확인이 밀릴 수 있어요.",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (battery.unrestricted) T.InkFaint else T.WarnText,
+                color = T.WarnText,
                 modifier = Modifier.weight(1f),
             )
-            if (!battery.unrestricted) {
-                Spacer(Modifier.width(Space.md))
-                TButton(
-                    text = "제한 없음으로",
-                    fillWidth = false,
-                    small = true,
-                    onClick = battery.onOpenSettings,
-                )
-            }
+            Spacer(Modifier.width(Space.md))
+            TButton(
+                text = "제한 없음으로",
+                fillWidth = false,
+                small = true,
+                onClick = battery.onOpenSettings,
+            )
         }
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
-        Text(
-            text = "태블릿 자체 절전은 따로예요. 설정 → 앱 → Smart Tesla에서 " +
-                "'자동 시작'과 '백그라운드 실행'도 함께 허용해 주세요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-        )
     }
 }
 
@@ -485,8 +470,6 @@ data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
-    val onScheduleSafeDriveTest: (Long) -> Unit = {},
-    val onCancelSafeDriveTest: () -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -542,7 +525,6 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
 /** 길안내를 넘길 내비 앱 하나 */
 @Composable
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
-    var testDelaySeconds by rememberSaveable { mutableStateOf("10") }
     TCard {
         Text(
             text = "지도 안내와 탑승 시 안심운전은 네이버 지도로 실행합니다.",
@@ -571,7 +553,7 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                 color = T.Ink,
             )
             Text(
-                text = "전체 진단은 예약 테스트에서만 두 통로를 쓰고, 실제 탑승은 한 번만 열어요",
+                text = "전체 진단은 수동 점검용이고, 실제 탑승은 한 번만 열어요",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
                 modifier = Modifier.padding(top = Space.xs),
@@ -585,39 +567,6 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                     .of(settings.navigatorSafeDriveLaunchMode)
                     .settingValue,
                 onSelect = controls.onSafeDriveLaunchModeChange,
-            )
-            Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
-            Text(
-                text = "잠금 화면 예약 테스트",
-                style = MaterialTheme.typography.titleMedium,
-                color = T.Ink,
-            )
-            Text(
-                text = "차량 없이 예약 후 화면을 잠그면 같은 실행 경로를 시험해요",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-                modifier = Modifier.padding(top = Space.xs),
-            )
-            Spacer(Modifier.height(Space.sm))
-            ChoiceRow(
-                options = listOf("5" to "5초", "10" to "10초", "15" to "15초"),
-                selected = testDelaySeconds,
-                onSelect = { testDelaySeconds = it },
-            )
-            Spacer(Modifier.height(Space.sm))
-            TButton(
-                text = "${testDelaySeconds}초 뒤 테스트 예약",
-                small = true,
-                onClick = { controls.onScheduleSafeDriveTest(testDelaySeconds.toLong() * 1_000L) },
-            )
-            Spacer(Modifier.height(Space.sm))
-            TButton(
-                text = "예약 취소",
-                tone = ButtonTone.Secondary,
-                small = true,
-                onClick = controls.onCancelSafeDriveTest,
             )
         }
     }

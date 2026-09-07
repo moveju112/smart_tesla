@@ -378,7 +378,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
                         onProtectPhoneKeyChange = settingsViewModel::setProtectPhoneKey,
-                        onDeviceRoleChange = settingsViewModel::setDeviceRole,
+                        onDeviceModeChange = settingsViewModel::setDeviceMode,
                         onDisconnectVehicle = settingsViewModel::disconnectVehicle,
                         onUnpair = settingsViewModel::unpair,
                         onStartPairing = { skippedPairing = false },

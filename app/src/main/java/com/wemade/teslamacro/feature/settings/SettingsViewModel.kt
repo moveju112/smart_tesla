@@ -7,7 +7,7 @@ import com.wemade.teslamacro.data.backup.BackupFile
 import com.wemade.teslamacro.data.backup.toBackup
 import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
 import com.wemade.teslamacro.data.settings.AppSettings
-import com.wemade.teslamacro.data.settings.DeviceRole
+import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.di.AppContainer
@@ -55,12 +55,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** 이 설치본의 역할을 저장하고 바뀐 연결 정책을 즉시 적용한다. */
-    fun setDeviceRole(role: DeviceRole) {
+    /** 이 설치본의 사용 모드를 저장하고 바뀐 연결 정책을 즉시 적용한다. */
+    fun setDeviceMode(mode: DeviceMode) {
         viewModelScope.launch {
-            container.settingsStore.setDeviceRole(role)
-            com.wemade.teslable.DiagLog.add("기기 역할 변경 — ${role.label}")
-            if (role == DeviceRole.PERSONAL_PHONE) {
+            container.settingsStore.setDeviceMode(mode)
+            com.wemade.teslable.DiagLog.add("기기 사용 모드 변경 — ${mode.label}")
+            if (mode == DeviceMode.PORTABLE) {
                 container.poller.enforceConnectionGuard()
             } else {
                 container.poller.nudge()

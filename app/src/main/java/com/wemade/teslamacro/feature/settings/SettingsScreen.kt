@@ -32,7 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
-import com.wemade.teslamacro.data.settings.DeviceRole
+import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.ui.component.ButtonTone
@@ -54,7 +54,7 @@ fun SettingsScreen(
     settings: AppSettings,
     onAutomationChange: (Boolean) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit = {},
-    onDeviceRoleChange: (DeviceRole) -> Unit = {},
+    onDeviceModeChange: (DeviceMode) -> Unit = {},
     onDisconnectVehicle: () -> Unit = {},
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
@@ -181,7 +181,7 @@ fun SettingsScreen(
                             SectionHeader("연결 안전", topPadding = Space.md)
                             PhoneKeyProtectionPanel(
                                 settings = settings,
-                                onDeviceRoleChange = onDeviceRoleChange,
+                                onDeviceModeChange = onDeviceModeChange,
                                 onProtectPhoneKeyChange = onProtectPhoneKeyChange,
                                 onDisconnectVehicle = onDisconnectVehicle,
                             )
@@ -216,33 +216,33 @@ fun SettingsScreen(
 @Composable
 private fun PhoneKeyProtectionPanel(
     settings: AppSettings,
-    onDeviceRoleChange: (DeviceRole) -> Unit,
+    onDeviceModeChange: (DeviceMode) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit,
     onDisconnectVehicle: () -> Unit,
 ) {
     TCard {
         Text(
-            text = "이 기기 역할",
+            text = "이 기기 사용 방식",
             style = MaterialTheme.typography.titleMedium,
             color = T.Ink,
         )
         Text(
-            text = "태블릿과 휴대폰에 각각 맞는 역할을 골라야 두 설치본이 동시에 차량에 붙지 않아요.",
+            text = "기기 종류와 상관없이 차량에 계속 두면 거치, 들고 다니면 휴대를 고르세요.",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
             modifier = Modifier.padding(top = Space.xs),
         )
         Spacer(Modifier.height(Space.sm))
         ChoiceRow(
-            options = DeviceRole.entries.map { it.name to it.label },
-            selected = settings.deviceRole.name,
-            onSelect = { onDeviceRoleChange(DeviceRole.of(it)) },
+            options = DeviceMode.entries.map { it.name to it.label },
+            selected = settings.deviceMode.name,
+            onSelect = { onDeviceModeChange(DeviceMode.of(it)) },
         )
         Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
 
-        if (settings.deviceRole == DeviceRole.CAR_TABLET) {
+        if (settings.deviceMode == DeviceMode.MOUNTED) {
             ToggleRow(
                 title = "휴대폰 키 간섭 방지",
                 subtitle = "전원이 있어도 빈 차가 확인되면 BLE 연결을 끊어요",
@@ -252,18 +252,18 @@ private fun PhoneKeyProtectionPanel(
         } else {
             Text(
                 text = "앱 화면이나 직접 명령을 쓸 때만 연결해요. " +
-                    "자동 매크로는 차량 태블릿에서만 실행하고, 안심운전은 자동 시작 옵션을 따릅니다.",
+                    "자동 매크로는 거치 모드에서만 실행하고, 안심운전은 자동 시작 옵션을 따릅니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
         }
-        if (settings.deviceRole == DeviceRole.CAR_TABLET && settings.protectPhoneKey) {
+        if (settings.deviceMode == DeviceMode.MOUNTED && settings.protectPhoneKey) {
             Spacer(Modifier.height(Space.md))
             Hairline()
             Spacer(Modifier.height(Space.md))
             Text(
-                text = "주차 중 상시 상태 감시·스텔스 충전·예약 매크로는 멈춥니다. " +
-                    "앱과 빅스비 명령은 필요할 때 다시 연결해요.",
+                text = "빈 차 상시 상태 감시·예약 매크로는 멈춥니다. " +
+                    "스텔스 충전 1회는 실행 시간대에만 연결을 유지해요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -825,7 +825,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     appendLine("차량: ${settings.vehicleName.ifBlank { "-" }} · VIN ${maskVin(settings.vin)}")
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
     appendLine(
-        "기기 역할=${settings.deviceRole.label}" +
+        "기기 사용 모드=${settings.deviceMode.label}" +
             " · 매크로 자동 실행=${settings.automationEnabled}" +
             " · 휴대폰 키 간섭 방지=${settings.protectPhoneKey}" +
             " · 스텔스 충전 1회=${settings.stealthCharging}" +

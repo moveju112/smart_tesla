@@ -145,10 +145,10 @@ class WideScreenshotTest {
     fun `W5c 설정 - 차량`() = settingsSnapshot("W5c-settings-vehicle", SettingsGroup.VEHICLE)
 
     @Test
-    fun `W5c2 설정 - 차량 개인 휴대폰`() = settingsSnapshot(
-        "W5c2-settings-vehicle-personal-phone",
+    fun `W5c2 설정 - 휴대 모드`() = settingsSnapshot(
+        "W5c2-settings-portable-mode",
         SettingsGroup.VEHICLE,
-        com.wemade.teslamacro.data.settings.DeviceRole.PERSONAL_PHONE,
+        com.wemade.teslamacro.data.settings.DeviceMode.PORTABLE,
     )
 
     @Test
@@ -165,8 +165,8 @@ class WideScreenshotTest {
     private fun settingsSnapshot(
         name: String,
         group: SettingsGroup,
-        deviceRole: com.wemade.teslamacro.data.settings.DeviceRole =
-            com.wemade.teslamacro.data.settings.DeviceRole.CAR_TABLET,
+        deviceMode: com.wemade.teslamacro.data.settings.DeviceMode =
+            com.wemade.teslamacro.data.settings.DeviceMode.MOUNTED,
         batteryUnrestricted: Boolean = false,
     ) {
         paparazzi.snapshot(name) {
@@ -176,7 +176,7 @@ class WideScreenshotTest {
                         vin = "5YJS0000000000000",
                         vehicleName = "내 테슬라",
                         vehicleAddress = "AA:BB:CC:DD:EE:FF",
-                        deviceRole = deviceRole,
+                        deviceMode = deviceMode,
                         hudOverlay = true,
                         safeDrive = true,
                         autoStartNavigatorSafeDrive = true,

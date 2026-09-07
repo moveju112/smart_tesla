@@ -3,7 +3,7 @@ package com.wemade.teslamacro.data.poll
 import com.wemade.teslamacro.data.charge.isWithinStealthChargeWindow
 import com.wemade.teslamacro.data.macro.RuleStore
 import com.wemade.teslamacro.data.settings.AppSettings
-import com.wemade.teslamacro.data.settings.DeviceRole
+import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.settings.SettingsStore
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
@@ -370,9 +370,9 @@ class StatePoller(
                 boardingChannel.trySend(Unit)
             }
 
-            // 개인 휴대폰은 백그라운드 자동화 주체가 아니다. 같은 룰을 태블릿과 폰이
-            // 동시에 발동하면 명령이 중복되고, 긴 대기 동안 폰이 차량 근접 키로 남는다.
-            if (settings.automationEnabled && settings.deviceRole == DeviceRole.CAR_TABLET) {
+            // 휴대 모드는 백그라운드 자동화 주체가 아니다. 같은 룰을 거치·휴대 기기가
+            // 동시에 발동하면 명령이 중복되고, 긴 대기 동안 휴대 기기가 차량 근접 키로 남는다.
+            if (settings.automationEnabled && settings.deviceMode == DeviceMode.MOUNTED) {
                 engine.evaluate(
                     rules = ruleStore.rules.value,
                     previous = evaluationPrevious,
@@ -530,10 +530,10 @@ class StatePoller(
         return decision.keep
     }
 
-    /** 현재 기기 역할과 차량 상태를 순수 연결 판정 입력으로 모은다. */
+    /** 현재 사용 모드와 차량 상태를 순수 연결 판정 입력으로 모은다. */
     private fun connectionDecision(settings: AppSettings): VehicleConnectionDecision =
         decideVehicleConnection(
-            deviceRole = settings.deviceRole,
+            deviceMode = settings.deviceMode,
             protectPhoneKey = settings.protectPhoneKey,
             vehiclePowerConnected = vehiclePowerConnected,
             vehiclePowerWakePending = vehiclePowerWakePending.get(),
@@ -771,16 +771,16 @@ class StatePoller(
 /** 연결을 유지하거나 놓는 정확한 이유. 진단 로그와 단위 테스트가 같은 판정을 공유한다. */
 internal enum class VehicleConnectionReason(val keep: Boolean, val label: String) {
     USER_PAUSED(false, "사용자가 다음 사용까지 일시정지"),
-    PHONE_IDLE(false, "개인 휴대폰 백그라운드"),
-    TABLET_EMPTY(false, "차량 전원은 있으나 빈 차 확인"),
-    TABLET_UNCONFIRMED(false, "차량 전원은 있으나 탑승 미확인"),
+    PORTABLE_IDLE(false, "휴대 모드 백그라운드"),
+    MOUNTED_EMPTY(false, "거치 모드 전원은 있으나 빈 차 확인"),
+    MOUNTED_UNCONFIRMED(false, "거치 모드 전원은 있으나 탑승 미확인"),
     NO_ACTIVE_USE(false, "차량 전원·앱·명령·매크로 사용 없음"),
     DIRECT_COMMAND(true, "직접 명령 실행 중"),
     APP_VISIBLE(true, "앱 화면 사용 중"),
     STEALTH_CHARGING(true, "스텔스 충전 1회 대기·실행·원복 중"),
-    MACRO_RUNNING(true, "차량 태블릿 매크로 실행 중"),
+    MACRO_RUNNING(true, "거치 모드 매크로 실행 중"),
     PROTECTION_DISABLED(true, "휴대폰 키 간섭 방지 꺼짐"),
-    TABLET_RIDE(true, "차량 태블릿 전원 상승 또는 탑승 확인"),
+    MOUNTED_USE(true, "거치 모드 전원 상승 또는 탑승 확인"),
 }
 
 /** 연결 유지 여부와 로그 사유를 함께 반환한다. */
@@ -788,9 +788,9 @@ internal data class VehicleConnectionDecision(val reason: VehicleConnectionReaso
     val keep: Boolean get() = reason.keep
 }
 
-/** 기기 역할과 실제 사용 사유를 한곳에서 판정한다. */
+/** 사용 모드와 실제 사용 사유를 한곳에서 판정한다. */
 internal fun decideVehicleConnection(
-    deviceRole: DeviceRole,
+    deviceMode: DeviceMode,
     protectPhoneKey: Boolean,
     vehiclePowerConnected: Boolean,
     vehiclePowerWakePending: Boolean,
@@ -805,17 +805,17 @@ internal fun decideVehicleConnection(
         manuallyPaused -> VehicleConnectionReason.USER_PAUSED
         commandActive -> VehicleConnectionReason.DIRECT_COMMAND
         appVisible -> VehicleConnectionReason.APP_VISIBLE
-        // 휴대폰은 충전 케이블·자동 매크로·보호 해제 설정을 연결 사유로 쓰지 않는다.
-        // 이 역할을 고른 목적이 공식 휴대폰 키의 이탈 잠금을 방해하지 않는 것이기 때문이다.
-        deviceRole == DeviceRole.PERSONAL_PHONE -> VehicleConnectionReason.PHONE_IDLE
-        // 태블릿만 1회 충전을 위해 보호를 잠시 미룬다. 완료 뒤 설정이 꺼지면 원래 정책으로 돌아간다.
+        // 휴대 모드는 충전 케이블·자동 매크로·보호 해제 설정을 연결 사유로 쓰지 않는다.
+        // 기기 종류가 아니라 들고 나가는 사용 방식이므로 이탈 잠금을 방해하지 않아야 한다.
+        deviceMode == DeviceMode.PORTABLE -> VehicleConnectionReason.PORTABLE_IDLE
+        // 거치 모드만 1회 충전을 위해 보호를 잠시 미룬다. 완료 뒤 원래 정책으로 돌아간다.
         stealthChargeNeedsConnection -> VehicleConnectionReason.STEALTH_CHARGING
         macroRunning -> VehicleConnectionReason.MACRO_RUNNING
         !protectPhoneKey -> VehicleConnectionReason.PROTECTION_DISABLED
         vehiclePowerConnected && (vehiclePowerWakePending || vehicleUserPresent == true) ->
-            VehicleConnectionReason.TABLET_RIDE
-        vehiclePowerConnected && vehicleUserPresent == false -> VehicleConnectionReason.TABLET_EMPTY
-        vehiclePowerConnected -> VehicleConnectionReason.TABLET_UNCONFIRMED
+            VehicleConnectionReason.MOUNTED_USE
+        vehiclePowerConnected && vehicleUserPresent == false -> VehicleConnectionReason.MOUNTED_EMPTY
+        vehiclePowerConnected -> VehicleConnectionReason.MOUNTED_UNCONFIRMED
         else -> VehicleConnectionReason.NO_ACTIVE_USE
     }
 )

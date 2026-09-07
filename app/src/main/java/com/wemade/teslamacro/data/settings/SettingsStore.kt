@@ -16,15 +16,18 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
 
-/** 이 설치본이 차량에 상주하는 태블릿인지, 사용자가 들고 다니는 휴대폰인지 구분한다. */
-enum class DeviceRole(val label: String) {
-    CAR_TABLET("차량 태블릿"),
-    PERSONAL_PHONE("개인 휴대폰");
+/** 기기 종류가 아니라 차량에 계속 두는지 들고 다니는지에 따라 연결 수명을 구분한다. */
+enum class DeviceMode(val label: String) {
+    MOUNTED("거치 모드"),
+    PORTABLE("휴대 모드");
 
     companion object {
-        /** 저장값이 없거나 깨졌으면 휴대폰 키 간섭 위험이 더 작은 개인 휴대폰으로 돌아간다. */
-        fun of(name: String?): DeviceRole =
-            entries.firstOrNull { it.name == name } ?: PERSONAL_PHONE
+        /** 기존 기기명 저장값을 같은 사용 방식으로 이어받고, 알 수 없으면 안전한 휴대 모드로 간다. */
+        fun of(name: String?): DeviceMode = when (name) {
+            MOUNTED.name, "CAR_TABLET" -> MOUNTED
+            PORTABLE.name, "PERSONAL_PHONE" -> PORTABLE
+            else -> PORTABLE
+        }
     }
 }
 
@@ -35,8 +38,8 @@ data class AppSettings(
     val automationEnabled: Boolean = true,
     /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
     val protectPhoneKey: Boolean = true,
-    /** 대다수 설치본은 휴대폰이므로, 처음엔 백그라운드 연결하지 않는 역할로 시작한다. */
-    val deviceRole: DeviceRole = DeviceRole.PERSONAL_PHONE,
+    /** 기기 종류와 무관하게 처음엔 백그라운드 연결하지 않는 안전한 휴대 모드로 시작한다. */
+    val deviceMode: DeviceMode = DeviceMode.PORTABLE,
     /**
      * 키 등록까지 끝났는지.
      *
@@ -99,7 +102,7 @@ class SettingsStore(private val context: Context) {
             vin = prefs[KeyVin] ?: "",
             automationEnabled = prefs[KeyAutomation] ?: true,
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
-            deviceRole = DeviceRole.of(prefs[KeyDeviceRole]),
+            deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             isEnrolled = prefs[KeyEnrolled] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
@@ -128,8 +131,8 @@ class SettingsStore(private val context: Context) {
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     suspend fun setProtectPhoneKey(enabled: Boolean) = edit { it[KeyProtectPhoneKey] = enabled }
-    /** 태블릿과 휴대폰마다 달라야 하므로 이 설치본에만 기기 역할을 저장한다. */
-    suspend fun setDeviceRole(role: DeviceRole) = edit { it[KeyDeviceRole] = role.name }
+    /** 같은 종류의 기기도 사용 방식이 다를 수 있으므로 이 설치본에만 모드를 저장한다. */
+    suspend fun setDeviceMode(mode: DeviceMode) = edit { it[KeyDeviceMode] = mode.name }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     /** 새 1회 세션은 이전 실행 흔적을 지우고, 수동 해제는 원복이 끝날 때까지 흔적을 남긴다. */
@@ -224,7 +227,7 @@ class SettingsStore(private val context: Context) {
     suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
         it[KeyAutomation] = backup.automationEnabled
         it[KeyProtectPhoneKey] = backup.protectPhoneKey
-        // 기기 역할은 일부러 복원하지 않는다 — 휴대폰 백업이 차량 태블릿 역할을 바꾸면 안 된다.
+        // 사용 모드는 일부러 복원하지 않는다 — 다른 기기 백업이 이 설치본의 거치 방식을 바꾸면 안 된다.
         // 1회 실행은 다른 기기에 복원하지 않는다. 시간대 취향만 이 설치본에 남는다.
         it[KeyStealthCharging] = false
         it.remove(KeyStealthChargeStarted)
@@ -291,7 +294,8 @@ class SettingsStore(private val context: Context) {
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
         val KeyAutomation = booleanPreferencesKey("automation_enabled")
         val KeyProtectPhoneKey = booleanPreferencesKey("protect_phone_key")
-        val KeyDeviceRole = stringPreferencesKey("device_role")
+        // 키 이름은 기존 설치본의 값을 읽기 위해 유지하고, 값만 MOUNTED/PORTABLE로 갱신한다.
+        val KeyDeviceMode = stringPreferencesKey("device_role")
         val KeyEnrolled = booleanPreferencesKey("enrolled")
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")

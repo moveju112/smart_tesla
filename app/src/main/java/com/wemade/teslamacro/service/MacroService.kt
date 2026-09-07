@@ -24,7 +24,7 @@ import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.nav.forAutomaticStart
-import com.wemade.teslamacro.data.settings.DeviceRole
+import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.domain.command.confirmCategory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -36,8 +36,8 @@ import kotlinx.coroutines.launch
 /**
  * 매크로 감시를 화면 밖에서도 계속 돌리는 포그라운드 서비스.
  *
- * 차량 태블릿은 백그라운드 자동화를 감시하고, 개인 휴대폰은 사용자가 앱이나
- * 직접 명령을 연 동안만 연결한다. connectedDevice 타입은 두 역할의 명시적 연결에 쓴다.
+ * 거치 모드는 백그라운드 자동화를 감시하고, 휴대 모드는 사용자가 앱이나 직접 명령을
+ * 연 동안만 연결한다. connectedDevice 타입은 두 모드의 명시적 연결에 쓴다.
  */
 class MacroService : LifecycleService() {
 
@@ -230,15 +230,15 @@ class MacroService : LifecycleService() {
             val app = application as? TeslaMacroApplication ?: return
             if (!app.ready.value) return
             lifecycleScope.launch {
-                val role = app.container.settingsStore.settings.first().deviceRole
+                val mode = app.container.settingsStore.settings.first().deviceMode
                 when (intent.action) {
-                    // 태블릿은 시동 신호로 즉시 확인하고, 휴대폰 충전은 연결 사유로 쓰지 않는다.
+                    // 거치 기기는 전원 상승을 시동 신호로 쓰고, 휴대 기기의 충전은 무시한다.
                     Intent.ACTION_POWER_CONNECTED -> {
                         com.wemade.teslable.DiagLog.add(
-                            if (role == DeviceRole.CAR_TABLET) {
+                            if (mode == DeviceMode.MOUNTED) {
                                 "차량 전원 연결 — 탑승 상태 즉시 확인"
                             } else {
-                                "기기 충전 연결 — 개인 휴대폰 모드라 차량 연결 사유에서 제외"
+                                "기기 충전 연결 — 휴대 모드라 차량 연결 사유에서 제외"
                             }
                         )
                         app.container.poller.setVehiclePowerConnected(true)
@@ -254,7 +254,7 @@ class MacroService : LifecycleService() {
         }
     }
 
-    /** 서비스 시작 시 현재 외부 전원을 읽되, 차량 신호로 쓸지는 기기 역할이 정한다. */
+    /** 서비스 시작 시 현재 외부 전원을 읽되, 차량 신호로 쓸지는 사용 모드가 정한다. */
     private fun isExternalPowerConnected(): Boolean {
         val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         return (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0

@@ -64,8 +64,17 @@ class ConnectionGuardTest {
             vehiclePowerWakePending = true,
             vehicleUserPresent = true,
             macroRunning = true,
+            stealthChargeNeedsConnection = true,
         )
         assertEquals(VehicleConnectionReason.PHONE_IDLE, result.reason)
+    }
+
+    @Test
+    fun `차량 태블릿은 스텔스 충전 1회가 끝날 때까지 보호를 잠시 미룬다`() {
+        assertEquals(
+            VehicleConnectionReason.STEALTH_CHARGING,
+            decision(stealthChargeNeedsConnection = true).reason,
+        )
     }
 
     @Test
@@ -84,6 +93,7 @@ class ConnectionGuardTest {
             appVisible = true,
             commandActive = true,
             macroRunning = true,
+            stealthChargeNeedsConnection = true,
             manuallyPaused = true,
         )
         assertEquals(VehicleConnectionReason.USER_PAUSED, result.reason)
@@ -126,6 +136,7 @@ class ConnectionGuardTest {
         appVisible: Boolean = false,
         commandActive: Boolean = false,
         macroRunning: Boolean = false,
+        stealthChargeNeedsConnection: Boolean = false,
         manuallyPaused: Boolean = false,
     ): VehicleConnectionDecision = decideVehicleConnection(
         deviceRole = deviceRole,
@@ -136,6 +147,7 @@ class ConnectionGuardTest {
         appVisible = appVisible,
         commandActive = commandActive,
         macroRunning = macroRunning,
+        stealthChargeNeedsConnection = stealthChargeNeedsConnection,
         manuallyPaused = manuallyPaused,
     )
 }

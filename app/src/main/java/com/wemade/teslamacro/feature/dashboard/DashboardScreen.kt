@@ -60,6 +60,7 @@ import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.CalloutNumber
 import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.Hairline
+import com.wemade.teslamacro.ui.component.HourMinuteStepper
 import com.wemade.teslamacro.ui.component.IndeterminateBar
 import com.wemade.teslamacro.ui.component.InlineBanner
 import com.wemade.teslamacro.ui.component.LevelSelector
@@ -113,9 +114,14 @@ fun DashboardScreen(
     modifier: Modifier = Modifier,
     onSeatClimate: (SeatPosition, SeatMode, Level) -> Unit = { _, _, _ -> },
     onStealthCharging: (Boolean) -> Unit = {},
+    onStealthScheduleEnabled: (Boolean) -> Unit = {},
+    onStealthStartMinutes: (Int) -> Unit = {},
+    onStealthEndMinutes: (Int) -> Unit = {},
+    initialSelected: CarPart? = null,
 ) {
     val compact = LocalPane.current.isCompact
-    var selected by remember { mutableStateOf<CarPart?>(null) }
+    // 스냅샷·딥링크는 특정 상세도에서 시작할 수 있고, 일반 진입은 기존처럼 도면부터 보인다.
+    var selected by remember(initialSelected) { mutableStateOf(initialSelected) }
 
     // 상세도가 열려 있으면 Back이 그걸 닫는다. 없으면 서명 상호작용 한가운데서 앱이 꺼진다
     BackHandler(enabled = selected != null) { selected = null }
@@ -142,6 +148,9 @@ fun DashboardScreen(
                     onCommand = onCommand,
                     onSeatClimate = onSeatClimate,
                     onStealthCharging = onStealthCharging,
+                    onStealthScheduleEnabled = onStealthScheduleEnabled,
+                    onStealthStartMinutes = onStealthStartMinutes,
+                    onStealthEndMinutes = onStealthEndMinutes,
                 )
             }
         }
@@ -785,6 +794,9 @@ private fun DetailView(
     onCommand: (VehicleCommand) -> Unit,
     onSeatClimate: (SeatPosition, SeatMode, Level) -> Unit,
     onStealthCharging: (Boolean) -> Unit,
+    onStealthScheduleEnabled: (Boolean) -> Unit,
+    onStealthStartMinutes: (Int) -> Unit,
+    onStealthEndMinutes: (Int) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -821,7 +833,14 @@ private fun DetailView(
         when (part) {
             CarPart.CABIN -> ClimateDetail(state, onCommand)
             CarPart.BODY -> LockDetail(onCommand, onClose)
-            CarPart.PACK -> ChargeDetail(state, onCommand, onStealthCharging)
+            CarPart.PACK -> ChargeDetail(
+                state = state,
+                onCommand = onCommand,
+                onStealthCharging = onStealthCharging,
+                onStealthScheduleEnabled = onStealthScheduleEnabled,
+                onStealthStartMinutes = onStealthStartMinutes,
+                onStealthEndMinutes = onStealthEndMinutes,
+            )
             CarPart.FRUNK, CarPart.TRUNK -> OpeningsDetail(state, onCommand)
             CarPart.SEAT_LEFT -> SeatDetail(state, SeatPosition.FRONT_LEFT, onSeatClimate)
             CarPart.SEAT_RIGHT -> SeatDetail(state, SeatPosition.FRONT_RIGHT, onSeatClimate)
@@ -867,6 +886,9 @@ private fun ChargeDetail(
     state: DashboardUiState,
     onCommand: (VehicleCommand) -> Unit,
     onStealthCharging: (Boolean) -> Unit,
+    onStealthScheduleEnabled: (Boolean) -> Unit,
+    onStealthStartMinutes: (Int) -> Unit,
+    onStealthEndMinutes: (Int) -> Unit,
 ) {
     FieldLabel("충전 한도")
     NumberStepper(
@@ -880,7 +902,7 @@ private fun ChargeDetail(
     Spacer(Modifier.height(Space.md))
     FieldLabel("충전 전류")
     NumberStepper(
-        value = (state.chargingAmps ?: 32).toDouble(),
+        value = (state.chargingAmps ?: 16).toDouble(),
         min = 5.0,
         max = 48.0,
         step = 1.0,
@@ -891,11 +913,34 @@ private fun ChargeDetail(
     Hairline()
     Spacer(Modifier.height(Space.md))
     ToggleRow(
-        title = "스텔스 충전",
-        subtitle = "전류를 조금씩 흔들어 눈에 덜 띄게 해요",
+        title = "스텔스 충전 1회",
+        subtitle = "다음 충전 1회만 실행하고 완료되면 자동으로 꺼져요",
         checked = state.stealthCharging,
         onCheckedChange = onStealthCharging,
     )
+    if (state.stealthCharging) {
+        Spacer(Modifier.height(Space.sm))
+        Text(
+            text = "실행 시간대의 대기·충전 중에만 차량 연결을 유지하고, 종료하면 휴대폰 키 보호 정책으로 돌아가요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+        )
+        Spacer(Modifier.height(Space.md))
+        ToggleRow(
+            title = "시간대 제한",
+            subtitle = "설정한 시간 안에서만 전류를 조절해요",
+            checked = state.stealthScheduleEnabled,
+            onCheckedChange = onStealthScheduleEnabled,
+        )
+        if (state.stealthScheduleEnabled) {
+            Spacer(Modifier.height(Space.md))
+            FieldLabel("시작")
+            HourMinuteStepper(state.stealthStartMinutes, onStealthStartMinutes)
+            Spacer(Modifier.height(Space.md))
+            FieldLabel("종료")
+            HourMinuteStepper(state.stealthEndMinutes, onStealthEndMinutes)
+        }
+    }
 }
 
 @Composable
@@ -1229,6 +1274,9 @@ data class DashboardUiState(
     val chargeLimitPercent: Int? = null,
     val chargingAmps: Int? = null,
     val stealthCharging: Boolean = false,
+    val stealthScheduleEnabled: Boolean = false,
+    val stealthStartMinutes: Int = 23 * 60,
+    val stealthEndMinutes: Int = 7 * 60,
     /** 공기압이 기준 아래인 바퀴. 있으면 도면의 그 자리가 적색이 된다 */
     val lowTires: Set<TirePosition> = emptySet(),
     /** 낮은 바퀴가 있을 때만 채운다 — 정상이면 화면에 한 글자도 안 늘린다 */

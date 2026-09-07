@@ -53,12 +53,20 @@ data class AppSettings(
     val vehicleAddress: String = "",
     /** 차에 지은 별칭. 페어링 목록에서 그대로 읽어 온다 (예 "Tesla Model Y Why") */
     val vehicleName: String = "",
-    /**
-     * 스텔스 충전 — 충전 중 전류를 난수로 흔들어 부하 지문을 흐린다.
-     * 흔드는 범위의 상한은 차가 보고하는 충전기 최대 전류다 (사용자 설정이 아니다).
-     * 기본 꺼짐. 켜면 충전이 느려지는 대가가 있다 (평균 전류가 내려가고 쉬는 구간이 생김).
-     */
+    /** 다음 충전 1회 동안만 전류를 조절한다. 완료하면 컨트롤러가 자동으로 끈다. */
     val stealthCharging: Boolean = false,
+    /** 실제 조절을 시작했는지. 대기만 하다 끝난 충전을 1회 사용으로 세지 않는다. */
+    val stealthChargeStarted: Boolean = false,
+    /** 조절 전에 사용자가 쓰던 전류. 종료·해제 때 이 값으로 되돌린다. */
+    val stealthChargeOriginalAmps: Int? = null,
+    /** 마지막 전류 명령이 원래 값과 다른지. 원복이 필요한 세션만 연결을 잠시 유지한다. */
+    val stealthChargeModified: Boolean = false,
+    /** 정한 시간대 안에서만 전류를 조절할지. */
+    val stealthScheduleEnabled: Boolean = false,
+    /** 스텔스 충전 시작 시각. 자정부터 흐른 분이다. */
+    val stealthStartMinutes: Int = 23 * 60,
+    /** 스텔스 충전 종료 시각. 시작보다 작으면 자정을 넘긴다. */
+    val stealthEndMinutes: Int = 7 * 60,
     /** 길안내를 넘길 내비 앱. 기기에 깔린 것 중 사용자가 고른다 */
     val navigatorApp: String = "NAVER",
     /** 탑승을 감지하면 선택한 내비의 목적지 없는 안심운전을 자동으로 연다 */
@@ -96,6 +104,12 @@ class SettingsStore(private val context: Context) {
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
             stealthCharging = prefs[KeyStealthCharging] ?: false,
+            stealthChargeStarted = prefs[KeyStealthChargeStarted] ?: false,
+            stealthChargeOriginalAmps = prefs[KeyStealthChargeOriginalAmps],
+            stealthChargeModified = prefs[KeyStealthChargeModified] ?: false,
+            stealthScheduleEnabled = prefs[KeyStealthScheduleEnabled] ?: false,
+            stealthStartMinutes = (prefs[KeyStealthStartMinutes] ?: 23 * 60).coerceIn(0, 1439),
+            stealthEndMinutes = (prefs[KeyStealthEndMinutes] ?: 7 * 60).coerceIn(0, 1439),
             // 공개 버전은 네이버 지도만 사용한다. 저장된 예전 선택값은 나중 확장 때 다시 쓸 수 있게 둔다.
             navigatorApp = "NAVER",
             autoStartNavigatorSafeDrive = prefs[KeyAutoStartNavigatorSafeDrive] ?: false,
@@ -118,7 +132,57 @@ class SettingsStore(private val context: Context) {
     suspend fun setDeviceRole(role: DeviceRole) = edit { it[KeyDeviceRole] = role.name }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
-    suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
+    /** 새 1회 세션은 이전 실행 흔적을 지우고, 수동 해제는 원복이 끝날 때까지 흔적을 남긴다. */
+    suspend fun setStealthCharging(enabled: Boolean) = edit {
+        it[KeyStealthCharging] = enabled
+        if (enabled) {
+            it.remove(KeyStealthChargeStarted)
+            it.remove(KeyStealthChargeOriginalAmps)
+            it.remove(KeyStealthChargeModified)
+        } else if (it[KeyStealthChargeModified] != true) {
+            // 전류를 바꾸지 않았다면 연결해서 되돌릴 것도 없다. 내부 진행 상태를 바로 비운다.
+            it.remove(KeyStealthChargeStarted)
+            it.remove(KeyStealthChargeOriginalAmps)
+            it.remove(KeyStealthChargeModified)
+        }
+    }
+
+    /** 첫 전류 조절 직전에 원래 전류를 한 번만 저장한다. */
+    suspend fun beginStealthCharge(originalAmps: Int) = edit {
+        if (it[KeyStealthChargeStarted] != true) {
+            it[KeyStealthChargeStarted] = true
+            it[KeyStealthChargeOriginalAmps] = originalAmps
+            it[KeyStealthChargeModified] = false
+        }
+    }
+
+    /** 원래 전류와 다른 명령이 성공했는지 남겨 불필요한 원복 명령을 막는다. */
+    suspend fun setStealthChargeModified(modified: Boolean) = edit {
+        it[KeyStealthChargeModified] = modified
+    }
+
+    /** 충전 완료나 수동 해제 뒤 1회 설정과 내부 복구 상태를 함께 비운다. */
+    suspend fun completeStealthCharge() = edit {
+        it[KeyStealthCharging] = false
+        it.remove(KeyStealthChargeStarted)
+        it.remove(KeyStealthChargeOriginalAmps)
+        it.remove(KeyStealthChargeModified)
+    }
+
+    /** 시간대 제한 사용 여부를 저장한다. */
+    suspend fun setStealthScheduleEnabled(enabled: Boolean) = edit {
+        it[KeyStealthScheduleEnabled] = enabled
+    }
+
+    /** 시작 시각은 하루 범위로 가둬 저장한다. */
+    suspend fun setStealthStartMinutes(minutes: Int) = edit {
+        it[KeyStealthStartMinutes] = minutes.coerceIn(0, 1439)
+    }
+
+    /** 종료 시각은 하루 범위로 가둬 저장한다. */
+    suspend fun setStealthEndMinutes(minutes: Int) = edit {
+        it[KeyStealthEndMinutes] = minutes.coerceIn(0, 1439)
+    }
     suspend fun setNavigatorApp(name: String) = edit { it[KeyNavigatorApp] = name }
     suspend fun setAutoStartNavigatorSafeDrive(enabled: Boolean) = edit {
         it[KeyAutoStartNavigatorSafeDrive] = enabled
@@ -161,7 +225,11 @@ class SettingsStore(private val context: Context) {
         it[KeyAutomation] = backup.automationEnabled
         it[KeyProtectPhoneKey] = backup.protectPhoneKey
         // 기기 역할은 일부러 복원하지 않는다 — 휴대폰 백업이 차량 태블릿 역할을 바꾸면 안 된다.
-        it[KeyStealthCharging] = backup.stealthCharging
+        // 1회 실행은 다른 기기에 복원하지 않는다. 시간대 취향만 이 설치본에 남는다.
+        it[KeyStealthCharging] = false
+        it.remove(KeyStealthChargeStarted)
+        it.remove(KeyStealthChargeOriginalAmps)
+        it.remove(KeyStealthChargeModified)
         // 옛 백업(version 1)엔 아래 값이 없다 — 그때는 BackupSettings의 기본값이 들어온다.
         // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
         it[KeyHudOverlay] = backup.hudOverlay
@@ -228,6 +296,12 @@ class SettingsStore(private val context: Context) {
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")
         val KeyStealthCharging = booleanPreferencesKey("stealth_charging")
+        val KeyStealthChargeStarted = booleanPreferencesKey("stealth_charge_started")
+        val KeyStealthChargeOriginalAmps = intPreferencesKey("stealth_charge_original_amps")
+        val KeyStealthChargeModified = booleanPreferencesKey("stealth_charge_modified")
+        val KeyStealthScheduleEnabled = booleanPreferencesKey("stealth_schedule_enabled")
+        val KeyStealthStartMinutes = intPreferencesKey("stealth_start_minutes")
+        val KeyStealthEndMinutes = intPreferencesKey("stealth_end_minutes")
         val KeyLastGeoLat = doublePreferencesKey("last_geo_lat")
         val KeyLastGeoLng = doublePreferencesKey("last_geo_lng")
         val KeyLastGeoAt = longPreferencesKey("last_geo_at")

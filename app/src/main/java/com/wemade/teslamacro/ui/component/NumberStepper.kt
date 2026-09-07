@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -59,6 +60,29 @@ fun NumberStepper(
         StepButton(DraftMark.Add, "늘리기", enabled = value < max) {
             onChange(snap((value + step).coerceAtMost(max), step))
         }
+    }
+}
+
+/** 좁은 화면에서도 잘리지 않게 시·분 스테퍼를 세로로 쌓는다. */
+@Composable
+fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        NumberStepper(
+            value = (minutesOfDay / 60).toDouble(),
+            min = 0.0,
+            max = 23.0,
+            step = 1.0,
+            unit = "시",
+            onChange = { onChange(it.toInt() * 60 + minutesOfDay % 60) },
+        )
+        NumberStepper(
+            value = (minutesOfDay % 60).toDouble(),
+            min = 0.0,
+            max = 55.0,
+            step = 5.0,
+            unit = "분",
+            onChange = { onChange((minutesOfDay / 60) * 60 + it.toInt()) },
+        )
     }
 }
 

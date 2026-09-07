@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.data.poll
 
+import com.wemade.teslamacro.data.charge.isWithinStealthChargeWindow
 import com.wemade.teslamacro.data.macro.RuleStore
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceRole
@@ -540,6 +541,13 @@ class StatePoller(
             appVisible = now() < appVisibleUntil,
             commandActive = commandConnections.get() > 0,
             macroRunning = runner.running.value.isNotEmpty(),
+            stealthChargeNeedsConnection = settings.stealthChargeModified ||
+                settings.stealthCharging && isWithinStealthChargeWindow(
+                    nowMinutes = TimeContext.of(now()).minutesOfDay,
+                    enabled = settings.stealthScheduleEnabled,
+                    startMinutes = settings.stealthStartMinutes,
+                    endMinutes = settings.stealthEndMinutes,
+                ),
             manuallyPaused = manualConnectionPause.get(),
         )
 
@@ -769,6 +777,7 @@ internal enum class VehicleConnectionReason(val keep: Boolean, val label: String
     NO_ACTIVE_USE(false, "차량 전원·앱·명령·매크로 사용 없음"),
     DIRECT_COMMAND(true, "직접 명령 실행 중"),
     APP_VISIBLE(true, "앱 화면 사용 중"),
+    STEALTH_CHARGING(true, "스텔스 충전 1회 대기·실행·원복 중"),
     MACRO_RUNNING(true, "차량 태블릿 매크로 실행 중"),
     PROTECTION_DISABLED(true, "휴대폰 키 간섭 방지 꺼짐"),
     TABLET_RIDE(true, "차량 태블릿 전원 상승 또는 탑승 확인"),
@@ -789,6 +798,7 @@ internal fun decideVehicleConnection(
     appVisible: Boolean,
     commandActive: Boolean,
     macroRunning: Boolean,
+    stealthChargeNeedsConnection: Boolean,
     manuallyPaused: Boolean,
 ): VehicleConnectionDecision = VehicleConnectionDecision(
     when {
@@ -798,6 +808,8 @@ internal fun decideVehicleConnection(
         // 휴대폰은 충전 케이블·자동 매크로·보호 해제 설정을 연결 사유로 쓰지 않는다.
         // 이 역할을 고른 목적이 공식 휴대폰 키의 이탈 잠금을 방해하지 않는 것이기 때문이다.
         deviceRole == DeviceRole.PERSONAL_PHONE -> VehicleConnectionReason.PHONE_IDLE
+        // 태블릿만 1회 충전을 위해 보호를 잠시 미룬다. 완료 뒤 설정이 꺼지면 원래 정책으로 돌아간다.
+        stealthChargeNeedsConnection -> VehicleConnectionReason.STEALTH_CHARGING
         macroRunning -> VehicleConnectionReason.MACRO_RUNNING
         !protectPhoneKey -> VehicleConnectionReason.PROTECTION_DISABLED
         vehiclePowerConnected && (vehiclePowerWakePending || vehicleUserPresent == true) ->

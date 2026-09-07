@@ -269,6 +269,9 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onDismissError = vm::dismissError,
                         onSeatClimate = vm::setSeatClimate,
                         onStealthCharging = vm::setStealthCharging,
+                        onStealthScheduleEnabled = vm::setStealthScheduleEnabled,
+                        onStealthStartMinutes = vm::setStealthStartMinutes,
+                        onStealthEndMinutes = vm::setStealthEndMinutes,
                     )
                 }
 

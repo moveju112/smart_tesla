@@ -41,7 +41,7 @@ StatePoller ↔ MacroRunner: latestReading(StateFlow) 공유 — `app/src/main/j
 - 연결 수명은 `StatePoller`가 기기 역할·탑승 확인·앱 화면·단발 명령·실행 중 매크로를 합쳐 판정한다.
   개인 휴대폰은 앱 화면과 직접 명령만 허용한다. 차량 태블릿은 전원 상승 뒤 첫 상태를 읽되,
   빈 차가 확인되면 전원이 남아 있어도 GATT를 끊는다. 사용자의 즉시 해제는 다음 명시적 사용까지 우선한다.
-- 스텔스 충전: `MacroService`가 `StealthChargeController`를 start/stop — 설정·연결·충전중 셋이 다 참일 때만 전류를 흔든다 (`app/src/main/java/com/wemade/teslamacro/di/AppContainer.kt:79`, `app/src/main/java/com/wemade/teslamacro/service/MacroService.kt:40`)
+- 스텔스 충전: `MacroService`가 `StealthChargeController`를 start/stop — 차량 태블릿은 1회 설정 동안 연결 보호를 잠시 미루고, 시간대 안에서 실제 상한의 위쪽 25% 전류를 조절한다. 충전 완료·수동 해제 뒤 원래 전류와 연결 보호 정책을 복구한다
 - 폴링 카테고리는 `StateCategory` enum (BODY_CONTROLLER=VCSEC 상시 / CLIMATE·CLOSURES·DRIVE·CHARGE=INFOTAINMENT 깨어 있어야) — `app/src/main/java/com/wemade/teslamacro/domain/model/VehicleSnapshot.kt:75`
 
 ## 스토어 3+1

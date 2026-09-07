@@ -76,4 +76,9 @@ class BackupFileTest {
         val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
         assertTrue(restored.settings.automationEnabled)
     }
+
+    @Test
+    fun `스텔스 충전 1회 진행 상태는 백업하지 않는다`() {
+        assertFalse(AppSettings(stealthCharging = true).toBackup().stealthCharging)
+    }
 }

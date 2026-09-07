@@ -815,6 +815,12 @@ private fun ChoiceRow(
  * VIN은 개인정보라 앞 3 + 뒤 4만 남기고 가린다.
  */
 private fun settingsDump(settings: AppSettings): String = buildString {
+    val stealthWindow = "%02d:%02d~%02d:%02d".format(
+        settings.stealthStartMinutes / 60,
+        settings.stealthStartMinutes % 60,
+        settings.stealthEndMinutes / 60,
+        settings.stealthEndMinutes % 60,
+    )
     appendLine("[Smart Tesla ${com.wemade.teslamacro.BuildConfig.VERSION_NAME} 설정]")
     appendLine("차량: ${settings.vehicleName.ifBlank { "-" }} · VIN ${maskVin(settings.vin)}")
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
@@ -822,7 +828,9 @@ private fun settingsDump(settings: AppSettings): String = buildString {
         "기기 역할=${settings.deviceRole.label}" +
             " · 매크로 자동 실행=${settings.automationEnabled}" +
             " · 휴대폰 키 간섭 방지=${settings.protectPhoneKey}" +
-            " · 스텔스 충전=${settings.stealthCharging}",
+            " · 스텔스 충전 1회=${settings.stealthCharging}" +
+            "(시작=${settings.stealthChargeStarted}, 변경=${settings.stealthChargeModified})" +
+            " · 시간대=${settings.stealthScheduleEnabled}($stealthWindow)",
     )
     append(
         "내비=${settings.navigatorApp} · HUD 오버레이=${settings.hudOverlay}" +

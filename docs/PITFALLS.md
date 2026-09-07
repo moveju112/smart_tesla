@@ -79,9 +79,9 @@
 - **Symptom:** 스텔스 충전을 끄거나 충전이 멈췄는데 전류를 계속 흔듦 / 조건이 다시 참이 돼도 재개 안 함
   - Cause: `runLoop()`이 무한 `delay`에 갇혀 있어, 평범한 `collect`면 on/off 신호의 다음 값을 못 받는다
   - Fix: `collectLatest`로 수집해 조건이 false로 바뀌면 실행 중이던 `runLoop`을 취소 — `app/src/main/java/com/wemade/teslamacro/data/charge/StealthChargeController.kt:46`
-- **Symptom:** 전류가 한쪽(상한 또는 하한)에 눌러앉거나 정확히 일정 주기로만 바뀜 → 위장 효과 없음
-  - Cause: 평균 복원(MEAN_REVERSION)·간격 난수(randomInterval)를 건드려 파라미터가 깨짐
-  - Fix: 다음 전류는 순수함수 `StealthChargePlan.next()`가 정한다 — 파라미터 변경 시 `StealthChargePlanTest`로 검증 (`app/src/main/java/com/wemade/teslamacro/data/charge/StealthChargePlan.kt`)
+- **Symptom:** 16A 이하 충전기에서 지나치게 낮은 전류가 오래 유지되거나 충전이 끝난 뒤 앱 키 연결이 남음
+  - Cause: 5A~32A 전체 범위 난수와 계속 켜지는 설정이 실제 충전기 상한·휴대폰 키 보호 수명과 맞지 않음
+  - Fix: 차량 상한의 위쪽 25%만 사용하고, 다음 충전 1회가 끝나면 원래 전류를 복구한 뒤 설정을 끄고 연결 정책을 재적용한다
 
 ## 문서 드리프트
 

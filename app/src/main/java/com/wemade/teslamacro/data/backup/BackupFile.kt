@@ -62,7 +62,8 @@ data class BackupSettings(
 fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     automationEnabled = automationEnabled,
     protectPhoneKey = protectPhoneKey,
-    stealthCharging = stealthCharging,
+    // 다음 충전 1회 예약은 취향이 아니라 진행 상태라 새 기기에 옮기지 않는다.
+    stealthCharging = false,
     hudOverlay = hudOverlay,
     safeDrive = safeDrive,
     safeDriveSound = safeDriveSound,

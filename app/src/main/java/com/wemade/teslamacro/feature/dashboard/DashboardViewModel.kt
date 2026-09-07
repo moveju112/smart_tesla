@@ -160,6 +160,9 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             chargeLimitPercent = effective.chargeLimitPercent,
             chargingAmps = effective.chargingAmps,
             stealthCharging = settings.stealthCharging,
+            stealthScheduleEnabled = settings.stealthScheduleEnabled,
+            stealthStartMinutes = settings.stealthStartMinutes,
+            stealthEndMinutes = settings.stealthEndMinutes,
             automationEnabled = settings.automationEnabled,
             runningMacroCount = container.runner.running.value.size,
             rangeKm = effective.rangeKm?.toInt(),
@@ -177,9 +180,27 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
      * 사용자가 직접 누른 명령.
      * 실행 중인 매크로가 있으면 먼저 멈춘다 — 사람 조작이 항상 우선이다.
      */
-    /** 스텔스 충전 on/off. 실제 전류 조작은 백그라운드 컨트롤러가 한다 */
+    /** 1회 설정을 저장하고 태블릿 연결 정책을 즉시 다시 적용한다. */
     fun setStealthCharging(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setStealthCharging(enabled) }
+        viewModelScope.launch {
+            container.settingsStore.setStealthCharging(enabled)
+            if (enabled) container.poller.nudge() else container.poller.enforceConnectionGuard()
+        }
+    }
+
+    /** 전류를 조절할 시간대 제한 사용 여부를 저장한다. */
+    fun setStealthScheduleEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setStealthScheduleEnabled(enabled) }
+    }
+
+    /** 시간대 시작 시각을 저장한다. */
+    fun setStealthStartMinutes(minutes: Int) {
+        viewModelScope.launch { container.settingsStore.setStealthStartMinutes(minutes) }
+    }
+
+    /** 시간대 종료 시각을 저장한다. */
+    fun setStealthEndMinutes(minutes: Int) {
+        viewModelScope.launch { container.settingsStore.setStealthEndMinutes(minutes) }
     }
 
     fun send(command: VehicleCommand) {

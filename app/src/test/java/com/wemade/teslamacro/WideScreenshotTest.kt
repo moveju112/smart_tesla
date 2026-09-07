@@ -13,6 +13,7 @@ import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.feature.dashboard.DashboardScreen
 import com.wemade.teslamacro.feature.dashboard.DashboardUiState
+import com.wemade.teslamacro.feature.dashboard.CarPart
 import com.wemade.teslamacro.feature.settings.SettingsGroup
 import com.wemade.teslamacro.ui.nav.Destination
 import org.junit.Rule
@@ -69,6 +70,25 @@ class WideScreenshotTest {
                     onCommand = {},
                     onRetryConnect = {},
                     onDismissError = {},
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `W2-1 제어 화면 - 스텔스 충전 1회 시간대`() {
+        paparazzi.snapshot("W2-1-dashboard-stealth-charge") {
+            AppFrame(Destination.Dashboard) {
+                DashboardScreen(
+                    state = wideState().copy(
+                        chargingAmps = 16,
+                        stealthCharging = true,
+                        stealthScheduleEnabled = true,
+                    ),
+                    onCommand = {},
+                    onRetryConnect = {},
+                    onDismissError = {},
+                    initialSelected = CarPart.PACK,
                 )
             }
         }

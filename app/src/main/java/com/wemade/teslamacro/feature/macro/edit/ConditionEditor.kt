@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.wemade.teslamacro.ui.component.DraftMark
+import com.wemade.teslamacro.ui.component.HourMinuteStepper
 import androidx.compose.ui.platform.LocalContext
 import com.wemade.teslamacro.data.location.TabletLocation
 import com.wemade.teslamacro.data.nav.NaverNavigator
@@ -561,23 +562,6 @@ private fun TimeAndDayEditor(
         Text("요일", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
         Spacer(Modifier.height(Space.sm))
         DayToggles(days, onDaysChange)
-    }
-}
-
-@Composable
-private fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
-    // 스테퍼 2개를 가로로 두면 좁은 세로 화면에서 "분"이 잘린다 — 세로로 쌓는다
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        NumberStepper(
-            value = (minutesOfDay / 60).toDouble(),
-            min = 0.0, max = 23.0, step = 1.0, unit = "시",
-            onChange = { onChange(it.toInt() * 60 + minutesOfDay % 60) },
-        )
-        NumberStepper(
-            value = (minutesOfDay % 60).toDouble(),
-            min = 0.0, max = 55.0, step = 5.0, unit = "분",
-            onChange = { onChange((minutesOfDay / 60) * 60 + it.toInt()) },
-        )
     }
 }
 

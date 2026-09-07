@@ -252,7 +252,7 @@ private fun PhoneKeyProtectionPanel(
         } else {
             Text(
                 text = "앱 화면이나 직접 명령을 쓸 때만 연결해요. " +
-                    "자동 매크로와 탑승 안심운전은 차량 태블릿에서만 실행합니다.",
+                    "자동 매크로는 차량 태블릿에서만 실행하고, 안심운전은 자동 시작 옵션을 따릅니다.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )

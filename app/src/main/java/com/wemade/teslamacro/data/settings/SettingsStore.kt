@@ -22,9 +22,9 @@ enum class DeviceRole(val label: String) {
     PERSONAL_PHONE("개인 휴대폰");
 
     companion object {
-        /** 저장값이 없거나 깨졌으면 기존 설치 동작을 보존하는 차량 태블릿으로 돌아간다. */
+        /** 저장값이 없거나 깨졌으면 휴대폰 키 간섭 위험이 더 작은 개인 휴대폰으로 돌아간다. */
         fun of(name: String?): DeviceRole =
-            entries.firstOrNull { it.name == name } ?: CAR_TABLET
+            entries.firstOrNull { it.name == name } ?: PERSONAL_PHONE
     }
 }
 
@@ -35,8 +35,8 @@ data class AppSettings(
     val automationEnabled: Boolean = true,
     /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
     val protectPhoneKey: Boolean = true,
-    /** 휴대폰 설치본이 차량 전원과 자동화 때문에 백그라운드 연결하지 않도록 하는 기기별 역할 */
-    val deviceRole: DeviceRole = DeviceRole.CAR_TABLET,
+    /** 대다수 설치본은 휴대폰이므로, 처음엔 백그라운드 연결하지 않는 역할로 시작한다. */
+    val deviceRole: DeviceRole = DeviceRole.PERSONAL_PHONE,
     /**
      * 키 등록까지 끝났는지.
      *

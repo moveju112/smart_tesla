@@ -206,7 +206,6 @@ class MacroService : LifecycleService() {
             app.ready.first { it }
             app.container.poller.boardingEvents.collect {
                 val settings = app.container.settingsStore.settings.first()
-                if (settings.deviceRole != DeviceRole.CAR_TABLET) return@collect
                 if (!settings.autoStartNavigatorSafeDrive) return@collect
 
                 val navigatorApp = NavigatorApp.of(settings.navigatorApp)

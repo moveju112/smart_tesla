@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.poll
 
 import com.wemade.teslamacro.data.settings.DeviceRole
+import com.wemade.teslamacro.data.settings.AppSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -9,9 +10,10 @@ import org.junit.Test
 class ConnectionGuardTest {
 
     @Test
-    fun `기기 역할 저장값이 없거나 깨졌으면 기존 차량 태블릿으로 돌아간다`() {
-        assertEquals(DeviceRole.CAR_TABLET, DeviceRole.of(null))
-        assertEquals(DeviceRole.CAR_TABLET, DeviceRole.of("BROKEN"))
+    fun `기기 역할 저장값이 없거나 깨졌으면 개인 휴대폰으로 돌아간다`() {
+        assertEquals(DeviceRole.PERSONAL_PHONE, DeviceRole.of(null))
+        assertEquals(DeviceRole.PERSONAL_PHONE, DeviceRole.of("BROKEN"))
+        assertEquals(DeviceRole.PERSONAL_PHONE, AppSettings().deviceRole)
     }
 
     @Test

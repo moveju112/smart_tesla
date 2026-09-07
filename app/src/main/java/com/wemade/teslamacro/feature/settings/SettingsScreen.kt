@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.settings.DeviceRole
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.ui.component.ButtonTone
@@ -53,6 +54,8 @@ fun SettingsScreen(
     settings: AppSettings,
     onAutomationChange: (Boolean) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit = {},
+    onDeviceRoleChange: (DeviceRole) -> Unit = {},
+    onDisconnectVehicle: () -> Unit = {},
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
     modifier: Modifier = Modifier,
@@ -176,7 +179,12 @@ fun SettingsScreen(
                             )
                         } else if (settings.isPaired) {
                             SectionHeader("연결 안전", topPadding = Space.md)
-                            PhoneKeyProtectionPanel(settings, onProtectPhoneKeyChange)
+                            PhoneKeyProtectionPanel(
+                                settings = settings,
+                                onDeviceRoleChange = onDeviceRoleChange,
+                                onProtectPhoneKeyChange = onProtectPhoneKeyChange,
+                                onDisconnectVehicle = onDisconnectVehicle,
+                            )
                         }
                     }
 
@@ -208,16 +216,48 @@ fun SettingsScreen(
 @Composable
 private fun PhoneKeyProtectionPanel(
     settings: AppSettings,
+    onDeviceRoleChange: (DeviceRole) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit,
+    onDisconnectVehicle: () -> Unit,
 ) {
     TCard {
-        ToggleRow(
-            title = "휴대폰 키 간섭 방지",
-            subtitle = "차량 전원이 꺼지면 앱의 BLE 연결을 끊어요",
-            checked = settings.protectPhoneKey,
-            onCheckedChange = onProtectPhoneKeyChange,
+        Text(
+            text = "이 기기 역할",
+            style = MaterialTheme.typography.titleMedium,
+            color = T.Ink,
         )
-        if (settings.protectPhoneKey) {
+        Text(
+            text = "태블릿과 휴대폰에 각각 맞는 역할을 골라야 두 설치본이 동시에 차량에 붙지 않아요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+            modifier = Modifier.padding(top = Space.xs),
+        )
+        Spacer(Modifier.height(Space.sm))
+        ChoiceRow(
+            options = DeviceRole.entries.map { it.name to it.label },
+            selected = settings.deviceRole.name,
+            onSelect = { onDeviceRoleChange(DeviceRole.of(it)) },
+        )
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+
+        if (settings.deviceRole == DeviceRole.CAR_TABLET) {
+            ToggleRow(
+                title = "휴대폰 키 간섭 방지",
+                subtitle = "전원이 있어도 빈 차가 확인되면 BLE 연결을 끊어요",
+                checked = settings.protectPhoneKey,
+                onCheckedChange = onProtectPhoneKeyChange,
+            )
+        } else {
+            Text(
+                text = "앱 화면이나 직접 명령을 쓸 때만 연결해요. " +
+                    "자동 매크로와 탑승 안심운전은 차량 태블릿에서만 실행합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
+        }
+        if (settings.deviceRole == DeviceRole.CAR_TABLET && settings.protectPhoneKey) {
             Spacer(Modifier.height(Space.md))
             Hairline()
             Spacer(Modifier.height(Space.md))
@@ -226,6 +266,25 @@ private fun PhoneKeyProtectionPanel(
                     "앱과 빅스비 명령은 필요할 때 다시 연결해요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
+            )
+        }
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "강제 종료 대신 실행 중 매크로를 멈추고 연결만 놓습니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Space.md))
+            TButton(
+                text = "지금 연결 끊기",
+                tone = ButtonTone.Secondary,
+                fillWidth = false,
+                small = true,
+                onClick = onDisconnectVehicle,
             )
         }
     }
@@ -811,7 +870,8 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     appendLine("차량: ${settings.vehicleName.ifBlank { "-" }} · VIN ${maskVin(settings.vin)}")
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
     appendLine(
-        "매크로 자동 실행=${settings.automationEnabled}" +
+        "기기 역할=${settings.deviceRole.label}" +
+            " · 매크로 자동 실행=${settings.automationEnabled}" +
             " · 휴대폰 키 간섭 방지=${settings.protectPhoneKey}" +
             " · 스텔스 충전=${settings.stealthCharging}",
     )

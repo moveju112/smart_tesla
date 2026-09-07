@@ -125,10 +125,22 @@ class WideScreenshotTest {
     fun `W5c 설정 - 차량`() = settingsSnapshot("W5c-settings-vehicle", SettingsGroup.VEHICLE)
 
     @Test
+    fun `W5c2 설정 - 차량 개인 휴대폰`() = settingsSnapshot(
+        "W5c2-settings-vehicle-personal-phone",
+        SettingsGroup.VEHICLE,
+        com.wemade.teslamacro.data.settings.DeviceRole.PERSONAL_PHONE,
+    )
+
+    @Test
     fun `W5d 설정 - 기기`() = settingsSnapshot("W5d-settings-device", SettingsGroup.DEVICE)
 
     /** 값이 다 들어찬 설정 화면 한 칸. 빈 상태만 찍으면 글자가 잘리는 걸 못 잡는다 */
-    private fun settingsSnapshot(name: String, group: SettingsGroup) {
+    private fun settingsSnapshot(
+        name: String,
+        group: SettingsGroup,
+        deviceRole: com.wemade.teslamacro.data.settings.DeviceRole =
+            com.wemade.teslamacro.data.settings.DeviceRole.CAR_TABLET,
+    ) {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
@@ -136,6 +148,7 @@ class WideScreenshotTest {
                         vin = "5YJS0000000000000",
                         vehicleName = "내 테슬라",
                         vehicleAddress = "AA:BB:CC:DD:EE:FF",
+                        deviceRole = deviceRole,
                         hudOverlay = true,
                         safeDrive = true,
                         autoStartNavigatorSafeDrive = true,

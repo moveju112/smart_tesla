@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.data.poll
 
 import com.wemade.teslamacro.data.macro.RuleStore
+import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.settings.DeviceRole
 import com.wemade.teslamacro.data.settings.SettingsStore
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
@@ -60,6 +62,16 @@ class StatePoller(
 
     @Volatile
     private var vehiclePowerConnected = false
+
+    /** 차량용 태블릿은 전원 상승 뒤 첫 상태 확인까지만 탑승 미확인 연결을 빌린다. */
+    private val vehiclePowerWakePending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 사용자가 끊기 버튼을 누르면 다음 명시적 사용 전까지 자동 재연결을 막는다. */
+    private val manualConnectionPause = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 같은 연결 정책을 폴링마다 반복 기록하지 않기 위한 마지막 판정값 */
+    @Volatile
+    private var lastConnectionDecision: VehicleConnectionDecision? = null
 
     @Volatile
     private var appVisibleUntil = 0L
@@ -167,7 +179,7 @@ class StatePoller(
 
             // 기본 보호 모드에서는 사람이 앱·명령·매크로를 쓰지 않는 빈 차와 인증 연결을
             // 유지하지 않는다. 공식 휴대폰 키가 유일한 근접 키로 판정될 여지를 남긴다
-            if (!shouldKeepConnection(settings.protectPhoneKey)) {
+            if (!shouldKeepConnection(settings)) {
                 enforceConnectionGuard()
                 sleep(NORMAL_POLL_SECONDS * 1000L)
                 continue
@@ -339,6 +351,11 @@ class StatePoller(
             val observedPresence = fresh
                 ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
                 ?.isUserPresent
+            // 전원 상승은 첫 VCSEC 응답까지만 연결 사유다. 응답 뒤에도 탑승이 확인되지
+            // 않았으면 다음 사이클에서 GATT를 놓아 충전 전원만으로 빈 차에 붙어 있지 않는다.
+            if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true) {
+                vehiclePowerWakePending.set(false)
+            }
             // 보호 모드는 전원 해제 때 하차(false)를 읽지 않고 곧바로 GATT를 놓는다.
             // 충분히 오래 꺼졌다 다시 켜진 세션은 직전 true를 이어 쓰지 않아야
             // 첫 응답 true도 새 탑승으로 판정된다. 짧은 전원 출렁임은 이 표식을 만들지 않는다
@@ -352,7 +369,9 @@ class StatePoller(
                 boardingChannel.trySend(Unit)
             }
 
-            if (settings.automationEnabled) {
+            // 개인 휴대폰은 백그라운드 자동화 주체가 아니다. 같은 룰을 태블릿과 폰이
+            // 동시에 발동하면 명령이 중복되고, 긴 대기 동안 폰이 차량 근접 키로 남는다.
+            if (settings.automationEnabled && settings.deviceRole == DeviceRole.CAR_TABLET) {
                 engine.evaluate(
                     rules = ruleStore.rules.value,
                     previous = evaluationPrevious,
@@ -426,8 +445,13 @@ class StatePoller(
 
     /** 차량 USB 전원 상태를 연결 정책에 반영한다. */
     fun setVehiclePowerConnected(connected: Boolean, endAppSession: Boolean = false) {
+        val wasConnected = vehiclePowerConnected
         vehiclePowerConnected = connected
         if (connected) {
+            if (!wasConnected) {
+                vehiclePowerWakePending.set(true)
+                manualConnectionPause.set(false)
+            }
             val disconnectedAt = vehiclePowerDisconnectedAt.getAndSet(0L)
             val connectedAt = now()
             if (startsNewVehicleSession(disconnectedAt, connectedAt)) {
@@ -441,6 +465,7 @@ class StatePoller(
                 )
             }
         } else {
+            vehiclePowerWakePending.set(false)
             // 동일한 해제 방송이 반복돼도 최초 시각을 지킨다. 매번 갱신하면 실제 하차가
             // 오래 이어져도 마지막 방송 기준 10분을 못 채워 다음 탑승을 놓칠 수 있다
             vehiclePowerDisconnectedAt.compareAndSet(0L, now())
@@ -453,12 +478,14 @@ class StatePoller(
 
     /** 앱을 연 직후에는 조회·수동 명령을 위해 짧게 연결을 허용한다. */
     fun setAppVisible(visible: Boolean) {
+        if (visible) manualConnectionPause.set(false)
         appVisibleUntil = if (visible) now() + APP_CONNECTION_WINDOW_MILLIS else 0L
         nudge()
     }
 
     /** 화면 밖의 단발 명령이 연결을 쓰는 동안 보호 해제를 잠시 미룬다. */
     fun beginCommandConnection() {
+        manualConnectionPause.set(false)
         commandConnections.incrementAndGet()
         nudge()
     }
@@ -473,22 +500,56 @@ class StatePoller(
     /** 보호 모드가 연결을 허용하지 않는 상태면 GATT를 즉시 끊는다. */
     suspend fun enforceConnectionGuard() {
         val settings = settingsStore.settings.first()
-        if (shouldKeepConnection(settings.protectPhoneKey)) return
+        val decision = connectionDecision(settings)
+        logConnectionDecision(decision)
+        if (decision.keep) return
         if (gateway.linkState.value !is LinkState.Idle) {
-            com.wemade.teslable.DiagLog.add("휴대폰 키 간섭 방지 — 차량 BLE 연결 해제")
+            com.wemade.teslable.DiagLog.add("차량 BLE 연결 해제 — ${decision.reason.label}")
             gateway.disconnect()
         }
     }
 
+    /** 사용자가 강제 종료하지 않아도 다음 명시적 사용 전까지 자동 연결을 멈춘다. */
+    suspend fun disconnectUntilNextUse() {
+        manualConnectionPause.set(true)
+        vehiclePowerWakePending.set(false)
+        val decision = connectionDecision(settingsStore.settings.first())
+        logConnectionDecision(decision)
+        com.wemade.teslable.DiagLog.add(
+            "사용자 요청 — 실행 중 매크로를 멈추고 차량 BLE를 다음 사용까지 일시정지"
+        )
+        if (gateway.linkState.value !is LinkState.Idle) gateway.disconnect()
+        nudge()
+    }
+
     /** 현재 연결을 필요로 하는 실제 사용자가 하나라도 있는지 판정한다. */
-    private fun shouldKeepConnection(protectPhoneKey: Boolean): Boolean =
-        shouldKeepVehicleConnection(
-            protectPhoneKey = protectPhoneKey,
+    private fun shouldKeepConnection(settings: AppSettings): Boolean {
+        val decision = connectionDecision(settings)
+        logConnectionDecision(decision)
+        return decision.keep
+    }
+
+    /** 현재 기기 역할과 차량 상태를 순수 연결 판정 입력으로 모은다. */
+    private fun connectionDecision(settings: AppSettings): VehicleConnectionDecision =
+        decideVehicleConnection(
+            deviceRole = settings.deviceRole,
+            protectPhoneKey = settings.protectPhoneKey,
             vehiclePowerConnected = vehiclePowerConnected,
+            vehiclePowerWakePending = vehiclePowerWakePending.get(),
+            vehicleUserPresent = _snapshot.value.isUserPresent,
             appVisible = now() < appVisibleUntil,
             commandActive = commandConnections.get() > 0,
             macroRunning = runner.running.value.isNotEmpty(),
+            manuallyPaused = manualConnectionPause.get(),
         )
+
+    /** 연결 사유가 바뀐 순간만 남겨 실차 로그에서 유지 주체를 바로 찾게 한다. */
+    private fun logConnectionDecision(decision: VehicleConnectionDecision) {
+        if (decision == lastConnectionDecision) return
+        lastConnectionDecision = decision
+        val state = if (decision.keep) "유지" else "대기"
+        com.wemade.teslable.DiagLog.add("차량 BLE 정책 — $state · ${decision.reason.label}")
+    }
 
     /** 자고 있는 폴러를 지금 깨운다. 돌고 있는 중이면 다음 잠만 짧아질 뿐 부작용 없다 */
     fun nudge() {
@@ -699,15 +760,53 @@ class StatePoller(
     }
 }
 
-/** 휴대폰 키 보호와 차량 연결 사용 사유를 한곳에서 판정한다. */
-internal fun shouldKeepVehicleConnection(
+/** 연결을 유지하거나 놓는 정확한 이유. 진단 로그와 단위 테스트가 같은 판정을 공유한다. */
+internal enum class VehicleConnectionReason(val keep: Boolean, val label: String) {
+    USER_PAUSED(false, "사용자가 다음 사용까지 일시정지"),
+    PHONE_IDLE(false, "개인 휴대폰 백그라운드"),
+    TABLET_EMPTY(false, "차량 전원은 있으나 빈 차 확인"),
+    TABLET_UNCONFIRMED(false, "차량 전원은 있으나 탑승 미확인"),
+    NO_ACTIVE_USE(false, "차량 전원·앱·명령·매크로 사용 없음"),
+    DIRECT_COMMAND(true, "직접 명령 실행 중"),
+    APP_VISIBLE(true, "앱 화면 사용 중"),
+    MACRO_RUNNING(true, "차량 태블릿 매크로 실행 중"),
+    PROTECTION_DISABLED(true, "휴대폰 키 간섭 방지 꺼짐"),
+    TABLET_RIDE(true, "차량 태블릿 전원 상승 또는 탑승 확인"),
+}
+
+/** 연결 유지 여부와 로그 사유를 함께 반환한다. */
+internal data class VehicleConnectionDecision(val reason: VehicleConnectionReason) {
+    val keep: Boolean get() = reason.keep
+}
+
+/** 기기 역할과 실제 사용 사유를 한곳에서 판정한다. */
+internal fun decideVehicleConnection(
+    deviceRole: DeviceRole,
     protectPhoneKey: Boolean,
     vehiclePowerConnected: Boolean,
+    vehiclePowerWakePending: Boolean,
+    vehicleUserPresent: Boolean?,
     appVisible: Boolean,
     commandActive: Boolean,
     macroRunning: Boolean,
-): Boolean =
-    !protectPhoneKey || vehiclePowerConnected || appVisible || commandActive || macroRunning
+    manuallyPaused: Boolean,
+): VehicleConnectionDecision = VehicleConnectionDecision(
+    when {
+        manuallyPaused -> VehicleConnectionReason.USER_PAUSED
+        commandActive -> VehicleConnectionReason.DIRECT_COMMAND
+        appVisible -> VehicleConnectionReason.APP_VISIBLE
+        // 휴대폰은 충전 케이블·자동 매크로·보호 해제 설정을 연결 사유로 쓰지 않는다.
+        // 이 역할을 고른 목적이 공식 휴대폰 키의 이탈 잠금을 방해하지 않는 것이기 때문이다.
+        deviceRole == DeviceRole.PERSONAL_PHONE -> VehicleConnectionReason.PHONE_IDLE
+        macroRunning -> VehicleConnectionReason.MACRO_RUNNING
+        !protectPhoneKey -> VehicleConnectionReason.PROTECTION_DISABLED
+        vehiclePowerConnected && (vehiclePowerWakePending || vehicleUserPresent == true) ->
+            VehicleConnectionReason.TABLET_RIDE
+        vehiclePowerConnected && vehicleUserPresent == false -> VehicleConnectionReason.TABLET_EMPTY
+        vehiclePowerConnected -> VehicleConnectionReason.TABLET_UNCONFIRMED
+        else -> VehicleConnectionReason.NO_ACTIVE_USE
+    }
+)
 
 /** 전원이 충분히 오래 끊겼다가 돌아왔으면 새 탑승 세션으로 시작한다. */
 internal fun startsNewVehicleSession(

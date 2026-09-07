@@ -16,6 +16,18 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
 
+/** 이 설치본이 차량에 상주하는 태블릿인지, 사용자가 들고 다니는 휴대폰인지 구분한다. */
+enum class DeviceRole(val label: String) {
+    CAR_TABLET("차량 태블릿"),
+    PERSONAL_PHONE("개인 휴대폰");
+
+    companion object {
+        /** 저장값이 없거나 깨졌으면 기존 설치 동작을 보존하는 차량 태블릿으로 돌아간다. */
+        fun of(name: String?): DeviceRole =
+            entries.firstOrNull { it.name == name } ?: CAR_TABLET
+    }
+}
+
 /** 앱 설정. */
 data class AppSettings(
     val vin: String = "",
@@ -23,6 +35,8 @@ data class AppSettings(
     val automationEnabled: Boolean = true,
     /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
     val protectPhoneKey: Boolean = true,
+    /** 휴대폰 설치본이 차량 전원과 자동화 때문에 백그라운드 연결하지 않도록 하는 기기별 역할 */
+    val deviceRole: DeviceRole = DeviceRole.CAR_TABLET,
     /**
      * 키 등록까지 끝났는지.
      *
@@ -77,6 +91,7 @@ class SettingsStore(private val context: Context) {
             vin = prefs[KeyVin] ?: "",
             automationEnabled = prefs[KeyAutomation] ?: true,
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
+            deviceRole = DeviceRole.of(prefs[KeyDeviceRole]),
             isEnrolled = prefs[KeyEnrolled] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
@@ -99,6 +114,8 @@ class SettingsStore(private val context: Context) {
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     suspend fun setProtectPhoneKey(enabled: Boolean) = edit { it[KeyProtectPhoneKey] = enabled }
+    /** 태블릿과 휴대폰마다 달라야 하므로 이 설치본에만 기기 역할을 저장한다. */
+    suspend fun setDeviceRole(role: DeviceRole) = edit { it[KeyDeviceRole] = role.name }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     suspend fun setStealthCharging(enabled: Boolean) = edit { it[KeyStealthCharging] = enabled }
@@ -143,6 +160,7 @@ class SettingsStore(private val context: Context) {
     suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
         it[KeyAutomation] = backup.automationEnabled
         it[KeyProtectPhoneKey] = backup.protectPhoneKey
+        // 기기 역할은 일부러 복원하지 않는다 — 휴대폰 백업이 차량 태블릿 역할을 바꾸면 안 된다.
         it[KeyStealthCharging] = backup.stealthCharging
         // 옛 백업(version 1)엔 아래 값이 없다 — 그때는 BackupSettings의 기본값이 들어온다.
         // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
@@ -205,6 +223,7 @@ class SettingsStore(private val context: Context) {
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
         val KeyAutomation = booleanPreferencesKey("automation_enabled")
         val KeyProtectPhoneKey = booleanPreferencesKey("protect_phone_key")
+        val KeyDeviceRole = stringPreferencesKey("device_role")
         val KeyEnrolled = booleanPreferencesKey("enrolled")
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")

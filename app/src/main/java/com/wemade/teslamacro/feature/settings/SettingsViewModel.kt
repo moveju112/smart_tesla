@@ -7,6 +7,7 @@ import com.wemade.teslamacro.data.backup.BackupFile
 import com.wemade.teslamacro.data.backup.toBackup
 import com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.settings.DeviceRole
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.di.AppContainer
@@ -52,6 +53,24 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             container.settingsStore.setProtectPhoneKey(enabled)
             if (enabled) container.poller.enforceConnectionGuard() else container.poller.nudge()
         }
+    }
+
+    /** 이 설치본의 역할을 저장하고 바뀐 연결 정책을 즉시 적용한다. */
+    fun setDeviceRole(role: DeviceRole) {
+        viewModelScope.launch {
+            container.settingsStore.setDeviceRole(role)
+            com.wemade.teslable.DiagLog.add("기기 역할 변경 — ${role.label}")
+            if (role == DeviceRole.PERSONAL_PHONE) {
+                container.poller.enforceConnectionGuard()
+            } else {
+                container.poller.nudge()
+            }
+        }
+    }
+
+    /** 강제 종료 대신 실행 중 작업을 정리하고 인증 BLE를 한 번에 놓는다. */
+    fun disconnectVehicle() {
+        com.wemade.teslamacro.service.MacroService.disconnectVehicle(container.appContext)
     }
 
     // ---- 업데이트 ----

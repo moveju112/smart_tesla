@@ -24,6 +24,7 @@ import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.nav.forAutomaticStart
+import com.wemade.teslamacro.data.settings.DeviceRole
 import com.wemade.teslamacro.domain.command.confirmCategory
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -37,8 +38,8 @@ import kotlinx.coroutines.launch
 /**
  * 매크로 감시를 화면 밖에서도 계속 돌리는 포그라운드 서비스.
  *
- * 태블릿은 차에 상시 거치되므로 앱이 백그라운드로 가도 폴링이 끊기면 안 된다.
- * connectedDevice 타입이라 BLE 연결을 유지할 수 있다.
+ * 차량 태블릿은 백그라운드 자동화를 감시하고, 개인 휴대폰은 사용자가 앱이나
+ * 직접 명령을 연 동안만 연결한다. connectedDevice 타입은 두 역할의 명시적 연결에 쓴다.
  */
 class MacroService : LifecycleService() {
 
@@ -205,6 +206,7 @@ class MacroService : LifecycleService() {
             app.ready.first { it }
             app.container.poller.boardingEvents.collect {
                 val settings = app.container.settingsStore.settings.first()
+                if (settings.deviceRole != DeviceRole.CAR_TABLET) return@collect
                 if (!settings.autoStartNavigatorSafeDrive) return@collect
 
                 val navigatorApp = NavigatorApp.of(settings.navigatorApp)
@@ -233,23 +235,32 @@ class MacroService : LifecycleService() {
         override fun onReceive(context: Context, intent: Intent) {
             val app = application as? TeslaMacroApplication ?: return
             if (!app.ready.value) return
-            when (intent.action) {
-                // 시동 = 차가 깼다. 낡은 화면으로 사람을 맞이하지 않는다
-                Intent.ACTION_POWER_CONNECTED -> {
-                    com.wemade.teslable.DiagLog.add("차량 전원 연결 — 즉시 상태 확인")
-                    app.container.poller.setVehiclePowerConnected(true)
-                }
-                // 시동이 꺼지면 공식 휴대폰 키만 남도록 앱의 인증 BLE를 바로 놓는다
-                Intent.ACTION_POWER_DISCONNECTED -> {
-                    com.wemade.teslable.DiagLog.add("차량 전원 끊김 — 휴대폰 키 보호 확인")
-                    app.container.poller.setVehiclePowerConnected(false, endAppSession = true)
-                    lifecycleScope.launch { app.container.poller.enforceConnectionGuard() }
+            lifecycleScope.launch {
+                val role = app.container.settingsStore.settings.first().deviceRole
+                when (intent.action) {
+                    // 태블릿은 시동 신호로 즉시 확인하고, 휴대폰 충전은 연결 사유로 쓰지 않는다.
+                    Intent.ACTION_POWER_CONNECTED -> {
+                        com.wemade.teslable.DiagLog.add(
+                            if (role == DeviceRole.CAR_TABLET) {
+                                "차량 전원 연결 — 탑승 상태 즉시 확인"
+                            } else {
+                                "기기 충전 연결 — 개인 휴대폰 모드라 차량 연결 사유에서 제외"
+                            }
+                        )
+                        app.container.poller.setVehiclePowerConnected(true)
+                    }
+                    // 전원이 끊기면 공식 휴대폰 키만 남도록 인증 BLE를 바로 놓는다.
+                    Intent.ACTION_POWER_DISCONNECTED -> {
+                        com.wemade.teslable.DiagLog.add("기기 전원 끊김 — 차량 BLE 보호 확인")
+                        app.container.poller.setVehiclePowerConnected(false, endAppSession = true)
+                        app.container.poller.enforceConnectionGuard()
+                    }
                 }
             }
         }
     }
 
-    /** 서비스 시작 시 현재 USB 전원 상태를 읽어 첫 연결부터 보호 정책을 지킨다. */
+    /** 서비스 시작 시 현재 외부 전원을 읽되, 차량 신호로 쓸지는 기기 역할이 정한다. */
     private fun isExternalPowerConnected(): Boolean {
         val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         return (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
@@ -314,6 +325,8 @@ class MacroService : LifecycleService() {
             }
 
             ACTION_CANCEL_SAFE_DRIVE_TEST -> cancelSafeDriveTest()
+
+            ACTION_DISCONNECT_VEHICLE -> disconnectVehicleNow()
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -441,6 +454,16 @@ class MacroService : LifecycleService() {
         Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
     }
 
+    /** 설정 버튼과 감시 알림이 같은 경로로 매크로를 멈추고 BLE를 놓는다. */
+    private fun disconnectVehicleNow() {
+        lifecycleScope.launch {
+            val app = application as TeslaMacroApplication
+            app.ready.first { it }
+            app.container.runner.cancelAll()
+            app.container.poller.disconnectUntilNextUse()
+        }
+    }
+
     /**
      * 포그라운드로 승격한다.
      *
@@ -509,10 +532,23 @@ class MacroService : LifecycleService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val disconnectVehicle = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, MacroService::class.java).setAction(ACTION_DISCONNECT_VEHICLE),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.service_title))
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(openApp)
+            .addAction(
+                Notification.Action.Builder(
+                    null,
+                    "차량 연결 끊기",
+                    disconnectVehicle,
+                ).build()
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
@@ -528,6 +564,8 @@ class MacroService : LifecycleService() {
             "com.wemade.teslamacro.action.SCHEDULE_SAFE_DRIVE_TEST"
         private const val ACTION_CANCEL_SAFE_DRIVE_TEST =
             "com.wemade.teslamacro.action.CANCEL_SAFE_DRIVE_TEST"
+        private const val ACTION_DISCONNECT_VEHICLE =
+            "com.wemade.teslamacro.action.DISCONNECT_VEHICLE"
         private const val EXTRA_SAFE_DRIVE_TEST_DELAY = "safe_drive_test_delay"
 
         /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
@@ -559,6 +597,13 @@ class MacroService : LifecycleService() {
         fun cancelSafeDriveTest(context: Context) {
             context.startForegroundService(
                 Intent(context, MacroService::class.java).setAction(ACTION_CANCEL_SAFE_DRIVE_TEST),
+            )
+        }
+
+        /** 앱 화면과 알림에서 강제 종료 없이 인증 BLE를 즉시 놓는다. */
+        fun disconnectVehicle(context: Context) {
+            context.startForegroundService(
+                Intent(context, MacroService::class.java).setAction(ACTION_DISCONNECT_VEHICLE),
             )
         }
 

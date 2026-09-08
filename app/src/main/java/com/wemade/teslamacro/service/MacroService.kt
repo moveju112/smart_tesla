@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.Build
+import android.os.PowerManager
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
@@ -23,6 +24,7 @@ import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.nav.NavigatorApp
+import com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
 import com.wemade.teslamacro.data.nav.forAutomaticStart
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.domain.command.confirmCategory
@@ -32,14 +34,20 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 
 /**
  * 매크로 감시를 화면 밖에서도 계속 돌리는 포그라운드 서비스.
  *
  * 거치 모드는 백그라운드 자동화를 감시하고, 휴대 모드는 앱·직접 명령과 자동 안심운전
- * 탑승 확인 1회만 연결한다. connectedDevice 타입은 두 모드의 명시적 연결에 쓴다.
+ * 탑승 확인 창 동안만 연결한다. connectedDevice 타입은 두 모드의 명시적 연결에 쓴다.
  */
 class MacroService : LifecycleService() {
+
+    private var safeDriveTestJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -213,6 +221,7 @@ class MacroService : LifecycleService() {
                             "탑승 자동 실행은 ${automaticLaunchMode.label} 통로 1회만 사용"
                     )
                 }
+                app.container.navigator.logSafeDriveState("탑승 자동 실행", navigatorApp, automaticLaunchMode)
                 app.container.navigator.startSafeDrive(
                     app = navigatorApp,
                     launchMode = automaticLaunchMode,
@@ -235,13 +244,13 @@ class MacroService : LifecycleService() {
                 val mode = settings.deviceMode
                 when (intent.action) {
                     // 거치 기기는 전원 상승을 시동 신호로 쓰고, 휴대 기기는 자동 안심운전이
-                    // 켜진 경우에만 실제 차량 탑승인지 확인하는 1회 연결을 빌린다.
+                    // 켜진 경우에만 최대 60초 동안 실제 차량 탑승을 확인한다.
                     Intent.ACTION_POWER_CONNECTED -> {
                         com.wemade.teslable.DiagLog.add(
                             if (mode == DeviceMode.MOUNTED) {
                                 "차량 전원 연결 — 탑승 상태 즉시 확인"
                             } else if (settings.autoStartNavigatorSafeDrive) {
-                                "기기 충전 연결 — 휴대 모드 안심운전 탑승 확인 1회"
+                                "기기 충전 연결 — 휴대 모드 안심운전 탑승 확인 (최대 60초)"
                             } else {
                                 "기기 충전 연결 — 휴대 모드라 차량 연결 사유에서 제외"
                             }
@@ -320,8 +329,64 @@ class MacroService : LifecycleService() {
             }
 
             ACTION_DISCONNECT_VEHICLE -> disconnectVehicleNow()
+            ACTION_TEST_SAFE_DRIVE -> beginSafeDriveTest()
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /** 화면을 잠글 시간을 남기고 서비스에서 실행해 설정 화면의 전면 실행과 구분한다. */
+    private fun beginSafeDriveTest() {
+        if (safeDriveTestJob?.isActive == true) {
+            com.wemade.teslable.DiagLog.add("안심운전 잠금 테스트 — 이전 예약 취소 후 교체")
+        }
+        safeDriveTestJob?.cancel()
+        safeDriveTestJob = lifecycleScope.launch {
+            var wakeLock: PowerManager.WakeLock? = null
+            try {
+                // 화면은 켜지 않고 예약 대기·전달 동안만 CPU 절전 지연을 막는다.
+                wakeLock = getSystemService(PowerManager::class.java)
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:safeDriveTest")
+                    .apply { setReferenceCounted(false) }
+                wakeLock.acquire(SAFE_DRIVE_TEST_TIMEOUT_MILLIS)
+                withTimeout(SAFE_DRIVE_TEST_TIMEOUT_MILLIS) {
+                    val app = application as TeslaMacroApplication
+                    app.ready.first { it }
+                    val prepared = app.container.settingsStore.settings.first()
+                    app.container.navigator.logSafeDriveState(
+                        "잠금 테스트 준비 · 10초 뒤 실행 · 홈 전환 끔",
+                        NavigatorApp.of(prepared.navigatorApp),
+                        SafeDriveLaunchMode.of(prepared.navigatorSafeDriveLaunchMode),
+                    )
+                    delay(SAFE_DRIVE_TEST_DELAY_MILLIS)
+                    // 예약 뒤 바꾼 설정도 실제 실행 직전에 다시 읽어 선택한 단독 통로를 검증한다.
+                    val settings = app.container.settingsStore.settings.first()
+                    val navigatorApp = NavigatorApp.of(settings.navigatorApp)
+                    val launchMode = SafeDriveLaunchMode.of(settings.navigatorSafeDriveLaunchMode)
+                    app.container.navigator.logSafeDriveState("잠금 테스트 실행", navigatorApp, launchMode)
+                    app.container.navigator.startSafeDrive(
+                        app = navigatorApp,
+                        launchMode = launchMode,
+                        returnHomeAfterStart = false,
+                    ).onSuccess {
+                        com.wemade.teslable.DiagLog.add(
+                            "${navigatorApp.label} 잠금 테스트 요청 완료 — 방식=${launchMode.label} · " +
+                                "실제 안심운전 시작은 화면·음성으로 확인",
+                        )
+                    }.onFailure { error ->
+                        com.wemade.teslable.DiagLog.add(
+                            "${navigatorApp.label} 잠금 테스트 요청 실패 — ${error.message}",
+                        )
+                    }
+                }
+            } catch (error: CancellationException) {
+                com.wemade.teslable.DiagLog.add("안심운전 잠금 테스트 취소 — ${error.message}")
+                throw error
+            } catch (error: Exception) {
+                com.wemade.teslable.DiagLog.add("안심운전 잠금 테스트 실패 — ${error.message}")
+            } finally {
+                wakeLock?.let { lock -> if (lock.isHeld) lock.release() }
+            }
+        }
     }
 
     /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
@@ -448,6 +513,7 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        safeDriveTestJob?.cancel()
         overlay.hide()
         runCatching { (application as TeslaMacroApplication).container.safeDrive.stop() }
         runCatching { unregisterReceiver(powerReceiver) }
@@ -508,6 +574,10 @@ class MacroService : LifecycleService() {
             "com.wemade.teslamacro.action.RUN_QUICK_ACTION"
         private const val ACTION_DISCONNECT_VEHICLE =
             "com.wemade.teslamacro.action.DISCONNECT_VEHICLE"
+        private const val ACTION_TEST_SAFE_DRIVE =
+            "com.wemade.teslamacro.action.TEST_SAFE_DRIVE"
+        private const val SAFE_DRIVE_TEST_DELAY_MILLIS = 10_000L
+        private const val SAFE_DRIVE_TEST_TIMEOUT_MILLIS = 30_000L
 
         /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
         private const val UPDATE_CHANNEL_ID = "update_available"
@@ -515,6 +585,13 @@ class MacroService : LifecycleService() {
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, MacroService::class.java))
+        }
+
+        /** 사용자 테스트 요청을 화면 수명과 독립적인 기존 포그라운드 서비스로 넘긴다. */
+        fun scheduleSafeDriveTest(context: Context) {
+            context.startForegroundService(
+                Intent(context, MacroService::class.java).setAction(ACTION_TEST_SAFE_DRIVE),
+            )
         }
 
         /** 숨은 바로가기 화면에서 받은 요청을 포그라운드 서비스에 안전하게 넘긴다. */

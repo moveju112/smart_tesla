@@ -470,6 +470,8 @@ data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
+    val onSafeDriveTest: () -> Unit = {},
+    val safeDriveTestMessage: String? = null,
     val onReturnHomeAfterSafeDriveChange: (Boolean) -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
@@ -568,6 +570,20 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                     .of(settings.navigatorSafeDriveLaunchMode)
                     .settingValue,
                 onSelect = controls.onSafeDriveLaunchModeChange,
+            )
+            Spacer(Modifier.height(Space.sm))
+            TButton(
+                text = "10초 뒤 실행 점검",
+                tone = ButtonTone.Secondary,
+                enabled = controls.overlayPermitted,
+                onClick = controls.onSafeDriveTest,
+            )
+            Text(
+                text = controls.safeDriveTestMessage
+                    ?: "누른 뒤 화면을 잠가 주세요.\n선택한 방식으로 실행하며 홈 전환은 생략해요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkMuted,
+                modifier = Modifier.padding(top = Space.xs),
             )
             Spacer(Modifier.height(Space.md))
             Hairline()

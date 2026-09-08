@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.nav
 
 import android.app.ActivityOptions
+import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,7 @@ import android.location.Geocoder
 import android.net.Uri
 import android.provider.Settings
 import android.os.Build
+import android.os.PowerManager
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
@@ -20,6 +22,8 @@ import com.wemade.teslamacro.domain.macro.GeoPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 
 /**
@@ -34,7 +38,7 @@ private const val WINDOW_ATTACH_MILLIS = 500L
 /** 화면 전환 판정이 끝날 때까지 실행 창을 유지하는 시간 */
 private const val WINDOW_KEEP_MILLIS = 1_000L
 
-/** 네이버 지도가 안심운전을 붙일 시간을 준 뒤 홈 화면으로 전환한다 */
+/** 실행 요청 뒤 홈 전환까지의 고정 대기 — 안심운전 시작 완료를 확인하는 시간은 아니다. */
 private const val HOME_RETURN_DELAY_MILLIS = 3_000L
 
 /** 진단 때 같은 내비 URI를 전달하는 서로 다른 Android 실행 통로 */
@@ -92,6 +96,9 @@ private const val DIAGNOSTIC_ATTEMPT_GAP_MILLIS = 2_000L
 
 class NaverNavigator(private val context: Context) {
 
+    // 전체 진단 중 자동 탑승 요청이 끼어들면 성공 통로를 구분할 수 없다.
+    private val safeDriveLaunchMutex = Mutex()
+
     /** 권한이 이미 있는가. 편집 화면이 안내 문구를 띄울지 판단할 때 쓴다 */
     val hasOverlayPermission: Boolean get() = Settings.canDrawOverlays(context)
 
@@ -135,32 +142,54 @@ class NaverNavigator(private val context: Context) {
         launchMode: SafeDriveLaunchMode = SafeDriveLaunchMode.DEFAULT,
         returnHomeAfterStart: Boolean = false,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            if (!hasOverlayPermission) {
-                error("'다른 앱 위에 표시' 권한이 없어요.\n설정 → 주행에서 허용해 주세요")
-            }
-            val packageName = installedPackage(app)
-                ?: error("${app.label} 앱이 설치되어 있지 않아요")
-            val uri = app.safeDriveUri(context.packageName)
-                ?: error("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
+        safeDriveLaunchMutex.withLock {
+            runCatching {
+                logSafeDriveState("실행 시작", app, launchMode)
+                if (!hasOverlayPermission) {
+                    error("'다른 앱 위에 표시' 권한이 없어요.\n설정 → 주행에서 허용해 주세요")
+                }
+                val packageName = installedPackage(app)
+                    ?: error("${app.label} 앱이 설치되어 있지 않아요")
+                val uri = app.safeDriveUri(context.packageName)
+                    ?: error("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
 
-            val intents = safeDriveIntents(app, packageName, uri)
-            if (launchMode == SafeDriveLaunchMode.ALL) {
-                launchSafeDriveForDiagnostics(app.label, intents)
-            } else {
-                launchFirst(
-                    app.label,
-                    intents,
-                    backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
-                    returnHomeAfterStart,
-                )
-            }
-            com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
-        }.recoverCatching { throwable ->
-            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
-            throw throwable
-        }.map { }
+                val intents = safeDriveIntents(app, packageName, uri)
+                if (launchMode == SafeDriveLaunchMode.ALL) {
+                    launchSafeDriveForDiagnostics(app.label, intents)
+                } else {
+                    launchFirst(
+                        app.label,
+                        intents,
+                        backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
+                        returnHomeAfterStart,
+                    )
+                }
+                com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
+            }.recoverCatching { throwable ->
+                if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+                throw throwable
+            }.map { }
+        }
     }
+
+    /** 예약과 실제 전달 때 같은 상태를 기록해야 잠금 조건별 성공 통로를 비교할 수 있다. */
+    fun logSafeDriveState(stage: String, app: NavigatorApp, launchMode: SafeDriveLaunchMode) {
+        com.wemade.teslable.DiagLog.add(
+            "${app.label} 안심운전 $stage — 방식=${launchMode.label} · " +
+                launchEnvironment(installedPackage(app)),
+        )
+    }
+
+    /** 상태 조회 실패가 지도 실행을 막지 않도록 진단 정보만 안전하게 수집한다. */
+    private fun launchEnvironment(packageName: String?): String = runCatching {
+        val power = context.getSystemService(PowerManager::class.java)
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        val version = packageName?.let { context.packageManager.getPackageInfo(it, 0) }
+        "Android=${Build.VERSION.SDK_INT} · 화면켜짐=${power?.isInteractive} · " +
+            "키가드잠금=${keyguard?.isKeyguardLocked} · 기기잠금=${keyguard?.isDeviceLocked} · " +
+            "오버레이권한=$hasOverlayPermission · 대상=${packageName ?: "미설치"} · " +
+            "버전=${version?.versionName ?: "미확인"}"
+    }.getOrElse { "실행 상태 조회 실패=${it.message}" }
 
     /** 설치된 패키지 중 첫 번째. 티맵처럼 패키지가 둘인 앱이 있다 */
     private fun installedPackage(app: NavigatorApp): String? = app.packages.firstOrNull { pkg ->
@@ -236,7 +265,10 @@ class NaverNavigator(private val context: Context) {
             val handled = runCatching {
                 launchFromBackground(intent, appLabel, method, returnHomeAfterStart)
             }
-                .onFailure { lastFailure = it }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    lastFailure = it
+                }
                 .isSuccess
             if (handled) return
         }
@@ -269,6 +301,7 @@ class NaverNavigator(private val context: Context) {
                     )
                 }
                 .onFailure { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
                     lastFailure = error
                     com.wemade.teslable.DiagLog.add(
                         "$appLabel 안심운전 진단 [$traceId] $attempt 실패 — ${error.message}"
@@ -277,7 +310,7 @@ class NaverNavigator(private val context: Context) {
             if (index < methods.lastIndex) delay(DIAGNOSTIC_ATTEMPT_GAP_MILLIS)
         }
         if (!delivered) throw lastFailure ?: IllegalStateException("$appLabel 앱을 열 수 없어요")
-        com.wemade.teslable.DiagLog.add("$appLabel 안심운전 진단 [$traceId] 모든 통로 전달 완료")
+        com.wemade.teslable.DiagLog.add("$appLabel 안심운전 진단 [$traceId] 통로별 시도 종료 — 실제 시작은 화면·음성으로 확인")
     }
 
     /**
@@ -334,7 +367,7 @@ class NaverNavigator(private val context: Context) {
             }
         }
 
-    /** 네이버 실행 성공과 분리해 홈 화면 전환은 실패해도 진단만 남긴다. */
+    /** 지도 실행 요청과 분리해 홈 화면 전환은 실패해도 진단만 남긴다. */
     private fun requestHomeScreen() {
         val homeIntent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_HOME)
@@ -363,6 +396,10 @@ class NaverNavigator(private val context: Context) {
         val resolved = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
             ?: error("$appLabel 앱이 안전운전 주소를 받지 않아요")
         val target = resolved.activityInfo?.name ?: "알 수 없는 화면"
+        com.wemade.teslable.DiagLog.add(
+            "$appLabel 전달 직전 — 방식=${method.logLabel} · " +
+                launchEnvironment(resolved.activityInfo?.packageName),
+        )
 
         if (method == BackgroundLaunchMethod.DIRECT_ACTIVITY) {
             context.startActivity(intent)

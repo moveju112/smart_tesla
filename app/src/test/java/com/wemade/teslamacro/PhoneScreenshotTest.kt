@@ -141,6 +141,28 @@ class PhoneScreenshotTest {
         }
     }
 
+    /** 휴대 화면에서도 실행 방식과 잠금 점검 안내를 읽고 누를 수 있어야 한다. */
+    @Test
+    fun `P7 잠금 실행 점검`() {
+        paparazzi.snapshot("P7-safe-drive-test") {
+            AppFrame(Destination.Settings) {
+                SettingsScreen(
+                    settings = AppSettings(autoStartNavigatorSafeDrive = true),
+                    onAutomationChange = {},
+                    onUnpair = {},
+                    onStartPairing = {},
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {},
+                        onHudOverlayChange = {},
+                        installed = setOf("NAVER"),
+                        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.",
+                    ),
+                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                )
+            }
+        }
+    }
+
     private fun dashboardState() = DashboardUiState(
         link = LinkState.Ready,
         vehicleName = "내 테슬라",

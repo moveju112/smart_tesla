@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 잠금 테스트 예약·전달 30초 동안만 CPU를 유지하며 화면과 잠금은 건드리지 않는다 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 태블릿은 차량에 상시 거치되므로 재부팅 후 자동 복귀시킨다 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

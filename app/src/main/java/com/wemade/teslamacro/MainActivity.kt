@@ -335,6 +335,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         ActivityResultContracts.OpenDocument()
                     ) { uri -> uri?.let(settingsViewModel::importBackup) }
                     val backupMessage by settingsViewModel.backupMessage.collectAsState()
+                    val safeDriveTestMessage by settingsViewModel.safeDriveTestMessage.collectAsState()
 
                     // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
                     val overlayPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
@@ -416,6 +417,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onAppChange = settingsViewModel::setNavigatorApp,
                             onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
                             onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
+                            onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
+                            safeDriveTestMessage = safeDriveTestMessage,
                             onReturnHomeAfterSafeDriveChange =
                                 settingsViewModel::setReturnHomeAfterNavigatorSafeDrive,
                             onHudOverlayChange = settingsViewModel::setHudOverlay,

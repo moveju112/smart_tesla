@@ -97,9 +97,13 @@ data class AppSettings(
     val isReady: Boolean get() = isPaired && isEnrolled
 }
 
-class SettingsStore(private val context: Context) {
+class SettingsStore(
+    context: Context,
+    // 테스트에서는 같은 저장소를 가상 시간 scope로 돌리고, 앱은 기존 기기 저장소를 쓴다.
+    private val store: DataStore<Preferences> = context.dataStore,
+) {
 
-    val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
+    val settings: Flow<AppSettings> = store.data.map { prefs ->
         AppSettings(
             vin = prefs[KeyVin] ?: "",
             automationEnabled = prefs[KeyAutomation] ?: true,
@@ -270,28 +274,28 @@ class SettingsStore(private val context: Context) {
 
     /** 주차 시작 시각과 그때 배터리. 주차 기록이 없으면 null */
     suspend fun parkStart(): Pair<Long, Int?>? {
-        val prefs = context.dataStore.data.first()
+        val prefs = store.data.first()
         val at = prefs[KeyParkedAt] ?: return null
         return at to prefs[KeyParkedBattery]
     }
 
     /** 마지막으로 본 탑승 상태와 본 시각. 남긴 적 없으면 null */
     suspend fun lastPresence(): Pair<Boolean, Long>? {
-        val prefs = context.dataStore.data.first()
+        val prefs = store.data.first()
         val present = prefs[KeyLastPresence] ?: return null
         return present to (prefs[KeyLastPresenceAt] ?: 0L)
     }
 
     /** 저장된 마지막 좌표와 저장 시각. 저장된 적 없으면 null */
     suspend fun lastGeo(): Pair<com.wemade.teslamacro.domain.macro.GeoPoint, Long>? {
-        val prefs = context.dataStore.data.first()
+        val prefs = store.data.first()
         val lat = prefs[KeyLastGeoLat] ?: return null
         val lng = prefs[KeyLastGeoLng] ?: return null
         return com.wemade.teslamacro.domain.macro.GeoPoint(lat, lng) to (prefs[KeyLastGeoAt] ?: 0L)
     }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
-        context.dataStore.edit(block)
+        store.edit(block)
     }
 
     private companion object {

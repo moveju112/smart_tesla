@@ -138,6 +138,15 @@ class WideScreenshotTest {
     @Test
     fun `W5 설정 - 주행`() = settingsSnapshot("W5-settings-driving", SettingsGroup.DRIVING)
 
+    /** 잠금 점검 버튼과 예약 안내를 실제 거치 화면 높이에서 확인한다. */
+    @Test
+    fun `W5e 설정 - 잠금 실행 점검`() = settingsSnapshot(
+        "W5e-settings-safe-drive-test",
+        SettingsGroup.DRIVING,
+        overlayPermitted = true,
+        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.",
+    )
+
     @Test
     fun `W5b 설정 - 자동화`() = settingsSnapshot("W5b-settings-automation", SettingsGroup.AUTOMATION)
 
@@ -168,6 +177,8 @@ class WideScreenshotTest {
         deviceMode: com.wemade.teslamacro.data.settings.DeviceMode =
             com.wemade.teslamacro.data.settings.DeviceMode.MOUNTED,
         batteryUnrestricted: Boolean = false,
+        overlayPermitted: Boolean = false,
+        safeDriveTestMessage: String? = null,
     ) {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings) {
@@ -200,7 +211,8 @@ class WideScreenshotTest {
                         safeDriveAvailable = true,
                         installed = setOf("NAVER", "KAKAO", "TMAP"),
                         // 권한이 빠진 모습이 가장 글자가 많다 — 잘림은 여기서 난다
-                        overlayPermitted = false,
+                        overlayPermitted = overlayPermitted,
+                        safeDriveTestMessage = safeDriveTestMessage,
                         locationPermitted = false,
                     ),
                     initialGroup = group,

@@ -36,8 +36,8 @@ import kotlinx.coroutines.launch
 /**
  * 매크로 감시를 화면 밖에서도 계속 돌리는 포그라운드 서비스.
  *
- * 거치 모드는 백그라운드 자동화를 감시하고, 휴대 모드는 사용자가 앱이나 직접 명령을
- * 연 동안만 연결한다. connectedDevice 타입은 두 모드의 명시적 연결에 쓴다.
+ * 거치 모드는 백그라운드 자동화를 감시하고, 휴대 모드는 앱·직접 명령과 자동 안심운전
+ * 탑승 확인 1회만 연결한다. connectedDevice 타입은 두 모드의 명시적 연결에 쓴다.
  */
 class MacroService : LifecycleService() {
 
@@ -231,13 +231,17 @@ class MacroService : LifecycleService() {
             val app = application as? TeslaMacroApplication ?: return
             if (!app.ready.value) return
             lifecycleScope.launch {
-                val mode = app.container.settingsStore.settings.first().deviceMode
+                val settings = app.container.settingsStore.settings.first()
+                val mode = settings.deviceMode
                 when (intent.action) {
-                    // 거치 기기는 전원 상승을 시동 신호로 쓰고, 휴대 기기의 충전은 무시한다.
+                    // 거치 기기는 전원 상승을 시동 신호로 쓰고, 휴대 기기는 자동 안심운전이
+                    // 켜진 경우에만 실제 차량 탑승인지 확인하는 1회 연결을 빌린다.
                     Intent.ACTION_POWER_CONNECTED -> {
                         com.wemade.teslable.DiagLog.add(
                             if (mode == DeviceMode.MOUNTED) {
                                 "차량 전원 연결 — 탑승 상태 즉시 확인"
+                            } else if (settings.autoStartNavigatorSafeDrive) {
+                                "기기 충전 연결 — 휴대 모드 안심운전 탑승 확인 1회"
                             } else {
                                 "기기 충전 연결 — 휴대 모드라 차량 연결 사유에서 제외"
                             }

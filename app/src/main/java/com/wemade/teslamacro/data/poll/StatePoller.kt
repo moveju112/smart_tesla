@@ -64,7 +64,7 @@ class StatePoller(
     @Volatile
     private var vehiclePowerConnected = false
 
-    /** 차량용 태블릿은 전원 상승 뒤 첫 상태 확인까지만 탑승 미확인 연결을 빌린다. */
+    /** 전원 상승 뒤 거치 모드 또는 휴대 모드 안심운전의 첫 상태 확인까지만 연결을 빌린다. */
     private val vehiclePowerWakePending = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** 사용자가 끊기 버튼을 누르면 다음 명시적 사용 전까지 자동 재연결을 막는다. */
@@ -199,6 +199,7 @@ class StatePoller(
                     // 거쳐 비동기로 복제되므로 여기서 읽으면 성공이 실패로 집계될 수 있다
                     // 붙었으면 바로 읽으러 간다 — 여기서 한 주기를 자면
                     // 연결 후 30초 동안 화면이 비어 있는다 (실차 로그 2026-08-13 15:37)
+                    val connectionReason = connectionDecision(settings).reason
                     if (gateway.connect(settings.vin).isSuccess) {
                         reconnectStrikes = 0
                         // Ready가 flatMapLatest를 타고 복제될 때까지 잠깐 기다린다 —
@@ -207,6 +208,14 @@ class StatePoller(
                             gateway.linkState.first { it is LinkState.Ready }
                         }
                         continue
+                    }
+                    // 휴대 모드의 충전 신호는 차량이 아닐 수도 있다. 안심운전 확인용 연결이
+                    // 실패하면 이번 전원 상승에서는 끝내 일반 충전 중 반복 접속을 막는다.
+                    if (connectionReason == VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK) {
+                        vehiclePowerWakePending.set(false)
+                        com.wemade.teslable.DiagLog.add(
+                            "휴대 모드 안심운전 탑승 확인 실패 — 이번 전원 연결에서는 재시도하지 않음"
+                        )
                     }
                     reconnectStrikes++
                     // 상한 5초 — 차내 상시 전원 태블릿이라 공격적으로 가도 방전 걱정이 없고,
@@ -301,6 +310,19 @@ class StatePoller(
             // 3. 한 번에 묶어 읽는다. 게이트웨이가 응답 크기를 보고 알아서 나눈다
             val result = gateway.readBundle(categories)
             val fresh = result.getOrNull()
+            // 연결됐어도 첫 상태를 못 읽으면 차량 여부를 확인할 수 없다. 휴대 모드는 여기서
+            // 1회 기회를 끝내 일반 충전 중 인증 GATT가 남거나 반복 접속하지 않게 한다.
+            if (settings.deviceMode == DeviceMode.PORTABLE &&
+                settings.autoStartNavigatorSafeDrive &&
+                vehiclePowerWakePending.get() && result.isFailure
+            ) {
+                vehiclePowerWakePending.set(false)
+                com.wemade.teslable.DiagLog.add(
+                    "휴대 모드 안심운전 탑승 상태 확인 실패 — 이번 전원 연결에서는 재시도하지 않음"
+                )
+                enforceConnectionGuard()
+                continue
+            }
             val merged = fresh
                 ?.let { fresh -> merge(_snapshot.value, fresh) }
                 ?.let { withRideMinutes(it) }
@@ -535,6 +557,7 @@ class StatePoller(
         decideVehicleConnection(
             deviceMode = settings.deviceMode,
             protectPhoneKey = settings.protectPhoneKey,
+            autoStartNavigatorSafeDrive = settings.autoStartNavigatorSafeDrive,
             vehiclePowerConnected = vehiclePowerConnected,
             vehiclePowerWakePending = vehiclePowerWakePending.get(),
             vehicleUserPresent = _snapshot.value.isUserPresent,
@@ -777,6 +800,7 @@ internal enum class VehicleConnectionReason(val keep: Boolean, val label: String
     NO_ACTIVE_USE(false, "차량 전원·앱·명령·매크로 사용 없음"),
     DIRECT_COMMAND(true, "직접 명령 실행 중"),
     APP_VISIBLE(true, "앱 화면 사용 중"),
+    PORTABLE_SAFE_DRIVE_CHECK(true, "휴대 모드 안심운전 탑승 확인 1회"),
     STEALTH_CHARGING(true, "스텔스 충전 1회 대기·실행·원복 중"),
     MACRO_RUNNING(true, "거치 모드 매크로 실행 중"),
     PROTECTION_DISABLED(true, "휴대폰 키 간섭 방지 꺼짐"),
@@ -792,6 +816,7 @@ internal data class VehicleConnectionDecision(val reason: VehicleConnectionReaso
 internal fun decideVehicleConnection(
     deviceMode: DeviceMode,
     protectPhoneKey: Boolean,
+    autoStartNavigatorSafeDrive: Boolean,
     vehiclePowerConnected: Boolean,
     vehiclePowerWakePending: Boolean,
     vehicleUserPresent: Boolean?,
@@ -805,6 +830,9 @@ internal fun decideVehicleConnection(
         manuallyPaused -> VehicleConnectionReason.USER_PAUSED
         commandActive -> VehicleConnectionReason.DIRECT_COMMAND
         appVisible -> VehicleConnectionReason.APP_VISIBLE
+        deviceMode == DeviceMode.PORTABLE && autoStartNavigatorSafeDrive &&
+            vehiclePowerConnected && vehiclePowerWakePending ->
+            VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK
         // 휴대 모드는 충전 케이블·자동 매크로·보호 해제 설정을 연결 사유로 쓰지 않는다.
         // 기기 종류가 아니라 들고 나가는 사용 방식이므로 이탈 잠금을 방해하지 않아야 한다.
         deviceMode == DeviceMode.PORTABLE -> VehicleConnectionReason.PORTABLE_IDLE

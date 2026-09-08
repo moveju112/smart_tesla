@@ -76,6 +76,37 @@ class ConnectionGuardTest {
     }
 
     @Test
+    fun `휴대 모드는 자동 안심운전이 켜지면 전원 상승 뒤 탑승 확인을 한 번 허용한다`() {
+        val result = decision(
+            deviceMode = DeviceMode.PORTABLE,
+            autoStartNavigatorSafeDrive = true,
+            vehiclePowerConnected = true,
+            vehiclePowerWakePending = true,
+        )
+        assertEquals(VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK, result.reason)
+    }
+
+    @Test
+    fun `휴대 모드 안심운전은 전원과 미확인 표식이 모두 있어야 연결한다`() {
+        assertEquals(
+            VehicleConnectionReason.PORTABLE_IDLE,
+            decision(
+                deviceMode = DeviceMode.PORTABLE,
+                autoStartNavigatorSafeDrive = true,
+                vehiclePowerConnected = true,
+            ).reason,
+        )
+        assertEquals(
+            VehicleConnectionReason.PORTABLE_IDLE,
+            decision(
+                deviceMode = DeviceMode.PORTABLE,
+                autoStartNavigatorSafeDrive = true,
+                vehiclePowerWakePending = true,
+            ).reason,
+        )
+    }
+
+    @Test
     fun `거치 모드는 스텔스 충전 1회가 끝날 때까지 보호를 잠시 미룬다`() {
         assertEquals(
             VehicleConnectionReason.STEALTH_CHARGING,
@@ -136,6 +167,7 @@ class ConnectionGuardTest {
     private fun decision(
         deviceMode: DeviceMode = DeviceMode.MOUNTED,
         protectPhoneKey: Boolean = true,
+        autoStartNavigatorSafeDrive: Boolean = false,
         vehiclePowerConnected: Boolean = false,
         vehiclePowerWakePending: Boolean = false,
         vehicleUserPresent: Boolean? = null,
@@ -147,6 +179,7 @@ class ConnectionGuardTest {
     ): VehicleConnectionDecision = decideVehicleConnection(
         deviceMode = deviceMode,
         protectPhoneKey = protectPhoneKey,
+        autoStartNavigatorSafeDrive = autoStartNavigatorSafeDrive,
         vehiclePowerConnected = vehiclePowerConnected,
         vehiclePowerWakePending = vehiclePowerWakePending,
         vehicleUserPresent = vehicleUserPresent,

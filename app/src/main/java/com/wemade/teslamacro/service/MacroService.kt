@@ -216,6 +216,7 @@ class MacroService : LifecycleService() {
                 app.container.navigator.startSafeDrive(
                     app = navigatorApp,
                     launchMode = automaticLaunchMode,
+                    returnHomeAfterStart = settings.returnHomeAfterNavigatorSafeDrive,
                 ).onFailure { error ->
                     com.wemade.teslable.DiagLog.add(
                         "${navigatorApp.label} 안심운전 자동 실행 실패 — ${error.message}"

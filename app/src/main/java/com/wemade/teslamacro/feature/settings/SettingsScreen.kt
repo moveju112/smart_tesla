@@ -470,6 +470,7 @@ data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
+    val onReturnHomeAfterSafeDriveChange: (Boolean) -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -567,6 +568,15 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                     .of(settings.navigatorSafeDriveLaunchMode)
                     .settingValue,
                 onSelect = controls.onSafeDriveLaunchModeChange,
+            )
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            ToggleRow(
+                title = "안심운전 후 홈 화면 전환 시도",
+                subtitle = "네이버 지도 실행 3초 뒤 홈 화면을 열어요 · 기기별 확인 필요",
+                checked = settings.returnHomeAfterNavigatorSafeDrive,
+                onCheckedChange = controls.onReturnHomeAfterSafeDriveChange,
             )
         }
     }
@@ -836,6 +846,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
         "내비=${settings.navigatorApp} · HUD 오버레이=${settings.hudOverlay}" +
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
+            " · 안심운전 후 홈=${settings.returnHomeAfterNavigatorSafeDrive}" +
             " · 과속안내=${settings.safeDrive}" +
             " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})",
     )

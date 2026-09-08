@@ -180,6 +180,7 @@ class WideScreenshotTest {
                         hudOverlay = true,
                         safeDrive = true,
                         autoStartNavigatorSafeDrive = true,
+                        returnHomeAfterNavigatorSafeDrive = true,
                     ),
                     onAutomationChange = {},
                     onUnpair = {},

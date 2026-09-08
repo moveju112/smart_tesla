@@ -34,6 +34,9 @@ private const val WINDOW_ATTACH_MILLIS = 500L
 /** 화면 전환 판정이 끝날 때까지 실행 창을 유지하는 시간 */
 private const val WINDOW_KEEP_MILLIS = 1_000L
 
+/** 네이버 지도가 안심운전을 붙일 시간을 준 뒤 홈 화면으로 전환한다 */
+private const val HOME_RETURN_DELAY_MILLIS = 3_000L
+
 /** 진단 때 같은 내비 URI를 전달하는 서로 다른 Android 실행 통로 */
 internal enum class BackgroundLaunchMethod(val logLabel: String) {
     PENDING_INTENT("PendingIntent"),
@@ -130,6 +133,7 @@ class NaverNavigator(private val context: Context) {
     suspend fun startSafeDrive(
         app: NavigatorApp,
         launchMode: SafeDriveLaunchMode = SafeDriveLaunchMode.DEFAULT,
+        returnHomeAfterStart: Boolean = false,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (!hasOverlayPermission) {
@@ -148,6 +152,7 @@ class NaverNavigator(private val context: Context) {
                     app.label,
                     intents,
                     backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
+                    returnHomeAfterStart,
                 )
             }
             com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
@@ -224,10 +229,13 @@ class NaverNavigator(private val context: Context) {
         appLabel: String,
         candidates: List<Intent>,
         method: BackgroundLaunchMethod,
+        returnHomeAfterStart: Boolean = false,
     ) {
         var lastFailure: Throwable? = null
         candidates.forEach { intent ->
-            val handled = runCatching { launchFromBackground(intent, appLabel, method) }
+            val handled = runCatching {
+                launchFromBackground(intent, appLabel, method, returnHomeAfterStart)
+            }
                 .onFailure { lastFailure = it }
                 .isSuccess
             if (handled) return
@@ -290,6 +298,7 @@ class NaverNavigator(private val context: Context) {
         intent: Intent,
         appLabel: String,
         method: BackgroundLaunchMethod,
+        returnHomeAfterStart: Boolean = false,
     ) =
         withContext(Dispatchers.Main) {
             val manager = context.getSystemService(WindowManager::class.java)
@@ -315,11 +324,35 @@ class NaverNavigator(private val context: Context) {
                     error("지도 실행 창이 화면에 붙지 않았어요")
                 }
                 launchExternalActivity(intent, appLabel, method)
-                delay(WINDOW_KEEP_MILLIS)
+                delay(
+                    if (returnHomeAfterStart) HOME_RETURN_DELAY_MILLIS
+                    else WINDOW_KEEP_MILLIS
+                )
+                if (returnHomeAfterStart) requestHomeScreen()
             } finally {
                 runCatching { manager.removeView(anchor) }
             }
         }
+
+    /** 네이버 실행 성공과 분리해 홈 화면 전환은 실패해도 진단만 남긴다. */
+    private fun requestHomeScreen() {
+        val homeIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_HOME)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching {
+            launchExternalActivity(
+                homeIntent,
+                "홈 화면",
+                BackgroundLaunchMethod.DIRECT_ACTIVITY,
+            )
+        }.onSuccess {
+            com.wemade.teslable.DiagLog.add(
+                "안심운전 후 홈 화면 전환 요청 — 화면 전환·안심운전 지속 여부는 별도 확인"
+            )
+        }.onFailure { error ->
+            com.wemade.teslable.DiagLog.add("안심운전 후 홈 화면 전환 실패 — ${error.message}")
+        }
+    }
 
     /** Android 14+가 요구하는 백그라운드 Activity 시작 허용을 명시해 외부 내비에 전달한다. */
     private fun launchExternalActivity(

@@ -76,6 +76,8 @@ data class AppSettings(
     val autoStartNavigatorSafeDrive: Boolean = false,
     /** 안심운전 전체 진단 뒤 통로를 하나씩 고르는 실행 방식 */
     val navigatorSafeDriveLaunchMode: String = "DEFAULT",
+    /** 네이버 지도 실행 뒤 홈 화면으로 돌아가 잠금 해제 후 전면 노출을 줄인다 */
+    val returnHomeAfterNavigatorSafeDrive: Boolean = false,
     /** HUD 속도를 다른 앱 위에 띄울지. 끄면 제어 화면 안에만 나온다 */
     val hudOverlay: Boolean = false,
     /** 과속·구간단속·보호구역 안내. 켜면 주행 중 GPS와 망을 계속 쓴다 */
@@ -119,6 +121,8 @@ class SettingsStore(private val context: Context) {
             // 0.9.20의 켜짐값은 전체 진단으로 이어 받아, 업데이트 뒤 시험 흐름이 끊기지 않게 한다.
             navigatorSafeDriveLaunchMode = prefs[KeyNavigatorSafeDriveLaunchMode]
                 ?: if (prefs[KeyNavigatorSafeDriveDiagnostics] == true) "ALL" else "DEFAULT",
+            returnHomeAfterNavigatorSafeDrive =
+                prefs[KeyReturnHomeAfterNavigatorSafeDrive] ?: false,
             hudOverlay = prefs[KeyHudOverlay] ?: false,
             // 카카오 KNSDK 과금 경로는 공개 버전에서 실행하지 않는다.
             safeDrive = false,
@@ -192,6 +196,10 @@ class SettingsStore(private val context: Context) {
     }
     suspend fun setNavigatorSafeDriveLaunchMode(mode: String) = edit {
         it[KeyNavigatorSafeDriveLaunchMode] = mode
+    }
+    /** 안심운전 실행 뒤 홈 화면 전환 시도 여부를 저장한다. */
+    suspend fun setReturnHomeAfterNavigatorSafeDrive(enabled: Boolean) = edit {
+        it[KeyReturnHomeAfterNavigatorSafeDrive] = enabled
     }
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
     suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
@@ -314,6 +322,8 @@ class SettingsStore(private val context: Context) {
         val KeyNavigatorApp = stringPreferencesKey("navigator_app")
         val KeyAutoStartNavigatorSafeDrive = booleanPreferencesKey("auto_start_navigator_safe_drive")
         val KeyNavigatorSafeDriveLaunchMode = stringPreferencesKey("navigator_safe_drive_launch_mode")
+        val KeyReturnHomeAfterNavigatorSafeDrive =
+            booleanPreferencesKey("return_home_after_navigator_safe_drive")
         // 0.9.20 전용 키. 다음 버전에서 전체 진단으로 1회 이관한다.
         val KeyNavigatorSafeDriveDiagnostics = booleanPreferencesKey("navigator_safe_drive_diagnostics")
         val KeyHudOverlay = booleanPreferencesKey("hud_overlay")

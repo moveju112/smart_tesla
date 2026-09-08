@@ -134,6 +134,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setNavigatorSafeDriveLaunchMode(mode) }
     }
 
+    /** 안심운전 뒤 홈 화면 전환 설정을 저장소에 넘긴다. */
+    fun setReturnHomeAfterNavigatorSafeDrive(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsStore.setReturnHomeAfterNavigatorSafeDrive(enabled)
+        }
+    }
+
     fun setHudOverlay(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setHudOverlay(enabled) }
     }

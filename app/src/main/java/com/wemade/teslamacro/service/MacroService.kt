@@ -225,7 +225,6 @@ class MacroService : LifecycleService() {
                 app.container.navigator.startSafeDrive(
                     app = navigatorApp,
                     launchMode = automaticLaunchMode,
-                    returnHomeAfterStart = settings.returnHomeAfterNavigatorSafeDrive,
                 ).onFailure { error ->
                     com.wemade.teslable.DiagLog.add(
                         "${navigatorApp.label} 안심운전 자동 실행 실패 — ${error.message}"
@@ -366,7 +365,6 @@ class MacroService : LifecycleService() {
                     app.container.navigator.startSafeDrive(
                         app = navigatorApp,
                         launchMode = launchMode,
-                        returnHomeAfterStart = false,
                     ).onSuccess {
                         com.wemade.teslable.DiagLog.add(
                             "${navigatorApp.label} 잠금 테스트 요청 완료 — 방식=${launchMode.label} · " +
@@ -577,7 +575,8 @@ class MacroService : LifecycleService() {
         private const val ACTION_TEST_SAFE_DRIVE =
             "com.wemade.teslamacro.action.TEST_SAFE_DRIVE"
         private const val SAFE_DRIVE_TEST_DELAY_MILLIS = 10_000L
-        private const val SAFE_DRIVE_TEST_TIMEOUT_MILLIS = 30_000L
+        // 10초 예약 뒤 시스템 인증을 최대 60초 기다리고 전달할 시간을 남긴다.
+        private const val SAFE_DRIVE_TEST_TIMEOUT_MILLIS = 90_000L
 
         /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
         private const val UPDATE_CHANNEL_ID = "update_available"

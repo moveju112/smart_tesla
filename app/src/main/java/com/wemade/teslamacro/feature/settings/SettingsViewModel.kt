@@ -143,16 +143,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         _safeDriveTestMessage.value = runCatching {
             com.wemade.teslamacro.service.MacroService.scheduleSafeDriveTest(container.appContext)
         }.fold(
-            onSuccess = { "예약을 요청했어요. 지금 화면을 잠가 주세요." },
+            onSuccess = { "예약을 요청했어요. 지금 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요." },
             onFailure = { "예약 요청을 확인해 주세요 · ${it.message}" },
         )
-    }
-
-    /** 안심운전 뒤 홈 화면 전환 설정을 저장소에 넘긴다. */
-    fun setReturnHomeAfterNavigatorSafeDrive(enabled: Boolean) {
-        viewModelScope.launch {
-            container.settingsStore.setReturnHomeAfterNavigatorSafeDrive(enabled)
-        }
     }
 
     fun setHudOverlay(enabled: Boolean) {

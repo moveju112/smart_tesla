@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- 잠금 테스트 예약·전달 30초 동안만 CPU를 유지하며 화면과 잠금은 건드리지 않는다 -->
+    <!-- 잠금 테스트 예약·인증 대기·전달 동안만 CPU를 유지한다 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 태블릿은 차량에 상시 거치되므로 재부팅 후 자동 복귀시킨다 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -93,6 +93,17 @@
                 android:name="android.app.shortcuts"
                 android:resource="@xml/shortcuts" />
         </activity>
+
+        <!-- 보안 잠금 인증 중 화면을 유지하며 다른 앱은 이 진입점을 호출할 수 없다 -->
+        <activity
+            android:name=".data.nav.SafeDriveUnlockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.safeDriveUnlock"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.TeslaMacro" />
 
         <!--
           외부에서 명령 하나만 실행하는 통로.

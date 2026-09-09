@@ -472,7 +472,6 @@ data class NavigationControls(
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
     val onSafeDriveTest: () -> Unit = {},
     val safeDriveTestMessage: String? = null,
-    val onReturnHomeAfterSafeDriveChange: (Boolean) -> Unit = {},
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
@@ -580,19 +579,16 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             )
             Text(
                 text = controls.safeDriveTestMessage
-                    ?: "누른 뒤 화면을 잠가 주세요.\n선택한 방식으로 실행하며 홈 전환은 생략해요.",
+                    ?: "누른 뒤 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkMuted,
                 modifier = Modifier.padding(top = Space.xs),
             )
-            Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
-            ToggleRow(
-                title = "안심운전 후 홈 화면 전환 시도",
-                subtitle = "네이버 지도 실행 3초 뒤 홈 화면을 열어요 · 기기별 확인 필요",
-                checked = settings.returnHomeAfterNavigatorSafeDrive,
-                onCheckedChange = controls.onReturnHomeAfterSafeDriveChange,
+            Text(
+                text = "실행 뒤 홈 화면으로 이동하지 않아요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkMuted,
+                modifier = Modifier.padding(top = Space.xs),
             )
         }
     }
@@ -862,7 +858,6 @@ private fun settingsDump(settings: AppSettings): String = buildString {
         "내비=${settings.navigatorApp} · HUD 오버레이=${settings.hudOverlay}" +
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
-            " · 안심운전 후 홈=${settings.returnHomeAfterNavigatorSafeDrive}" +
             " · 과속안내=${settings.safeDrive}" +
             " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})",
     )

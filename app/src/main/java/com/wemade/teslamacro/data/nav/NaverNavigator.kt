@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.data.nav
 
+import android.app.Activity
 import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.app.PendingIntent
@@ -23,7 +24,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 
 /**
@@ -37,9 +37,6 @@ private const val WINDOW_ATTACH_MILLIS = 500L
 
 /** 화면 전환 판정이 끝날 때까지 실행 창을 유지하는 시간 */
 private const val WINDOW_KEEP_MILLIS = 1_000L
-
-/** 실행 요청 뒤 홈 전환까지의 고정 대기 — 안심운전 시작 완료를 확인하는 시간은 아니다. */
-private const val HOME_RETURN_DELAY_MILLIS = 3_000L
 
 /** 진단 때 같은 내비 URI를 전달하는 서로 다른 Android 실행 통로 */
 internal enum class BackgroundLaunchMethod(val logLabel: String) {
@@ -140,9 +137,12 @@ class NaverNavigator(private val context: Context) {
     suspend fun startSafeDrive(
         app: NavigatorApp,
         launchMode: SafeDriveLaunchMode = SafeDriveLaunchMode.DEFAULT,
-        returnHomeAfterStart: Boolean = false,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        safeDriveLaunchMutex.withLock {
+        // 인증 대기 중 들어온 요청은 줄 세우지 않아 뒤늦게 지도가 다시 열리지 않게 한다.
+        if (!safeDriveLaunchMutex.tryLock()) {
+            return@withContext Result.failure(IllegalStateException("이미 안심운전 실행을 처리하고 있어요"))
+        }
+        try {
             runCatching {
                 logSafeDriveState("실행 시작", app, launchMode)
                 if (!hasOverlayPermission) {
@@ -154,21 +154,39 @@ class NaverNavigator(private val context: Context) {
                     ?: error("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
 
                 val intents = safeDriveIntents(app, packageName, uri)
-                if (launchMode == SafeDriveLaunchMode.ALL) {
-                    launchSafeDriveForDiagnostics(app.label, intents)
-                } else {
-                    launchFirst(
-                        app.label,
-                        intents,
-                        backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
-                        returnHomeAfterStart,
+                val launch: suspend (Activity?) -> Unit = { activity ->
+                    if (launchMode == SafeDriveLaunchMode.ALL) {
+                        launchSafeDriveForDiagnostics(app.label, intents, activity)
+                    } else {
+                        launchFirst(
+                            app.label,
+                            intents,
+                            backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
+                            activity,
+                        )
+                    }
+                }
+                // 실제 성공한 잠금 유지 상태는 그대로 두고, 인증이 필요한 경우만 이어받는다.
+                if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) {
+                    val launched = SafeDriveUnlockActivity.runWhenUnlocked(
+                        context = context,
+                        appLabel = app.label,
+                        openActivity = { intent ->
+                            launchFromBackground(intent, "안심운전 잠금 해제", BackgroundLaunchMethod.DIRECT_ACTIVITY)
+                        },
+                        launch = { activity -> launch(activity) },
                     )
+                    if (!launched) error("잠금 해제 대기가 끝나 안심운전 요청을 취소했어요")
+                } else {
+                    launch(null)
                 }
                 com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
             }.recoverCatching { throwable ->
                 if (throwable is kotlinx.coroutines.CancellationException) throw throwable
                 throw throwable
             }.map { }
+        } finally {
+            safeDriveLaunchMutex.unlock()
         }
     }
 
@@ -258,12 +276,19 @@ class NaverNavigator(private val context: Context) {
         appLabel: String,
         candidates: List<Intent>,
         method: BackgroundLaunchMethod,
-        returnHomeAfterStart: Boolean = false,
+        foregroundActivity: Activity? = null,
     ) {
         var lastFailure: Throwable? = null
         candidates.forEach { intent ->
             val handled = runCatching {
-                launchFromBackground(intent, appLabel, method, returnHomeAfterStart)
+                if (foregroundActivity == null) {
+                    launchFromBackground(intent, appLabel, method)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        launchExternalActivity(intent, appLabel, method, foregroundActivity)
+                        delay(WINDOW_KEEP_MILLIS)
+                    }
+                }
             }
                 .onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it
@@ -281,7 +306,11 @@ class NaverNavigator(private val context: Context) {
      * 화면 표시 콜백은 외부 앱이 주지 않는다. 그래서 전달 성공을 화면 성공으로 부르지 않고,
      * 진단 로그의 시각·순서와 실제 화면 관찰을 함께 보게 한다.
      */
-    private suspend fun launchSafeDriveForDiagnostics(appLabel: String, candidates: List<Intent>) {
+    private suspend fun launchSafeDriveForDiagnostics(
+        appLabel: String,
+        candidates: List<Intent>,
+        foregroundActivity: Activity? = null,
+    ) {
         val traceId = System.currentTimeMillis().toString(36)
         val methods = backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.ALL)
         var delivered = false
@@ -293,7 +322,7 @@ class NaverNavigator(private val context: Context) {
         methods.forEachIndexed { index, method ->
             val attempt = "${index + 1}/${methods.size} ${method.logLabel}"
             com.wemade.teslable.DiagLog.add("$appLabel 안심운전 진단 [$traceId] $attempt 시도")
-            runCatching { launchFirst(appLabel, candidates, method) }
+            runCatching { launchFirst(appLabel, candidates, method, foregroundActivity) }
                 .onSuccess {
                     delivered = true
                     com.wemade.teslable.DiagLog.add(
@@ -331,7 +360,6 @@ class NaverNavigator(private val context: Context) {
         intent: Intent,
         appLabel: String,
         method: BackgroundLaunchMethod,
-        returnHomeAfterStart: Boolean = false,
     ) =
         withContext(Dispatchers.Main) {
             val manager = context.getSystemService(WindowManager::class.java)
@@ -357,42 +385,24 @@ class NaverNavigator(private val context: Context) {
                     error("지도 실행 창이 화면에 붙지 않았어요")
                 }
                 launchExternalActivity(intent, appLabel, method)
-                delay(
-                    if (returnHomeAfterStart) HOME_RETURN_DELAY_MILLIS
-                    else WINDOW_KEEP_MILLIS
-                )
-                if (returnHomeAfterStart) requestHomeScreen()
+                delay(WINDOW_KEEP_MILLIS)
             } finally {
                 runCatching { manager.removeView(anchor) }
             }
         }
-
-    /** 지도 실행 요청과 분리해 홈 화면 전환은 실패해도 진단만 남긴다. */
-    private fun requestHomeScreen() {
-        val homeIntent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_HOME)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching {
-            launchExternalActivity(
-                homeIntent,
-                "홈 화면",
-                BackgroundLaunchMethod.DIRECT_ACTIVITY,
-            )
-        }.onSuccess {
-            com.wemade.teslable.DiagLog.add(
-                "안심운전 후 홈 화면 전환 요청 — 화면 전환·안심운전 지속 여부는 별도 확인"
-            )
-        }.onFailure { error ->
-            com.wemade.teslable.DiagLog.add("안심운전 후 홈 화면 전환 실패 — ${error.message}")
-        }
-    }
 
     /** Android 14+가 요구하는 백그라운드 Activity 시작 허용을 명시해 외부 내비에 전달한다. */
     private fun launchExternalActivity(
         intent: Intent,
         appLabel: String,
         method: BackgroundLaunchMethod,
+        launchContext: Context = context,
     ) {
+        if (launchContext is SafeDriveUnlockActivity) {
+            check(launchContext.canContinue() && !launchContext.isFinishing && !launchContext.isDestroyed &&
+                !launchContext.getSystemService(KeyguardManager::class.java).isDeviceLocked
+            ) { "인증 요청이 만료되거나 화면이 닫히거나 다시 잠겨 실행을 취소했어요" }
+        }
         val resolved = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
             ?: error("$appLabel 앱이 안전운전 주소를 받지 않아요")
         val target = resolved.activityInfo?.name ?: "알 수 없는 화면"
@@ -402,7 +412,7 @@ class NaverNavigator(private val context: Context) {
         )
 
         if (method == BackgroundLaunchMethod.DIRECT_ACTIVITY) {
-            context.startActivity(intent)
+            launchContext.startActivity(intent)
             com.wemade.teslable.DiagLog.add("$appLabel 시스템 전달 완료 — $target · ${method.logLabel}")
             return
         }
@@ -421,13 +431,13 @@ class NaverNavigator(private val context: Context) {
             }
         } else null
         val pendingIntent = PendingIntent.getActivity(
-            context,
+            launchContext,
             intent.dataString?.hashCode() ?: intent.hashCode(),
             intent,
             PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             creatorOptions?.toBundle(),
         )
-        pendingIntent.send(context, 0, null, null, null, null, senderOptions.toBundle())
+        pendingIntent.send(launchContext, 0, null, null, null, null, senderOptions.toBundle())
         // 시스템이 인텐트를 받았다는 뜻일 뿐 화면 표시 성공으로 과장하지 않는다
         com.wemade.teslable.DiagLog.add("$appLabel 시스템 전달 완료 — $target · ${method.logLabel}")
     }

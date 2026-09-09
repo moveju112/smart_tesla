@@ -144,7 +144,7 @@ class WideScreenshotTest {
         "W5e-settings-safe-drive-test",
         SettingsGroup.DRIVING,
         overlayPermitted = true,
-        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.",
+        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요.",
     )
 
     @Test
@@ -170,6 +170,16 @@ class WideScreenshotTest {
         batteryUnrestricted = true,
     )
 
+    /** 태블릿 가로에서도 인증 안내와 취소 버튼이 잘리지 않아야 한다. */
+    @Test
+    fun `W5f 안심운전 인증`() {
+        paparazzi.snapshot("W5f-safe-drive-unlock") {
+            FullScreenFrame {
+                com.wemade.teslamacro.data.nav.SafeDriveUnlockScreen(onCancel = {})
+            }
+        }
+    }
+
     /** 값이 다 들어찬 설정 화면 한 칸. 빈 상태만 찍으면 글자가 잘리는 걸 못 잡는다 */
     private fun settingsSnapshot(
         name: String,
@@ -180,6 +190,8 @@ class WideScreenshotTest {
         overlayPermitted: Boolean = false,
         safeDriveTestMessage: String? = null,
     ) {
+        // 다른 테스트의 진단 기록 수가 기기 설정 스냅샷에 섞이지 않게 한다.
+        if (group == SettingsGroup.DEVICE) com.wemade.teslable.DiagLog.clear()
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
@@ -191,7 +203,6 @@ class WideScreenshotTest {
                         hudOverlay = true,
                         safeDrive = true,
                         autoStartNavigatorSafeDrive = true,
-                        returnHomeAfterNavigatorSafeDrive = true,
                     ),
                     onAutomationChange = {},
                     onUnpair = {},

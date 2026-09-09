@@ -155,10 +155,20 @@ class PhoneScreenshotTest {
                         onAppChange = {},
                         onHudOverlayChange = {},
                         installed = setOf("NAVER"),
-                        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.",
+                        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요.",
                     ),
                     initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
                 )
+            }
+        }
+    }
+
+    /** 인증 안내와 취소 버튼이 휴대폰 세로 화면 안에 들어오는지 확인한다. */
+    @Test
+    fun `P8 안심운전 인증`() {
+        paparazzi.snapshot("P8-safe-drive-unlock") {
+            FullScreenFrame {
+                com.wemade.teslamacro.data.nav.SafeDriveUnlockScreen(onCancel = {})
             }
         }
     }

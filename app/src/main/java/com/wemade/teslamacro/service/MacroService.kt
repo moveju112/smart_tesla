@@ -324,7 +324,14 @@ class MacroService : LifecycleService() {
             ACTION_RUN_QUICK_ACTION -> {
                 val action = intent.getStringExtra(QuickActionActivity.EXTRA_ACTION)
                 val macroId = intent.getStringExtra(QuickActionActivity.EXTRA_MACRO_ID)
-                lifecycleScope.launch { handleQuickAction(action, macroId) }
+                val receivedAt = intent.getLongExtra(EXTRA_RECEIVED_AT, android.os.SystemClock.elapsedRealtime())
+                lifecycleScope.launch {
+                    if (action == "open_frunk" && macroId == null) {
+                        handleTimedFrunkAction(action, receivedAt)
+                    } else {
+                        handleQuickAction(action, macroId)
+                    }
+                }
             }
 
             ACTION_DISCONNECT_VEHICLE -> disconnectVehicleNow()
@@ -387,6 +394,29 @@ class MacroService : LifecycleService() {
         }
     }
 
+    /** 보닛 요청은 수신부터 2분만 유지하며 절전 중에도 만료 처리를 진행한다. */
+    private suspend fun handleTimedFrunkAction(action: String, receivedAt: Long) {
+        val deadline = com.wemade.teslable.CommandDeadline(receivedAt + 120_000L) {
+            android.os.SystemClock.elapsedRealtime()
+        }
+        val wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:frunkRequest")
+        try {
+            deadline.check()
+            wakeLock.acquire(deadline.remainingMillis())
+            com.wemade.teslable.DiagLog.add("보닛 요청 대기 — 수신부터 최대 2분 · 만료 후 전송 취소")
+            val completed = kotlinx.coroutines.withTimeoutOrNull(deadline.remainingMillis()) {
+                kotlinx.coroutines.withContext(deadline) { handleQuickAction(action, null) }
+                true
+            }
+            if (completed == null) throw com.wemade.teslable.CommandExpiredException()
+        } catch (expired: com.wemade.teslable.CommandExpiredException) {
+            quickActionFailed("보닛(프렁크) 열기", "요청 후 2분이 지나 취소했어요 · 이미 전송한 명령은 취소할 수 없어요")
+        } finally {
+            if (wakeLock.isHeld) wakeLock.release()
+        }
+    }
+
     /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
     private suspend fun handleQuickAction(action: String?, macroId: String?) {
         val app = application as TeslaMacroApplication
@@ -411,9 +441,19 @@ class MacroService : LifecycleService() {
 
         app.container.poller.beginCommandConnection()
         try {
-            // 사람이 방금 누른 요청이므로 저장 주소 직행이 한 번 실패하면 주변 검색까지 시도한다.
-            // 자동 폴링과 달리 후보 검증을 생략하면 일시적인 GATT 오류 한 번에 명령이 유실된다.
-            val connection = app.container.gateway.connect(settings.vin, allowProbe = true)
+            // 보닛은 남은 수명 동안 저장 주소를 재시도하고 다른 바로가기는 기존 후보 검색을 유지한다.
+            val deadline = kotlin.coroutines.coroutineContext[com.wemade.teslable.CommandDeadline]
+            var connection: Result<Unit>
+            do {
+                com.wemade.teslable.ensureCommandActive()
+                // 보닛 대기 중에는 검증된 저장 주소를 반복 사용한다.
+                connection = app.container.gateway.connect(settings.vin, allowProbe = deadline == null)
+                com.wemade.teslable.ensureCommandActive()
+                if (connection.isFailure && deadline != null) {
+                    com.wemade.teslable.DiagLog.add("보닛 연결 대기 — 남은 ${deadline.remainingMillis() / 1000}초")
+                    delay(1_000L)
+                }
+            } while (connection.isFailure && deadline != null)
             if (connection.isFailure) {
                 quickActionFailed(requestLabel, connection.exceptionOrNull()?.message ?: "차량 연결 실패")
                 return
@@ -449,7 +489,10 @@ class MacroService : LifecycleService() {
                 )
             }
         } finally {
-            app.container.poller.endCommandConnection()
+            // 만료로 코루틴이 취소돼도 연결 사용권과 보호 정책은 반드시 복구한다.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                app.container.poller.endCommandConnection()
+            }
         }
     }
 
@@ -593,10 +636,13 @@ class MacroService : LifecycleService() {
             )
         }
 
-        /** 숨은 바로가기 화면에서 받은 요청을 포그라운드 서비스에 안전하게 넘긴다. */
+        private const val EXTRA_RECEIVED_AT = "quick_action_received_at"
+
+        /** 서비스 시작 지연도 요청 유효 시간에 포함한다. */
         fun runQuickAction(context: Context, action: String?, macroId: String?) {
             val intent = Intent(context, MacroService::class.java)
                 .setAction(ACTION_RUN_QUICK_ACTION)
+                .putExtra(EXTRA_RECEIVED_AT, android.os.SystemClock.elapsedRealtime())
                 .putExtra(QuickActionActivity.EXTRA_ACTION, action)
                 .putExtra(QuickActionActivity.EXTRA_MACRO_ID, macroId)
             context.startForegroundService(intent)

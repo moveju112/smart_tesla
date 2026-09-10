@@ -128,6 +128,7 @@ class TeslaBleLink(private val context: Context) {
 
     /** 페이로드에 길이 헤더를 붙여 청크로 나눠 보낸다 */
     suspend fun send(payload: ByteArray, timeoutMillis: Long = WRITE_TIMEOUT_MS) = opLock.withLock {
+        ensureCommandActive()
         // 죽은 링크엔 안 쏜다 — ensureLinked를 안 거치는 경로(등록 등)도 여기서 다 막힌다
         if (dead) error("링크가 죽었다 — 재연결 필요")
         val characteristic = txCharacteristic ?: error("연결되어 있지 않다")
@@ -141,6 +142,7 @@ class TeslaBleLink(private val context: Context) {
             try {
                 withTimeout(timeoutMillis) { deferred.await() }
             } catch (t: TimeoutCancellationException) {
+                ensureCommandActive()
                 // 완료 콜백이 영영 안 오는 건 스택이 죽은 것 — 살아있는 척을 끝낸다
                 markDead(activeGatt)
                 throw IllegalStateException("쓰기 완료 미수신 ${timeoutMillis}ms — 링크 사망 처리", t)
@@ -171,6 +173,7 @@ class TeslaBleLink(private val context: Context) {
         chunk: ByteArray,
     ) {
         repeat(WRITE_ATTEMPTS) { attempt ->
+            ensureCommandActive()
             when (writeChunk(gatt, characteristic, chunk)) {
                 WriteAccept.QUEUED -> return
                 WriteAccept.BUSY ->

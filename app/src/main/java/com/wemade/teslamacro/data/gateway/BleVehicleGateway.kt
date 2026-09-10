@@ -419,6 +419,14 @@ class BleVehicleGateway(
             delay(waitMillis)
             firstAttempt(active, action)?.let { return it }
         }
+        // 보닛의 P단 조회는 읽기이므로 요청 수명이 남아 있으면 계속 확인한다.
+        // 실제 개방 명령은 이 경로 밖에서 한 번만 전송한다.
+        val deadline = kotlin.coroutines.coroutineContext[com.wemade.teslable.CommandDeadline]
+        while (deadline != null) {
+            com.wemade.teslable.ensureCommandActive()
+            delay(2_000L)
+            firstAttempt(active, action)?.let { return it }
+        }
         throw IllegalStateException("차량이 깨어나지 않았어요")
     }
 

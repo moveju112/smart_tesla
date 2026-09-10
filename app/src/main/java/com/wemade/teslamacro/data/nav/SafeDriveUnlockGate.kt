@@ -6,6 +6,10 @@ import java.util.UUID
 
 internal const val SAFE_DRIVE_UNLOCK_TIMEOUT_MILLIS = 60_000L
 
+/** 보안 인증이 풀려도 키가드 화면이 남아 있으면 지도 전달을 기다린다. */
+internal fun isSafeDriveUnlocked(keyguardLocked: Boolean, deviceLocked: Boolean): Boolean =
+    !keyguardLocked && !deviceLocked
+
 /** 메인 스레드에서 인증 요청 한 건의 만료·취소·늦은 콜백을 함께 관리한다. */
 internal class SafeDriveUnlockGate(private val nowMillis: () -> Long) {
     private data class Request(

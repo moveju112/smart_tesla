@@ -15,6 +15,27 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SafeDriveUnlockGateTest {
+    /** 실차 실패 상태인 키가드만 남은 경우에도 인증 화면을 거쳐야 한다. */
+    @Test
+    fun `두 잠금이 모두 해제돼야 지도 전달을 허용한다`() {
+        assertFalse(isSafeDriveUnlocked(keyguardLocked = true, deviceLocked = false))
+        assertFalse(isSafeDriveUnlocked(keyguardLocked = true, deviceLocked = true))
+        assertFalse(isSafeDriveUnlocked(keyguardLocked = false, deviceLocked = true))
+        assertTrue(isSafeDriveUnlocked(keyguardLocked = false, deviceLocked = false))
+    }
+
+    /** 보안 인증만 풀린 콜백은 성공으로 처리하지 않아 배경 직접 실행으로 새지 않는다. */
+    @Test
+    fun `키가드가 남은 성공 콜백은 지도를 전달하지 않는다`() = runTest {
+        val harness = Harness { testScheduler.currentTime }
+        val result = async { harness.run() }
+        runCurrent()
+        harness.gate.complete(harness.token, isSafeDriveUnlocked(true, false))
+        assertFalse(result.await())
+        assertEquals(0, harness.launchCount)
+        assertEquals(listOf("show", "close"), harness.events)
+    }
+
     /** 인증 전에는 전달하지 않고, 첫 성공 뒤 전달이 끝난 다음 화면을 닫는다. */
     @Test
     fun `인증 전에는 기다리고 성공 한 번만 전달한다`() = runTest {

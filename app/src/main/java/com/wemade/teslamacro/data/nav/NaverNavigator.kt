@@ -166,8 +166,9 @@ class NaverNavigator(private val context: Context) {
                         )
                     }
                 }
-                // 실제 성공한 잠금 유지 상태는 그대로 두고, 인증이 필요한 경우만 이어받는다.
-                if (context.getSystemService(KeyguardManager::class.java).isDeviceLocked) {
+                // 보안 인증이 풀렸어도 키가드가 남으면 화면을 켜고 시스템 해제 뒤 전달한다.
+                val keyguard = context.getSystemService(KeyguardManager::class.java)
+                if (!isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
                     val launched = SafeDriveUnlockActivity.runWhenUnlocked(
                         context = context,
                         appLabel = app.label,
@@ -399,8 +400,9 @@ class NaverNavigator(private val context: Context) {
         launchContext: Context = context,
     ) {
         if (launchContext is SafeDriveUnlockActivity) {
+            val keyguard = launchContext.getSystemService(KeyguardManager::class.java)
             check(launchContext.canContinue() && !launchContext.isFinishing && !launchContext.isDestroyed &&
-                !launchContext.getSystemService(KeyguardManager::class.java).isDeviceLocked
+                isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)
             ) { "인증 요청이 만료되거나 화면이 닫히거나 다시 잠겨 실행을 취소했어요" }
         }
         val resolved = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)

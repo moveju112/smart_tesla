@@ -35,7 +35,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 보안 잠금일 때만 인증을 요청한다. 성공한 기존 잠금 유지 경로에서는 열지 않는다. */
+/** 키가드 또는 보안 잠금이 남아 있으면 화면을 켜고 시스템 해제를 요청한다. */
 class SafeDriveUnlockActivity : ComponentActivity() {
     private var requestId = ""
     private var dismissalRequested = false
@@ -92,7 +92,7 @@ class SafeDriveUnlockActivity : ComponentActivity() {
         dismissalRequested = true
         val id = requestId
         val keyguard = getSystemService(KeyguardManager::class.java)
-        if (!keyguard.isKeyguardLocked && !keyguard.isDeviceLocked) {
+        if (isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
             gate.complete(id, true)
             return
         }
@@ -100,9 +100,12 @@ class SafeDriveUnlockActivity : ComponentActivity() {
             // 성공 콜백 뒤에도 실제 잠금 상태를 검사해 인증 전 실행을 막는다.
             override fun onDismissSucceeded() {
                 if (promptActivity !== this@SafeDriveUnlockActivity) return
-                val unlocked = !keyguard.isDeviceLocked
+                val unlocked = isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)
                 if (gate.complete(id, unlocked)) {
-                    DiagLog.add("안심운전 잠금 해제 결과 — 인증완료=$unlocked")
+                    DiagLog.add(
+                        "안심운전 잠금 해제 결과 — 인증완료=$unlocked · " +
+                            "키가드잠금=${keyguard.isKeyguardLocked} · 기기잠금=${keyguard.isDeviceLocked}",
+                    )
                 }
             }
 
@@ -179,7 +182,8 @@ class SafeDriveUnlockActivity : ComponentActivity() {
                     check(activity != null && !activity.isFinishing && !activity.isDestroyed) {
                         "잠금 해제 화면이 닫혀 요청을 취소했어요"
                     }
-                    check(!context.getSystemService(KeyguardManager::class.java).isDeviceLocked) {
+                    val keyguard = context.getSystemService(KeyguardManager::class.java)
+                    check(isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
                         "다시 잠겨 안심운전 요청을 취소했어요"
                     }
                     DiagLog.add("$appLabel 안심운전 인증 후 실행 이어가기")

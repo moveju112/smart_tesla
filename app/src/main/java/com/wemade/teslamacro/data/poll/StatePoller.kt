@@ -179,12 +179,20 @@ class StatePoller(
             val cycleStart = now()
             val settings = settingsStore.settings.first()
             val wakeCheck = vehiclePowerWakeCheck.get()
-            if (settings.deviceMode == DeviceMode.PORTABLE && wakeCheck?.expired(now()) == true) {
+            if ((settings.deviceMode == DeviceMode.PORTABLE || settings.autoStartNavigatorSafeDrive) &&
+                wakeCheck?.expired(now()) == true
+            ) {
                 finishPowerWakeCheck(wakeCheck, "60초 확인 시간 종료")
             }
-            val portableCheck = wakeCheck?.takeIf {
-                connectionDecision(settings).reason == VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK
+            // 거치 모드도 전원 직후 미착석 응답 한 번으로 끝내지 않고 같은 확인 예산을 쓴다.
+            val boardingCheck = wakeCheck?.takeIf {
+                !it.expired(now()) && when (connectionDecision(settings).reason) {
+                    VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK -> true
+                    VehicleConnectionReason.MOUNTED_USE -> settings.autoStartNavigatorSafeDrive
+                    else -> false
+                }
             }
+            val portableCheck = boardingCheck?.takeIf { settings.deviceMode == DeviceMode.PORTABLE }
 
             // 기본 보호 모드에서는 사람이 앱·명령·매크로를 쓰지 않는 빈 차와 인증 연결을
             // 유지하지 않는다. 공식 휴대폰 키가 유일한 근접 키로 판정될 여지를 남긴다
@@ -207,18 +215,18 @@ class StatePoller(
                     // 거쳐 비동기로 복제되므로 여기서 읽으면 성공이 실패로 집계될 수 있다
                     // 붙었으면 바로 읽으러 간다 — 여기서 한 주기를 자면
                     // 연결 후 30초 동안 화면이 비어 있는다 (실차 로그 2026-08-13 15:37)
-                    if (portableCheck != null && !portableCheck.tryConnect(now())) {
-                        finishPowerWakeCheck(portableCheck, "연결 시도 2회 종료")
+                    if (boardingCheck != null && !boardingCheck.tryConnect(now())) {
+                        finishPowerWakeCheck(boardingCheck, "연결 시도 2회 종료")
                         enforceConnectionGuard()
                         continue
                     }
-                    val connected = if (portableCheck != null) {
-                        withTimeoutOrNull(portableCheck.remainingMillis(now()).coerceAtMost(30_000L)) {
+                    val connected = if (boardingCheck != null) {
+                        withTimeoutOrNull(boardingCheck.remainingMillis(now()).coerceAtMost(30_000L)) {
                             gateway.connect(settings.vin)
                         }
                     } else gateway.connect(settings.vin)
                     // 전원 해제·재연결 또는 수동 해제 중 끝난 이전 연결은 새 확인으로 쓰지 않는다.
-                    if (portableCheck != null && vehiclePowerWakeCheck.get() !== portableCheck) {
+                    if (boardingCheck != null && vehiclePowerWakeCheck.get() !== boardingCheck) {
                         enforceConnectionGuard()
                         continue
                     }
@@ -226,17 +234,17 @@ class StatePoller(
                         reconnectStrikes = 0
                         // Ready가 flatMapLatest를 타고 복제될 때까지 잠깐 기다린다 —
                         // 안 기다리면 루프 상단 검사가 옛 상태를 보고 connect를 또 부른다
-                        withTimeoutOrNull(portableCheck?.remainingMillis(now())?.coerceAtMost(2_000L) ?: 2_000L) {
+                        withTimeoutOrNull(boardingCheck?.remainingMillis(now())?.coerceAtMost(2_000L) ?: 2_000L) {
                             gateway.linkState.first { it is LinkState.Ready }
                         }
                         continue
                     }
-                    if (portableCheck != null) {
+                    if (boardingCheck != null) {
                         com.wemade.teslable.DiagLog.add(
-                            "휴대 모드 안심운전 연결 대기 — ${portableCheck.connectionAttempts}/2회 시도"
+                            "안심운전 연결 대기 — ${boardingCheck.connectionAttempts}/2회 시도"
                         )
-                        if (!portableCheck.canConnect(now())) {
-                            finishPowerWakeCheck(portableCheck, "연결 확인 기회 종료")
+                        if (!boardingCheck.canConnect(now())) {
+                            finishPowerWakeCheck(boardingCheck, "연결 확인 기회 종료")
                             enforceConnectionGuard()
                         }
                     }
@@ -333,19 +341,19 @@ class StatePoller(
             }
 
             // 3. 한 번에 묶어 읽는다. 게이트웨이가 응답 크기를 보고 알아서 나눈다
-            val result = if (portableCheck != null) {
-                withTimeoutOrNull(portableCheck.remainingMillis(now())) {
+            val result = if (boardingCheck != null) {
+                withTimeoutOrNull(boardingCheck.remainingMillis(now())) {
                     gateway.readBundle(categories)
                 } ?: Result.failure(IllegalStateException("안심운전 확인 시간 종료"))
             } else gateway.readBundle(categories)
-            if (portableCheck != null) {
-                if (vehiclePowerWakeCheck.get() !== portableCheck || portableCheck.expired(now())) {
-                    finishPowerWakeCheck(portableCheck, "60초 확인 시간 종료")
+            if (boardingCheck != null) {
+                if (vehiclePowerWakeCheck.get() !== boardingCheck || boardingCheck.expired(now())) {
+                    finishPowerWakeCheck(boardingCheck, "60초 확인 시간 종료")
                     enforceConnectionGuard()
                     continue
                 }
                 if (!connectionDecision(settingsStore.settings.first()).keep) {
-                    finishPowerWakeCheck(portableCheck, "안심운전 확인 해제")
+                    finishPowerWakeCheck(boardingCheck, "안심운전 확인 해제")
                     enforceConnectionGuard()
                     continue
                 }
@@ -355,7 +363,6 @@ class StatePoller(
                 ?.let { fresh -> merge(_snapshot.value, fresh) }
                 ?.let { withRideMinutes(it) }
                 ?: _snapshot.value
-            _snapshot.value = merged
 
             // 3-1. 좀비 GATT 워치독 — 한 사이클이 통째로 실패하는 게 이어지면 강제 재접속.
             //      하나라도 성공했으면 링크는 산 것이다 (빈 차 사이클도 VCSEC는 항상 응답해야 정상)
@@ -382,13 +389,27 @@ class StatePoller(
 
             // 5. 매크로 판정 + 실행.
             //    GPS는 위치 조건이 실제로 걸려 있을 때만 읽는다 — 매 폴링마다 켜면 배터리를 먹는다
-            val location = if (portableCheck == null && needsLocation()) cachedLocation() else null
-            // 예보는 예보 조건을 쓰는 매크로가 켜져 있을 때만 받는다.
-            // 좌표가 있어야 하므로 위치를 못 읽으면 조회 자체를 안 한다
-            val weather = if (portableCheck == null && needsForecast()) {
-                cachedForecast(location ?: cachedLocation())
-            } else null
-            val current = Reading(merged, TimeContext.of(now()), location, weather)
+            // 위치·예보도 확인 예산에 포함해 늦은 조회가 종료된 탑승 요청을 되살리지 못하게 한다.
+            val current = withTimeoutOrNull(boardingCheck?.remainingMillis(now()) ?: Long.MAX_VALUE) {
+                val location = if (portableCheck == null && needsLocation()) cachedLocation() else null
+                // 좌표가 있어야 예보를 받으며, 거치 매크로에 필요한 조회는 유지한다.
+                val weather = if (portableCheck == null && needsForecast()) {
+                    cachedForecast(location ?: cachedLocation())
+                } else null
+                Reading(merged, TimeContext.of(now()), location, weather)
+            }
+            if (boardingCheck != null &&
+                (current == null || vehiclePowerWakeCheck.get() !== boardingCheck ||
+                    boardingCheck.expired(now()) ||
+                    !connectionDecision(settingsStore.settings.first()).keep)
+            ) {
+                finishPowerWakeCheck(boardingCheck, "확인 시간 종료 또는 요청 해제")
+                enforceConnectionGuard()
+                continue
+            }
+            if (current == null) continue
+            // 취소된 조회의 착석값이 연결 유지 사유로 남지 않도록 검증 뒤에만 반영한다.
+            _snapshot.value = merged
             latestReading.value = current
 
             // 현재 응답으로 덮기 전에 직전 확인값의 유효시간을 판정한다.
@@ -404,10 +425,9 @@ class StatePoller(
             val observedPresence = fresh
                 ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
                 ?.isUserPresent
-            // 거치 모드는 첫 응답으로 끝내고, 휴대 확인 창은 착석까지 짧게 다시 읽는다.
+            // 자동 안심운전은 사용 모드와 무관하게 착석 또는 확인 시간 만료까지 기다린다.
             if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
-                (settings.deviceMode != DeviceMode.PORTABLE ||
-                    !settings.autoStartNavigatorSafeDrive || observedPresence == true)
+                (!settings.autoStartNavigatorSafeDrive || observedPresence == true)
             ) {
                 wakeCheck?.let { finishPowerWakeCheck(it, "탑승 상태 확인 완료") }
             }
@@ -423,7 +443,7 @@ class StatePoller(
             ) {
                 boardingChannel.trySend(Unit)
             }
-            if (portableCheck != null) enforceConnectionGuard()
+            if (boardingCheck != null) enforceConnectionGuard()
 
             // 휴대 모드는 백그라운드 자동화 주체가 아니다. 같은 룰을 거치·휴대 기기가
             // 동시에 발동하면 명령이 중복되고, 긴 대기 동안 휴대 기기가 차량 근접 키로 남는다.
@@ -474,7 +494,7 @@ class StatePoller(
             // 이번 사이클에 사건이 감지돼 창이 열렸으면 바로 짧은 주기로 — 낡은 판정을 쓰면
             // 문 열림 직후 한 사이클(15초)을 통째로 기다리게 된다
             val interval = nextIntervalSeconds(
-                inActiveWindow = portableCheck != null || now() < activeUntil,
+                inActiveWindow = boardingCheck != null || now() < activeUntil,
                 snapshot = merged,
                 activeSeconds = ACTIVE_POLL_SECONDS,
                 idleSeconds = NORMAL_POLL_SECONDS,
@@ -484,8 +504,8 @@ class StatePoller(
             // 하한 1초로 떨어져 "느린 차일수록 쉼 없이 재시도"가 된다
             val elapsed = if (result.isFailure) 0L else now() - cycleStart
             val sleepMillis = (interval * 1000L - elapsed).coerceAtLeast(1_000L)
-            sleep(if (portableCheck != null) {
-                sleepMillis.coerceAtMost(portableCheck.remainingMillis(now()).coerceAtLeast(1L))
+            sleep(if (boardingCheck != null) {
+                sleepMillis.coerceAtMost(boardingCheck.remainingMillis(now()).coerceAtLeast(1L))
             } else sleepMillis)
         }
     }
@@ -603,7 +623,8 @@ class StatePoller(
             autoStartNavigatorSafeDrive = settings.autoStartNavigatorSafeDrive,
             vehiclePowerConnected = vehiclePowerConnected,
             vehiclePowerWakePending = vehiclePowerWakeCheck.get()?.let {
-                settings.deviceMode != DeviceMode.PORTABLE || !it.expired(now())
+                (settings.deviceMode != DeviceMode.PORTABLE && !settings.autoStartNavigatorSafeDrive) ||
+                    !it.expired(now())
             } == true,
             vehicleUserPresent = _snapshot.value.isUserPresent,
             appVisible = now() < appVisibleUntil,

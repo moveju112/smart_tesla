@@ -210,8 +210,153 @@ class PortableBoardingPollTest {
         fixture.poller.stop()
     }
 
-    /** 저장 상태를 초기화해 이전 테스트의 탑승 기록이 새 폴러 판정에 섞이지 않게 한다. */
-    private suspend fun TestScope.fixture(): Fixture {
+    /** 거치 전원 상승이 착석보다 빨라도 앱을 열지 않고 탑승을 잡으며 기존 조회를 유지한다. */
+    @Test
+    fun `거치는 미착석과 UNKNOWN 뒤 착석을 한번 전달하고 연결을 유지한다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED)
+        fixture.gateway.onRead = { count ->
+            fixture.snapshot(when (count) { 1 -> false; 2 -> null; else -> true })
+        }
+        fixture.start()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertEquals(1, fixture.boardings)
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+        assertTrue(fixture.gateway.reads.first().contains(StateCategory.CLIMATE))
+        assertTrue(fixture.locationReads > 0)
+        assertTrue(fixture.forecastReads > 0)
+        advanceTimeBy(90_000)
+        runCurrent()
+        assertEquals(1, fixture.boardings)
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 빈 거치 차량의 인증 연결을 확인 창 안으로 제한하고 같은 전원으로 재시작하지 않는다. */
+    @Test
+    fun `거치 미탑승은 60초에 종료하고 같은 전원에서 다시 확인하지 않는다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED)
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        assertEquals(0, fixture.boardings)
+        assertTrue(fixture.gateway.reads.size in 20..32)
+        val readsAtDeadline = fixture.gateway.reads.size
+        fixture.poller.setVehiclePowerConnected(true)
+        advanceTimeBy(90_000)
+        runCurrent()
+        assertEquals(readsAtDeadline, fixture.gateway.reads.size)
+        assertEquals(1, fixture.gateway.connections)
+        fixture.poller.stop()
+    }
+
+    /** 전원을 끊기 전에 시작한 조회가 뒤늦게 성공해도 자동 안내를 열지 않는다. */
+    @Test
+    fun `거치 확인 중 전원이 끊기면 늦은 착석 응답을 버린다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED)
+        fixture.gateway.onRead = {
+            delay(5_000)
+            fixture.snapshot(true)
+        }
+        fixture.start()
+        advanceTimeBy(1_000)
+        runCurrent()
+        fixture.poller.setVehiclePowerConnected(false, endAppSession = true)
+        fixture.poller.enforceConnectionGuard()
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(0, fixture.boardings)
+        assertEquals(1, fixture.gateway.connections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 사용자가 연결을 중단한 뒤의 늦은 응답으로 자동 안내가 되살아나지 않게 한다. */
+    @Test
+    fun `거치 확인 중 수동 해제하면 늦은 착석 응답을 버린다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED)
+        fixture.gateway.onRead = {
+            delay(5_000)
+            fixture.snapshot(true)
+        }
+        fixture.start()
+        advanceTimeBy(1_000)
+        runCurrent()
+        fixture.poller.disconnectUntilNextUse()
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(0, fixture.boardings)
+        assertEquals(1, fixture.gateway.connections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 자동 안내를 끈 거치는 기존처럼 첫 미착석 확인만으로 연결 사유를 끝낸다. */
+    @Test
+    fun `거치 자동 안내가 꺼져 있으면 첫 미착석 뒤 추가 조회하지 않는다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.start()
+        advanceTimeBy(121_000)
+        runCurrent()
+
+        assertEquals(1, fixture.gateway.reads.size)
+        assertEquals(0, fixture.boardings)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 차량 응답 뒤 위치 조회가 지연돼도 확인 시간 종료 후 탑승으로 처리하지 않는다. */
+    @Test
+    fun `거치 위치 조회가 60초를 넘으면 안내 없이 연결을 종료한다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, locationDelayMillis = 90_000L)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+
+        assertEquals(1, fixture.locationReads)
+        assertEquals(0, fixture.boardings)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        val readsAtDeadline = fixture.gateway.reads.size
+        advanceTimeBy(90_000)
+        runCurrent()
+        assertEquals(0, fixture.boardings)
+        assertEquals(readsAtDeadline, fixture.gateway.reads.size)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 위치를 기다리는 동안 전원이 끊기면 앞서 읽은 착석값도 자동 실행에 쓰지 않는다. */
+    @Test
+    fun `거치 위치 조회 중 전원이 끊기면 늦은 안내를 버린다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, locationDelayMillis = 5_000L)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.start()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(1, fixture.locationReads)
+        fixture.poller.setVehiclePowerConnected(false, endAppSession = true)
+        fixture.poller.enforceConnectionGuard()
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(0, fixture.boardings)
+        assertEquals(1, fixture.gateway.connections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 저장 상태를 초기화하고 휴대 기본값을 유지한 채 거치 모드도 같은 폴러로 검증한다. */
+    private suspend fun TestScope.fixture(
+        mode: DeviceMode = DeviceMode.PORTABLE,
+        autoStart: Boolean = true,
+        locationDelayMillis: Long = 0L,
+    ): Fixture {
         val context = object : ContextWrapper(paparazzi.context) {
             /** 매크로 파일도 테스트 종료 때 함께 지워지도록 임시 폴더로 격리한다. */
             override fun getFilesDir(): File = temporaryFolder.root
@@ -225,8 +370,8 @@ class PortableBoardingPollTest {
         )
         settings.setVin("5YJS0000000000000")
         settings.setEnrolled(true)
-        settings.setDeviceMode(DeviceMode.PORTABLE)
-        settings.setAutoStartNavigatorSafeDrive(true)
+        settings.setDeviceMode(mode)
+        settings.setAutoStartNavigatorSafeDrive(autoStart)
         settings.savePresence(false)
         val rules = RuleStore(context)
         rules.upsert(MacroRule(
@@ -240,11 +385,16 @@ class PortableBoardingPollTest {
             ),
             actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn)),
         ))
-        return Fixture(this, settings, rules)
+        return Fixture(this, settings, rules, locationDelayMillis)
     }
 
     /** 실제 StatePoller에 저장소와 가짜 BLE만 연결하며 시간을 코루틴 스케줄러와 맞춘다. */
-    private class Fixture(val scope: TestScope, settings: SettingsStore, rules: RuleStore) {
+    private class Fixture(
+        val scope: TestScope,
+        settings: SettingsStore,
+        rules: RuleStore,
+        locationDelayMillis: Long,
+    ) {
         val gateway = TestGateway()
         var boardings = 0
         var locationReads = 0
@@ -258,7 +408,11 @@ class PortableBoardingPollTest {
             runner = MacroRunner(gateway, scope.backgroundScope, reading),
             latestReading = reading,
             now = { epoch + scope.testScheduler.currentTime },
-            locationReader = { locationReads++; GeoPoint(0.0, 0.0) },
+            locationReader = {
+                locationReads++
+                delay(locationDelayMillis)
+                GeoPoint(0.0, 0.0)
+            },
             forecastReader = { _, _ -> forecastReads++; null },
         )
 

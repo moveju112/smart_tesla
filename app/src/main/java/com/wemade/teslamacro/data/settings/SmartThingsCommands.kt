@@ -10,8 +10,6 @@ object SmartThingsCommands {
     val all = listOf(
         SmartThingsCommand("open_frunk", "보닛(프렁크) 열기"),
         SmartThingsCommand("open_trunk", "트렁크 열기"),
-        SmartThingsCommand("lock", "문 잠그기"),
-        SmartThingsCommand("unlock", "문 잠금 해제"),
         SmartThingsCommand("climate_on", "공조 켜기"),
         SmartThingsCommand("climate_off", "공조 끄기"),
         SmartThingsCommand("vent_windows", "창문 환기"),

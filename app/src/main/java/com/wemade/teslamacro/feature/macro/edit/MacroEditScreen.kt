@@ -303,6 +303,10 @@ fun MacroEditScreen(
                 onChange(draft.addAction(ActionStep.Navigate(destinationName = "", address = "")))
                 picker = OpenPicker.NONE
             },
+            onPickStealthCharging = {
+                onChange(draft.addAction(ActionStep.SetStealthCharging()))
+                picker = OpenPicker.NONE
+            },
         )
 
         OpenPicker.WAIT_UNTIL -> ConditionPicker(
@@ -682,6 +686,7 @@ private fun ActionPicker(
     onDismiss: () -> Unit,
     onPick: (CommandTemplate) -> Unit,
     onPickNavigate: () -> Unit,
+    onPickStealthCharging: () -> Unit,
 ) {
     var group by remember { mutableStateOf(CommandGroup.CLIMATE) }
 
@@ -690,19 +695,22 @@ private fun ActionPicker(
             // 차량 명령이 아닌 태블릿 동작. 그룹 밖 최상단에 둔다
             // 맨몸 텍스트는 눌리는 항목으로 안 보여서 옅은 면으로 감싸 "버튼"임을 드러낸다
             Column(
-                // clickable을 면 전체에 걸어야 가장자리 16dp도 눌린다 (패딩은 clickable 뒤)
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Radius.button))
                     .background(T.Slate)
-                    .clickable(onClick = onPickNavigate)
-                    .padding(horizontal = Space.md, vertical = Space.sm + Space.xs),
+                    .padding(horizontal = Space.md),
             ) {
-                Text("네이버 지도 안내", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
-                Text(
-                    text = "저장한 주소로 길안내를 자동 시작",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkFaint,
+                PickerRow(
+                    label = "네이버 지도 안내",
+                    detail = "저장한 주소로 길안내를 자동 시작",
+                    onClick = onPickNavigate,
+                )
+                Hairline()
+                PickerRow(
+                    label = "스텔스 충전 1회",
+                    detail = "다음 충전에서 전류를 자동 조절하도록 켜기",
+                    onClick = onPickStealthCharging,
                 )
             }
             // 구분선으로 아래 그룹 칩과 시각적으로 분리한다

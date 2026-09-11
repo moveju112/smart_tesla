@@ -113,6 +113,26 @@ class WideScreenshotTest {
     }
 
     @Test
+    fun `W3b 매크로 동작 - 스텔스 충전`() {
+        paparazzi.snapshot("W3b-macro-edit-stealth-charge") {
+            AppFrame(Destination.Macros) {
+                com.wemade.teslamacro.feature.macro.edit.ActionCard(
+                    index = 0,
+                    total = 1,
+                    step = com.wemade.teslamacro.domain.macro.ActionStep.SetStealthCharging(),
+                    template = null,
+                    onChange = {},
+                    onMove = {},
+                    onRemove = {},
+                    modifier = androidx.compose.ui.Modifier.padding(
+                        com.wemade.teslamacro.ui.theme.Space.lg
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `W4 매크로 목록`() {
         paparazzi.snapshot("W4-macro-list") {
             AppFrame(Destination.Macros) {

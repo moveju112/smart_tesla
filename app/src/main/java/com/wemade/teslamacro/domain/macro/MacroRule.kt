@@ -140,6 +140,10 @@ sealed interface ActionStep {
     @Serializable @SerialName("navigate")
     data class Navigate(val destinationName: String, val address: String) : ActionStep
 
+    /** 다음 충전 1회의 스텔스 전류 조절을 켜거나 취소한다. */
+    @Serializable @SerialName("set_stealth_charging")
+    data class SetStealthCharging(val enabled: Boolean = true) : ActionStep
+
     /**
      * 조건이 맞을 때까지 대기.
      *
@@ -181,6 +185,8 @@ data class MacroRule(
                 when (step) {
                     is ActionStep.Run -> step.command.label
                     is ActionStep.Navigate -> "${step.destinationName} 안내"
+                    is ActionStep.SetStealthCharging ->
+                        "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
                     else -> null
                 }
             }
@@ -194,7 +200,10 @@ data class MacroRule(
             .toSet()
 
     /** 실제로 실행할 명령 수 (대기 제외) */
-    val commandCount: Int get() = actions.count { it is ActionStep.Run }
+    val commandCount: Int
+        get() = actions.count {
+            it is ActionStep.Run || it is ActionStep.Navigate || it is ActionStep.SetStealthCharging
+        }
 }
 
 /** 트리거가 참조하는 차량 신호 (폴링 계획 수립용) */

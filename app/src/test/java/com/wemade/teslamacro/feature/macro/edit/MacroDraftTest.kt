@@ -76,6 +76,16 @@ class MacroDraftTest {
     }
 
     @Test
+    fun `스텔스 충전 설정만 있는 매크로도 저장할 수 있다`() {
+        val stealthOnly = MacroDraft.blank()
+            .copy(name = "야간 충전")
+            .addTrigger(Trigger.AtTime(22 * 60))
+            .addAction(ActionStep.SetStealthCharging(true))
+
+        assertNull(stealthOnly.blockReason)
+    }
+
+    @Test
     fun `지도 안내의 주소가 비면 저장할 수 없다`() {
         val blankAddress = MacroDraft.blank()
             .copy(name = "출근 안내")

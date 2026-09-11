@@ -159,6 +159,10 @@ class AppContainer(private val context: Context) {
                 )
                 navigator.navigate(name, address, chosen)
             },
+            stealthChargingSetter = { enabled ->
+                setStealthCharging(enabled)
+                Result.success(Unit)
+            },
         )
         poller = StatePoller(
             gateway, ruleStore, settingsStore, runner, latestReading,
@@ -171,6 +175,12 @@ class AppContainer(private val context: Context) {
     }
 
     val isSimulated: Boolean get() = gateway.current is SimulatedVehicleGateway
+
+    /** 1회 설정을 저장하고 바뀐 연결 조건을 즉시 다시 판정한다. */
+    suspend fun setStealthCharging(enabled: Boolean) {
+        settingsStore.setStealthCharging(enabled)
+        if (enabled) poller.nudge() else poller.enforceConnectionGuard()
+    }
 
     /**
      * 측위 성공 좌표는 저장하고, 실패하면 마지막 성공 좌표로 대체한다.

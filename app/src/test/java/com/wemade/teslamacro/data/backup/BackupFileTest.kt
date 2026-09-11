@@ -26,7 +26,10 @@ class BackupFileTest {
         name = "여름 탑승 쿨링",
         triggers = listOf(Trigger.SignalBecomes(Signal.DOOR_DRIVER_FRONT, to = true)),
         conditions = listOf(Condition.InRange(Signal.INSIDE_TEMP, gte = 27.0)),
-        actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn)),
+        actions = listOf(
+            ActionStep.Run(VehicleCommand.ClimateOn),
+            ActionStep.SetStealthCharging(true),
+        ),
     )
 
     @Test

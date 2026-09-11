@@ -182,10 +182,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
      */
     /** 1회 설정을 저장하고 태블릿 연결 정책을 즉시 다시 적용한다. */
     fun setStealthCharging(enabled: Boolean) {
-        viewModelScope.launch {
-            container.settingsStore.setStealthCharging(enabled)
-            if (enabled) container.poller.nudge() else container.poller.enforceConnectionGuard()
-        }
+        viewModelScope.launch { container.setStealthCharging(enabled) }
     }
 
     /** 전류를 조절할 시간대 제한 사용 여부를 저장한다. */

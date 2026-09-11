@@ -75,6 +75,8 @@ fun ActionCard(
                     is ActionStep.WaitUntil -> "${describe(step.condition)}까지 대기"
                     is ActionStep.Navigate ->
                         "지도 안내 — ${step.destinationName.ifBlank { "목적지 미입력" }}"
+                    is ActionStep.SetStealthCharging ->
+                        "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
                 },
                 style = MaterialTheme.typography.titleMedium,
                 color = if (step is ActionStep.Run) T.Ink else T.InkMuted,
@@ -169,6 +171,15 @@ private fun parameterEditor(
                 onSelect = { onChange(step.copy(timeoutSeconds = it)) },
             )
         }
+    }
+
+    step is ActionStep.SetStealthCharging -> { onChange ->
+        ChipRow(
+            options = listOf(true, false),
+            selected = step.enabled,
+            label = { if (it) "켜기" else "끄기" },
+            onSelect = { onChange(ActionStep.SetStealthCharging(it)) },
+        )
     }
 
     step is ActionStep.Run && template is CommandTemplate.SeatLevel -> { onChange ->

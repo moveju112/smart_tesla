@@ -59,10 +59,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 다음 충전 1회의 스텔스 전류 조절 사용 여부를 저장한다. */
     fun setStealthCharging(enabled: Boolean) {
-        viewModelScope.launch {
-            container.settingsStore.setStealthCharging(enabled)
-            if (enabled) container.poller.nudge() else container.poller.enforceConnectionGuard()
-        }
+        viewModelScope.launch { container.setStealthCharging(enabled) }
     }
 
     /** 스텔스 충전의 시간대 제한 사용 여부를 저장한다. */

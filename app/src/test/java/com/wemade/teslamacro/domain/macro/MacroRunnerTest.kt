@@ -62,7 +62,11 @@ class MacroRunnerTest {
     @Test
     fun `고정 대기가 지나야 다음 명령이 나간다`() = runTest {
         val reading = MutableStateFlow<Reading?>(readingWith(30.0))
-        val runner = MacroRunner(gateway, TestScope(testScheduler), reading, now = { currentTimeMs() })
+        val runner = MacroRunner(
+            gateway, this, reading,
+            now = { currentTimeMs() },
+            diagnosticLogger = {},
+        )
 
         runner.launch(
             rule(
@@ -87,7 +91,11 @@ class MacroRunnerTest {
     @Test
     fun `조건이 맞으면 대기를 즉시 끝낸다`() = runTest {
         val reading = MutableStateFlow<Reading?>(readingWith(31.0))
-        val runner = MacroRunner(gateway, TestScope(testScheduler), reading, now = { currentTimeMs() })
+        val runner = MacroRunner(
+            gateway, this, reading,
+            now = { currentTimeMs() },
+            diagnosticLogger = {},
+        )
 
         runner.launch(
             rule(
@@ -113,7 +121,11 @@ class MacroRunnerTest {
     fun `조건이 끝내 안 맞아도 시간이 지나면 다음으로 넘어간다`() = runTest {
         // 무한 대기하면 매크로가 영원히 안 끝나고 다음 발동도 막힌다
         val reading = MutableStateFlow<Reading?>(readingWith(31.0))
-        val runner = MacroRunner(gateway, TestScope(testScheduler), reading, now = { currentTimeMs() })
+        val runner = MacroRunner(
+            gateway, this, reading,
+            now = { currentTimeMs() },
+            diagnosticLogger = {},
+        )
 
         runner.launch(
             rule(
@@ -134,7 +146,11 @@ class MacroRunnerTest {
     @Test
     fun `대기 중에는 남은 시간이 진행 상황에 노출된다`() = runTest {
         val reading = MutableStateFlow<Reading?>(readingWith(30.0))
-        val runner = MacroRunner(gateway, TestScope(testScheduler), reading, now = { currentTimeMs() })
+        val runner = MacroRunner(
+            gateway, this, reading,
+            now = { currentTimeMs() },
+            diagnosticLogger = {},
+        )
 
         runner.launch(rule(ActionStep.Wait(120)), nowMillis = 0L)
         advanceTimeBy(1_000)
@@ -147,7 +163,11 @@ class MacroRunnerTest {
     @Test
     fun `중단하면 대기가 즉시 끊긴다`() = runTest {
         val reading = MutableStateFlow<Reading?>(readingWith(30.0))
-        val runner = MacroRunner(gateway, TestScope(testScheduler), reading, now = { currentTimeMs() })
+        val runner = MacroRunner(
+            gateway, this, reading,
+            now = { currentTimeMs() },
+            diagnosticLogger = {},
+        )
 
         runner.launch(
             rule(ActionStep.Wait(600), ActionStep.Run(VehicleCommand.ClimateOff)),
@@ -158,6 +178,36 @@ class MacroRunnerTest {
         advanceUntilIdle()
 
         assertTrue("중단했으면 이후 명령이 나가면 안 된다", sent.isEmpty())
+    }
+
+    @Test
+    fun `스텔스 충전 설정을 바꾸고 다음 걸음을 계속 실행한다`() = runTest {
+        val reading = MutableStateFlow<Reading?>(readingWith(30.0))
+        val changes = mutableListOf<Boolean>()
+        val runner = MacroRunner(
+            gateway,
+            this,
+            reading,
+            stealthChargingSetter = {
+                changes += it
+                Result.success(Unit)
+            },
+            now = { currentTimeMs() },
+            diagnosticLogger = {},
+        )
+
+        runner.launch(
+            rule(
+                ActionStep.SetStealthCharging(true),
+                ActionStep.Run(VehicleCommand.ClimateOff),
+            ),
+            nowMillis = 0L,
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf(true), changes)
+        assertEquals(listOf(VehicleCommand.ClimateOff), sent.toList())
+        assertTrue(runner.log.value.any { it.message == "스텔스 충전 1회 켜기" })
     }
 
     /** 가상 시계의 현재 시각. 실제 벽시계를 쓰면 테스트가 흔들린다 */

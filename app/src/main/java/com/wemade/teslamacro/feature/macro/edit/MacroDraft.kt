@@ -29,7 +29,11 @@ data class MacroDraft(
             // 트리거가 없으면 발동 시점이 없다. 조건만으로는 절대 실행되지 않는다
             triggers.isEmpty() -> "\"언제\"를 하나 이상 추가해 주세요"
             // 지도 안내도 어엿한 동작이다 — 안내만 있는 매크로(탑승 → 길안내)를 막으면 안 된다
-            actions.none { it is ActionStep.Run || it is ActionStep.Navigate } ->
+            actions.none {
+                it is ActionStep.Run ||
+                    it is ActionStep.Navigate ||
+                    it is ActionStep.SetStealthCharging
+            } ->
                 "\"실행할 동작\"을 하나 이상 추가해 주세요"
             // 목적지가 비면 실행 시점에 아무 데도 못 간다
             actions.any { it is ActionStep.Navigate && it.address.isBlank() } ->

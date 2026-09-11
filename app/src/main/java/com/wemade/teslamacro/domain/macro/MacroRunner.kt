@@ -53,8 +53,12 @@ class MacroRunner(
     /** "지도 안내" 걸음 처리기. 안드로이드 인텐트는 앱 계층이 안다 — 도메인은 결과만 받는다 */
     private val navigator: suspend (name: String, address: String) -> Result<Unit> =
         { _, _ -> Result.failure(IllegalStateException("지도 안내를 지원하지 않는 환경이에요")) },
+    /** 스텔스 충전은 차량 단발 명령이 아니라 앱 설정과 전용 제어기가 처리한다. */
+    private val stealthChargingSetter: suspend (enabled: Boolean) -> Result<Unit> =
+        { Result.failure(IllegalStateException("스텔스 충전을 지원하지 않는 환경이에요")) },
     private val now: () -> Long = System::currentTimeMillis,
     private val maxLogSize: Int = 100,
+    private val diagnosticLogger: (String) -> Unit = com.wemade.teslable.DiagLog::add,
 ) {
     private val jobs = mutableMapOf<String, Job>()
     private val lock = Mutex()
@@ -123,6 +127,7 @@ class MacroRunner(
                     is ActionStep.WaitUntil -> runConditionalWait(rule, index, step)
                     is ActionStep.Run -> runCommand(rule, index, step)
                     is ActionStep.Navigate -> runNavigate(rule, index, step)
+                    is ActionStep.SetStealthCharging -> runStealthCharging(rule, index, step)
                 }
             }
             append(now(), rule.name, "완료")
@@ -228,11 +233,39 @@ class MacroRunner(
         }
     }
 
+    /** 앱의 1회 설정을 바꾸고 결과를 다른 매크로 걸음과 같은 형식으로 남긴다. */
+    private suspend fun runStealthCharging(
+        rule: MacroRule,
+        index: Int,
+        step: ActionStep.SetStealthCharging,
+    ) {
+        _progress.update {
+            it + (rule.id to MacroProgress(rule.id, index, rule.actions.size))
+        }
+        val label = "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
+        val result = try {
+            stealthChargingSetter(step.enabled)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Result.failure(error)
+        }
+        if (result.isFailure) {
+            append(
+                now(), rule.name,
+                "$label 실패: ${result.exceptionOrNull()?.message}",
+                isError = true,
+            )
+        } else {
+            append(now(), rule.name, label)
+        }
+    }
+
     private fun append(timestamp: Long, ruleName: String, message: String, isError: Boolean = false) {
         _log.update { (it + MacroLogEntry(timestamp, ruleName, message, isError)).takeLast(maxLogSize) }
         // 진단 로그에도 미러링 — "매크로가 왜 안 떴지"를 설정의 공유 버튼 한 번으로 조사 가능하게.
         // 여기 아무것도 없으면 발동 자체가 안 된 것, 실패가 찍혀 있으면 실행은 됐는데 걸음이 죽은 것
-        com.wemade.teslable.DiagLog.add("매크로 [$ruleName] $message")
+        diagnosticLogger("매크로 [$ruleName] $message")
     }
 
     private companion object {

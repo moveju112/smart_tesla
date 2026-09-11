@@ -66,6 +66,7 @@ class SmartThingsNotificationMatcherTest {
     @Test
     fun `설정에 노출한 모든 동작은 빠른 실행 허용 목록에 있다`() {
         assertTrue(SmartThingsCommands.all.all { it.action in QuickActionActivity.ACTIONS })
+        assertFalse(SmartThingsCommands.all.any { it.action == "lock" || it.action == "unlock" })
     }
 
     @Test

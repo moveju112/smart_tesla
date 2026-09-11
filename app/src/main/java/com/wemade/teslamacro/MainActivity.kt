@@ -54,6 +54,7 @@ import com.wemade.teslamacro.service.MacroService
 import com.wemade.teslamacro.ui.ViewModelFactory
 import com.wemade.teslamacro.ui.component.AppSplash
 import com.wemade.teslamacro.ui.component.openOverlayPermissionSettings
+import com.wemade.teslamacro.ui.component.openNotificationListenerSettings
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.layout.Pane
 import com.wemade.teslamacro.ui.nav.Destination
@@ -375,6 +376,15 @@ private fun AppRoot(factory: ViewModelFactory) {
                         }
                     }
 
+                    // 알림 접근은 일반 런타임 권한이 아니라 시스템 설정에서 바뀐다.
+                    // 복귀 때 다시 읽어야 허용 직후 경고와 버튼이 사라진다.
+                    val notificationAccessGranted =
+                        com.wemade.teslamacro.ui.component.rememberOnResume {
+                            androidx.core.app.NotificationManagerCompat
+                                .getEnabledListenerPackages(context)
+                                .contains(context.packageName)
+                        }
+
                     SettingsScreen(
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
@@ -412,6 +422,14 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onImport = { openBackup.launch(arrayOf("application/json", "text/*")) },
                             message = backupMessage,
                             onDismissMessage = settingsViewModel::clearBackupMessage,
+                        ),
+                        smartThings = com.wemade.teslamacro.feature.settings.SmartThingsFrunkControls(
+                            notificationAccessGranted = notificationAccessGranted,
+                            onEnabledChange = settingsViewModel::setSmartThingsFrunkEnabled,
+                            onTriggerTextChange = settingsViewModel::setSmartThingsFrunkText,
+                            onRequestNotificationAccess = {
+                                openNotificationListenerSettings(context)
+                            },
                         ),
                         navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                             onAppChange = settingsViewModel::setNavigatorApp,

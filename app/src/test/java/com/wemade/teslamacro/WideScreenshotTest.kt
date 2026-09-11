@@ -203,6 +203,7 @@ class WideScreenshotTest {
                         hudOverlay = true,
                         safeDrive = true,
                         autoStartNavigatorSafeDrive = true,
+                        smartThingsFrunkEnabled = group == SettingsGroup.AUTOMATION,
                     ),
                     onAutomationChange = {},
                     onUnpair = {},
@@ -214,6 +215,12 @@ class WideScreenshotTest {
                     backup = com.wemade.teslamacro.feature.settings.BackupControls(
                         onExport = {},
                         onImport = {},
+                    ),
+                    smartThings = com.wemade.teslamacro.feature.settings.SmartThingsFrunkControls(
+                        notificationAccessGranted = false,
+                        onEnabledChange = {},
+                        onTriggerTextChange = {},
+                        onRequestNotificationAccess = {},
                     ),
                     navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                         onAppChange = {},

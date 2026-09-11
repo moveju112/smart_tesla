@@ -36,6 +36,10 @@ data class AppSettings(
     val vin: String = "",
     /** 매크로 자동 실행 on/off — 정비·세차 때 통째로 끄는 스위치 */
     val automationEnabled: Boolean = true,
+    /** 스마트싱스 알림을 프렁크 직접 명령으로 받을지 */
+    val smartThingsFrunkEnabled: Boolean = false,
+    /** 스마트싱스 알림에서 정확히 일치해야 하는 문구 */
+    val smartThingsFrunkText: String = DEFAULT_SMARTTHINGS_FRUNK_TEXT,
     /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
     val protectPhoneKey: Boolean = true,
     /** 기기 종류와 무관하게 처음엔 백그라운드 연결하지 않는 안전한 휴대 모드로 시작한다. */
@@ -105,6 +109,10 @@ class SettingsStore(
         AppSettings(
             vin = prefs[KeyVin] ?: "",
             automationEnabled = prefs[KeyAutomation] ?: true,
+            smartThingsFrunkEnabled = prefs[KeySmartThingsFrunkEnabled] ?: false,
+            smartThingsFrunkText = prefs[KeySmartThingsFrunkText]
+                ?.take(MAX_SMARTTHINGS_FRUNK_TEXT_LENGTH)
+                ?: DEFAULT_SMARTTHINGS_FRUNK_TEXT,
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             isEnrolled = prefs[KeyEnrolled] ?: false,
@@ -134,6 +142,18 @@ class SettingsStore(
     suspend fun setVin(vin: String) = edit { it[KeyVin] = vin }
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
+    /** 알림 접근 권한과 별개로 차량 명령 수신 여부를 저장한다. */
+    suspend fun setSmartThingsFrunkEnabled(enabled: Boolean) = edit {
+        it[KeySmartThingsFrunkEnabled] = enabled
+    }
+
+    /** 알림 한 칸에서 비교할 수 있도록 줄바꿈을 없애고 길이를 제한한다. */
+    suspend fun setSmartThingsFrunkText(text: String) = edit {
+        it[KeySmartThingsFrunkText] = text
+            .replace('\n', ' ')
+            .replace('\r', ' ')
+            .take(MAX_SMARTTHINGS_FRUNK_TEXT_LENGTH)
+    }
     suspend fun setProtectPhoneKey(enabled: Boolean) = edit { it[KeyProtectPhoneKey] = enabled }
     /** 같은 종류의 기기도 사용 방식이 다를 수 있으므로 이 설치본에만 모드를 저장한다. */
     suspend fun setDeviceMode(mode: DeviceMode) = edit { it[KeyDeviceMode] = mode.name }
@@ -297,6 +317,8 @@ class SettingsStore(
         val KeyLegacyActivePoll = intPreferencesKey("active_poll_seconds")
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
         val KeyAutomation = booleanPreferencesKey("automation_enabled")
+        val KeySmartThingsFrunkEnabled = booleanPreferencesKey("smartthings_frunk_enabled")
+        val KeySmartThingsFrunkText = stringPreferencesKey("smartthings_frunk_text")
         val KeyProtectPhoneKey = booleanPreferencesKey("protect_phone_key")
         // 키 이름은 기존 설치본의 값을 읽기 위해 유지하고, 값만 MOUNTED/PORTABLE로 갱신한다.
         val KeyDeviceMode = stringPreferencesKey("device_role")
@@ -328,3 +350,6 @@ class SettingsStore(
         val KeyParkedBattery = intPreferencesKey("parked_battery")
     }
 }
+
+const val DEFAULT_SMARTTHINGS_FRUNK_TEXT = "ㅎㅎㅎㅎㅎ"
+const val MAX_SMARTTHINGS_FRUNK_TEXT_LENGTH = 40

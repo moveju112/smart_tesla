@@ -37,6 +37,7 @@ import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DiagLogPanel
+import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.TButton
@@ -67,6 +68,7 @@ fun SettingsScreen(
     onRequestInstallPermission: () -> Unit = {},
     backup: BackupControls? = null,
     navigation: NavigationControls? = null,
+    smartThings: SmartThingsFrunkControls? = null,
     /**
      * 처음 펼칠 칸. 안 주면 상황이 정한다(미등록이면 차량, 아니면 자동화).
      * 특정 칸을 곧바로 보여야 할 때 쓴다 — 스냅샷 검증이 지금의 유일한 사용처다.
@@ -163,7 +165,12 @@ fun SettingsScreen(
                         }
                     }
 
-                    SettingsGroup.AUTOMATION -> Unit
+                    SettingsGroup.AUTOMATION -> {
+                        if (smartThings != null) {
+                            SectionHeader("음성 연결", topPadding = Space.md)
+                            SmartThingsFrunkPanel(settings, smartThings)
+                        }
+                    }
 
                     SettingsGroup.VEHICLE -> {
                         // 차량 미등록 상태에서만 나온다. 매크로를 실제로 발동시켜볼 유일한 방법
@@ -453,7 +460,6 @@ private fun LabelValueRow(label: String, value: String) {
     }
 }
 
-/** 음성 설정에 필요한 값과 콜백 묶음 */
 /**
  * 절전 제외 상태와 시스템 다이얼로그로 보내는 길.
  *
@@ -464,6 +470,66 @@ data class BatteryControls(
     val unrestricted: Boolean,
     val onOpenSettings: () -> Unit,
 )
+
+/** 스마트싱스 알림 기반 프렁크 명령과 시스템 알림 접근 권한을 묶는다. */
+data class SmartThingsFrunkControls(
+    val notificationAccessGranted: Boolean,
+    val onEnabledChange: (Boolean) -> Unit,
+    val onTriggerTextChange: (String) -> Unit,
+    val onRequestNotificationAccess: () -> Unit,
+)
+
+/** 구글 음성에서 넘어온 스마트싱스 알림을 프렁크 명령으로 연결한다. */
+@Composable
+private fun SmartThingsFrunkPanel(
+    settings: AppSettings,
+    controls: SmartThingsFrunkControls,
+) {
+    TCard {
+        ToggleRow(
+            title = "스마트싱스로 프렁크 열기",
+            subtitle = "지정한 스마트싱스 알림이 오면 프렁크를 열어요",
+            checked = settings.smartThingsFrunkEnabled,
+            onCheckedChange = controls.onEnabledChange,
+        )
+        if (!settings.smartThingsFrunkEnabled) return@TCard
+
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        DraftField(
+            value = settings.smartThingsFrunkText,
+            onValueChange = controls.onTriggerTextChange,
+            label = "감지할 알림 문구",
+            isError = settings.smartThingsFrunkText.isBlank(),
+            note = "스마트싱스 알림의 한 줄과 정확히 같을 때만 프렁크를 열어요",
+        )
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (controls.notificationAccessGranted) {
+                    "알림 접근 허용됨 · 명령 전달 뒤 해당 알림을 지워요"
+                } else {
+                    "알림 접근을 허용해 주세요"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (controls.notificationAccessGranted) T.InkFaint else T.Danger,
+                modifier = Modifier.weight(1f),
+            )
+            if (!controls.notificationAccessGranted) {
+                Spacer(Modifier.width(Space.md))
+                TButton(
+                    text = "권한 허용",
+                    fillWidth = false,
+                    small = true,
+                    onClick = controls.onRequestNotificationAccess,
+                )
+            }
+        }
+    }
+}
 
 /** 길안내를 넘길 내비 앱, HUD 속도 표시, 과속·단속 안내와 그 소리 */
 data class NavigationControls(
@@ -846,6 +912,10 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     appendLine("[Smart Tesla ${com.wemade.teslamacro.BuildConfig.VERSION_NAME} 설정]")
     appendLine("차량: ${settings.vehicleName.ifBlank { "-" }} · VIN ${maskVin(settings.vin)}")
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
+    appendLine(
+        "스마트싱스 프렁크=${settings.smartThingsFrunkEnabled}" +
+            " · 감지 문구=${settings.smartThingsFrunkText.ifBlank { "-" }}",
+    )
     appendLine(
         "기기 사용 모드=${settings.deviceMode.label}" +
             " · 매크로 자동 실행=${settings.automationEnabled}" +

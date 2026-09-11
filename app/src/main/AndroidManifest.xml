@@ -130,6 +130,17 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
 
+        <!-- 사용자가 허용한 스마트싱스 알림만 기존 프렁크 명령으로 넘긴다 -->
+        <service
+            android:name=".service.SmartThingsNotificationListener"
+            android:exported="false"
+            android:label="스마트싱스 프렁크"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- 업데이트 설치 결과를 받는다. PackageInstaller가 직접 부르므로 exported 불필요 -->
         <receiver
             android:name=".data.update.InstallResultReceiver"

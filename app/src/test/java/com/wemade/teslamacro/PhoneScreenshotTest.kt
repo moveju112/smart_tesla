@@ -128,14 +128,23 @@ class PhoneScreenshotTest {
         paparazzi.snapshot("P6-settings") {
             AppFrame(Destination.Settings) {
                 SettingsScreen(
-                    settings = AppSettings(vin = "5YJS0000000000000"),
+                    settings = AppSettings(
+                        vin = "5YJS0000000000000",
+                        smartThingsFrunkEnabled = true,
+                    ),
                     onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
-                battery = com.wemade.teslamacro.feature.settings.BatteryControls(
-                    unrestricted = false,
-                    onOpenSettings = {},
-                ),
+                    battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                        unrestricted = false,
+                        onOpenSettings = {},
+                    ),
+                    smartThings = com.wemade.teslamacro.feature.settings.SmartThingsFrunkControls(
+                        notificationAccessGranted = false,
+                        onEnabledChange = {},
+                        onTriggerTextChange = {},
+                        onRequestNotificationAccess = {},
+                    ),
                 )
             }
         }

@@ -47,6 +47,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
     }
 
+    /** 스마트싱스 알림으로 프렁크를 여는 기능의 사용 여부를 저장한다. */
+    fun setSmartThingsFrunkEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSmartThingsFrunkEnabled(enabled) }
+    }
+
+    /** 스마트싱스 루틴이 보내는 알림 문구를 저장한다. */
+    fun setSmartThingsFrunkText(text: String) {
+        viewModelScope.launch { container.settingsStore.setSmartThingsFrunkText(text) }
+    }
+
     /** 휴대폰 키 보호 설정을 저장하고 현재 연결 정책을 즉시 다시 적용한다. */
     fun setProtectPhoneKey(enabled: Boolean) {
         viewModelScope.launch {

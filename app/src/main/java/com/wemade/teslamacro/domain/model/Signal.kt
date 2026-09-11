@@ -20,7 +20,7 @@ enum class Signal(
     SPEED("속도", SignalKind.NUMBER, "km/h"),
     /**
      * 차가 주는 값이 아니라 앱이 잰다 — 탑승이 이어진 시간, 하차 후엔 직전 세션 길이.
-     * "30분 이상 타고 내렸으면 애프터블로우" 같은 지속시간 조건의 재료다
+     * "30분 이상 운행했으면 실행" 같은 지속시간 조건의 재료다
      */
     RIDE_MINUTES("탑승 시간", SignalKind.NUMBER, "분"),
     /**

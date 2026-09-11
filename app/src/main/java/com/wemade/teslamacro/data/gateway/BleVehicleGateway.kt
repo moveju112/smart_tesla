@@ -71,7 +71,7 @@ class BleVehicleGateway(
         runCatching {
             _linkState.value = LinkState.Scanning
             // 백그라운드 재시도는 몇 시간씩 같은 실패를 반복한다 — 직전과 같은 실패가
-            // 이어지는 동안은 시작·실패 로그를 생략해 버퍼(300줄)를 지킨다
+            // 이어지는 동안은 시작·실패 로그를 생략해 버퍼(100줄)를 지킨다
             val repeatAttempt = lastConnectFailure != null
             if (!repeatAttempt) {
                 val searchNames = com.wemade.teslable.TeslaBleSpec.bleLocalNames(vin)
@@ -600,7 +600,7 @@ class BleVehicleGateway(
     private val lastReadFailure = mutableMapOf<String, String>()
 
     // 파싱 결과는 값이 바뀔 때만 남긴다 — "배터리=99"를 15초마다 반복하면
-    // 300줄 버퍼에서 연결·매크로 로그를 밀어낸다
+    // 100줄 버퍼에서 연결·매크로 로그를 밀어낸다
     private val lastParsedLog = mutableMapOf<StateCategory, String>()
     private fun logParsedIfChanged(category: StateCategory, summary: String) {
         if (lastParsedLog[category] == summary) return

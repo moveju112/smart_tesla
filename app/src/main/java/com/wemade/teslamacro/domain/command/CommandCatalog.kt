@@ -85,15 +85,6 @@ object CommandCatalog {
             "Climate Keeper", CommandGroup.CLIMATE,
             ClimateKeeperMode.entries.map { it.label to VehicleCommand.SetClimateKeeper(it) },
         ),
-        CommandTemplate.Choice(
-            "캐빈 과열보호", CommandGroup.CLIMATE,
-            listOf(
-                "켜기" to VehicleCommand.SetCabinOverheatProtection(enabled = true),
-                "팬만" to VehicleCommand.SetCabinOverheatProtection(true, fanOnly = true),
-                "끄기" to VehicleCommand.SetCabinOverheatProtection(enabled = false),
-            ),
-        ),
-
         // ---- 시트 ----
         // 통풍은 앞좌석만 가능하다 (프로토콜 제약)
         CommandTemplate.SeatLevel("통풍 시트", CommandGroup.SEAT, frontSeats) { seat, level ->

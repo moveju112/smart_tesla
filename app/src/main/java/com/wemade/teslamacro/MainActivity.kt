@@ -37,8 +37,6 @@ import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.wemade.teslamacro.feature.dashboard.DashboardScreen
-import com.wemade.teslamacro.feature.dashboard.DashboardViewModel
 import com.wemade.teslamacro.feature.macro.MacroListScreen
 import com.wemade.teslamacro.feature.macro.MacroViewModel
 import com.wemade.teslamacro.feature.macro.edit.MacroEditScreen
@@ -203,7 +201,7 @@ internal fun runtimePermissionsFor(sdkInt: Int): List<String> = buildList {
 
 /**
  * 등록 전에는 등록 화면만, 등록 후에는 레일 + 본문.
- * 화면이 3개뿐이라 Navigation 라이브러리 없이 상태 하나로 전환한다.
+ * 화면이 2개뿐이라 Navigation 라이브러리 없이 상태 하나로 전환한다.
  */
 @Composable
 private fun AppRoot(factory: ViewModelFactory) {
@@ -211,7 +209,7 @@ private fun AppRoot(factory: ViewModelFactory) {
     val settings by settingsViewModel.settings.collectAsState()
 
     var skippedPairing by rememberSaveable { mutableStateOf(false) }
-    var current by rememberSaveable { mutableStateOf(Destination.Dashboard) }
+    var current by rememberSaveable { mutableStateOf(Destination.Macros) }
 
     val context = LocalContext.current
 
@@ -244,7 +242,7 @@ private fun AppRoot(factory: ViewModelFactory) {
     }
 
     // 세로면 하단 탭, 가로면 좌측 레일 — 폭이 아니라 방향으로 가른다.
-    // 차내 태블릿은 세로로 세워도 폭이 600dp를 넘어 레일로 잡혔다. 메뉴가 3개뿐이라 세로에선 레일이 본문 폭만 먹는다
+    // 차내 태블릿은 세로로 세워도 폭이 600dp를 넘어 레일로 잡혔다. 메뉴가 2개뿐이라 세로에선 레일이 본문 폭만 먹는다
     val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
 
     ResponsiveScaffold(
@@ -261,19 +259,8 @@ private fun AppRoot(factory: ViewModelFactory) {
         Box(modifier = Modifier.fillMaxSize()) {
             when (current) {
                 Destination.Dashboard -> {
-                    val vm: DashboardViewModel = viewModel(factory = factory)
-                    val state by vm.uiState.collectAsState()
-                    DashboardScreen(
-                        state = state,
-                        onCommand = vm::send,
-                        onRetryConnect = vm::retryConnect,
-                        onDismissError = vm::dismissError,
-                        onSeatClimate = vm::setSeatClimate,
-                        onStealthCharging = vm::setStealthCharging,
-                        onStealthScheduleEnabled = vm::setStealthScheduleEnabled,
-                        onStealthStartMinutes = vm::setStealthStartMinutes,
-                        onStealthEndMinutes = vm::setStealthEndMinutes,
-                    )
+                    // 업데이트 전 저장 상태가 제어 화면이면 첫 번째 실제 화면으로 바로 옮긴다.
+                    LaunchedEffect(Unit) { current = Destination.Macros }
                 }
 
                 Destination.Macros -> {
@@ -388,6 +375,10 @@ private fun AppRoot(factory: ViewModelFactory) {
                     SettingsScreen(
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
+                        onStealthChargingChange = settingsViewModel::setStealthCharging,
+                        onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
+                        onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
+                        onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,
                         onProtectPhoneKeyChange = settingsViewModel::setProtectPhoneKey,
                         onDeviceModeChange = settingsViewModel::setDeviceMode,
                         onDisconnectVehicle = settingsViewModel::disconnectVehicle,
@@ -423,10 +414,10 @@ private fun AppRoot(factory: ViewModelFactory) {
                             message = backupMessage,
                             onDismissMessage = settingsViewModel::clearBackupMessage,
                         ),
-                        smartThings = com.wemade.teslamacro.feature.settings.SmartThingsFrunkControls(
+                        smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
                             notificationAccessGranted = notificationAccessGranted,
-                            onEnabledChange = settingsViewModel::setSmartThingsFrunkEnabled,
-                            onTriggerTextChange = settingsViewModel::setSmartThingsFrunkText,
+                            onEnabledChange = settingsViewModel::setSmartThingsEnabled,
+                            onCommandTextChange = settingsViewModel::setSmartThingsCommandText,
                             onRequestNotificationAccess = {
                                 openNotificationListenerSettings(context)
                             },

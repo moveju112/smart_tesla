@@ -22,7 +22,7 @@ data/
   charge/               StealthChargePlan(다음 전류 순수함수), StealthChargeController(실행부)
   settings/             SettingsStore(설정), SeatStore(좌석 통풍/열선 클라 저장)
   macro/RuleStore.kt    매크로 JSON 파일 저장 (DataStore 아님 — filesDir/macros.json)
-feature/<화면>/         XxxScreen.kt + XxxViewModel.kt 쌍 (dashboard, macro, pairing, settings)
+feature/<화면>/         XxxScreen.kt + XxxViewModel.kt 쌍 (macro, pairing, settings)
   macro/edit/           매크로 편집 분리 — MacroEditScreen, ActionEditor, ConditionEditor, MacroDraft
 service/                MacroService(FGS connectedDevice), BootReceiver
 ui/                     ViewModelFactory, component/, layout/(Pane 반응형), nav/, theme/(토큰)

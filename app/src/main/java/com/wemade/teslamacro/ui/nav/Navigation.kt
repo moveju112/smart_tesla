@@ -30,28 +30,34 @@ import com.wemade.teslamacro.ui.theme.T
  * 도면집의 시트 목록.
  *
  * 아이콘을 쓰지 않는다. 도면집은 아이콘이 아니라 **시트 번호**로 넘긴다 —
- * "SHEET 2 / 3"처럼. 번호가 있으면 몇 장 중 몇 번째인지도 함께 알 수 있어
- * 아이콘 세 개보다 정보가 많다.
+ * "SHEET 1 / 2"처럼. 번호가 있으면 몇 장 중 몇 번째인지도 함께 알 수 있어
+ * 아이콘 두 개보다 정보가 많다.
  *
  * 순서는 사용 빈도 순이다.
  */
 enum class Destination(val route: String, val label: String) {
+    // 이전 버전의 저장 상태와 화면 테스트가 읽을 수 있게 값은 남기되 실제 목차에서는 제외한다.
     Dashboard("dashboard", "제어"),
     Macros("macros", "매크로"),
     Settings("settings", "설정"),
     ;
 
-    /** 시트 번호. 1부터 센다 */
-    val sheet: Int get() = ordinal + 1
+    /** 실제 목차에 보이는 두 화면의 시트 번호. */
+    val sheet: Int get() = visible.indexOf(this).takeIf { it >= 0 }?.plus(1) ?: 1
+
+    companion object {
+        /** 제어 화면을 뺀 실제 앱 목차. */
+        val visible = listOf(Macros, Settings)
+    }
 }
 
-/** 도면집의 총 장수. 시트 번호 옆에 "/ 3"으로 붙는다 */
-private val SHEET_COUNT = Destination.entries.size
+/** 도면집의 총 장수. */
+private val SHEET_COUNT = Destination.visible.size
 
 /**
  * 좁은 화면의 시트 탭 (하단 가로).
  *
- * 세로에선 레일이 본문 폭을 너무 먹는다. 시트가 3장뿐이라 하단이 낫고 엄지도 닿기 쉽다.
+ * 세로에선 레일이 본문 폭을 너무 먹는다. 시트가 2장뿐이라 하단이 낫고 엄지도 닿기 쉽다.
  * 지금 시트는 위쪽 굵은 선으로 표시한다 — 도면집에서 펼쳐진 장을 가리키는 방식이다.
  */
 @Composable
@@ -73,7 +79,7 @@ fun NavBar(
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Destination.entries.forEachIndexed { index, destination ->
+        Destination.visible.forEachIndexed { index, destination ->
             if (index > 0) {
                 // 시트 사이 괘선 — 표제란과 같은 방식으로 칸을 나눈다
                 Box(
@@ -128,7 +134,7 @@ fun NavRail(
                 .background(T.Hairline)
         )
         Spacer(Modifier.height(Space.sm))
-        Destination.entries.forEach { destination ->
+        Destination.visible.forEach { destination ->
             SheetTab(
                 destination = destination,
                 selected = destination == current,

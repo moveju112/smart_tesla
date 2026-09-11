@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -47,6 +48,8 @@ fun DiagLogPanel(
     val lines by DiagLog.lines.collectAsState()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    // 화면을 연 시점에도 12시간 보관 기준을 바로 적용한다.
+    LaunchedEffect(Unit) { DiagLog.pruneExpired() }
 
     TCard(modifier = modifier, outlined = true) {
         if (title != null) {
@@ -108,15 +111,13 @@ fun DiagLogPanel(
         if (!showLines) {
             // 줄을 늘어놓지 않는다 — 사용자가 읽을 내용이 아니고, 여기가 화면을 제일 많이 먹었다.
             // 공유 한 번으로 최근 기록이 나가므로 몇 줄 쌓였는지만 알려준다
-            // 화면 줄 수만 적으면 "300줄뿐"으로 읽힌다 — 저장량도 함께 보여야
-            // 텍스트 공유가 최근 기록만 보내는 이유를 알 수 있다
-            val storedKb = remember(lines.size) { DiagLog.storedBytes() / 1024 }
+            // 재시작 전 파일 기록까지 포함한 실제 보관 줄 수와 상한을 함께 보여준다.
+            val storedLines = remember(lines.size) { DiagLog.storedLineCount() }
             Text(
                 text = when {
-                    lines.isEmpty() && storedKb <= 0 -> "아직 기록이 없어요."
-                    storedKb > 0 -> "기록 ${lines.size}줄 (파일 ${storedKb}KB). " +
-                        "문제가 생기면 공유를 눌러 최근 로그를 텍스트로 보내주세요."
-                    else -> "기록 ${lines.size}줄. 문제가 생기면 공유를 눌러 보내주세요."
+                    storedLines <= 0 -> "아직 기록이 없어요."
+                    else -> "기록 ${storedLines}줄 · 최근 ${DiagLog.MAX_AGE_HOURS}시간, " +
+                        "최대 ${DiagLog.MAX_LINES}줄. 문제가 생기면 공유를 눌러 보내주세요."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,

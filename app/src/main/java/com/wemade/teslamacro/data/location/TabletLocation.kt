@@ -66,7 +66,7 @@ class TabletLocation(private val context: Context) {
     }
 
     // 같은 결과가 반복될 땐 침묵한다 — 매 측위(주행 중 분당 1회)를 다 남기면
-    // 진단 로그 300줄 버퍼에서 BLE 로그를 밀어낸다. 좌표 원문은 남기지 않는다(개인 위치정보)
+    // 진단 로그 100줄 버퍼에서 BLE 로그를 밀어낸다. 좌표 원문은 남기지 않는다(개인 위치정보)
     private var lastOutcomeKey: String? = null
     private fun logOutcome(key: String, message: String) {
         if (key == lastOutcomeKey) return

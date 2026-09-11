@@ -16,6 +16,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 
@@ -40,6 +42,13 @@ class AppContainer(private val context: Context) {
             logFile = java.io.File(logDir, "diag.log"),
             previousFile = java.io.File(logDir, "diag-prev.log"),
         )
+        // 새 로그가 없어도 실행 중인 앱에서 만료분이 계속 남지 않게 주기적으로 정리한다.
+        appScope.launch {
+            while (isActive) {
+                delay(15L * 60L * 1_000L)
+                com.wemade.teslable.DiagLog.pruneExpired()
+            }
+        }
 
         // 제거된 오프라인 음성 기능이 설치했던 대용량 모델과 알림 채널을 업데이트 뒤에도 남기지 않는다.
         val legacyVoiceModel = java.io.File(appContext.filesDir, "vosk-ko")

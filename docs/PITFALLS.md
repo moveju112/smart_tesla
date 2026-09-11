@@ -56,7 +56,7 @@
 
 - **Symptom:** 빅스비 루틴의 "앱을 열거나 앱 동작 바로 실행"에 `Smart Tesla 열기`만 보임
   - Cause: APK의 정적 바로가기는 삼성 루틴 목록에 앱 동작으로 수집되지 않음 (갤럭시 실기기 2026-09-02)
-  - Fix: `MacroShortcutPublisher`가 저장 매크로를 런타임 동적 바로가기로 발행한다. 시스템 슬롯이 적으면 애프터블로우와 수동 매크로를 우선한다 (0.9.7, 실기기 미확인)
+  - Fix: `MacroShortcutPublisher`가 저장 매크로를 런타임 동적 바로가기로 발행한다. 시스템 슬롯이 적으면 수동 매크로를 우선한다 (0.9.7, 실기기 미확인)
 
 - **Symptom:** 빅스비 루틴에서 보닛 열기를 수동 실행해도 차량과 진단 로그가 모두 조용함
   - Cause: `Theme.NoDisplay`인 `QuickActionActivity`가 BLE 연결이 끝날 때까지 `finish()`를 미뤄 Android가 `onResume`에서 강제 종료함. 직접 명령은 수신·결과 로그도 없었음

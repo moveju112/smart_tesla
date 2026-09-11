@@ -47,14 +47,37 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
     }
 
-    /** 스마트싱스 알림으로 프렁크를 여는 기능의 사용 여부를 저장한다. */
-    fun setSmartThingsFrunkEnabled(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSmartThingsFrunkEnabled(enabled) }
+    /** 스마트싱스 알림 명령 전체의 사용 여부를 저장한다. */
+    fun setSmartThingsEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSmartThingsEnabled(enabled) }
     }
 
-    /** 스마트싱스 루틴이 보내는 알림 문구를 저장한다. */
-    fun setSmartThingsFrunkText(text: String) {
-        viewModelScope.launch { container.settingsStore.setSmartThingsFrunkText(text) }
+    /** 스마트싱스 루틴이 보낼 문구를 빠른 차량 동작별로 저장한다. */
+    fun setSmartThingsCommandText(action: String, text: String) {
+        viewModelScope.launch { container.settingsStore.setSmartThingsCommandText(action, text) }
+    }
+
+    /** 다음 충전 1회의 스텔스 전류 조절 사용 여부를 저장한다. */
+    fun setStealthCharging(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsStore.setStealthCharging(enabled)
+            if (enabled) container.poller.nudge() else container.poller.enforceConnectionGuard()
+        }
+    }
+
+    /** 스텔스 충전의 시간대 제한 사용 여부를 저장한다. */
+    fun setStealthScheduleEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setStealthScheduleEnabled(enabled) }
+    }
+
+    /** 스텔스 충전 시작 시각을 저장한다. */
+    fun setStealthStartMinutes(minutes: Int) {
+        viewModelScope.launch { container.settingsStore.setStealthStartMinutes(minutes) }
+    }
+
+    /** 스텔스 충전 종료 시각을 저장한다. */
+    fun setStealthEndMinutes(minutes: Int) {
+        viewModelScope.launch { container.settingsStore.setStealthEndMinutes(minutes) }
     }
 
     /** 휴대폰 키 보호 설정을 저장하고 현재 연결 정책을 즉시 다시 적용한다. */

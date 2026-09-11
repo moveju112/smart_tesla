@@ -66,19 +66,16 @@ class MacroShortcutPublisher(context: Context) {
     }
 }
 
-/** 슬롯이 적어도 애프터블로우와 수동 매크로가 먼저 보이도록 순서를 정한다. */
+/** 슬롯이 적어도 사용자가 직접 실행할 수동 매크로가 먼저 보이도록 순서를 정한다. */
 internal fun selectMacroShortcuts(rules: List<MacroRule>, limit: Int): List<MacroRule> = rules
     .asSequence()
     .filter { it.name.isNotBlank() && it.actions.isNotEmpty() }
     .distinctBy { it.id }
     .sortedWith(
-        compareBy<MacroRule> { it.id != AFTER_BLOW_PRESET_ID }
-            .thenBy { rule -> rule.triggers.none { it is Trigger.Manual } }
+        compareBy<MacroRule> { rule -> rule.triggers.none { it is Trigger.Manual } }
             .thenBy { it.id.startsWith("preset-") }
             .thenByDescending { it.enabled }
             .thenBy { it.name }
     )
     .take(limit.coerceAtLeast(0))
     .toList()
-
-private const val AFTER_BLOW_PRESET_ID = "preset-after-blow"

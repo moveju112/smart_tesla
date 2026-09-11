@@ -13,6 +13,9 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("settings")
 
@@ -36,10 +39,10 @@ data class AppSettings(
     val vin: String = "",
     /** 매크로 자동 실행 on/off — 정비·세차 때 통째로 끄는 스위치 */
     val automationEnabled: Boolean = true,
-    /** 스마트싱스 알림을 프렁크 직접 명령으로 받을지 */
-    val smartThingsFrunkEnabled: Boolean = false,
-    /** 스마트싱스 알림에서 정확히 일치해야 하는 문구 */
-    val smartThingsFrunkText: String = DEFAULT_SMARTTHINGS_FRUNK_TEXT,
+    /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
+    val smartThingsEnabled: Boolean = false,
+    /** 빠른 차량 동작별로 정확히 일치해야 하는 스마트싱스 알림 문구 */
+    val smartThingsCommandTexts: Map<String, String> = SmartThingsCommands.defaults(),
     /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
     val protectPhoneKey: Boolean = true,
     /** 기기 종류와 무관하게 처음엔 백그라운드 연결하지 않는 안전한 휴대 모드로 시작한다. */
@@ -80,7 +83,7 @@ data class AppSettings(
     val autoStartNavigatorSafeDrive: Boolean = false,
     /** 안심운전 전체 진단 뒤 통로를 하나씩 고르는 실행 방식 */
     val navigatorSafeDriveLaunchMode: String = "DEFAULT",
-    /** HUD 속도를 다른 앱 위에 띄울지. 끄면 제어 화면 안에만 나온다 */
+    /** HUD 속도를 다른 앱 위에 띄울지. */
     val hudOverlay: Boolean = false,
     /** 과속·구간단속·보호구역 안내. 켜면 주행 중 GPS와 망을 계속 쓴다 */
     val safeDrive: Boolean = false,
@@ -109,10 +112,10 @@ class SettingsStore(
         AppSettings(
             vin = prefs[KeyVin] ?: "",
             automationEnabled = prefs[KeyAutomation] ?: true,
-            smartThingsFrunkEnabled = prefs[KeySmartThingsFrunkEnabled] ?: false,
-            smartThingsFrunkText = prefs[KeySmartThingsFrunkText]
-                ?.take(MAX_SMARTTHINGS_FRUNK_TEXT_LENGTH)
-                ?: DEFAULT_SMARTTHINGS_FRUNK_TEXT,
+            smartThingsEnabled = prefs[KeySmartThingsEnabled]
+                ?: prefs[KeySmartThingsFrunkEnabled]
+                ?: false,
+            smartThingsCommandTexts = commandTexts(prefs),
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             isEnrolled = prefs[KeyEnrolled] ?: false,
@@ -143,16 +146,20 @@ class SettingsStore(
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     /** 알림 접근 권한과 별개로 차량 명령 수신 여부를 저장한다. */
-    suspend fun setSmartThingsFrunkEnabled(enabled: Boolean) = edit {
-        it[KeySmartThingsFrunkEnabled] = enabled
+    suspend fun setSmartThingsEnabled(enabled: Boolean) = edit {
+        it[KeySmartThingsEnabled] = enabled
     }
 
-    /** 알림 한 칸에서 비교할 수 있도록 줄바꿈을 없애고 길이를 제한한다. */
-    suspend fun setSmartThingsFrunkText(text: String) = edit {
-        it[KeySmartThingsFrunkText] = text
-            .replace('\n', ' ')
-            .replace('\r', ' ')
-            .take(MAX_SMARTTHINGS_FRUNK_TEXT_LENGTH)
+    /** 동작별 문구를 한 줄로 정리해 한 설정값에 함께 저장한다. */
+    suspend fun setSmartThingsCommandText(action: String, text: String) = edit { prefs ->
+        if (SmartThingsCommands.all.none { it.action == action }) return@edit
+        val updated = commandTexts(prefs).toMutableMap().apply {
+            this[action] = text
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .take(MAX_SMARTTHINGS_COMMAND_TEXT_LENGTH)
+        }
+        prefs[KeySmartThingsCommandTexts] = Json.encodeToString(updated)
     }
     suspend fun setProtectPhoneKey(enabled: Boolean) = edit { it[KeyProtectPhoneKey] = enabled }
     /** 같은 종류의 기기도 사용 방식이 다를 수 있으므로 이 설치본에만 모드를 저장한다. */
@@ -310,6 +317,17 @@ class SettingsStore(
         store.edit(block)
     }
 
+    /** 새 형식을 읽고, 없거나 깨졌으면 기존 프렁크 문구를 새 동작 목록으로 옮긴다. */
+    private fun commandTexts(prefs: Preferences): Map<String, String> {
+        val stored = prefs[KeySmartThingsCommandTexts]?.let { encoded ->
+            runCatching { Json.decodeFromString<Map<String, String>>(encoded) }.getOrNull()
+        }
+        val legacyFrunkText = prefs[KeySmartThingsFrunkText]
+            ?.take(MAX_SMARTTHINGS_COMMAND_TEXT_LENGTH)
+            ?: DEFAULT_SMARTTHINGS_FRUNK_TEXT
+        return SmartThingsCommands.normalized(stored ?: SmartThingsCommands.defaults(legacyFrunkText))
+    }
+
     private companion object {
         val KeyVin = stringPreferencesKey("vin")
         val KeyLegacyVoiceAlwaysOn = booleanPreferencesKey("voice_always_on")
@@ -317,6 +335,9 @@ class SettingsStore(
         val KeyLegacyActivePoll = intPreferencesKey("active_poll_seconds")
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
         val KeyAutomation = booleanPreferencesKey("automation_enabled")
+        val KeySmartThingsEnabled = booleanPreferencesKey("smartthings_enabled")
+        val KeySmartThingsCommandTexts = stringPreferencesKey("smartthings_command_texts")
+        // 0.9.36 설정은 새 다중 명령 설정의 초기값으로만 읽는다.
         val KeySmartThingsFrunkEnabled = booleanPreferencesKey("smartthings_frunk_enabled")
         val KeySmartThingsFrunkText = stringPreferencesKey("smartthings_frunk_text")
         val KeyProtectPhoneKey = booleanPreferencesKey("protect_phone_key")
@@ -350,6 +371,3 @@ class SettingsStore(
         val KeyParkedBattery = intPreferencesKey("parked_battery")
     }
 }
-
-const val DEFAULT_SMARTTHINGS_FRUNK_TEXT = "ㅎㅎㅎㅎㅎ"
-const val MAX_SMARTTHINGS_FRUNK_TEXT_LENGTH = 40

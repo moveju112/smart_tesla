@@ -162,8 +162,7 @@ class StatePoller(
 
         var previous: Reading? = null
         var activeUntil = 0L
-        var needFullRead = true   // 연결 직후 첫 사이클 — 매크로에 필요한 것만
-        var needDashboardFill = false  // 그 다음 사이클 — 대시보드용 여분을 채운다
+        var needFullRead = true   // 연결 직후 첫 사이클 — 자동화에 필요한 것만
         // 명령 후 확인 읽기로 요청된 카테고리 — 확인 창(짧게) 동안만 읽는다.
         // 1회 성공에 바로 끝내면 차량이 명령을 아직 반영하기 전의 정상 응답(옛값)으로
         // 낙관 표시가 되돌아간 채 재확인이 없다. 창(10초, 2초 주기 4~5회)이 흡수한다
@@ -273,7 +272,7 @@ class StatePoller(
             reconnectStrikes = 0
 
             // 2. 카테고리 선택:
-            //    - 연결 직후: 전부 (온도·배터리까지 화면에 한 번 채운다)
+            //    - 연결 직후: 매크로와 스텔스 충전에 필요한 상태
             //    - 집중 폴링 창: 룰이 요구하는 것
             //    - 사람이 타고 있음: 공조·배터리도 갱신 — 타고 있는 동안 차는 어차피 안 잔다.
             //      (접속 시 한 번만 읽으면 주행 중 배터리가 화면에서 멈춰 있는다 — 실차 제보)
@@ -293,23 +292,13 @@ class StatePoller(
             val categories = when {
                 // 안심운전 확인은 탑승값만 필요하다. 위치·다른 매크로 조회로 착석 감지를 늦추지 않는다.
                 portableCheck != null -> setOf(StateCategory.BODY_CONTROLLER)
-                // 연결 직후 첫 사이클은 매크로 판정에 필요한 것만 읽는다.
-                // 대시보드용(공조·충전·주행)까지 기다리면 BLE 왕복 3번(실측 ~1초)이
-                // 탑승 순간에 그대로 얹힌다 — 지도 안내가 그만큼 늦는다.
-                // 여분은 다음 사이클(집중 창이라 2초 뒤)에 읽어 화면을 채운다
-                needFullRead -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories()
-                // 첫 사이클에서 미뤄둔 대시보드용 값을 여기서 채운다
-                needDashboardFill -> setOf(
-                    StateCategory.BODY_CONTROLLER,
-                    StateCategory.CLIMATE,
-                    StateCategory.CHARGE,
-                    StateCategory.DRIVE,
-                )
+                // 제어 화면이 없어졌으므로 화면 표시용 전체 조회는 하지 않는다.
+                needFullRead -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories(settings)
                 // 집중 창에도 차체는 항상 본다(탑승·잠금 변화 감지가 멈추면 안 된다).
                 // 타고 있으면 공조·배터리도 — 매크로가 안 써도 화면이 멈춰 보이면 안 된다
                 isActiveWindow -> buildSet {
                     add(StateCategory.BODY_CONTROLLER)
-                    addAll(requiredCategories())
+                    addAll(requiredCategories(settings))
                     addAll(focusCategories)
                     if (_snapshot.value.isUserPresent == true) {
                         add(StateCategory.CLIMATE)
@@ -327,17 +316,14 @@ class StatePoller(
                 _snapshot.value.isCharging == true -> setOf(
                     StateCategory.BODY_CONTROLLER,
                     StateCategory.CHARGE,
-                ) + requiredCategories()
+                ) + requiredCategories(settings)
                 // 켜진 룰이 요구하는 카테고리는 빈 차에서도 읽는다 — "주차 과열 보호"처럼
                 // 빈 차가 본령인 룰이 하차 시점 값(몇 시간 전 46℃)으로 판정되는 걸 막는다.
                 // 인포테인먼트 읽기가 차 수면을 방해하는 비용은 그 룰을 켠 사용자의 선택이다
-                else -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories()
+                else -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories(settings)
             } + if (portableCheck == null) dueSlowCategories() else emptySet()
             if (portableCheck == null && needFullRead) {
                 needFullRead = false
-                needDashboardFill = true   // 여분은 다음 사이클에
-            } else if (portableCheck == null && needDashboardFill) {
-                needDashboardFill = false
             }
 
             // 3. 한 번에 묶어 읽는다. 게이트웨이가 응답 크기를 보고 알아서 나눈다
@@ -819,13 +805,15 @@ class StatePoller(
     /** 느린 상태를 마지막으로 읽은 시각 */
     private val slowReadAt = mutableMapOf<StateCategory, Long>()
 
-    /** 켜져 있는 매크로가 실제로 필요로 하는 카테고리만 읽는다 */
-    private fun requiredCategories(): Set<StateCategory> =
-        ruleStore.rules.value
+    /** 켜진 매크로와 스텔스 충전이 실제로 필요로 하는 카테고리만 읽는다. */
+    private fun requiredCategories(settings: AppSettings): Set<StateCategory> = buildSet {
+        addAll(ruleStore.rules.value
             .filter { it.enabled }
             .flatMap { it.requiredCategories }
-            .toSet()
-            .ifEmpty { setOf(StateCategory.BODY_CONTROLLER) }
+        )
+        if (settings.stealthCharging || settings.stealthChargeModified) add(StateCategory.CHARGE)
+        if (isEmpty()) add(StateCategory.BODY_CONTROLLER)
+    }
 
     /** 문 열림·탑승 변화 = 사람이 차에 접근했다는 신호 */
     private fun isWakeEvent(previous: VehicleSnapshot?, current: VehicleSnapshot): Boolean {

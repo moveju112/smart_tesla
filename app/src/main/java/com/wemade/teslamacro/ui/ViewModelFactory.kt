@@ -3,7 +3,6 @@ package com.wemade.teslamacro.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.wemade.teslamacro.di.AppContainer
-import com.wemade.teslamacro.feature.dashboard.DashboardViewModel
 import com.wemade.teslamacro.feature.macro.MacroViewModel
 import com.wemade.teslamacro.feature.pairing.PairingViewModel
 import com.wemade.teslamacro.feature.settings.SettingsViewModel
@@ -13,8 +12,6 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
-        modelClass.isAssignableFrom(DashboardViewModel::class.java) ->
-            DashboardViewModel(container) as T
         modelClass.isAssignableFrom(MacroViewModel::class.java) ->
             MacroViewModel(container) as T
         modelClass.isAssignableFrom(PairingViewModel::class.java) ->

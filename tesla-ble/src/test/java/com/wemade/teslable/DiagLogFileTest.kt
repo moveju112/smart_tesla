@@ -8,6 +8,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import org.junit.Test
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 진단 로그의 파일 보관.
@@ -59,9 +62,10 @@ class DiagLogFileTest {
      */
     @Test
     fun `dumpAll은 화면 버퍼보다 앞선 것까지 담는다`() {
-        current.writeText("11-01 09:00:00.000 지난 실행의 마지막 줄\n")
-        DiagLog.attachFile(current, previous)
-        DiagLog.add("이번 실행")
+        val now = System.currentTimeMillis()
+        current.writeText("${timestamp(now - 1_000L)} 지난 실행의 마지막 줄\n")
+        DiagLog.attachFile(current, previous, nowMillis = now)
+        DiagLog.addAt("이번 실행", now + 1_000L)
 
         val all = DiagLog.dumpAll()
         assertTrue(all.contains("지난 실행의 마지막 줄"))
@@ -70,32 +74,43 @@ class DiagLogFileTest {
         assertFalse(DiagLog.dump().contains("지난 실행의 마지막 줄"))
     }
 
-    /** 상한을 넘으면 한 세대 밀고 새로 쓴다. 살아 있는 두 세대는 공유에 함께 실린다 */
+    /** 화면과 파일 모두 마지막 100줄만 남겨 저장량이 다시 커지지 않아야 한다. */
     @Test
-    fun `가득 차면 직전 세대로 밀고 새로 쓴다`() {
-        DiagLog.attachFile(current, previous, maxBytes = 400)
+    fun `100줄을 넘으면 가장 오래된 줄부터 지운다`() {
+        val now = System.currentTimeMillis()
+        DiagLog.attachFile(current, previous, maxLines = 100, nowMillis = now)
+        repeat(120) { index -> DiagLog.addAt("채우는 줄 $index", now + index + 1L) }
 
-        // 딱 한 번 밀릴 때까지만 채운다. 더 채우면 첫 줄은 규칙대로 버려지므로
-        // "첫 줄이 남아 있는가"로 검사하면 안 된다
-        var n = 0
-        while (!previous.exists() && n < 500) DiagLog.add("채우는 줄 ${n++}")
-        assertTrue("직전 세대가 만들어져야 한다", previous.exists())
-
-        val movedLine = previous.readLines().last { it.isNotBlank() }
-        DiagLog.add("밀린 뒤의 줄")
-
-        val all = DiagLog.dumpAll()
-        assertTrue("밀려난 세대도 공유에 실린다", all.contains(movedLine))
-        assertTrue("새 세대도 함께 실린다", all.contains("밀린 뒤의 줄"))
+        assertEquals(100, current.readLines().size)
+        assertFalse(DiagLog.dumpAll().contains("채우는 줄 0\n"))
+        assertTrue(DiagLog.dumpAll().contains("채우는 줄 119"))
     }
 
-    /** 세 세대째가 오면 가장 오래된 것은 버린다 — 무한히 쌓이면 안 된다 */
+    /** 정확히 12시간이 된 줄도 보관 대상에서 빠져야 한다. */
     @Test
-    fun `두 세대만 남는다`() {
-        DiagLog.attachFile(current, previous, maxBytes = 120)
-        repeat(60) { DiagLog.add("줄 $it") }
+    fun `12시간 이상 지난 로그를 붙일 때 지운다`() {
+        val now = System.currentTimeMillis()
+        val twelveHours = 12L * 60L * 60L * 1_000L
+        current.writeText(
+            "${timestamp(now - twelveHours)} 만료된 줄\n" +
+                "${timestamp(now - twelveHours + 1L)} 남아 있는 줄\n"
+        )
+        DiagLog.attachFile(current, previous, nowMillis = now)
 
-        assertTrue(current.length() + previous.length() < 120 * 3)
+        assertFalse(current.readText().contains("만료된 줄"))
+        assertTrue(current.readText().contains("남아 있는 줄"))
+    }
+
+    /** 0.9.36까지 쓰던 연도 없는 날짜도 업데이트 직후 버리지 않고 같은 기준으로 정리한다. */
+    @Test
+    fun `이전 날짜 형식의 최근 로그를 이어받는다`() {
+        val now = System.currentTimeMillis()
+        previous.writeText("${legacyTimestamp(now - 1_000L)} 이전 형식의 줄\n")
+
+        DiagLog.attachFile(current, previous, nowMillis = now)
+
+        assertTrue(current.readText().contains("이전 형식의 줄"))
+        assertFalse(previous.exists())
     }
 
     @Test
@@ -116,4 +131,12 @@ class DiagLogFileTest {
         assertTrue(DiagLog.dump().contains("파일 없이도 남는다"))
         assertTrue(DiagLog.dumpAll().contains("파일 없이도 남는다"))
     }
+
+    /** 테스트용 시각을 실제 로그와 같은 형식으로 만든다. */
+    private fun timestamp(millis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date(millis))
+
+    /** 이전 버전 로그가 쓰던 연도 없는 시각을 만든다. */
+    private fun legacyTimestamp(millis: Long): String =
+        SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(Date(millis))
 }

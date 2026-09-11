@@ -4,6 +4,7 @@ import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.wemade.teslamacro.TeslaMacroApplication
+import com.wemade.teslamacro.data.settings.SmartThingsCommands
 import com.wemade.teslable.DiagLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,13 +13,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** 스마트싱스 명령 알림을 기존 프렁크 바로가기 실행 경로로 넘긴다. */
+/** 스마트싱스 명령 알림을 문구별 기존 빠른 차량 동작 실행 경로로 넘긴다. */
 class SmartThingsNotificationListener : NotificationListenerService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val receiptGuard = NotificationReceiptGuard()
 
-    /** 스마트싱스 알림의 출처·문구·중복을 확인한 뒤 프렁크 직접 명령으로 넘긴다. */
+    /** 스마트싱스 알림의 출처·문구·중복을 확인한 뒤 연결된 빠른 차량 동작으로 넘긴다. */
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName != SMARTTHINGS_PACKAGE_NAME) return
 
@@ -27,23 +28,26 @@ class SmartThingsNotificationListener : NotificationListenerService() {
             val app = application as TeslaMacroApplication
             app.ready.first { it }
             val settings = app.container.settingsStore.settings.first()
-            if (!settings.smartThingsFrunkEnabled) return@launch
-            if (!matchesSmartThingsFrunkNotification(sbn.packageName, texts, settings.smartThingsFrunkText)) {
-                return@launch
-            }
+            if (!settings.smartThingsEnabled) return@launch
+            val action = matchingSmartThingsAction(
+                sbn.packageName,
+                texts,
+                settings.smartThingsCommandTexts,
+            ) ?: return@launch
+            val label = SmartThingsCommands.all.firstOrNull { it.action == action }?.label ?: action
             if (!receiptGuard.accept(sbn.key, android.os.SystemClock.elapsedRealtime())) {
-                DiagLog.add("스마트싱스 프렁크 알림 중복 무시")
+                DiagLog.add("스마트싱스 $label 알림 중복 무시")
                 return@launch
             }
 
             // 기존 바로가기와 같은 서비스 진입점을 써서 BLE·P단·2분 제한을 그대로 적용한다.
-            runCatching { MacroService.runQuickAction(this@SmartThingsNotificationListener, "open_frunk", null) }
+            runCatching { MacroService.runQuickAction(this@SmartThingsNotificationListener, action, null) }
                 .onSuccess {
                     cancelNotification(sbn.key)
-                    DiagLog.add("스마트싱스 프렁크 알림 수신 — 명령 전달 후 알림 삭제")
+                    DiagLog.add("스마트싱스 $label 알림 수신 — 명령 전달 후 알림 삭제")
                 }
                 .onFailure { error ->
-                    DiagLog.add("스마트싱스 프렁크 명령 전달 실패 — ${error.message}")
+                    DiagLog.add("스마트싱스 $label 명령 전달 실패 — ${error.message}")
                 }
         }
     }

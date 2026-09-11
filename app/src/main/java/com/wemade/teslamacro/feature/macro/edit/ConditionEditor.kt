@@ -605,6 +605,6 @@ private fun defaultThreshold(signal: Signal): Double = when (signal) {
     Signal.INSIDE_TEMP -> 27.0     // 통풍 자동화의 기본 임계값
     Signal.OUTSIDE_TEMP -> 30.0
     Signal.BATTERY_LEVEL -> 20.0
-    Signal.RIDE_MINUTES -> 30.0    // "오래 탔으면 애프터블로우"의 기본선
+    Signal.RIDE_MINUTES -> 30.0    // 오래 운행한 뒤 실행할 조건의 기본선
     else -> 0.0
 }

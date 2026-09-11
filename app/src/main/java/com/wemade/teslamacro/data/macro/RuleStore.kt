@@ -50,10 +50,10 @@ class RuleStore(context: Context) {
             } else emptySet()
         }.getOrDefault(emptySet())
 
-        _rules.value = loaded?.let { existing ->
+        _rules.value = loaded?.filterNot { it.id == REMOVED_AFTER_BLOW_PRESET_ID }?.let { existing ->
             val knownIds = existing.map { it.id }.toSet() + seen
             val missing = MacroPresets.defaults().filter { it.id !in knownIds }
-            if (missing.isEmpty()) existing
+            if (missing.isEmpty() && existing.size == loaded.size) existing
             else (existing + missing).also { persist(it) }
         } ?: MacroPresets.defaults().also { persist(it) }
 
@@ -97,6 +97,7 @@ class RuleStore(context: Context) {
     }
 
     private companion object {
+        const val REMOVED_AFTER_BLOW_PRESET_ID = "preset-after-blow"
         val ruleListSerializer = ListSerializer(MacroRule.serializer())
         val presetIdSerializer = SetSerializer(String.serializer())
     }

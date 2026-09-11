@@ -21,7 +21,6 @@ object MacroPresets {
         leaveCar(),
         eveningPrecondition(),
         parkedOverheatVent(),
-        afterBlow(),
     )
 
     /** 여름 탑승 쿨링 — 문이 열릴 때, 실내가 27℃ 이상이면 */
@@ -86,30 +85,6 @@ object MacroPresets {
             ActionStep.Run(VehicleCommand.ClimateOn),
             ActionStep.Run(VehicleCommand.SetTemperature(22.0)),
             ActionStep.Run(VehicleCommand.SetSeatCooler(SeatPosition.FRONT_LEFT, Level.LOW)),
-        ),
-        cooldownSeconds = 3600,
-    )
-
-    /**
-     * 애프터블로우 — 하차하면 팬만 돌려 증발기 습기를 말린다.
-     *
-     * 테슬라는 팬 단독 제어를 안 열어놔서 캐빈 과열보호의 "팬만" 모드로 근사한다.
-     * 30분 뒤 원래대로 끈다. 실차에서 팬이 실제로 도는지 미검증이라 기본은 꺼둔다.
-     * 30분 이상 탄 뒤에만 — 잠깐 탄 차는 증발기에 습기가 찰 시간도 없었다.
-     */
-    fun afterBlow() = MacroRule(
-        id = "preset-after-blow",
-        name = "애프터블로우",
-        enabled = false,
-        triggers = listOf(Trigger.SignalBecomes(Signal.USER_PRESENT, to = false)),
-        conditions = listOf(
-            Condition.SignalIs(Signal.PARKED, value = true),
-            Condition.InRange(Signal.RIDE_MINUTES, gte = 30.0),
-        ),
-        actions = listOf(
-            ActionStep.Run(VehicleCommand.SetCabinOverheatProtection(enabled = true, fanOnly = true)),
-            ActionStep.Wait(seconds = 1800),
-            ActionStep.Run(VehicleCommand.SetCabinOverheatProtection(enabled = false)),
         ),
         cooldownSeconds = 3600,
     )

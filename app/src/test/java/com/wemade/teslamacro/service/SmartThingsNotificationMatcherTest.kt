@@ -1,45 +1,71 @@
 package com.wemade.teslamacro.service
 
+import com.wemade.teslamacro.data.settings.SmartThingsCommands
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SmartThingsNotificationMatcherTest {
 
     @Test
-    fun `스마트싱스의 정확한 문구만 프렁크 명령으로 받는다`() {
-        assertTrue(
-            matchesSmartThingsFrunkNotification(
+    fun `알림 문구마다 서로 다른 차량 동작을 찾는다`() {
+        val commands = mapOf("open_frunk" to "ㅎㅎㅎㅎㅎ", "open_trunk" to "ㅌㅌㅌㅌㅌ")
+
+        assertEquals(
+            "open_frunk",
+            matchingSmartThingsAction(
                 packageName = SMARTTHINGS_PACKAGE_NAME,
                 texts = listOf("SmartThings", "ㅎㅎㅎㅎㅎ"),
-                triggerText = "ㅎㅎㅎㅎㅎ",
-            )
+                commandTexts = commands,
+            ),
         )
-        assertFalse(
-            matchesSmartThingsFrunkNotification(
+        assertEquals(
+            "open_trunk",
+            matchingSmartThingsAction(
+                packageName = SMARTTHINGS_PACKAGE_NAME,
+                texts = listOf("ㅌㅌㅌㅌㅌ"),
+                commandTexts = commands,
+            ),
+        )
+        assertNull(
+            matchingSmartThingsAction(
                 packageName = "example.fake",
                 texts = listOf("ㅎㅎㅎㅎㅎ"),
-                triggerText = "ㅎㅎㅎㅎㅎ",
-            )
+                commandTexts = commands,
+            ),
         )
-        assertFalse(
-            matchesSmartThingsFrunkNotification(
+        assertNull(
+            matchingSmartThingsAction(
                 packageName = SMARTTHINGS_PACKAGE_NAME,
                 texts = listOf("ㅎㅎㅎㅎㅎ 실행됨"),
-                triggerText = "ㅎㅎㅎㅎㅎ",
-            )
+                commandTexts = commands,
+            ),
         )
     }
 
     @Test
-    fun `빈 문구는 어떤 알림도 실행하지 않는다`() {
-        assertFalse(
-            matchesSmartThingsFrunkNotification(
+    fun `빈 문구와 중복 문구는 어떤 동작도 실행하지 않는다`() {
+        assertNull(
+            matchingSmartThingsAction(
                 packageName = SMARTTHINGS_PACKAGE_NAME,
                 texts = listOf("SmartThings"),
-                triggerText = "   ",
-            )
+                commandTexts = mapOf("open_frunk" to "   "),
+            ),
         )
+        assertNull(
+            matchingSmartThingsAction(
+                packageName = SMARTTHINGS_PACKAGE_NAME,
+                texts = listOf("같은 문구"),
+                commandTexts = mapOf("open_frunk" to "같은 문구", "open_trunk" to "같은 문구"),
+            ),
+        )
+    }
+
+    @Test
+    fun `설정에 노출한 모든 동작은 빠른 실행 허용 목록에 있다`() {
+        assertTrue(SmartThingsCommands.all.all { it.action in QuickActionActivity.ACTIONS })
     }
 
     @Test

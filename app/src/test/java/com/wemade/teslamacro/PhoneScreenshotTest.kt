@@ -130,7 +130,8 @@ class PhoneScreenshotTest {
                 SettingsScreen(
                     settings = AppSettings(
                         vin = "5YJS0000000000000",
-                        smartThingsFrunkEnabled = true,
+                        smartThingsEnabled = true,
+                        stealthCharging = true,
                     ),
                     onAutomationChange = {},
                     onUnpair = {},
@@ -139,10 +140,10 @@ class PhoneScreenshotTest {
                         unrestricted = false,
                         onOpenSettings = {},
                     ),
-                    smartThings = com.wemade.teslamacro.feature.settings.SmartThingsFrunkControls(
+                    smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
                         notificationAccessGranted = false,
                         onEnabledChange = {},
-                        onTriggerTextChange = {},
+                        onCommandTextChange = { _, _ -> },
                         onRequestNotificationAccess = {},
                     ),
                 )

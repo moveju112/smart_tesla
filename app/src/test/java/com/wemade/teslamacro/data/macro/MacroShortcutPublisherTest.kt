@@ -7,7 +7,7 @@ import org.junit.Test
 class MacroShortcutPublisherTest {
 
     @Test
-    fun `애프터블로우와 수동 매크로를 제한 슬롯에 먼저 넣는다`() {
+    fun `수동 매크로를 제한 슬롯에 먼저 넣는다`() {
         val automatic = MacroPresets.summerBoarding()
         val manual = automatic.copy(
             id = "macro-manual",
@@ -16,10 +16,10 @@ class MacroShortcutPublisherTest {
         )
 
         val selected = selectMacroShortcuts(
-            rules = listOf(automatic, manual, MacroPresets.afterBlow()),
-            limit = 2,
+            rules = listOf(automatic, manual),
+            limit = 1,
         )
 
-        assertEquals(listOf("preset-after-blow", "macro-manual"), selected.map { it.id })
+        assertEquals(listOf("macro-manual"), selected.map { it.id })
     }
 }

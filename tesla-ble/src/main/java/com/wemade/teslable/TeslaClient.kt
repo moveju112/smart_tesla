@@ -207,7 +207,7 @@ class TeslaClient(
             .setFlags(flags)
             .build()
 
-        // 주기 폴링(quiet)은 남기지 않는다 — 15초마다 2줄씩 쌓여 300줄 버퍼를 15분에 다 밀어낸다
+        // 주기 폴링(quiet)은 남기지 않는다 — 15초마다 2줄씩 쌓이면 중요한 기록을 빠르게 밀어낸다
         if (!quiet) DiagLog.add("명령 전송 ${domain.name} (${payload.size}B)")
         val response = sendAndAwait(message.toByteArray(), uuid)
             ?: run {

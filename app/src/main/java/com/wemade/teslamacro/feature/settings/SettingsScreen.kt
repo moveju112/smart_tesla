@@ -33,12 +33,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
+import com.wemade.teslamacro.data.settings.SmartThingsCommands
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DiagLogPanel
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.Hairline
+import com.wemade.teslamacro.ui.component.HourMinuteStepper
 import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
@@ -54,6 +56,10 @@ import com.wemade.teslamacro.ui.theme.T
 fun SettingsScreen(
     settings: AppSettings,
     onAutomationChange: (Boolean) -> Unit,
+    onStealthChargingChange: (Boolean) -> Unit = {},
+    onStealthScheduleEnabledChange: (Boolean) -> Unit = {},
+    onStealthStartMinutesChange: (Int) -> Unit = {},
+    onStealthEndMinutesChange: (Int) -> Unit = {},
     onProtectPhoneKeyChange: (Boolean) -> Unit = {},
     onDeviceModeChange: (DeviceMode) -> Unit = {},
     onDisconnectVehicle: () -> Unit = {},
@@ -68,7 +74,7 @@ fun SettingsScreen(
     onRequestInstallPermission: () -> Unit = {},
     backup: BackupControls? = null,
     navigation: NavigationControls? = null,
-    smartThings: SmartThingsFrunkControls? = null,
+    smartThings: SmartThingsControls? = null,
     /**
      * 처음 펼칠 칸. 안 주면 상황이 정한다(미등록이면 차량, 아니면 자동화).
      * 특정 칸을 곧바로 보여야 할 때 쓴다 — 스냅샷 검증이 지금의 유일한 사용처다.
@@ -129,6 +135,14 @@ fun SettingsScreen(
                                 onCheckedChange = onAutomationChange,
                             )
                         }
+                        SectionHeader("충전")
+                        StealthChargePanel(
+                            settings = settings,
+                            onEnabledChange = onStealthChargingChange,
+                            onScheduleEnabledChange = onStealthScheduleEnabledChange,
+                            onStartMinutesChange = onStealthStartMinutesChange,
+                            onEndMinutesChange = onStealthEndMinutesChange,
+                        )
                     }
 
                     SettingsGroup.VEHICLE -> {
@@ -168,7 +182,7 @@ fun SettingsScreen(
                     SettingsGroup.AUTOMATION -> {
                         if (smartThings != null) {
                             SectionHeader("음성 연결", topPadding = Space.md)
-                            SmartThingsFrunkPanel(settings, smartThings)
+                            SmartThingsPanel(settings, smartThings)
                         }
                     }
 
@@ -216,6 +230,50 @@ fun SettingsScreen(
         )
 
         Spacer(Modifier.height(Space.xxl))
+    }
+}
+
+/** 제어 화면에서 옮긴 다음 1회 스텔스 충전 설정. */
+@Composable
+private fun StealthChargePanel(
+    settings: AppSettings,
+    onEnabledChange: (Boolean) -> Unit,
+    onScheduleEnabledChange: (Boolean) -> Unit,
+    onStartMinutesChange: (Int) -> Unit,
+    onEndMinutesChange: (Int) -> Unit,
+) {
+    TCard {
+        ToggleRow(
+            title = "스텔스 충전 1회",
+            subtitle = "다음 충전 1회만 실행하고 완료되면 자동으로 꺼져요",
+            checked = settings.stealthCharging,
+            onCheckedChange = onEnabledChange,
+        )
+        if (!settings.stealthCharging) return@TCard
+
+        Spacer(Modifier.height(Space.sm))
+        Text(
+            text = "대기·충전 중에만 차량 연결을 유지하고, 종료하면 휴대폰 키 보호 정책으로 돌아가요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+        )
+        Spacer(Modifier.height(Space.md))
+        ToggleRow(
+            title = "시간대 제한",
+            subtitle = "설정한 시간 안에서만 전류를 조절해요",
+            checked = settings.stealthScheduleEnabled,
+            onCheckedChange = onScheduleEnabledChange,
+        )
+        if (settings.stealthScheduleEnabled) {
+            Spacer(Modifier.height(Space.md))
+            Text("시작", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+            Spacer(Modifier.height(Space.sm))
+            HourMinuteStepper(settings.stealthStartMinutes, onStartMinutesChange)
+            Spacer(Modifier.height(Space.md))
+            Text("종료", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+            Spacer(Modifier.height(Space.sm))
+            HourMinuteStepper(settings.stealthEndMinutes, onEndMinutesChange)
+        }
     }
 }
 
@@ -471,39 +529,52 @@ data class BatteryControls(
     val onOpenSettings: () -> Unit,
 )
 
-/** 스마트싱스 알림 기반 프렁크 명령과 시스템 알림 접근 권한을 묶는다. */
-data class SmartThingsFrunkControls(
+/** 스마트싱스 알림 기반 차량 명령과 시스템 알림 접근 권한을 묶는다. */
+data class SmartThingsControls(
     val notificationAccessGranted: Boolean,
     val onEnabledChange: (Boolean) -> Unit,
-    val onTriggerTextChange: (String) -> Unit,
+    val onCommandTextChange: (String, String) -> Unit,
     val onRequestNotificationAccess: () -> Unit,
 )
 
-/** 구글 음성에서 넘어온 스마트싱스 알림을 프렁크 명령으로 연결한다. */
+/** 구글 음성에서 넘어온 스마트싱스 알림 문구별로 기존 빠른 차량 동작을 연결한다. */
 @Composable
-private fun SmartThingsFrunkPanel(
+private fun SmartThingsPanel(
     settings: AppSettings,
-    controls: SmartThingsFrunkControls,
+    controls: SmartThingsControls,
 ) {
     TCard {
         ToggleRow(
-            title = "스마트싱스로 프렁크 열기",
-            subtitle = "지정한 스마트싱스 알림이 오면 프렁크를 열어요",
-            checked = settings.smartThingsFrunkEnabled,
+            title = "스마트싱스 음성 명령",
+            subtitle = "알림 문구마다 실행할 차량 동작을 정해요",
+            checked = settings.smartThingsEnabled,
             onCheckedChange = controls.onEnabledChange,
         )
-        if (!settings.smartThingsFrunkEnabled) return@TCard
+        if (!settings.smartThingsEnabled) return@TCard
 
         Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
-        DraftField(
-            value = settings.smartThingsFrunkText,
-            onValueChange = controls.onTriggerTextChange,
-            label = "감지할 알림 문구",
-            isError = settings.smartThingsFrunkText.isBlank(),
-            note = "스마트싱스 알림의 한 줄과 정확히 같을 때만 프렁크를 열어요",
+        Text(
+            text = "알림의 한 줄과 정확히 같은 문구만 실행해요. 빈 칸은 사용하지 않아요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
         )
+        Spacer(Modifier.height(Space.md))
+        SmartThingsCommands.all.forEachIndexed { index, command ->
+            val text = settings.smartThingsCommandTexts[command.action].orEmpty()
+            val duplicated = text.isNotBlank() && settings.smartThingsCommandTexts.values.count {
+                it.trim() == text.trim()
+            } > 1
+            DraftField(
+                value = text,
+                onValueChange = { controls.onCommandTextChange(command.action, it) },
+                label = command.label,
+                isError = duplicated,
+                note = if (duplicated) "다른 동작과 문구가 같아 실행할 수 없어요" else null,
+            )
+            if (index < SmartThingsCommands.all.lastIndex) Spacer(Modifier.height(Space.md))
+        }
         Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
@@ -913,8 +984,10 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     appendLine("차량: ${settings.vehicleName.ifBlank { "-" }} · VIN ${maskVin(settings.vin)}")
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
     appendLine(
-        "스마트싱스 프렁크=${settings.smartThingsFrunkEnabled}" +
-            " · 감지 문구=${settings.smartThingsFrunkText.ifBlank { "-" }}",
+        "스마트싱스 명령=${settings.smartThingsEnabled}" +
+            " · 문구=" + SmartThingsCommands.all.joinToString { command ->
+                "${command.action}:${settings.smartThingsCommandTexts[command.action].orEmpty().ifBlank { "-" }}"
+            },
     )
     appendLine(
         "기기 사용 모드=${settings.deviceMode.label}" +

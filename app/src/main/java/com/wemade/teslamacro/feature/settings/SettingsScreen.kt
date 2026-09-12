@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.settings.ThemeMode
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.settings.MAX_SMARTTHINGS_COMMAND_TEXT_LENGTH
 import com.wemade.teslamacro.data.settings.SmartThingsCommands
@@ -57,6 +58,7 @@ import com.wemade.teslamacro.ui.theme.T
 fun SettingsScreen(
     settings: AppSettings,
     onAutomationChange: (Boolean) -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit = {},
     onStealthChargingChange: (Boolean) -> Unit = {},
     onStealthScheduleEnabledChange: (Boolean) -> Unit = {},
     onStealthStartMinutesChange: (Int) -> Unit = {},
@@ -152,7 +154,20 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.DEVICE -> {
-                            SectionHeader("업데이트", topPadding = Space.md)
+                            SectionHeader("화면", topPadding = Space.md)
+                            TCard {
+                                Text("화면 모드", style = MaterialTheme.typography.titleMedium, color = T.Ink)
+                                Spacer(Modifier.height(Space.sm))
+                                ChoiceRow(
+                                    options = ThemeMode.entries.map { it.name to it.label },
+                                    selected = settings.themeMode.name,
+                                    onSelect = { onThemeModeChange(ThemeMode.of(it)) },
+                                )
+                                Text("자동은 오전 7시~오후 7시에는 라이트, 나머지 시간에는 다크로 바뀌어요.",
+                                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                                    modifier = Modifier.padding(top = Space.sm))
+                            }
+                            SectionHeader("업데이트")
                             UpdatePanel(
                                 update = update,
                                 onCheck = onCheckUpdate,

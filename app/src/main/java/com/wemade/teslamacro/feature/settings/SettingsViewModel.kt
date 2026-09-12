@@ -43,6 +43,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         initialValue = container.initialSettings,
     )
 
+    /** 선택 즉시 테마를 바꾸고 다음 실행에도 유지한다. */
+    fun setThemeMode(mode: com.wemade.teslamacro.data.settings.ThemeMode) {
+        viewModelScope.launch { container.settingsStore.setThemeMode(mode) }
+    }
+
     fun setAutomationEnabled(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
     }

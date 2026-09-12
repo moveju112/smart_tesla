@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.wemade.teslamacro.data.settings.ThemeMode
 import java.util.Calendar
 import kotlinx.coroutines.delay
 
@@ -142,12 +143,12 @@ private fun colorSchemeFor(palette: Palette, dark: Boolean) = if (dark) {
 }
 
 /**
- * @param dark null이면 시계를 보고 스스로 정한다.
+ * @param dark null이면 저장된 mode를 따르고, 자동일 때만 시각으로 정한다.
  *   스냅샷 테스트처럼 결과가 고정돼야 하는 곳에서만 true/false를 직접 넘긴다.
  */
 @Composable
-fun TeslaMacroTheme(dark: Boolean? = null, content: @Composable () -> Unit) {
-    val isDark = dark ?: rememberIsNight()
+fun TeslaMacroTheme(dark: Boolean? = null, mode: ThemeMode = ThemeMode.AUTO, content: @Composable () -> Unit) {
+    val isDark = dark ?: mode.isDark(if (mode == ThemeMode.AUTO) rememberIsNight() else false)
     val palette = if (isDark) DarkPalette else LightPalette
     CompositionLocalProvider(LocalPalette provides palette) {
         MaterialTheme(

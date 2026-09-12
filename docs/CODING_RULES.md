@@ -14,8 +14,8 @@
 - **[NEVER]** 그라데이션·글로우를 쓰지 않는다. 휴대폰 우선 블루/그레이·쿨 뉴트럴·둥근 카드가 현행 방향(DESIGN.md)
   - why: 사용자가 "AI가 짠 것 같다"며 다크+그라데이션 시안을 두 번 리젝함 (0.4.x에서 전면 교체)
   - ❌ 루트 `ARCHITECTURE.md`의 디자인 절(#3E6AE1 등) — 구버전 서술, 코드가 정본
-- **다크는 0.8.22부터 허용**. 단 "다크 테마"가 아니라 **시계 기준 낮/밤 자동 전환**이다
-  - why: 휴대폰과 차내 거치 기기 모두 밤에는 흰 화면이 눈부시다. 시스템 다크가 꺼져 있어도 밤엔 어두워져야 해서 `isSystemInDarkTheme()`이 아니라 시계를 본다 (`Theme.kt` `DAY_START_HOUR`/`DAY_END_HOUR`)
+- **화면 모드는 저장된 `ThemeMode`를 따른다**. `AUTO`는 시계 기준 낮/밤 자동 전환, `LIGHT`·`DARK`는 수동 고정이다
+  - why: 사용자가 밝기를 선택할 수 있게 하되 기본 `AUTO`는 기존 07~19시 전환을 유지한다. 앱 화면은 저장된 모드를 `TeslaMacroTheme(mode = …)`에 전달하고 시스템 다크를 별도로 읽지 않는다 (`Theme.kt` `DAY_START_HOUR`/`DAY_END_HOUR`)
   - 순검정 금지 — 차콜 배경(`#15171B`). 야간 눈부심·잔상 때문
   - 색은 `T.Xxx`로 꺼내되 **@Composable 안에서만** 된다. 상태 클래스·enum 등 밖에서는 `ColorRole`을 쓴다
 - **제어 화면의 색 규칙**: 정상은 `T.Ok`, 선택·주요 동작은 `T.Electric`. `TileTone.Cool/Warm` = 차가 실제로 일하는 중, `TileTone.Alert` = 사람이 봐야 함(면 전체가 물듦)

@@ -34,9 +34,27 @@ enum class DeviceMode(val label: String) {
     }
 }
 
+/** 수동 테마는 시간과 무관하게 유지하고 자동은 기존 낮·밤 전환을 따른다. */
+enum class ThemeMode(val label: String) {
+    AUTO("자동"), LIGHT("라이트"), DARK("다크");
+
+    companion object {
+        /** 알 수 없는 저장값도 기존 자동 테마로 안전하게 복원한다. */
+        fun of(name: String?): ThemeMode = entries.firstOrNull { it.name == name } ?: AUTO
+    }
+
+    /** 수동 선택을 우선하고 자동일 때만 현재 시각을 사용한다. */
+    fun isDark(night: Boolean): Boolean = when (this) {
+        AUTO -> night
+        LIGHT -> false
+        DARK -> true
+    }
+}
+
 /** 앱 설정. */
 data class AppSettings(
     val vin: String = "",
+    val themeMode: ThemeMode = ThemeMode.AUTO,
     /** 매크로 자동 실행 on/off — 정비·세차 때 통째로 끄는 스위치 */
     val automationEnabled: Boolean = true,
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
@@ -112,6 +130,7 @@ class SettingsStore(
     val settings: Flow<AppSettings> = store.data.map { prefs ->
         AppSettings(
             vin = prefs[KeyVin] ?: "",
+            themeMode = ThemeMode.of(prefs[KeyThemeMode]),
             automationEnabled = prefs[KeyAutomation] ?: true,
             smartThingsEnabled = prefs[KeySmartThingsEnabled]
                 ?: prefs[KeySmartThingsFrunkEnabled]
@@ -143,6 +162,9 @@ class SettingsStore(
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
         )
     }
+
+    /** 화면 모드를 저장해 앱을 다시 열어도 사용자의 선택을 유지한다. */
+    suspend fun setThemeMode(mode: ThemeMode) = edit { it[KeyThemeMode] = mode.name }
 
     suspend fun setVin(vin: String) = edit { it[KeyVin] = vin }
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
@@ -336,6 +358,7 @@ class SettingsStore(
     }
 
     private companion object {
+        val KeyThemeMode = stringPreferencesKey("theme_mode")
         val KeyVin = stringPreferencesKey("vin")
         val KeyLegacyVoiceAlwaysOn = booleanPreferencesKey("voice_always_on")
         val KeyLegacyIdlePoll = intPreferencesKey("idle_poll_seconds")

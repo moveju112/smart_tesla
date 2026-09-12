@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.wemade.teslamacro.ui.component.ButtonTone
@@ -79,7 +81,9 @@ class SafeDriveUnlockActivity : ComponentActivity() {
         promptActivity = this
         DiagLog.add("안심운전 인증 화면 표시 — 요청=$id")
         setContent {
-            TeslaMacroTheme {
+            val app = application as com.wemade.teslamacro.TeslaMacroApplication
+            val settings by app.container.settingsStore.settings.collectAsState(initial = app.container.initialSettings)
+            TeslaMacroTheme(mode = settings.themeMode) {
                 SafeDriveUnlockScreen(onCancel = ::cancelRequest)
             }
         }

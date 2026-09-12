@@ -152,7 +152,16 @@ class MainActivity : ComponentActivity() {
         val app = application as TeslaMacroApplication
 
         setContent {
-            TeslaMacroTheme {
+            val appearance by app.container.settingsStore.settings.collectAsState(initial = app.container.initialSettings)
+            TeslaMacroTheme(mode = appearance.themeMode) {
+                val activePalette = com.wemade.teslamacro.ui.theme.LocalPalette.current
+                androidx.compose.runtime.SideEffect {
+                    window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(activePalette.void.toArgb()))
+                    val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    val light = activePalette == com.wemade.teslamacro.ui.theme.LightPalette
+                    bars.isAppearanceLightStatusBars = light
+                    bars.isAppearanceLightNavigationBars = light
+                }
                 val ready by app.ready.collectAsState()
                 BoxWithConstraints(
                     modifier = Modifier
@@ -375,6 +384,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                     SettingsScreen(
                         settings = settings,
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
+                        onThemeModeChange = settingsViewModel::setThemeMode,
                         onStealthChargingChange = settingsViewModel::setStealthCharging,
                         onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
                         onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,

@@ -257,6 +257,22 @@ class PhoneScreenshotTest {
         }
     }
 
+    /** 기기 설정에서 라이트·다크 선택이 작은 화면에도 들어오는지 확인한다. */
+    @Test
+    fun `P17 화면 모드 설정`() {
+        for (dark in listOf(false, true)) {
+            paparazzi.snapshot("P17-theme-settings-${if (dark) "dark" else "light"}") {
+                AppFrame(Destination.Settings, dark = dark) {
+                    SettingsScreen(
+                        settings = AppSettings(themeMode = if (dark) com.wemade.teslamacro.data.settings.ThemeMode.DARK else com.wemade.teslamacro.data.settings.ThemeMode.LIGHT),
+                        onAutomationChange = {}, onUnpair = {}, onStartPairing = {},
+                        initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DEVICE,
+                    )
+                }
+            }
+        }
+    }
+
     private fun dashboardState() = DashboardUiState(
         link = LinkState.Ready,
         vehicleName = "내 테슬라",

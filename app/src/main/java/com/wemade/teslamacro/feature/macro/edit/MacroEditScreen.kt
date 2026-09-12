@@ -8,24 +8,20 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.theme.Motion
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -42,8 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import com.wemade.teslamacro.ui.component.DraftMark
-import com.wemade.teslamacro.ui.component.DraftToggle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.CommandCatalog
@@ -75,10 +71,10 @@ private enum class OpenPicker { NONE, TRIGGER, CONDITION, ACTION, WAIT_UNTIL }
 private data class WizardStep(val title: String, val subtitle: String)
 
 private val STEPS = listOf(
-    WizardStep("언제 실행할까요?", "이 사건이 일어나는 순간 발동해요 (하나라도)"),
-    WizardStep("어떤 조건이면요?", "모두 만족해야 실행해요.\n없으면 무조건 실행해요."),
-    WizardStep("무엇을 실행할까요?", "위에서 아래로 순서대로 실행해요"),
-    WizardStep("마무리", "이름과 실행 옵션을 정해요"),
+    WizardStep("실행할 순간을 정하세요", "등록한 시점 중 하나가 되면 매크로를 시작합니다."),
+    WizardStep("필요할 때만 실행하세요", "조건을 모두 만족할 때 실행합니다. 조건은 생략해도 됩니다."),
+    WizardStep("차가 할 일을 순서대로", "동작은 위에서 아래로 실행합니다. 화살표로 순서를 바꿀 수 있습니다."),
+    WizardStep("이름을 정하고 저장하세요", "자동 실행 여부와 다시 실행할 수 있는 간격을 설정합니다."),
 )
 
 /**
@@ -101,7 +97,7 @@ fun MacroEditScreen(
     modifier: Modifier = Modifier,
 ) {
     var picker by remember { mutableStateOf(OpenPicker.NONE) }
-    var step by rememberSaveable { mutableStateOf(0) }
+    var step by rememberSaveable(draft.id) { mutableStateOf(if (draft.isNew) 0 else 2) }
     val compact = LocalPane.current.isCompact
     val last = step == STEPS.lastIndex
 
@@ -115,22 +111,7 @@ fun MacroEditScreen(
         }
     }
 
-    // 넓으면 네 단계를 한 화면에 펼친다. 위저드는 세로폰에서만 의미가 있고,
-    // 가로 태블릿에서는 화면의 3분의 2가 비면서 한 질문에 답하려고 네 번 넘겨야 했다
-    if (!compact) {
-        WidePage(
-            draft = draft,
-            onChange = onChange,
-            onSave = onSave,
-            onDelete = onDelete,
-            onCancel = onCancel,
-            modifier = modifier,
-            onPickTrigger = { picker = OpenPicker.TRIGGER },
-            onPickCondition = { picker = OpenPicker.CONDITION },
-            onPickAction = { picker = OpenPicker.ACTION },
-            onPickWaitUntil = { picker = OpenPicker.WAIT_UNTIL },
-        )
-    } else {
+    // 화면 크기와 관계없이 한 단계씩 편집하고, 이미 만든 매크로는 동작부터 수정한다.
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -150,7 +131,15 @@ fun MacroEditScreen(
                     .padding(Space.sm + Space.xs)
                     .size(24.dp),
             )
-            Spacer(Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f).padding(horizontal = Space.sm)) {
+                Text(
+                    text = if (draft.isNew) "매크로 만들기" else draft.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = T.Ink,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = "${step + 1} / ${STEPS.size}",
                 style = MaterialTheme.typography.labelLarge,
@@ -162,19 +151,35 @@ fun MacroEditScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
         ) {
-            repeat(STEPS.size) { index ->
-                Box(
+            listOf("언제", "조건", "동작", "마무리").forEachIndexed { index, label ->
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .height(4.dp)
-                        .background(
-                            if (index <= step) T.Electric else T.Slate,
-                            RoundedCornerShape(Radius.pill),
-                        ),
-                )
+                        .clip(RoundedCornerShape(Radius.segment))
+                        .background(if (index == step) T.Electric else T.Slate)
+                        .selectable(selected = index == step, role = Role.Tab, onClick = { step = index })
+                        .heightIn(min = 64.dp)
+                        .padding(vertical = Space.sm),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelLarge,
+                        color = if (index == step) T.Void else T.Ink)
+                    Text(
+                        text = when (index) {
+                            0 -> "${draft.triggers.size}개"
+                            1 -> if (draft.conditions.isEmpty()) "선택 사항" else "${draft.conditions.size}개"
+                            2 -> "${draft.actions.size}개"
+                            else -> "이름 · 옵션"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (index == step) T.Void else T.InkMuted,
+                        modifier = Modifier.padding(top = Space.xs),
+                    )
+                }
             }
         }
-        Spacer(Modifier.height(Space.lg))
+        Spacer(Modifier.height(Space.md))
 
         // 본문 — 현재 페이지만. 페이지가 옆으로 밀려 들어와 "넘어간다"는 감각을 준다
         AnimatedContent(
@@ -198,7 +203,7 @@ fun MacroEditScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(modifier = Modifier.widthIn(max = 680.dp)) {
+                Column(modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth()) {
                     Text(STEPS[current].title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
                     Text(
                         text = STEPS[current].subtitle,
@@ -224,7 +229,7 @@ fun MacroEditScreen(
             }
         }
 
-        // 하단: 이전 / 다음(마지막 페이지는 저장)
+        // 저장은 항상 같은 위치에 두고, 새 매크로만 다음 단계 버튼으로 안내한다.
         val nextEnabled = when (step) {
             0 -> draft.triggers.isNotEmpty()
             2 -> draft.actions.isNotEmpty()
@@ -233,6 +238,7 @@ fun MacroEditScreen(
         }
         // 다음이 막힌 이유를 버튼 위에 바로 알려준다. 버튼만 비활성이면 이유를 모른다
         val blockHint = when {
+            !draft.isNew -> draft.blockReason
             nextEnabled -> null
             step == 0 -> "발동 시점을 하나 이상 골라야 다음으로 갈 수 있어요"
             step == 2 -> "실행할 동작을 하나 이상 쌓아야 다음으로 갈 수 있어요"
@@ -265,15 +271,12 @@ fun MacroEditScreen(
             if (step > 0) {
                 TButton("이전", ButtonTone.Secondary, modifier = Modifier.weight(1f)) { step-- }
             }
-            TButton(
-                text = if (last) "저장" else "다음",
-                modifier = Modifier.weight(2f),
-                enabled = nextEnabled,
-                onClick = { if (last) onSave() else step++ },
-            )
+            if (!last && draft.isNew) {
+                TButton("다음", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                    enabled = nextEnabled, onClick = { step++ })
+            }
+            TButton("저장", modifier = Modifier.weight(1f), enabled = draft.canSave, onClick = onSave)
         }
-    }
-
     }
 
     when (picker) {
@@ -323,128 +326,6 @@ fun MacroEditScreen(
 }
 
 
-/**
- * 넓은 화면용 한 장 편집.
- *
- * **언제 · 어떤 조건이면 · 무엇을** 을 나란히 편다.
- * 루틴 앱이 넓은 화면에서 쓰는 문법 그대로다 — 세 칸이 곧 매크로의 문장 구조라서
- * 무엇을 채워야 하는지 설명 없이 보인다. 위저드는 이 구조를 시간축으로 접은 것뿐이었다.
- *
- * 이름·재발동·삭제는 한 화면에 다 있으니 굳이 별도 단계로 두지 않고 위아래로 붙인다.
- */
-@Composable
-private fun WidePage(
-    draft: MacroDraft,
-    onChange: (MacroDraft) -> Unit,
-    onSave: () -> Unit,
-    onDelete: () -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier,
-    onPickTrigger: () -> Unit,
-    onPickCondition: () -> Unit,
-    onPickAction: () -> Unit,
-    onPickWaitUntil: () -> Unit,
-) {
-    Column(modifier = modifier.fillMaxSize().padding(horizontal = Space.lg, vertical = Space.md)) {
-
-        // 머리줄 — 닫기 · 이름 · 저장. 목록에서 식별할 이름이라 가장 먼저 눈에 둔다
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = DraftMark.Close,
-                contentDescription = "닫기",
-                tint = T.InkMuted,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.pill))
-                    .clickable(onClick = onCancel)
-                    .padding(Space.sm + Space.xs)
-                    .size(24.dp),
-            )
-            Spacer(Modifier.width(Space.md))
-            DraftField(
-                value = draft.name,
-                onValueChange = { onChange(draft.copy(name = it)) },
-                label = "매크로 이름",
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(Space.md))
-            if (!draft.isNew) {
-                TButton("삭제", ButtonTone.Danger, fillWidth = false, onClick = onDelete)
-                Spacer(Modifier.width(Space.sm))
-            }
-            TButton("저장", fillWidth = false, enabled = draft.canSave, onClick = onSave)
-        }
-
-        Spacer(Modifier.height(Space.md))
-
-        // 한 칸으로 세운다. 좌우로 쪼개면 눈이 어느 쪽을 먼저 볼지 정해야 해서
-        // 항목 수가 같아도 더 어수선하게 읽힌다. 위에서 아래로 한 줄기면 읽는 순서가 하나다
-        Column(
-            modifier = Modifier.fillMaxWidth().weight(1f)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            ColumnHeading("언제", "이 사건이 일어나는 순간 (하나라도)")
-            StepTriggers(draft, onChange, onPickTrigger)
-            Spacer(Modifier.height(Space.lg))
-            ColumnHeading("어떤 조건이면", "모두 만족해야 실행해요")
-            StepConditions(draft, onChange, onPickCondition)
-            Spacer(Modifier.height(Space.lg))
-            ColumnHeading("무엇을", "위에서 아래로 순서대로")
-            StepActions(
-                draft = draft,
-                onChange = onChange,
-                onPickAction = onPickAction,
-                onPickWaitUntil = onPickWaitUntil,
-            )
-            Spacer(Modifier.height(Space.xl))
-        }
-
-        Spacer(Modifier.height(Space.sm))
-        Hairline()
-        Spacer(Modifier.height(Space.sm))
-
-        // 꼬리줄 — 켜기·재발동 억제. 매번 만지는 값이 아니라 아래로 내린다
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("사용", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-                Spacer(Modifier.width(Space.sm))
-                DraftToggle(
-                    checked = draft.enabled,
-                    onCheckedChange = { onChange(draft.copy(enabled = it)) },
-                    label = if (draft.enabled) "켬" else "끔",
-                )
-            }
-            Spacer(Modifier.width(Space.xl))
-            Text("재발동 억제", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-            Spacer(Modifier.width(Space.sm))
-            ChipRow(
-                options = listOf(60, 300, 600, 1800, 3600),
-                selected = draft.cooldownSeconds,
-                label = { if (it >= 60) "${it / 60}분" else "${it}초" },
-                onSelect = { onChange(draft.copy(cooldownSeconds = it)) },
-                modifier = Modifier.weight(1f),
-            )
-            // 저장이 막힌 이유를 버튼 옆이 아니라 여기 한 곳에서 말한다
-            draft.blockReason?.let {
-                Spacer(Modifier.width(Space.md))
-                Text(it, style = MaterialTheme.typography.bodySmall, color = T.WarnText)
-            }
-        }
-    }
-}
-
-/** 칸 제목 — 왼쪽 칸은 이걸 두 번 써서 두 구역을 겹쳐 쌓는다 */
-@Composable
-private fun ColumnHeading(title: String, subtitle: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
-    Text(
-        text = subtitle,
-        style = MaterialTheme.typography.bodySmall,
-        color = T.InkFaint,
-        modifier = Modifier.padding(top = Space.xs, bottom = Space.md),
-    )
-}
-
 /** 1/4 — 발동 시점 */
 @Composable
 private fun StepTriggers(
@@ -466,7 +347,7 @@ private fun StepTriggers(
                 onRemove = { onChange(draft.removeTrigger(index)) },
             )
         }
-        TButton("언제 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onAdd)
+        TButton("실행 시점 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onAdd)
     }
 }
 
@@ -480,7 +361,7 @@ private fun StepConditions(
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         if (draft.conditions.isEmpty()) {
             Text(
-                text = "조건 없음.\n발동 시점이 오면 항상 실행해요.\n이대로 넘어가도 돼요.",
+                text = "추가 조건 없이 실행합니다. 특정 요일이나 차량 상태일 때만 실행하려면 조건을 추가하세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -497,7 +378,6 @@ private fun StepConditions(
 }
 
 /** 3/4 — 실행 동작 */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StepActions(
     draft: MacroDraft,
@@ -505,7 +385,7 @@ private fun StepActions(
     onPickAction: () -> Unit,
     onPickWaitUntil: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
         if (draft.actions.isEmpty()) {
             EmptyState(
                 title = "실행할 동작이 없어요",
@@ -524,16 +404,16 @@ private fun StepActions(
                 onRemove = { onChange(draft.removeAction(index)) },
             )
         }
-        // 좁은 화면에서 버튼 3개가 짓눌리지 않게 줄바꿈되는 FlowRow로 둔다
-        FlowRow(
+        // 동작 추가를 가장 크게 보여주고 대기 설정은 보조 행으로 분리한다.
+        TButton("실행할 동작 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onPickAction)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            TButton("동작 추가", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false, icon = DraftMark.Add, onClick = onPickAction)
-            TButton("시간 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false) {
+            TButton("시간 대기", ButtonTone.Ghost, modifier = Modifier.weight(1f), fillWidth = false) {
                 onChange(draft.addAction(ActionStep.Wait(60)))
             }
-            TButton("조건 대기", ButtonTone.Secondary, modifier = Modifier.weight(1f), fillWidth = false, onClick = onPickWaitUntil)
+            TButton("조건 대기", ButtonTone.Ghost, modifier = Modifier.weight(1f), fillWidth = false, onClick = onPickWaitUntil)
         }
     }
 }

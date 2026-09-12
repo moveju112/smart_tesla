@@ -6,6 +6,7 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.NightMode
 import com.android.resources.ScreenOrientation
+import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.domain.gateway.LinkState
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatClimate
@@ -45,6 +46,36 @@ class WideScreenshotTest {
         }
     }
 
+
+    /** 음성 명령 목록과 편집 패널의 터치 영역·문구를 확인한다. */
+    @Test
+    fun `W13 음성 명령 편집`() {
+        paparazzi.snapshot("W13-smartthings-command-sheet") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SmartThingsCommandSheet(
+                    settings = AppSettings(smartThingsEnabled = true),
+                    selectedAction = null,
+                    draftText = "",
+                    onSelect = {}, onDraftChange = {}, onSave = { _, _ -> }, onDismiss = {},
+                )
+            }
+        }
+    }
+
+    /** 음성 명령 목록과 편집 패널의 터치 영역·문구를 확인한다. */
+    @Test
+    fun `W14 음성 명령 편집`() {
+        paparazzi.snapshot("W14-smartthings-command-sheet") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SmartThingsCommandSheet(
+                    settings = AppSettings(smartThingsEnabled = true),
+                    selectedAction = "open_frunk",
+                    draftText = "프렁크 열기",
+                    onSelect = {}, onDraftChange = {}, onSave = { _, _ -> }, onDismiss = {},
+                )
+            }
+        }
+    }
 
     @get:Rule
     val paparazzi = Paparazzi(

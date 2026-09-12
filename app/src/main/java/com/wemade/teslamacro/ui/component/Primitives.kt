@@ -58,7 +58,7 @@ fun TButton(
     enabled: Boolean = true,
     fillWidth: Boolean = true,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    /** 카드 안 보조 액션용 소형(44dp). 주 동작 버튼은 기본(52dp)을 유지한다 */
+    /** 카드 안 보조 액션용 소형(48dp). 주 동작 버튼은 기본(52dp)을 유지한다 */
     small: Boolean = false,
     onClick: () -> Unit,
 ) {
@@ -86,7 +86,7 @@ fun TButton(
         tone == ButtonTone.Ghost -> T.InkMuted
         tone == ButtonTone.Secondary -> T.Ink
         tone == ButtonTone.Danger -> T.Danger
-        else -> T.Carbon
+        else -> T.Void
     }
 
     val borderColor = when {
@@ -144,17 +144,7 @@ fun TButton(
     }
 }
 
-/**
- * 판 한 칸 — 카드가 아니라 **괘선으로 구획된 구역**이다.
- *
- * 예전엔 4면 테두리 상자였다. 그러면 층이 상자에서 생기는데, 이 세계의 약속은
- * "판은 종이와 같은 색이고 층은 괘선으로만 생긴다"였다. 상자 다섯 개가 쌓인 화면은
- * 도면이 아니라 카드 목록이다.
- *
- * 위에 굵은 괘선 하나를 긋고 그 아래를 구역으로 삼는다. 도면 표가 구역을 나누는 방식이다.
- *
- * @param outlined 강조 구역. 괘선이 2dp로 굵어진다 (실행 중인 항목 등)
- */
+/** 관련 설정과 동작을 하나의 읽기 쉬운 면으로 묶는다. */
 @Composable
 fun TCard(
     modifier: Modifier = Modifier,
@@ -163,14 +153,15 @@ fun TCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val rule = if (outlined) Stroke.bold else Stroke.thin
-    val ruleColor = if (outlined) T.Ink else T.Hairline
+    val shape = RoundedCornerShape(Radius.card)
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .clip(shape)
+            .background(T.Carbon)
+            .then(if (outlined) Modifier.border(Stroke.thin, T.Electric, shape) else Modifier)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .drawBehind { drawRect(ruleColor, size = size.copy(height = rule.toPx())) }
-            .padding(top = Space.md, bottom = Space.lg),
+            .padding(Space.md),
         content = content,
     )
 }

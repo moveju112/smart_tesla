@@ -12,26 +12,25 @@ import androidx.compose.ui.graphics.Color
  * 토큰 이름은 예전 `object T`와 똑같이 유지한다 — 화면 코드 253곳을 안 건드리기 위해서다.
  * 값만 팔레트별로 갈리고, 꺼내 쓰는 문법(`T.Ink`)은 그대로다.
  *
- * 세계가 도면으로 바뀌면서 각 이름이 가리키는 대상도 바뀌었다:
- * 배경은 종이, 액센트는 잉크, 의미색은 도면 정정 관행의 적·청 2색뿐이다.
+ * 기존 토큰 이름을 유지하면서 배경·콘텐츠 면·강조색을 낮과 밤에 맞춘다.
  */
 @Immutable
 data class Palette(
-    // 종이 계층 — 판 위에 표제란과 채워진 면이 얹힌다
+    // 배경과 콘텐츠 면의 계층
     val void: Color,
     val carbon: Color,
     val graphite: Color,
     val slate: Color,
     val hairline: Color,
-    // 잉크 3단계
+    // 본문·보조·설명 텍스트의 대비
     val ink: Color,
     val inkMuted: Color,
     val inkFaint: Color,
-    // 액센트 — 누를 수 있는 것. 도면에서 그건 잉크다
+    // 액센트 — 주요 동작과 선택 상태
     val electric: Color,
     val electricPressed: Color,
     val electricFaint: Color,
-    // 의미색 — 도면 정정 2색. 청은 기준·냉각, 적은 정정·주의
+    // 상태색 — 냉각·난방·주의·오류
     val cool: Color,
     val heat: Color,
     val warn: Color,
@@ -44,30 +43,22 @@ data class Palette(
     val okText: Color,
 )
 
-/**
- * 낮 — 제도지에 단색 인쇄.
- *
- * 종이는 순백이 아니다. 미색이 살짝 있어야 직사광에서 눈이 덜 아프고,
- * 그 위의 잉크가 검정이 아니라 인쇄된 것처럼 보인다.
- *
- * 유채색은 두 개뿐이다 — 도면 정정 관행의 적(주의·정정)과 청(기준·냉각).
- * 나머지 화면 전부가 단색 잉크다. 그래서 색이 하나 뜨면 그게 곧 소식이다.
- */
+/** 휴대폰 낮 화면: 밝은 뉴트럴 바탕과 딥틸 포인트로 정보 계층을 구분한다. */
 val LightPalette = Palette(
-    void = Color(0xFFF2F0E9),        // 제도지
-    carbon = Color(0xFFEAE7DE),      // 표제란 · 시트 여백
-    graphite = Color(0xFFF2F0E9),    // 판은 종이와 같은 색이다. 카드가 떠 있지 않다
-    slate = Color(0xFFE1DDD1),       // 채워진 면 · 눌린 상태
-    hairline = Color(0xFFB9B5A8),    // 치수선 · 격자
-    ink = Color(0xFF1A1A17),
-    inkMuted = Color(0xFF5D5C55),
+    void = Color(0xFFF3F6F5),
+    carbon = Color(0xFFFFFFFF),
+    graphite = Color(0xFFFFFFFF),
+    slate = Color(0xFFE9EFEC),
+    hairline = Color(0xFFD5DFDB),
+    ink = Color(0xFF172C28),
+    inkMuted = Color(0xFF4C625C),
     // 4.5:1을 넘겨야 한다. 예전 #8F8D84는 2.91:1로, 부품 라벨·표 머리글·치수 이름이
     // 전부 이 색이었다 — 직사광 아래 11sp로 읽어야 하는 글자들이다
-    inkFaint = Color(0xFF6E6C64),
-    // 누를 수 있다는 표시에 유채색을 쓰지 않는다. 도면의 강조는 잉크가 진해지는 것이다
-    electric = Color(0xFF1A1A17),
-    electricPressed = Color(0xFF44433D),
-    electricFaint = Color(0xFFE1DDD1),
+    inkFaint = Color(0xFF5A6F69),
+    // 주요 동작은 딥틸로 구별한다
+    electric = Color(0xFF216B59),
+    electricPressed = Color(0xFF17513F),
+    electricFaint = Color(0xFFDFEEE7),
     // 제도 청 — 기준선과 냉각
     cool = Color(0xFF1F5C8C),
     // 제도 적 — 정정과 주의. 난방·경보가 같은 계열의 농담으로 갈린다
@@ -77,32 +68,25 @@ val LightPalette = Palette(
     warnFaint = Color(0xFFEDE4D2),
     danger = Color(0xFFC8321E),
     onDanger = Color(0xFFF2F0E9),
-    // 정상엔 색이 없다. 도면에서 "이상 없음"은 표시가 없다는 뜻이다
-    ok = Color(0xFF5D5C55),
-    okText = Color(0xFF5D5C55),
+    // 정상 상태는 포인트와 같은 계열로 표시한다
+    ok = Color(0xFF216B59),
+    okText = Color(0xFF216B59),
 )
 
-/**
- * 밤 — 청사진(blueprint) 네거티브.
- *
- * 같은 도면을 다른 방식으로 인쇄한 것이다. 흄내기가 아니라 실제로 있던 인쇄법이라
- * 세계가 갈라지지 않는다. 어두운 청 바탕에 흰 선이 뜬다.
- *
- * 순검정을 쓰지 않는다 — 값싼 패널에서 잔상이 남고 야간 운전에 눈이 아프다.
- */
+/** 밤에는 녹색 기운을 억제한 어두운 면과 밝은 세이지 포인트로 대비를 유지한다. */
 val DarkPalette = Palette(
-    void = Color(0xFF101619),        // 청사진 바탕
-    carbon = Color(0xFF161E22),      // 표제란
-    graphite = Color(0xFF101619),
-    slate = Color(0xFF1E282D),
-    hairline = Color(0xFF32414A),
-    ink = Color(0xFFE7ECEE),
-    inkMuted = Color(0xFF9DACB3),
+    void = Color(0xFF101A17),
+    carbon = Color(0xFF1A2823),
+    graphite = Color(0xFF1A2823),
+    slate = Color(0xFF263A31),
+    hairline = Color(0xFF3B5147),
+    ink = Color(0xFFEAF2EE),
+    inkMuted = Color(0xFFB4C6BC),
     // 밤도 4.13:1로 미달이었다
-    inkFaint = Color(0xFF8B9AA2),
-    electric = Color(0xFFE7ECEE),
-    electricPressed = Color(0xFFB8C3C8),
-    electricFaint = Color(0xFF1E282D),
+    inkFaint = Color(0xFFA1B8AB),
+    electric = Color(0xFF9AD6BA),
+    electricPressed = Color(0xFFB8E5CE),
+    electricFaint = Color(0xFF263F33),
     cool = Color(0xFF6FB6E0),
     heat = Color(0xFFE08A5A),
     warn = Color(0xFFD9A441),
@@ -110,8 +94,8 @@ val DarkPalette = Palette(
     warnFaint = Color(0xFF2B2718),
     danger = Color(0xFFE8624E),
     onDanger = Color(0xFF101619),
-    ok = Color(0xFF9DACB3),
-    okText = Color(0xFF9DACB3),
+    ok = Color(0xFF9AD6BA),
+    okText = Color(0xFF9AD6BA),
 )
 
 /** 지금 팔레트. [TeslaMacroTheme]이 낮/밤에 맞춰 갈아 끼운다 */

@@ -1,32 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 런처 아이콘 전경 — 전기차 측면 실루엣 + 번개 볼트.
-     테슬라 상표(T 로고)는 쓰지 않고 "전기차 제어 앱"임을 형태로만 전달한다.
-     바퀴·볼트는 배경색과 같은 파랑으로 뚫어 배경 위에서 아치·볼트로 보이게 한다 -->
+<!-- 정면 차량과 연결 경로로 자동화를 표현한다. 공식 상표를 사용하지 않는다. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 차체 (흰색) -->
+    <!-- 안전 영역 안의 단색 윤곽은 테마 아이콘에서도 동일하게 읽힌다. -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M20,58 C20,52 26,48 34,46 C40,37 66,36 72,44 C80,46 88,52 88,58 L88,62 C88,64.2 86.2,66 84,66 L24,66 C21.8,66 20,64.2 20,62 Z" />
-    <!-- 앞바퀴 아치 + 허브 -->
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="@color/launcher_ink"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M34,52 L39,39 L69,39 L74,52 L74,68 L34,68 Z M34,52 L74,52 M40,59 L46,59 M62,59 L68,59 M39,68 L39,73 M69,68 L69,73" />
+    <!-- 차량에 닿는 연결 경로와 시작점. -->
     <path
-        android:fillColor="#3182F6"
-        android:pathData="M27.5,64 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M31.5,64 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z" />
-    <!-- 뒷바퀴 아치 + 허브 -->
-    <path
-        android:fillColor="#3182F6"
-        android:pathData="M65.5,64 a7.5,7.5 0 1,0 15,0 a7.5,7.5 0 1,0 -15,0 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M69.5,64 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 Z" />
-    <!-- 번개 볼트 (차체 위, 배경색) -->
-    <path
-        android:fillColor="#3182F6"
-        android:pathData="M57,42 L46,55 L52,55 L50,64 L61,50 L55,50 Z" />
+        android:fillColor="@android:color/transparent"
+        android:strokeColor="@color/launcher_ink"
+        android:strokeWidth="3.5"
+        android:strokeLineJoin="round"
+        android:pathData="M30,31 L54,31 L54,39 M26,27 L34,27 L34,35 L26,35 Z" />
 </vector>

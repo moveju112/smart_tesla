@@ -1,6 +1,6 @@
 # Smart Tesla
 
-차내 태블릿용 안드로이드 앱. 클라우드 없이 BLE로 테슬라를 직접 제어한다(공조/시트/잠금/충전 + 매크로).
+휴대폰 우선 안드로이드 앱이며 차내 거치 태블릿도 지원한다. 클라우드 없이 BLE로 테슬라를 직접 제어한다(공조/시트/잠금/충전 + 매크로).
 모듈 2개: `:app`(UI/도메인) + `:tesla-ble`(전송 계층).
 
 ## Core Rules
@@ -11,13 +11,13 @@
 - 프로토콜 정답 벡터(루트 ARCHITECTURE.md 목록 + ProtocolVectorTest)는 불변 — 안 맞으면 코드가 틀린 것
 - 새 명령·조건·트리거는 확장 지점 3개로만 (파일 1개 + 분기 1개) — 편집 UI는 `Signal.entries`/`CommandCatalog.all`을 자동 나열 (docs/tasks/ADD_COMMAND.md)
 - 등록 완료 = 카드 태그 후 핸드셰이크 성공. VIN 저장(isPaired) ≠ 키 등록(isEnrolled)
-- UI는 **정비 매뉴얼 분해도**다 — 제도지에 단색 잉크, 밤엔 같은 도면의 청사진 네거티브. 모서리 0dp·그림자 없음·**카드 없음**(층은 괘선으로만), 선 굵기는 `Stroke` 3계층(0.5/1/2dp)이 색을 대신한다. 유채색은 **도면 정정 2색뿐**(적=지금 봐야 할 것, 청=차가 일하는 중) — 두 색이 동시에 뜨지 않게 `insideColor()`가 물러선다. 값은 `T/Space/Radius/Stroke/Motion` 토큰만. 정본은 [DESIGN.md](DESIGN.md)
-- **본문은 한 칸으로 세운다.** 좌우 2단은 사용자가 "정신없다"고 반려했다(0.8.31). 설정만 서로 무관한 묶음을 2단으로 나눈다
-- **아이콘·스위치·입력칸은 Material을 쓰지 않는다** — `DraftMark`(자체 도면 기호)·`DraftToggle`(채운 사각)·`DraftField`(라벨 위 + 밑줄). 둥근 모서리와 홈 파인 테두리가 세계를 깨뜨린다
+- UI는 **휴대폰 우선의 쿨 뉴트럴·딥틸/세이지·둥근 카드**다. 기존 도면·0dp·카드 금지·Material 금지 규칙은 전면 리디자인 요청으로 대체한다. 값은 `T/Space/Radius/Stroke/Motion` 토큰을 쓰며 정본은 [DESIGN.md](DESIGN.md)다.
+- 휴대폰 본문은 한 열로 읽고, 긴 내용은 스크롤한다. 넓은 화면은 `LocalPane`으로 대응한다.
+- 공용 `DraftMark/DraftToggle/DraftField`를 재사용한다. `DraftToggle`은 Material Switch이며 입력칸은 둥근 면이다.
 - **터치 타깃은 48dp**가 하한이다(안드로이드 최소치, 장갑 낀 손·흔들리는 차). 44dp는 한 곳도 없다
 - **글자 크기는 재서 맞춘다.** 배율 상한이나 서체 advance를 추정하면 안 된다 — 네 번 틀렸다(DESIGN.md 글자 배율 절). 기입 치수는 `WideFontScaleTest`(배율 1.3, 값 있는 상태)와 `InscribedSizeTest`(순수 함수)가 함께 지킨다
-- 실기기는 **ALLDOCUBE iPlay 60 mini Pro** (8.4" 1920×1200 ≈ 960×600dp) — 세로가 짧다. UI는 폭에 따라 칸이 바뀌는 반응형이어야 한다
-- **UI를 바꿨으면 반드시 `WideScreenshotTest`(실기기 크기)로 눈으로 확인한다.** 기본 `ScreenshotTest`는 PIXEL_C(1280×900dp)라 실기기보다 가로 320dp·세로 300dp가 더 넓다 — 여기서만 보면 실기기에서 칩이 접히고 글자가 잘리는 걸 못 잡는다 (0.8.22·0.8.29에서 두 번 새어 나감)
+- 보조 검증용 거치 실기기는 **ALLDOCUBE iPlay 60 mini Pro** (8.4" 1920×1200 ≈ 960×600dp) — 세로가 짧다. UI는 폭에 따라 칸이 바뀌는 반응형이어야 한다
+- **UI를 바꿨으면 휴대폰 낮/밤 스냅샷을 우선 확인하고 `WideFontScaleTest`와 `WideScreenshotTest`(거치 실기기 크기)도 눈으로 확인한다.** 기본 `ScreenshotTest`는 PIXEL_C(1280×900dp)라 실기기보다 가로 320dp·세로 300dp가 더 넓다 — 여기서만 보면 실기기에서 칩이 접히고 글자가 잘리는 걸 못 잡는다 (0.8.22·0.8.29에서 두 번 새어 나감)
 - `./gradlew test`에 Paparazzi는 없다 — UI 변경 시 `recordPaparazziDebug` 별도
 - **사용자가 승인한 코드 변경은 검증 통과 후 자동 릴리즈한다.** 별도 확인 없이 다음 패치 버전 선택 → versionCode +1 → 테스트·Paparazzi·arm64 빌드 → 관련 파일만 커밋 → 현재 추적 브랜치 푸시 → annotated 태그 → GitHub Release·APK 첨부 → 원격 HEAD·태그·APK SHA-256 검증까지 [RELEASE_BUILD.md](docs/tasks/RELEASE_BUILD.md)대로 완료한다. 사용자가 릴리즈 제외를 명시했거나 검증 실패·실 VIN/비밀값·무관한 변경 혼입이 있으면 중단한다
 - 자동 릴리즈 상시 권한은 `moveju112/smart_tesla`의 현재 추적 브랜치·일치 태그·GitHub Release에만 적용한다. force-push·merge/rebase·브랜치 삭제·의존성 업그레이드·기기 설치·스토어 배포·DB/데이터/서비스·이슈/PR 변경은 포함하지 않으며, BLE는 사용자 실차 로그 전까지 미확인이다

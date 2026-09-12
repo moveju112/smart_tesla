@@ -39,13 +39,12 @@ import com.wemade.teslamacro.domain.macro.MacroRule
 import com.wemade.teslamacro.domain.macro.describeRule
 import com.wemade.teslamacro.domain.macro.formatDuration
 import com.wemade.teslamacro.ui.component.ButtonTone
-import com.wemade.teslamacro.ui.component.CalloutNumber
 import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.DraftToggle
 import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.TButton
-import com.wemade.teslamacro.ui.component.TableHeader
+import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
@@ -54,15 +53,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * 매크로 목록 — 시트 2. **절차 명세표**다.
- *
- * 예전엔 카드 하나가 매크로 하나였다. 카드 세 장이면 화면이 꽉 차서
- * 매크로가 몇 개인지, 어느 게 지금 도는지 한눈에 볼 수 없었다.
- * 도면집의 부품 명세표처럼 한 줄이 하나다 — 열이 고정되어 있어 훑기만 하면 비교된다.
- *
- * 실행 기록은 아래 **개정란**으로 붙는다. 도면이 변경 이력을 적는 자리가 거기다.
- */
+/** 이름과 발동 조건을 먼저 읽고, 필요한 매크로만 편집하거나 실행한다. */
 @Composable
 fun MacroListScreen(
     rules: List<MacroRule>,
@@ -84,7 +75,7 @@ fun MacroListScreen(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // 표 위 도구 줄. 제목은 두지 않는다 — 어느 시트인지는 좌측 목차가 이미 말한다
+        // 생성은 하단에 고정하고 상단에는 현재 자동화 상태만 남긴다.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -92,9 +83,9 @@ fun MacroListScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "절차 ${rules.size}건 · 감시 ${rules.count { it.enabled }}건",
-                style = MaterialTheme.typography.labelSmall,
-                color = T.InkFaint,
+                text = "매크로 ${rules.size}개 · 사용 중 ${rules.count { it.enabled }}개",
+                style = MaterialTheme.typography.bodyMedium,
+                color = T.InkMuted,
                 modifier = Modifier.weight(1f),
             )
             if (runningIds.isNotEmpty()) {
@@ -107,43 +98,25 @@ fun MacroListScreen(
                 )
                 Spacer(Modifier.width(Space.sm))
             }
-            TButton(
-                text = "새 절차",
-                fillWidth = false,
-                small = true,
-                icon = DraftMark.Add,
-                onClick = onCreate,
-            )
         }
 
         if (rules.isEmpty()) {
             EmptyState(
-                title = "아직 절차가 없어요",
+                title = "반복하는 차량 동작을 자동으로",
                 description = "탑승을 감지해 통풍을 켜는 식의 자동화를 만들 수 있어요.",
-                actionLabel = "첫 절차 만들기",
+                actionLabel = "매크로 만들기",
                 onAction = onCreate,
-                modifier = Modifier.padding(horizontal = Space.lg),
-            )
-        } else {
-            TableHeader(
-                columns = listOf(
-                    "번호" to NUMBER_WEIGHT,
-                    "절차 · 조건" to NAME_WEIGHT,
-                    "동작" to STEPS_WEIGHT,
-                    "마지막 실행" to LAST_RUN_WEIGHT,
-                    "상태" to STATE_WEIGHT,
-                ),
                 modifier = Modifier.padding(horizontal = Space.lg),
             )
         }
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = Space.lg, vertical = 0.dp),
+            contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
         ) {
             items(rules, key = { it.id }) { rule ->
                 MacroRow(
-                    number = rules.indexOf(rule) + 1,
                     rule = rule,
                     isRunning = rule.id in runningIds,
                     lastRunMillis = lastRunByName[rule.name],
@@ -155,29 +128,20 @@ fun MacroListScreen(
                     onDelete = { onDelete(rule) },
                 )
             }
+            item { RevisionBlock(log) }
         }
-
-        // 개정란 — 도면이 변경 이력을 적는 자리. 실행 기록이 정확히 그것이다
-        RevisionBlock(log)
+        TButton(
+            text = "새 매크로 만들기",
+            icon = DraftMark.Add,
+            modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
+            onClick = onCreate,
+        )
     }
 }
 
-// 표의 열 비율. 지시선 계산과 같은 이유로 상수로 둔다 — 머리글과 본문이 어긋나면 표가 아니다
-private const val NUMBER_WEIGHT = 0.06f
-private const val NAME_WEIGHT = 0.44f
-private const val STEPS_WEIGHT = 0.10f
-private const val LAST_RUN_WEIGHT = 0.20f
-private const val STATE_WEIGHT = 0.20f
-
-/**
- * 표의 한 행.
- *
- * 행 전체가 편집 진입점이다. 편집 버튼을 따로 두면 행이 버튼 창고가 된다.
- * 실행 중이면 번호 원이 채워진다 — 색이 아니라 채움으로 표시하는 게 이 세계의 방식이다.
- */
+/** 휴대폰에서 이름·조건·동작을 읽고 하단에서 바로 실행하거나 사용 여부를 바꾼다. */
 @Composable
 private fun MacroRow(
-    number: Int,
     rule: MacroRule,
     isRunning: Boolean,
     lastRunMillis: Long?,
@@ -188,67 +152,69 @@ private fun MacroRow(
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Column {
+    TCard(onClick = onEdit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 60.dp)
-                .clickable(onClick = onEdit)
+                .heightIn(min = Space.xxl)
                 .padding(vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.weight(NUMBER_WEIGHT)) {
-                CalloutNumber(number = number, highlighted = isRunning)
-            }
-            Column(Modifier.weight(NAME_WEIGHT).padding(end = Space.sm)) {
+            Column(Modifier.weight(1f).padding(end = Space.sm)) {
                 Text(
                     text = rule.name,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     color = if (rule.enabled) T.Ink else T.InkFaint,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.height(Space.sm))
                 Text(
-                    text = describeRule(rule),
+                    text = "언제 · ${describeRule(rule)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = T.InkMuted,
-                    maxLines = 1,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(Space.xs))
+                Text(
+                    text = "동작 · ${rule.summary}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkMuted,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = "${rule.actions.size}",
-                style = CalloutNumberStyle,
-                color = T.InkMuted,
-                modifier = Modifier.weight(STEPS_WEIGHT),
-            )
-            Text(
-                text = lastRunLabel(lastRunMillis),
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-                maxLines = 1,
-                modifier = Modifier.weight(LAST_RUN_WEIGHT),
-            )
-            Row(
-                modifier = Modifier.weight(STATE_WEIGHT),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DraftToggle(
-                    checked = rule.enabled,
-                    onCheckedChange = onToggle,
-                    label = if (isRunning) runningLabel(progress) else if (rule.enabled) "감시" else "끔",
-                )
-                Spacer(Modifier.weight(1f))
-                RowActions(
-                    rule = rule,
-                    onRunNow = onRunNow,
-                    onDuplicate = onDuplicate,
-                    onDelete = onDelete,
-                )
-            }
+            RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete)
         }
-        // 괘선 — 표의 행 경계. 카드 간 여백으로 나누면 표가 아니라 목록이 된다
+        Text(
+            text = if (isRunning) "실행 중 · ${runningLabel(progress)}"
+                else "최근 실행 ${lastRunLabel(lastRunMillis)} · 눌러서 수정",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isRunning) T.Electric else T.InkFaint,
+            modifier = Modifier.padding(bottom = Space.sm),
+        )
         Hairline()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        ) {
+            DraftToggle(
+                checked = rule.enabled,
+                onCheckedChange = onToggle,
+                label = if (rule.enabled) "사용 중" else "사용 안 함",
+            )
+            Spacer(Modifier.weight(1f))
+            TButton(
+                text = "지금 실행",
+                icon = DraftMark.Run,
+                tone = ButtonTone.Secondary,
+                small = true,
+                fillWidth = false,
+                onClick = onRunNow,
+            )
+        }
     }
 }
 
@@ -256,24 +222,9 @@ private fun MacroRow(
 @Composable
 private fun RowActions(
     rule: MacroRule,
-    onRunNow: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clickable(onClick = onRunNow),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = DraftMark.Run,
-            contentDescription = "지금 실행",
-            tint = T.Ink,
-            modifier = Modifier.size(18.dp),
-        )
-    }
-
     // 삭제는 실수 방지로 두 번 탭 — 다이얼로그까지 띄울 일은 아니다
     var menuOpen by remember(rule.id) { mutableStateOf(false) }
     var confirmDelete by remember(rule.id) { mutableStateOf(false) }
@@ -349,14 +300,14 @@ private fun RevisionBlock(log: List<MacroLogEntry>) {
             .padding(horizontal = Space.lg, vertical = Space.sm),
     ) {
         Text(
-            text = "개정란 · 실행 기록",
+            text = "최근 실행 기록",
             style = MaterialTheme.typography.labelSmall,
             color = T.InkFaint,
         )
         Spacer(Modifier.height(Space.xs))
         if (log.isEmpty()) {
             Text(
-                text = "아직 실행된 절차가 없어요. 조건이 맞으면 여기에 기록이 쌓여요.",
+                text = "매크로가 실행되면 결과가 여기에 표시돼요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )

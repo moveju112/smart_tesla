@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
 import com.wemade.teslamacro.ui.theme.Space
+import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.T
 
@@ -143,7 +148,7 @@ fun CalloutNumber(
     }
 }
 
-/** 원번호의 원. 도면 지시선의 관례라 여기만 실제로 둥글다 */
+/** 부품번호의 원형 외곽선. */
 private val CircleOutline = androidx.compose.foundation.shape.CircleShape
 
 
@@ -183,13 +188,7 @@ fun TableHeader(
     }
 }
 
-/**
- * 켜짐/꺼짐 표시 — 도면의 상태 기호.
- *
- * Material 스위치를 쓰지 않는다. 알약형 트랙과 미끄러지는 손잡이는 이 세계의 문법이
- * 아니고, 무엇보다 **켜짐인지 꺼짐인지 색으로만 갈린다** — 도면은 채움으로 갈린다.
- * 채운 사각 = 켜짐, 빈 사각 = 꺼짐. 옆에 상태어를 함께 적어 색맹이어도 읽힌다.
- */
+/** 손잡이 위치와 상태어로 켜짐 여부를 함께 전달한다. */
 @Composable
 fun DraftToggle(
     checked: Boolean,
@@ -200,15 +199,20 @@ fun DraftToggle(
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .clickable { onCheckedChange(!checked) }
+            .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onCheckedChange)
             .padding(end = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(16.dp)
-                .background(if (checked) T.Ink else Color.Transparent)
-                .border(Stroke.thin, if (checked) T.Ink else T.InkFaint),
+        Switch(
+            checked = checked,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = T.Electric,
+                checkedThumbColor = T.Void,
+                uncheckedTrackColor = T.Slate,
+                uncheckedThumbColor = T.InkMuted,
+                uncheckedBorderColor = T.Hairline,
+            ),
         )
         if (label != null) {
             Spacer(Modifier.width(Space.sm))
@@ -237,16 +241,7 @@ fun Modifier.draftBlock(tone: Color = T.Ink): Modifier {
         .padding(top = Space.sm)
 }
 
-/**
- * 기입란 — 사람이 값을 적어 넣는 칸.
- *
- * Material의 `OutlinedTextField`를 쓰지 않는다. 네 면을 감싼 둥근 테두리에
- * 라벨이 홈을 파고 떠 있는 그 모양은 안드로이드 기본 부품의 서명 그 자체라,
- * 다른 걸 다 바꿔도 저 칸 하나가 "머티리얼 앱"이라고 말한다.
- *
- * 도면의 기입란은 **라벨이 위에 적히고 값은 밑줄 위에 앉는다.** 서식이 그렇게 생겼다.
- * 초점이 오면 밑줄이 굵어진다 — 색을 쓰지 않고 선 굵기로 말하는 방식이다.
- */
+/** 라벨과 입력 면을 분리해 휴대폰에서도 입력 위치를 쉽게 찾는다. */
 @Composable
 fun DraftField(
     value: String,
@@ -257,9 +252,9 @@ fun DraftField(
     isError: Boolean = false,
     singleLine: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    /** 단위. 밑줄 오른쪽 끝에 붙는다 — 도면이 치수에 단위를 적는 자리다 */
+    /** 단위는 입력값 오른쪽에 표시한다. */
     suffix: String? = null,
-    /** 주기(註記). 밑줄 아래 작게 붙는다 */
+    /** 입력칸 아래에 표시하는 보조 설명. */
     note: String? = null,
     /** 빈 기입란이 공백처럼 보이지 않도록 값이 들어갈 자리를 직접 알려준다 */
     placeholder: String? = null,
@@ -269,8 +264,8 @@ fun DraftField(
     val ruleColor = when {
         isError -> T.Danger
         !enabled -> T.Hairline
-        focused -> T.Ink
-        else -> T.InkFaint
+        focused -> T.Electric
+        else -> T.Hairline
     }
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -279,7 +274,14 @@ fun DraftField(
             color = if (isError) T.Danger else T.InkFaint,
         )
         Spacer(Modifier.height(Space.xs))
-        Row(verticalAlignment = Alignment.Bottom) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(T.Slate, RoundedCornerShape(Radius.button))
+                .border(rule, ruleColor, RoundedCornerShape(Radius.button))
+                .padding(horizontal = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -289,7 +291,7 @@ fun DraftField(
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = if (enabled) T.Ink else T.InkFaint,
                 ),
-                cursorBrush = SolidColor(T.Ink),
+                cursorBrush = SolidColor(T.Electric),
                 interactionSource = remember { MutableInteractionSource() }
                     .also { source ->
                         val isFocused by source.collectIsFocusedAsState()
@@ -316,23 +318,17 @@ fun DraftField(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 40.dp),
+                    .heightIn(min = Space.xxl),
             )
             if (suffix != null) {
                 Text(
                     text = suffix,
                     style = MaterialTheme.typography.bodyMedium,
                     color = T.InkFaint,
-                    modifier = Modifier.padding(start = Space.sm, bottom = Space.sm),
+                    modifier = Modifier.padding(start = Space.sm),
                 )
             }
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(rule)
-                .background(ruleColor)
-        )
         if (note != null) {
             Spacer(Modifier.height(Space.xs))
             Text(
@@ -345,13 +341,7 @@ fun DraftField(
 }
 
 /**
- * 도면 기호.
- *
- * Material 아이콘을 쓰지 않는다 — 둥근 모서리와 채워진 면이 도면 문법과 어긋난다.
- * 여기 있는 것들은 전부 직선과 직각으로만 그린 1.5dp 단일 굵기 기호다.
- *
- * 제도에서 쓰는 기호를 그대로 가져왔다: 취소는 대각 두 선, 추가는 십자,
- * 삭제는 사선 하나, 방향은 삼각 화살촉.
+ * 익숙한 사물의 윤곽을 같은 선 굵기로 그려 동작을 바로 알아보게 한다.
  */
 object DraftMark {
 
@@ -369,13 +359,38 @@ object DraftMark {
         moveTo(4f, 12f); lineTo(20f, 12f)
     }
 
-    /**
-     * 삭제 = 도면의 취소 표시. 항목을 지우지 않고 상자에 사선을 그어 무효로 만든다.
-     * 사선만 그으면 그냥 빗금으로 보이고, 상자가 있어야 "이 항목이 취소됨"으로 읽힌다.
-     */
+    /** 기존 호출 이름을 유지하고 삭제 표시는 휴지통으로 통일한다. */
     val Strike: ImageVector = mark {
-        moveTo(5f, 5f); lineTo(19f, 5f); lineTo(19f, 19f); lineTo(5f, 19f); lineTo(5f, 5f)
-        moveTo(5f, 19f); lineTo(19f, 5f)
+        moveTo(4f, 6f); lineTo(20f, 6f)
+        moveTo(9f, 6f); lineTo(9f, 3f); lineTo(15f, 3f); lineTo(15f, 6f)
+        moveTo(6f, 6f); lineTo(7f, 21f); lineTo(17f, 21f); lineTo(18f, 6f)
+        moveTo(10f, 10f); lineTo(10f, 17f)
+        moveTo(14f, 10f); lineTo(14f, 17f)
+    }
+
+    /** 연필의 끝과 몸통으로 수정 동작을 표시한다. */
+    val Edit: ImageVector = mark {
+        moveTo(4f, 20f); lineTo(5f, 15f); lineTo(16f, 4f)
+        lineTo(20f, 8f); lineTo(9f, 19f); lineTo(4f, 20f)
+        moveTo(13f, 7f); lineTo(17f, 11f)
+    }
+
+    /** 연결된 시작점과 동작으로 자동화 흐름을 나타낸다. */
+    val Automation: ImageVector = mark {
+        moveTo(3f, 4f); lineTo(9f, 4f); lineTo(9f, 10f); lineTo(3f, 10f); close()
+        moveTo(15f, 14f); lineTo(21f, 14f); lineTo(21f, 20f); lineTo(15f, 20f); close()
+        moveTo(6f, 10f); lineTo(6f, 17f); lineTo(15f, 17f)
+        moveTo(12f, 14f); lineTo(15f, 17f); lineTo(12f, 20f)
+    }
+
+    /** 조절 손잡이 세 개로 설정 화면의 목적을 나타낸다. */
+    val Settings: ImageVector = mark {
+        moveTo(4f, 6f); lineTo(8f, 6f)
+        moveTo(12f, 6f); lineTo(20f, 6f)
+        moveTo(8f, 3f); lineTo(12f, 3f); lineTo(12f, 9f); lineTo(8f, 9f); close()
+        moveTo(4f, 17f); lineTo(14f, 17f)
+        moveTo(18f, 17f); lineTo(20f, 17f)
+        moveTo(14f, 14f); lineTo(18f, 14f); lineTo(18f, 20f); lineTo(14f, 20f); close()
     }
 
     /** 지시선 화살촉 — 위 */

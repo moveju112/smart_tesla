@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import android.provider.Settings
 import androidx.compose.material3.Icon
@@ -61,46 +60,42 @@ fun ActionCard(
     modifier: Modifier = Modifier,
 ) {
     TCard(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "${index + 1}",
-                style = MaterialTheme.typography.titleMedium,
-                color = T.InkFaint,
-                modifier = Modifier.width(28.dp),
-            )
-            Text(
-                text = when (step) {
-                    is ActionStep.Run -> step.command.label
-                    is ActionStep.Wait -> "${formatDuration(step.seconds)} 대기"
-                    is ActionStep.WaitUntil -> "${describe(step.condition)}까지 대기"
-                    is ActionStep.Navigate ->
-                        "지도 안내 — ${step.destinationName.ifBlank { "목적지 미입력" }}"
-                    is ActionStep.SetStealthCharging ->
-                        "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
-                },
-                style = MaterialTheme.typography.titleMedium,
-                color = if (step is ActionStep.Run) T.Ink else T.InkMuted,
-                modifier = Modifier.weight(1f),
-            )
-            // 글자 글리프(▲▼) 대신 벡터 아이콘 — 접근성 설명과 44dp 터치 타깃을 함께 확보한다
-            CardIconButton(DraftMark.ArrowUp, "위로", enabled = index > 0) { onMove(-1) }
-            CardIconButton(DraftMark.ArrowDown, "아래로", enabled = index < total - 1) { onMove(1) }
-            // 삭제는 파괴적 동작 — Danger 색으로 드러낸다
-            // 삭제는 행마다 있는 평상 조작이다 — 경보 잉크를 쓰면 모든 행이 경보로 보인다
-        CardIconButton(DraftMark.Strike, "삭제", tint = T.InkMuted, onClick = onRemove)
-        }
+        // 긴 동작 이름과 목적지는 카드 너비 전체에서 줄바꿈한다.
+        Text(
+            text = when (step) {
+                is ActionStep.Run -> step.command.label
+                is ActionStep.Wait -> "${formatDuration(step.seconds)} 대기"
+                is ActionStep.WaitUntil -> "${describe(step.condition)}까지 대기"
+                is ActionStep.Navigate ->
+                    "지도 안내 — ${step.destinationName.ifBlank { "목적지 미입력" }}"
+                is ActionStep.SetStealthCharging ->
+                    "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
+            },
+            style = MaterialTheme.typography.titleMedium,
+            color = if (step is ActionStep.Run) T.Ink else T.InkMuted,
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         val editor = parameterEditor(step, template)
         if (editor != null) {
             Spacer(Modifier.height(Space.md))
             editor(onChange)
         }
+        // 순서·삭제 조작은 별도 행으로 내려 휴대폰에서 제목을 밀어내지 않는다.
+        Spacer(Modifier.height(Space.sm))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("${index + 1}번째 동작", style = MaterialTheme.typography.labelMedium,
+                color = T.InkMuted, modifier = Modifier.weight(1f))
+            CardIconButton(DraftMark.ArrowUp, "${index + 1}번째 동작 위로 이동", enabled = index > 0) { onMove(-1) }
+            CardIconButton(DraftMark.ArrowDown, "${index + 1}번째 동작 아래로 이동", enabled = index < total - 1) { onMove(1) }
+            CardIconButton(DraftMark.Strike, "${index + 1}번째 동작 삭제", tint = T.InkMuted, onClick = onRemove)
+        }
     }
 }
 
 /**
  * 카드 헤더용 아이콘 버튼.
- * 아이콘은 20dp지만 터치 타깃은 44dp를 보장한다 — 흔들리는 차 안에서 오탭을 줄인다.
+ * 아이콘은 20dp지만 터치 타깃은 48dp를 보장한다.
  * ConditionEditor의 카드 헤더도 같은 패턴을 쓴다.
  */
 @Composable

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -34,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
@@ -52,13 +55,15 @@ fun PickerSheet(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    val compact = LocalPane.current.isCompact
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            .imePadding()
             // 뒤 배경을 덮어 바깥 탭으로 닫는다
             .background(Color.Black.copy(alpha = 0.6f))
             .clickable(indication = null, interactionSource = remembered()) { onDismiss() },
-        contentAlignment = Alignment.Center,
+        contentAlignment = if (compact) Alignment.BottomCenter else Alignment.Center,
     ) {
         // 짧은 목록이 화면 85%를 강제로 채우면 아래가 텅 빈다 — 내용만큼만 차지하게 상한만 건다
         val panelMaxHeight = maxHeight * 0.85f
@@ -66,11 +71,11 @@ fun PickerSheet(
             modifier = Modifier
                 .widthIn(max = 560.dp)
                 .heightIn(max = panelMaxHeight)
-                .padding(Space.lg)
+                .padding(if (compact) Space.sm else Space.lg)
                 .background(T.Carbon, RoundedCornerShape(Radius.card))
                 // 패널 안 탭이 닫기로 새어나가지 않게 막는다
                 .clickable(indication = null, interactionSource = remembered()) { }
-                .padding(Space.lg),
+                .padding(Space.md),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
@@ -106,6 +111,7 @@ fun PickerRow(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 56.dp)
             .clickable(onClick = onClick)
             .padding(vertical = Space.sm + Space.xs),
     ) {
@@ -186,13 +192,14 @@ fun <T> ChipRow(
                     .background(background)
                     // selectable — TalkBack이 선택 상태를 읽을 수 있게
                     .selectable(selected = isSelected, role = Role.Button) { onSelect(option) }
+                    .defaultMinSize(minHeight = 48.dp)
                     .padding(horizontal = Space.md, vertical = Space.sm + Space.xs),
             ) {
                 Text(
                     text = label(option),
                     style = MaterialTheme.typography.labelLarge,
-                    // 파랑 위 어두운 글자는 안 읽힌다 — TButton Primary와 같은 흰 글자 규칙
-                    color = if (isSelected) Color.White else T.InkMuted,
+                    // 낮과 밤의 포인트 명도에 맞춰 버튼과 같은 대비를 쓴다
+                    color = if (isSelected) T.Void else T.InkMuted,
                 )
             }
         }

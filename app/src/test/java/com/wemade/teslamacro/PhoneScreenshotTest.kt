@@ -47,6 +47,36 @@ class PhoneScreenshotTest {
     }
 
 
+    /** 음성 명령 목록과 편집 패널의 터치 영역·문구를 확인한다. */
+    @Test
+    fun `P13 음성 명령 편집`() {
+        paparazzi.snapshot("P13-smartthings-command-sheet") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SmartThingsCommandSheet(
+                    settings = AppSettings(smartThingsEnabled = true),
+                    selectedAction = null,
+                    draftText = "",
+                    onSelect = {}, onDraftChange = {}, onSave = { _, _ -> }, onDismiss = {},
+                )
+            }
+        }
+    }
+
+    /** 음성 명령 목록과 편집 패널의 터치 영역·문구를 확인한다. */
+    @Test
+    fun `P14 음성 명령 편집`() {
+        paparazzi.snapshot("P14-smartthings-command-sheet") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SmartThingsCommandSheet(
+                    settings = AppSettings(smartThingsEnabled = true),
+                    selectedAction = "open_frunk",
+                    draftText = "프렁크 열기",
+                    onSelect = {}, onDraftChange = {}, onSave = { _, _ -> }, onDismiss = {},
+                )
+            }
+        }
+    }
+
     @get:Rule
     val paparazzi = Paparazzi(
         // 일반적인 폰 세로 (411dp 폭) — Compact 분기점 아래
@@ -197,6 +227,32 @@ class PhoneScreenshotTest {
         paparazzi.snapshot("P8-safe-drive-unlock") {
             FullScreenFrame {
                 com.wemade.teslamacro.data.nav.SafeDriveUnlockScreen(onCancel = {})
+            }
+        }
+    }
+
+    /** 밤 팔레트에서도 편집 선택 상태와 저장 버튼의 대비를 유지한다. */
+    @Test
+    fun `P15 매크로 편집 밤`() {
+        paparazzi.snapshot("P15-macro-edit-night") {
+            AppFrame(Destination.Macros, dark = true) {
+                MacroEditScreen(
+                    draft = MacroDraft.from(MacroPresets.summerBoarding()),
+                    onChange = {}, onSave = {}, onDelete = {}, onCancel = {},
+                )
+            }
+        }
+    }
+
+    /** 처음 만드는 사용자가 첫 단계에서 다음 행동을 찾을 수 있어야 한다. */
+    @Test
+    fun `P16 새 매크로`() {
+        paparazzi.snapshot("P16-macro-new") {
+            AppFrame(Destination.Macros) {
+                MacroEditScreen(
+                    draft = MacroDraft.blank(),
+                    onChange = {}, onSave = {}, onDelete = {}, onCancel = {},
+                )
             }
         }
     }

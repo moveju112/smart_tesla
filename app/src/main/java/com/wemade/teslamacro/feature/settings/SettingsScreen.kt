@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
+import com.wemade.teslamacro.data.settings.MAX_SMARTTHINGS_COMMAND_TEXT_LENGTH
 import com.wemade.teslamacro.data.settings.SmartThingsCommands
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
@@ -96,140 +97,141 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(horizontal = Space.lg, vertical = Space.lg),
+            .padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
     ) {
-        // 화면 제목을 두지 않는다 — 도면엔 큰 제목이 없고, 어느 시트인지는 좌측 목차가 말한다.
-        // 대신 이 시트 안의 목차를 한 줄 둔다. 소분류가 10개까지 늘어 한 장에 다 세우니
-        // 스크롤로만 찾게 됐고, 좌우 2단의 좌/우 배분도 기능이 늘면서 무너졌다
+        Text("설정", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+        Text("차량과 자동화를 내 사용 방식에 맞춰요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        Spacer(Modifier.height(Space.md))
+        // 분류를 고정해 긴 설정에서도 다른 항목으로 바로 이동한다.
         ChoiceRow(
             options = SettingsGroup.entries.map { it.name to it.label },
             selected = group.name,
             onSelect = { picked -> group = SettingsGroup.valueOf(picked) },
         )
         Spacer(Modifier.height(Space.md))
-        // 목차와 내용을 가르는 굵은 괘선 — 층은 그림자가 아니라 선으로만 만든다
-        Box(Modifier.fillMaxWidth().height(Stroke.bold).background(T.Ink))
 
-        // 넓으면 좌우 2단(설정 시트만의 예외). 자주 만지는 것을 왼쪽에 둔다
-        TwoColumns(
-            compact = compact,
-            left = {
-                when (group) {
-                    SettingsGroup.DRIVING -> {
-                        if (navigation != null) {
-                            SectionHeader("길안내", topPadding = Space.md)
-                            NavigatorPanel(settings, navigation)
-                        } else {
-                            EmptyGroupNote("길안내를 넘길 내비 앱이 이 기기에 없어요.")
+        // 분류는 고정하고 내용만 스크롤해 긴 설정에서도 이동할 수 있다.
+        Column(Modifier.weight(1f).verticalScroll(scroll)) {
+            // 넓으면 좌우 2단(설정 시트만의 예외). 자주 만지는 것을 왼쪽에 둔다
+            TwoColumns(
+                compact = compact,
+                left = {
+                    when (group) {
+                        SettingsGroup.DRIVING -> {
+                            if (navigation != null) {
+                                SectionHeader("길안내", topPadding = Space.md)
+                                NavigatorPanel(settings, navigation)
+                            } else {
+                                EmptyGroupNote("길안내를 넘길 내비 앱이 이 기기에 없어요.")
+                            }
                         }
-                    }
 
-                    SettingsGroup.AUTOMATION -> {
-                        SectionHeader("자동화", topPadding = Space.md)
-                        TCard {
-                            ToggleRow(
-                                title = "매크로 자동 실행",
-                                subtitle = "세차·정비 중에는 꺼두세요",
-                                checked = settings.automationEnabled,
-                                onCheckedChange = onAutomationChange,
-                            )
+                        SettingsGroup.AUTOMATION -> {
+                            SectionHeader("자동화", topPadding = Space.md)
+                            TCard {
+                                ToggleRow(
+                                    title = "매크로 자동 실행",
+                                    subtitle = "세차·정비 중에는 꺼두세요",
+                                    checked = settings.automationEnabled,
+                                    onCheckedChange = onAutomationChange,
+                                )
+                            }
+                            if (smartThings != null) {
+                                SectionHeader("음성 연결")
+                                SmartThingsPanel(settings, smartThings)
+                            }
                         }
-                        SectionHeader("충전")
-                        StealthChargePanel(
-                            settings = settings,
-                            onEnabledChange = onStealthChargingChange,
-                            onScheduleEnabledChange = onStealthScheduleEnabledChange,
-                            onStartMinutesChange = onStealthStartMinutesChange,
-                            onEndMinutesChange = onStealthEndMinutesChange,
-                        )
-                    }
 
-                    SettingsGroup.VEHICLE -> {
-                        SectionHeader("차량", topPadding = Space.md)
-                        VehiclePanel(
-                            settings = settings,
-                            onUnpair = onUnpair,
-                            onStartPairing = onStartPairing,
-                        )
-                    }
-
-                    SettingsGroup.DEVICE -> {
-                        SectionHeader("업데이트", topPadding = Space.md)
-                        UpdatePanel(
-                            update = update,
-                            onCheck = onCheckUpdate,
-                            onInstall = onDownloadUpdate,
-                            onRequestPermission = onRequestInstallPermission,
-                        )
-
-                        if (battery?.unrestricted == false) {
-                            SectionHeader("절전")
-                            BatteryPanel(battery)
-                        }
-                    }
-                }
-            },
-            right = {
-                when (group) {
-                    SettingsGroup.DRIVING -> {
-                        if (navigation != null) {
-                            SectionHeader("속도 표시", topPadding = Space.md)
-                            SpeedPanel(settings, navigation)
-                        }
-                    }
-
-                    SettingsGroup.AUTOMATION -> {
-                        if (smartThings != null) {
-                            SectionHeader("음성 연결", topPadding = Space.md)
-                            SmartThingsPanel(settings, smartThings)
-                        }
-                    }
-
-                    SettingsGroup.VEHICLE -> {
-                        // 차량 미등록 상태에서만 나온다. 매크로를 실제로 발동시켜볼 유일한 방법
-                        if (simulator != null) {
-                            SectionHeader("시뮬레이터", topPadding = Space.md)
-                            SimulatorPanel(
-                                insideTemp = simulator.insideTemp,
-                                outsideTemp = simulator.outsideTemp,
-                                onInsideTempChange = simulator.onInsideTempChange,
-                                onOutsideTempChange = simulator.onOutsideTempChange,
-                                onBoard = simulator.onBoard,
-                                onLeave = simulator.onLeave,
-                            )
-                        } else if (settings.isPaired) {
-                            SectionHeader("연결 안전", topPadding = Space.md)
-                            PhoneKeyProtectionPanel(
+                        SettingsGroup.VEHICLE -> {
+                            SectionHeader("차량", topPadding = Space.md)
+                            VehiclePanel(
                                 settings = settings,
-                                onDeviceModeChange = onDeviceModeChange,
-                                onProtectPhoneKeyChange = onProtectPhoneKeyChange,
-                                onDisconnectVehicle = onDisconnectVehicle,
+                                onUnpair = onUnpair,
+                                onStartPairing = onStartPairing,
+                            )
+                        }
+
+                        SettingsGroup.DEVICE -> {
+                            SectionHeader("업데이트", topPadding = Space.md)
+                            UpdatePanel(
+                                update = update,
+                                onCheck = onCheckUpdate,
+                                onInstall = onDownloadUpdate,
+                                onRequestPermission = onRequestInstallPermission,
+                            )
+
+                            if (battery?.unrestricted == false) {
+                                SectionHeader("절전")
+                                BatteryPanel(battery)
+                            }
+                        }
+                    }
+                },
+                right = {
+                    when (group) {
+                        SettingsGroup.DRIVING -> {
+                            if (navigation != null) {
+                                SectionHeader("속도 표시", topPadding = Space.md)
+                                SpeedPanel(settings, navigation)
+                            }
+                        }
+
+                        SettingsGroup.AUTOMATION -> {
+                            SectionHeader("충전")
+                            StealthChargePanel(
+                                settings = settings,
+                                onEnabledChange = onStealthChargingChange,
+                                onScheduleEnabledChange = onStealthScheduleEnabledChange,
+                                onStartMinutesChange = onStealthStartMinutesChange,
+                                onEndMinutesChange = onStealthEndMinutesChange,
+                            )
+                        }
+
+                        SettingsGroup.VEHICLE -> {
+                            // 차량 미등록 상태에서만 나온다. 매크로를 실제로 발동시켜볼 유일한 방법
+                            if (simulator != null) {
+                                SectionHeader("시뮬레이터", topPadding = Space.md)
+                                SimulatorPanel(
+                                    insideTemp = simulator.insideTemp,
+                                    outsideTemp = simulator.outsideTemp,
+                                    onInsideTempChange = simulator.onInsideTempChange,
+                                    onOutsideTempChange = simulator.onOutsideTempChange,
+                                    onBoard = simulator.onBoard,
+                                    onLeave = simulator.onLeave,
+                                )
+                            } else if (settings.isPaired) {
+                                SectionHeader("연결 안전", topPadding = Space.md)
+                                PhoneKeyProtectionPanel(
+                                    settings = settings,
+                                    onDeviceModeChange = onDeviceModeChange,
+                                    onProtectPhoneKeyChange = onProtectPhoneKeyChange,
+                                    onDisconnectVehicle = onDisconnectVehicle,
+                                )
+                            }
+                        }
+
+                        SettingsGroup.DEVICE -> {
+                            if (backup != null) {
+                                SectionHeader("백업", topPadding = Space.md)
+                                BackupPanel(backup)
+                            }
+
+                            // 실차 문제를 원격으로 전달받는 통로. 공유 버튼은 항상 남긴다.
+                            // 줄 목록은 끈다 — 사용자가 읽을 내용이 아니고 여기가 화면을 제일 많이 먹었다.
+                            // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 토글 상태를 알 수 없다
+                            SectionHeader("진단 로그", topPadding = if (backup == null) Space.md else Space.lg)
+                            DiagLogPanel(
+                                title = null,
+                                showLines = false,
+                                shareExtra = { settingsDump(settings) },
                             )
                         }
                     }
+                },
+            )
 
-                    SettingsGroup.DEVICE -> {
-                        if (backup != null) {
-                            SectionHeader("백업", topPadding = Space.md)
-                            BackupPanel(backup)
-                        }
-
-                        // 실차 문제를 원격으로 전달받는 통로. 공유 버튼은 항상 남긴다.
-                        // 줄 목록은 끈다 — 사용자가 읽을 내용이 아니고 여기가 화면을 제일 많이 먹었다.
-                        // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 토글 상태를 알 수 없다
-                        SectionHeader("진단 로그", topPadding = if (backup == null) Space.md else Space.lg)
-                        DiagLogPanel(
-                            title = null,
-                            showLines = false,
-                            shareExtra = { settingsDump(settings) },
-                        )
-                    }
-                }
-            },
-        )
-
-        Spacer(Modifier.height(Space.xxl))
+            Spacer(Modifier.height(Space.xxl))
+        }
     }
 }
 
@@ -544,6 +546,10 @@ internal fun SmartThingsPanel(
     settings: AppSettings,
     controls: SmartThingsControls,
 ) {
+    var manageCommands by rememberSaveable { mutableStateOf(false) }
+    var selectedAction by rememberSaveable { mutableStateOf<String?>(null) }
+    var draftText by rememberSaveable { mutableStateOf("") }
+    val configured = settings.smartThingsCommandTexts.values.count { it.isNotBlank() }
     TCard {
         ToggleRow(
             title = "스마트싱스 음성 명령",
@@ -568,25 +574,15 @@ internal fun SmartThingsPanel(
         Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
-        Text(
-            text = "알림의 한 줄과 정확히 같은 문구만 실행해요. 빈 칸은 사용하지 않아요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.md))
-        SmartThingsCommands.all.forEachIndexed { index, command ->
-            val text = settings.smartThingsCommandTexts[command.action].orEmpty()
-            val duplicated = text.isNotBlank() && settings.smartThingsCommandTexts.values.count {
-                it.trim() == text.trim()
-            } > 1
-            DraftField(
-                value = text,
-                onValueChange = { controls.onCommandTextChange(command.action, it) },
-                label = command.label,
-                isError = duplicated,
-                note = if (duplicated) "다른 동작과 문구가 같아 실행할 수 없어요" else null,
-            )
-            if (index < SmartThingsCommands.all.lastIndex) Spacer(Modifier.height(Space.md))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("연결된 명령", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+                Text("${configured}개 사용 중 · 프렁크, 트렁크 등",
+                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            }
+            TButton("명령 관리", ButtonTone.Secondary, fillWidth = false, small = true) {
+                manageCommands = true
+            }
         }
         Spacer(Modifier.height(Space.md))
         Hairline()
@@ -610,6 +606,81 @@ internal fun SmartThingsPanel(
                     small = true,
                     onClick = controls.onRequestNotificationAccess,
                 )
+            }
+        }
+    }
+    if (manageCommands) {
+        androidx.activity.compose.BackHandler {
+            if (selectedAction != null) selectedAction = null else manageCommands = false
+        }
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { if (selectedAction != null) selectedAction = null else manageCommands = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            SmartThingsCommandSheet(
+                settings = settings,
+                selectedAction = selectedAction,
+                draftText = draftText,
+                onSelect = { selectedAction = it },
+                onDraftChange = { draftText = it },
+                onSave = controls.onCommandTextChange,
+                onDismiss = { manageCommands = false; selectedAction = null },
+            )
+        }
+    }
+}
+
+/** 목록과 개별 문구 편집을 분리해 키보드가 떠도 한 명령에 집중한다. */
+@Composable
+internal fun SmartThingsCommandSheet(
+    settings: AppSettings,
+    selectedAction: String?,
+    draftText: String,
+    onSelect: (String?) -> Unit,
+    onDraftChange: (String) -> Unit,
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    com.wemade.teslamacro.ui.component.PickerSheet(
+        title = if (selectedAction == null) "음성 명령 관리" else "알림 문구 편집",
+        onDismiss = onDismiss,
+    ) {
+        val selected = SmartThingsCommands.all.firstOrNull { it.action == selectedAction }
+        if (selected == null) {
+            Text("바꿀 동작을 선택하세요. 문구가 없는 동작은 실행하지 않아요.",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            com.wemade.teslamacro.ui.component.PickerList(SmartThingsCommands.all) { command ->
+                com.wemade.teslamacro.ui.component.PickerRow(
+                    label = command.label,
+                    detail = settings.smartThingsCommandTexts[command.action].orEmpty().ifBlank { "사용 안 함" },
+                    onClick = {
+                        onDraftChange(settings.smartThingsCommandTexts[command.action].orEmpty())
+                        onSelect(command.action)
+                    },
+                )
+            }
+        } else {
+            val duplicate = draftText.isNotBlank() && settings.smartThingsCommandTexts.any {
+                it.key != selected.action && it.value.trim() == draftText.trim()
+            }
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(selected.label, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+                Spacer(Modifier.height(Space.md))
+                DraftField(
+                    value = draftText,
+                    onValueChange = { onDraftChange(it.take(MAX_SMARTTHINGS_COMMAND_TEXT_LENGTH)) },
+                    label = "SmartThings가 보낼 알림 문구",
+                    isError = duplicate,
+                    note = if (duplicate) "다른 동작에서 사용 중인 문구예요" else "알림 한 줄과 정확히 같아야 해요. 비우면 사용하지 않아요.",
+                )
+                Spacer(Modifier.height(Space.lg))
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    TButton("취소", ButtonTone.Secondary, modifier = Modifier.weight(1f)) { onSelect(null) }
+                    TButton("저장", enabled = !duplicate, modifier = Modifier.weight(1f)) {
+                        onSave(selected.action, draftText)
+                        onSelect(null)
+                    }
+                }
             }
         }
     }
@@ -956,7 +1027,7 @@ private fun ChoiceRow(
         options.forEach { (value, label) ->
             val isSelected = value == selected
             val background by animateColorAsState(
-                targetValue = if (isSelected) T.Ink else Color.Transparent,
+                targetValue = if (isSelected) T.Carbon else Color.Transparent,
                 animationSpec = Motion.quick(),
                 label = "choiceBackground",
             )
@@ -973,7 +1044,7 @@ private fun ChoiceRow(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isSelected) T.Void else T.InkMuted,
+                    color = if (isSelected) T.Electric else T.InkMuted,
                     maxLines = 1,
                 )
             }

@@ -30,20 +30,14 @@ object Space {
     val xxl = 48.dp
 }
 
-/**
- * 도면에 둥근 모서리는 없다. 전부 0dp다.
- *
- * 예전엔 4dp였다. 4dp는 "각지게 하려고 했다"는 표시일 뿐이고,
- * 제도된 판에서는 선이 만나는 곳이 그냥 만나야 한다.
- * 알약(999dp)은 점·구멍처럼 실제로 원인 것에만 남긴다.
- */
+/** 손으로 누르는 요소와 콘텐츠 면의 모서리를 구분한다. */
 object Radius {
-    val button = 0.dp
-    val card = 0.dp
-    val hero = 0.dp
+    val button = 12.dp
+    val card = 20.dp
+    val hero = 24.dp
     val pill = 999.dp
-    val segment = 0.dp
-    val tile = 0.dp
+    val segment = 12.dp
+    val tile = 16.dp
 }
 
 /**
@@ -116,7 +110,7 @@ private fun rememberIsNight(): Boolean {
 private fun colorSchemeFor(palette: Palette, dark: Boolean) = if (dark) {
     darkColorScheme(
         primary = palette.electric,
-        onPrimary = Color.White,
+        onPrimary = palette.void,
         secondary = palette.inkMuted,
         onSecondary = Color.White,
         background = palette.void,

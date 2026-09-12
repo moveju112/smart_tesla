@@ -535,11 +535,12 @@ data class SmartThingsControls(
     val onEnabledChange: (Boolean) -> Unit,
     val onCommandTextChange: (String, String) -> Unit,
     val onRequestNotificationAccess: () -> Unit,
+    val onValiditySecondsChange: (Int) -> Unit = {},
 )
 
 /** 구글 음성에서 넘어온 스마트싱스 알림 문구별로 기존 빠른 차량 동작을 연결한다. */
 @Composable
-private fun SmartThingsPanel(
+internal fun SmartThingsPanel(
     settings: AppSettings,
     controls: SmartThingsControls,
 ) {
@@ -551,6 +552,18 @@ private fun SmartThingsPanel(
             onCheckedChange = controls.onEnabledChange,
         )
         if (!settings.smartThingsEnabled) return@TCard
+        Spacer(Modifier.height(Space.md))
+        Text("명령 유효시간", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+        Text(
+            "알림 수신부터 이 시간 안에 실행하지 못하면 취소해요. 이미 전송한 명령은 취소할 수 없어요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+        )
+        com.wemade.teslamacro.ui.component.NumberStepper(
+            value = settings.smartThingsValiditySeconds.toDouble(),
+            min = 10.0, max = 600.0, step = 10.0, unit = "초",
+            onChange = { controls.onValiditySecondsChange(it.toInt()) },
+        )
 
         Spacer(Modifier.height(Space.md))
         Hairline()
@@ -985,6 +998,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     appendLine("등록: isPaired=${settings.isPaired} · isEnrolled=${settings.isEnrolled}")
     appendLine(
         "스마트싱스 명령=${settings.smartThingsEnabled}" +
+            " · 유효시간=${settings.smartThingsValiditySeconds}초" +
             " · 문구=" + SmartThingsCommands.all.joinToString { command ->
                 "${command.action}:${settings.smartThingsCommandTexts[command.action].orEmpty().ifBlank { "-" }}"
             },

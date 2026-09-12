@@ -27,6 +27,24 @@ import org.junit.Test
  * 제어 화면은 "스크롤 없이 한 화면"이 전제라 비율이 바뀌면 바로 티가 난다.
  */
 class WideScreenshotTest {
+    /** 음성 명령 유효시간 입력이 기기 폭 안에서 표시되는지 확인한다. */
+    @Test
+    fun `W12 음성 명령 유효시간`() {
+        paparazzi.snapshot("W12-smartthings-validity") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SmartThingsPanel(
+                    settings = com.wemade.teslamacro.data.settings.AppSettings(smartThingsEnabled = true),
+                    controls = com.wemade.teslamacro.feature.settings.SmartThingsControls(
+                        notificationAccessGranted = true,
+                        onEnabledChange = {},
+                        onCommandTextChange = { _, _ -> },
+                        onRequestNotificationAccess = {},
+                    ),
+                )
+            }
+        }
+    }
+
 
     @get:Rule
     val paparazzi = Paparazzi(

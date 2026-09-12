@@ -12,6 +12,21 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FrunkDeadlineTest {
+    // 설정한 유효시간마다 수신 기준 만료를 적용한다.
+    @Test fun `설정 시간과 서비스 지연을 반영하고 경계에서 만료한다`() {
+        for (seconds in listOf(10, 30, 120, 600)) {
+            val receivedAt = 5000L
+            var now = receivedAt + 3000L
+            val deadline = CommandDeadline(receivedAt + seconds * 1000L) { now }
+            assertEquals(seconds * 1000L - 3000L, deadline.remainingMillis())
+            now = receivedAt + seconds * 1000L
+            try {
+                deadline.check()
+                fail("설정 시간 경계에서 만료되어야 한다")
+            } catch (_: CommandExpiredException) { }
+        }
+    }
+
     // 서비스 시작이 지연돼도 수신 때 정한 만료를 연장하지 않는다.
     @Test fun `수신 30초 뒤 시작하면 90초만 남는다`() {
         val deadline = CommandDeadline(120_000L) { 30_000L }

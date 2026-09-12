@@ -418,6 +418,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             notificationAccessGranted = notificationAccessGranted,
                             onEnabledChange = settingsViewModel::setSmartThingsEnabled,
                             onCommandTextChange = settingsViewModel::setSmartThingsCommandText,
+                            onValiditySecondsChange = settingsViewModel::setSmartThingsValiditySeconds,
                             onRequestNotificationAccess = {
                                 openNotificationListenerSettings(context)
                             },

@@ -48,6 +48,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** 스마트싱스 알림 명령 전체의 사용 여부를 저장한다. */
+    /** 다음 음성 요청부터 사용할 유효시간을 저장한다. */
+    fun setSmartThingsValiditySeconds(seconds: Int) {
+        viewModelScope.launch { container.settingsStore.setSmartThingsValiditySeconds(seconds) }
+    }
+
     fun setSmartThingsEnabled(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setSmartThingsEnabled(enabled) }
     }

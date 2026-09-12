@@ -41,6 +41,7 @@ data class AppSettings(
     val automationEnabled: Boolean = true,
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
     val smartThingsEnabled: Boolean = false,
+    val smartThingsValiditySeconds: Int = 120,
     /** 빠른 차량 동작별로 정확히 일치해야 하는 스마트싱스 알림 문구 */
     val smartThingsCommandTexts: Map<String, String> = SmartThingsCommands.defaults(),
     /** 빈 차에서는 인증 BLE를 끊어 공식 휴대폰 키와의 간섭 가능성을 줄인다 */
@@ -116,6 +117,7 @@ class SettingsStore(
                 ?: prefs[KeySmartThingsFrunkEnabled]
                 ?: false,
             smartThingsCommandTexts = commandTexts(prefs),
+            smartThingsValiditySeconds = (prefs[KeySmartThingsValiditySeconds] ?: 120).coerceIn(10, 600),
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             isEnrolled = prefs[KeyEnrolled] ?: false,
@@ -146,6 +148,11 @@ class SettingsStore(
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     /** 알림 접근 권한과 별개로 차량 명령 수신 여부를 저장한다. */
+    /** 음성 요청 유효시간은 10초부터 10분까지 저장한다. */
+    suspend fun setSmartThingsValiditySeconds(seconds: Int) = edit {
+        it[KeySmartThingsValiditySeconds] = seconds.coerceIn(10, 600)
+    }
+
     suspend fun setSmartThingsEnabled(enabled: Boolean) = edit {
         it[KeySmartThingsEnabled] = enabled
     }
@@ -335,6 +342,7 @@ class SettingsStore(
         val KeyLegacyActivePoll = intPreferencesKey("active_poll_seconds")
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
         val KeyAutomation = booleanPreferencesKey("automation_enabled")
+        val KeySmartThingsValiditySeconds = intPreferencesKey("smartthings_validity_seconds")
         val KeySmartThingsEnabled = booleanPreferencesKey("smartthings_enabled")
         val KeySmartThingsCommandTexts = stringPreferencesKey("smartthings_command_texts")
         // 0.9.36 설정은 새 다중 명령 설정의 초기값으로만 읽는다.

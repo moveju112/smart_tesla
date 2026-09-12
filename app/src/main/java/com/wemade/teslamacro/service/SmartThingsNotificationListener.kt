@@ -23,6 +23,7 @@ class SmartThingsNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName != SMARTTHINGS_PACKAGE_NAME) return
 
+        val receivedAt = android.os.SystemClock.elapsedRealtime()
         val texts = notificationTexts(sbn.notification)
         serviceScope.launch {
             val app = application as TeslaMacroApplication
@@ -40,8 +41,8 @@ class SmartThingsNotificationListener : NotificationListenerService() {
                 return@launch
             }
 
-            // 기존 바로가기와 같은 서비스 진입점을 써서 BLE·P단·2분 제한을 그대로 적용한다.
-            runCatching { MacroService.runQuickAction(this@SmartThingsNotificationListener, action, null) }
+            // 알림 수신 시각을 전달해 설정 조회와 서비스 시작 지연도 유효시간에 포함한다.
+            runCatching { MacroService.runQuickAction(this@SmartThingsNotificationListener, action, null, settings.smartThingsValiditySeconds, receivedAt) }
                 .onSuccess {
                     cancelNotification(sbn.key)
                     DiagLog.add("스마트싱스 $label 알림 수신 — 명령 전달 후 알림 삭제")

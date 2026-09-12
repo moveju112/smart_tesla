@@ -53,3 +53,15 @@ fun openNotificationListenerSettings(context: Context) {
         }
     }
 }
+
+/** 제조사별 신뢰 기기 화면은 공개 경로가 없어 보안 설정을 열고 기본 설정으로 대체한다. */
+fun openTrustedDeviceSettings(context: Context) {
+    val direct = Intent(Settings.ACTION_SECURITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val fallback = Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(direct) }.onFailure {
+        runCatching { context.startActivity(fallback) }.onFailure {
+            DiagLog.add("안심운전 · 신뢰 기기 설정 화면을 열지 못함")
+            Toast.makeText(context, "휴대폰 설정에서 'Extend Unlock' 또는 'Smart Lock'을 찾아 주세요.", Toast.LENGTH_LONG).show()
+        }
+    }
+}

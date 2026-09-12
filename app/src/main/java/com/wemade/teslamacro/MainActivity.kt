@@ -436,6 +436,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                             onAppChange = settingsViewModel::setNavigatorApp,
                             onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
+                            onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
                             onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
                             onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
                             safeDriveTestMessage = safeDriveTestMessage,

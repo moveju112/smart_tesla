@@ -273,6 +273,16 @@ class PhoneScreenshotTest {
         }
     }
 
+    /** 신뢰 기기 안내와 확인·취소가 휴대폰 화면에 들어오는지 확인한다. */
+    @Test
+    fun `P18 신뢰 기기 안내`() {
+        paparazzi.snapshot("P18-trusted-device-prompt") {
+            FullScreenFrame {
+                com.wemade.teslamacro.feature.settings.TrustedDevicePrompt(onDismiss = {}, onConfirm = {})
+            }
+        }
+    }
+
     private fun dashboardState() = DashboardUiState(
         link = LinkState.Ready,
         vehicleName = "내 테슬라",

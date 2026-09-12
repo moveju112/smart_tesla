@@ -705,6 +705,7 @@ internal fun SmartThingsCommandSheet(
 data class NavigationControls(
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
+    val onOpenTrustedDeviceSettings: () -> Unit = {},
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
     val onSafeDriveTest: () -> Unit = {},
     val safeDriveTestMessage: String? = null,
@@ -763,6 +764,7 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
 /** 길안내를 넘길 내비 앱 하나 */
 @Composable
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
+    var showTrustedDevicePrompt by rememberSaveable { mutableStateOf(false) }
     TCard {
         Text(
             text = "지도 안내와 탑승 시 안심운전은 네이버 지도로 실행합니다.",
@@ -776,9 +778,14 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             title = "탑승하면 안심운전 자동 실행",
             subtitle = "운전자를 감지하면 네이버 지도의 안심운전을 열어요",
             checked = settings.autoStartNavigatorSafeDrive,
-            onCheckedChange = controls.onAutoStartSafeDriveChange,
+            onCheckedChange = { enabled ->
+                controls.onAutoStartSafeDriveChange(enabled)
+                showTrustedDevicePrompt = enabled
+            },
         )
         if (settings.autoStartNavigatorSafeDrive) {
+            Spacer(Modifier.height(Space.sm))
+            TButton("신뢰 기기 설정 안내", ButtonTone.Secondary) { showTrustedDevicePrompt = true }
             if (!controls.overlayPermitted) {
                 OverlayPermissionNotice(controls)
             }
@@ -828,6 +835,32 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             )
         }
     }
+    if (showTrustedDevicePrompt) {
+        TrustedDevicePrompt(
+            onDismiss = { showTrustedDevicePrompt = false },
+            onConfirm = {
+                showTrustedDevicePrompt = false
+                controls.onOpenTrustedDeviceSettings()
+            },
+        )
+    }
+}
+
+/** 설정 이동에만 동의를 받고, 취소해도 안심운전 자동 실행은 유지한다. */
+@Composable
+internal fun TrustedDevicePrompt(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("차량을 신뢰 기기로 설정할까요?") },
+        text = {
+            Text("차량 블루투스를 신뢰할 수 있는 기기로 등록하면 연결 중 잠금 해제 상태를 유지할 수 있어요.\n\n휴대폰 보안 설정을 여시겠습니까? 'Extend Unlock' 또는 'Smart Lock'에서 차량을 직접 선택해 주세요.\n\n처음에는 직접 잠금을 해제해야 해요. 취소해도 안심운전 자동 실행은 유지됩니다.")
+        },
+        confirmButton = { TButton("확인", fillWidth = false, small = true, onClick = onConfirm) },
+        dismissButton = { TButton("취소", ButtonTone.Ghost, fillWidth = false, small = true, onClick = onDismiss) },
+        containerColor = T.Carbon,
+        titleContentColor = T.Ink,
+        textContentColor = T.InkMuted,
+    )
 }
 
 /** 배경에서 내비 화면을 띄우는 데 필요한 오버레이 권한 안내 */

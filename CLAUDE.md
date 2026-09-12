@@ -11,7 +11,7 @@
 - 프로토콜 정답 벡터(루트 ARCHITECTURE.md 목록 + ProtocolVectorTest)는 불변 — 안 맞으면 코드가 틀린 것
 - 새 명령·조건·트리거는 확장 지점 3개로만 (파일 1개 + 분기 1개) — 편집 UI는 `Signal.entries`/`CommandCatalog.all`을 자동 나열 (docs/tasks/ADD_COMMAND.md)
 - 등록 완료 = 카드 태그 후 핸드셰이크 성공. VIN 저장(isPaired) ≠ 키 등록(isEnrolled)
-- UI는 **휴대폰 우선의 쿨 뉴트럴·딥틸/세이지·둥근 카드**다. 기존 도면·0dp·카드 금지·Material 금지 규칙은 전면 리디자인 요청으로 대체한다. 값은 `T/Space/Radius/Stroke/Motion` 토큰을 쓰며 정본은 [DESIGN.md](DESIGN.md)다.
+- UI는 **휴대폰 우선의 쿨 뉴트럴·블루/그레이·둥근 카드**다. 기존 도면·0dp·카드 금지·Material 금지 규칙은 전면 리디자인 요청으로 대체한다. 값은 `T/Space/Radius/Stroke/Motion` 토큰을 쓰며 정본은 [DESIGN.md](DESIGN.md)다.
 - 휴대폰 본문은 한 열로 읽고, 긴 내용은 스크롤한다. 넓은 화면은 `LocalPane`으로 대응한다.
 - 공용 `DraftMark/DraftToggle/DraftField`를 재사용한다. `DraftToggle`은 Material Switch이며 입력칸은 둥근 면이다.
 - **터치 타깃은 48dp**가 하한이다(안드로이드 최소치, 장갑 낀 손·흔들리는 차). 44dp는 한 곳도 없다

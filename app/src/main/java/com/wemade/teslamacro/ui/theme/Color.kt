@@ -43,22 +43,22 @@ data class Palette(
     val okText: Color,
 )
 
-/** 휴대폰 낮 화면: 밝은 뉴트럴 바탕과 딥틸 포인트로 정보 계층을 구분한다. */
+/** 휴대폰 낮 화면: 밝은 뉴트럴 바탕과 블루 포인트로 정보 계층을 구분한다. */
 val LightPalette = Palette(
-    void = Color(0xFFF3F6F5),
+    void = Color(0xFFF5F6F8),
     carbon = Color(0xFFFFFFFF),
     graphite = Color(0xFFFFFFFF),
-    slate = Color(0xFFE9EFEC),
-    hairline = Color(0xFFD5DFDB),
-    ink = Color(0xFF172C28),
-    inkMuted = Color(0xFF4C625C),
+    slate = Color(0xFFECEEF2),
+    hairline = Color(0xFFD8DCE3),
+    ink = Color(0xFF20242B),
+    inkMuted = Color(0xFF555E6B),
     // 4.5:1을 넘겨야 한다. 예전 #8F8D84는 2.91:1로, 부품 라벨·표 머리글·치수 이름이
     // 전부 이 색이었다 — 직사광 아래 11sp로 읽어야 하는 글자들이다
-    inkFaint = Color(0xFF5A6F69),
-    // 주요 동작은 딥틸로 구별한다
-    electric = Color(0xFF216B59),
-    electricPressed = Color(0xFF17513F),
-    electricFaint = Color(0xFFDFEEE7),
+    inkFaint = Color(0xFF646D7A),
+    // 주요 동작은 블루로 구별한다
+    electric = Color(0xFF3569B7),
+    electricPressed = Color(0xFF285393),
+    electricFaint = Color(0xFFE8EFFA),
     // 제도 청 — 기준선과 냉각
     cool = Color(0xFF1F5C8C),
     // 제도 적 — 정정과 주의. 난방·경보가 같은 계열의 농담으로 갈린다
@@ -69,24 +69,24 @@ val LightPalette = Palette(
     danger = Color(0xFFC8321E),
     onDanger = Color(0xFFF2F0E9),
     // 정상 상태는 포인트와 같은 계열로 표시한다
-    ok = Color(0xFF216B59),
-    okText = Color(0xFF216B59),
+    ok = Color(0xFF3569B7),
+    okText = Color(0xFF3569B7),
 )
 
-/** 밤에는 녹색 기운을 억제한 어두운 면과 밝은 세이지 포인트로 대비를 유지한다. */
+/** 밤에는 무채색의 어두운 면과 밝은 블루 포인트로 대비를 유지한다. */
 val DarkPalette = Palette(
-    void = Color(0xFF101A17),
-    carbon = Color(0xFF1A2823),
-    graphite = Color(0xFF1A2823),
-    slate = Color(0xFF263A31),
-    hairline = Color(0xFF3B5147),
-    ink = Color(0xFFEAF2EE),
-    inkMuted = Color(0xFFB4C6BC),
+    void = Color(0xFF15171B),
+    carbon = Color(0xFF202329),
+    graphite = Color(0xFF202329),
+    slate = Color(0xFF2C3038),
+    hairline = Color(0xFF424852),
+    ink = Color(0xFFEFF1F5),
+    inkMuted = Color(0xFFBDC3CD),
     // 밤도 4.13:1로 미달이었다
-    inkFaint = Color(0xFFA1B8AB),
-    electric = Color(0xFF9AD6BA),
-    electricPressed = Color(0xFFB8E5CE),
-    electricFaint = Color(0xFF263F33),
+    inkFaint = Color(0xFFAAB2BF),
+    electric = Color(0xFF91B4E8),
+    electricPressed = Color(0xFFB1CCF2),
+    electricFaint = Color(0xFF293A53),
     cool = Color(0xFF6FB6E0),
     heat = Color(0xFFE08A5A),
     warn = Color(0xFFD9A441),
@@ -94,8 +94,8 @@ val DarkPalette = Palette(
     warnFaint = Color(0xFF2B2718),
     danger = Color(0xFFE8624E),
     onDanger = Color(0xFF101619),
-    ok = Color(0xFF9AD6BA),
-    okText = Color(0xFF9AD6BA),
+    ok = Color(0xFF91B4E8),
+    okText = Color(0xFF91B4E8),
 )
 
 /** 지금 팔레트. [TeslaMacroTheme]이 낮/밤에 맞춰 갈아 끼운다 */

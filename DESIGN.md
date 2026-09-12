@@ -1,18 +1,18 @@
 ---
 name: Smart Tesla
-description: 휴대폰 우선 차량 자동화 앱 · 0.9.40
+description: 휴대폰 우선 차량 자동화 앱 · 0.9.41
 colors:
-  light-void: "#F3F6F5"
+  light-void: "#F5F6F8"
   light-carbon: "#FFFFFF"
   light-graphite: "#FFFFFF"
-  light-slate: "#E9EFEC"
-  light-hairline: "#D5DFDB"
-  light-ink: "#172C28"
-  light-inkMuted: "#4C625C"
-  light-inkFaint: "#5A6F69"
-  light-electric: "#216B59"
-  light-electricPressed: "#17513F"
-  light-electricFaint: "#DFEEE7"
+  light-slate: "#ECEEF2"
+  light-hairline: "#D8DCE3"
+  light-ink: "#20242B"
+  light-inkMuted: "#555E6B"
+  light-inkFaint: "#646D7A"
+  light-electric: "#3569B7"
+  light-electricPressed: "#285393"
+  light-electricFaint: "#E8EFFA"
   light-cool: "#1F5C8C"
   light-heat: "#B3411F"
   light-warn: "#A1601A"
@@ -20,19 +20,19 @@ colors:
   light-warnFaint: "#EDE4D2"
   light-danger: "#C8321E"
   light-onDanger: "#F2F0E9"
-  light-ok: "#216B59"
-  light-okText: "#216B59"
-  dark-void: "#101A17"
-  dark-carbon: "#1A2823"
-  dark-graphite: "#1A2823"
-  dark-slate: "#263A31"
-  dark-hairline: "#3B5147"
-  dark-ink: "#EAF2EE"
-  dark-inkMuted: "#B4C6BC"
-  dark-inkFaint: "#A1B8AB"
-  dark-electric: "#9AD6BA"
-  dark-electricPressed: "#B8E5CE"
-  dark-electricFaint: "#263F33"
+  light-ok: "#3569B7"
+  light-okText: "#3569B7"
+  dark-void: "#15171B"
+  dark-carbon: "#202329"
+  dark-graphite: "#202329"
+  dark-slate: "#2C3038"
+  dark-hairline: "#424852"
+  dark-ink: "#EFF1F5"
+  dark-inkMuted: "#BDC3CD"
+  dark-inkFaint: "#AAB2BF"
+  dark-electric: "#91B4E8"
+  dark-electricPressed: "#B1CCF2"
+  dark-electricFaint: "#293A53"
   dark-cool: "#6FB6E0"
   dark-heat: "#E08A5A"
   dark-warn: "#D9A441"
@@ -40,8 +40,8 @@ colors:
   dark-warnFaint: "#2B2718"
   dark-danger: "#E8624E"
   dark-onDanger: "#101619"
-  dark-ok: "#9AD6BA"
-  dark-okText: "#9AD6BA"
+  dark-ok: "#91B4E8"
+  dark-okText: "#91B4E8"
 typography:
   headlineLarge:
     fontFamily: "system-ui"
@@ -143,8 +143,8 @@ components:
 ## Overview
 
 휴대폰에서 매크로와 설정을 빠르게 읽고 조작하는 화면이 기준이다.
-밝은 쿨 뉴트럴 바탕, 딥틸 강조색, 둥근 콘텐츠 카드로 정보 묶음과 다음 동작을 구별한다.
-밤에는 어두운 녹색 계열 면과 밝은 세이지 강조색을 사용한다.
+밝은 쿨 뉴트럴 바탕, 블루 강조색, 둥근 콘텐츠 카드로 정보 묶음과 다음 동작을 구별한다.
+밤에는 차콜 면과 밝은 블루 강조색을 사용한다.
 사용자의 전면 리디자인 요청에 따라 기존 정비 도면·0dp 모서리·카드 금지·Material 금지·태블릿 우선 규칙을 명시적으로 대체한다.
 기존 `Draft*` 이름과 차량 선도 구현은 호환되는 코드 자산이며, 새 화면을 도면처럼 만들라는 지침이 아니다.
 
@@ -154,7 +154,7 @@ components:
 `Void`는 화면 배경, `Carbon/Graphite`는 콘텐츠 면, `Slate`는 보조 면, `Hairline`은 경계다.
 `Electric`은 주요 동작과 선택 상태, `ElectricFaint`는 선택 배경이다.
 `Cool/Heat`는 냉각·난방, `Warn`은 주의, `Danger`는 오류, `Ok`는 정상 상태에 사용한다.
-정상 상태의 녹색과 선택 강조를 허용하며, 예전 적·청 두 색 제한을 적용하지 않는다.
+정상 상태의 강조색과 선택 강조를 허용하며, 예전 적·청 두 색 제한을 적용하지 않는다.
 색만으로 상태를 전달하지 않고 글자·선택 상태·아이콘을 함께 사용한다.
 07시부터 19시 전까지 낮 팔레트이며, 기본 테마는 시각을 10분마다 재확인한다.
 
@@ -203,9 +203,10 @@ components:
   Primary는 `Electric` 면과 `Void` 글자, Secondary는 `Slate` 면과 `Ink` 글자, Danger는 보조 면과 오류색 글자다.
 - `TCard`: 20dp 반경, `Carbon` 면, 16dp 내부 여백으로 관련 내용을 묶는다.
 - `DraftToggle`: 이름은 유지하되 Material Switch를 사용하고 행의 최소 높이는 48dp다.
+  매크로 목록은 별도 켜짐·꺼짐 문구 없이 스위치로 상태를 표시하고, 접근성 이름은 매크로 이름과 자동 실행 용도를 유지한다.
 - `DraftField`: 라벨과 둥근 `Slate` 입력 면, 포커스 경계로 입력 위치를 구별한다.
 - 선택 칩: 선택 배경과 전경은 현재 팔레트에서 함께 구한다.
-  밤의 밝은 세이지 면 위에 밝은 흰색 글자를 고정하지 않는다.
+  밤의 밝은 블루 면 위에 밝은 흰색 글자를 고정하지 않는다.
 - 탐색: 아이콘과 기능 이름을 함께 표시하며 선택 항목은 `ElectricFaint` 면과 `Electric` 전경이다.
 - 스마트싱스 명령: 목록에서 선택한 항목을 별도 시트로 편집하며 알림 문구와 차량 동작을 연결한다.
 
@@ -215,7 +216,7 @@ components:
 - Do 공용 토큰과 기존 프리미티브를 재사용한다.
 - Do 모든 조작 타깃을 최소 48dp로 제공한다.
 - Do 아직 읽지 못한 값은 `--`로 표시하고 실제 차량 결과와 UI 표시 검증을 구별한다.
-- Don't 도면 금지 규칙을 되살려 둥근 카드·Material Switch·정상 녹색을 제거하지 않는다.
+- Don't 도면 금지 규칙을 되살려 둥근 카드·Material Switch·정상 상태 강조색을 제거하지 않는다.
 - Don't 주행 중 편집이나 조작을 유도하지 않는다.
 - Don't 그라데이션·글로우를 새 장식으로 추가하지 않는다.
 

@@ -31,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.macro.MacroLogEntry
@@ -203,7 +205,7 @@ private fun MacroRow(
             DraftToggle(
                 checked = rule.enabled,
                 onCheckedChange = onToggle,
-                label = if (rule.enabled) "사용 중" else "사용 안 함",
+                modifier = Modifier.semantics { contentDescription = "${rule.name} 자동 실행" },
             )
             Spacer(Modifier.weight(1f))
             TButton(

@@ -45,11 +45,11 @@ class StealthChargePlanTest {
     }
 
     @Test
-    fun `간격은 기존 30~120초 사이다`() {
+    fun `간격은 60~300초 사이다`() {
         val random = Random(11)
         repeat(200) {
             val step = StealthChargePlan.next(14, 5, 16, random)
-            assertTrue("간격 ${step.holdSeconds}", step.holdSeconds in 30..120)
+            assertTrue("간격 ${step.holdSeconds}", step.holdSeconds in 60..300)
         }
     }
 

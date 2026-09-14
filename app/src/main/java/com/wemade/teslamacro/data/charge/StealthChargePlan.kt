@@ -35,11 +35,11 @@ object StealthChargePlan {
         return maxOf(lo, (hi * HIGH_BAND_RATIO).roundToInt()).coerceAtMost(hi)
     }
 
-    /** 고정 주기로 명령이 몰리지 않도록 기존 30~120초 간격을 유지한다. */
+    /** 고정 주기로 명령이 몰리지 않도록 60~300초 사이에서 다음 변경 시점을 고른다. */
     private fun randomInterval(random: Random): Int =
         MIN_INTERVAL_S + random.nextInt(MAX_INTERVAL_S - MIN_INTERVAL_S + 1)
 
     private const val HIGH_BAND_RATIO = 0.75
-    private const val MIN_INTERVAL_S = 30
-    private const val MAX_INTERVAL_S = 120
+    private const val MIN_INTERVAL_S = 60
+    private const val MAX_INTERVAL_S = 300
 }

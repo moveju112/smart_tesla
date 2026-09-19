@@ -8,12 +8,17 @@
    - versionCode를 안 올리면 기기에서 덮어쓰기 설치가 거부될 수 있다
 2. **테스트 + 스냅샷 + 빌드** — 한 번에:
    ```bash
-   ./gradlew test verifyPaparazziDebug :app:assembleDebug
+   ./gradlew test verifyPaparazziDebug :app:assembleRelease
    ```
    - `test`에는 Paparazzi가 포함되지 않는다 ([PITFALLS.md](../PITFALLS.md))
    - UI를 바꿨으면 먼저 `recordPaparazziDebug`로 관련 기준 이미지만 갱신하고 휴대폰·`WideScreenshotTest`를 눈으로 확인한 뒤 전체 `verifyPaparazziDebug`를 통과시킨다
-3. **산출물 확인** — `app/build/outputs/apk/debug/app-arm64-v8a-debug.apk`
+3. **산출물 확인** — `app/build/outputs/apk/release/app-arm64-v8a-release.apk`
    - universal APK는 없다 (ABI split, `app/build.gradle.kts:24`). 실기기는 arm64
+   - 배포는 **release 빌드**다 (R8 축소, 39.9MB → 17.6MB). 자가 업데이트가 끊기지 않게
+     debug 키로 서명한다 (`signingConfig = signingConfigs.getByName("debug")`) — 키를 바꾸면
+     서명 불일치로 사용자가 앱을 지우고 다시 깔아야 한다
+   - R8이 지우면 안 되는 것: protobuf 생성 클래스(`tesla-ble/consumer-rules.pro`),
+     KNSDK(`app/proguard-rules.pro`). 규칙을 지우면 VCSEC 응답이 통째로 빈다
 4. **전달** — APK 파일명을 `SmartTesla-<versionName>-arm64.apk`로 바꿔 사용자에게 전달
 5. **커밋 + 푸시 + 릴리즈** — 검증을 통과한 코드 변경은 자동으로 GitHub Release까지 완료한다 (사용자 상시 허가, 2026-09-03)
    ```bash

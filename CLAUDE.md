@@ -21,7 +21,7 @@
 - `./gradlew test`에 Paparazzi는 없다 — UI 변경 시 `recordPaparazziDebug` 별도
 - **사용자가 승인한 코드 변경은 검증 통과 후 자동 릴리즈한다.** 별도 확인 없이 다음 패치 버전 선택 → versionCode +1 → 테스트·Paparazzi·arm64 빌드 → 관련 파일만 커밋 → 현재 추적 브랜치 푸시 → annotated 태그 → GitHub Release·APK 첨부 → 원격 HEAD·태그·APK SHA-256 검증까지 [RELEASE_BUILD.md](docs/tasks/RELEASE_BUILD.md)대로 완료한다. 사용자가 릴리즈 제외를 명시했거나 검증 실패·실 VIN/비밀값·무관한 변경 혼입이 있으면 중단한다
 - 자동 릴리즈 상시 권한은 `moveju112/smart_tesla`의 현재 추적 브랜치·일치 태그·GitHub Release에만 적용한다. force-push·merge/rebase·브랜치 삭제·의존성 업그레이드·기기 설치·스토어 배포·DB/데이터/서비스·이슈/PR 변경은 포함하지 않으며, BLE는 사용자 실차 로그 전까지 미확인이다
-- 배포마다 versionCode +1, 실기기는 arm64 split APK (universal 없음)
+- 배포마다 versionCode +1, 실기기는 arm64 split APK (universal 없음). 배포용은 R8을 태운 **release 빌드**이며, 자가 업데이트가 끊기지 않게 debug 키로 서명한다 — 키를 바꾸면 사용자가 앱을 지우고 다시 깔아야 한다
 - **실기기 로그는 `adb`가 아니라 앱의 "설정 → 기기 → 진단 로그 → 공유"로 받는다** — 차내 태블릿은 PC에 안 물려 있다. 로그는 `filesDir/diag/`에 파일로 남아 앱 재시작을 견딘다 (docs/tasks/RELEASE_BUILD.md)
 - 주석은 한국어 "왜" 중심, 새 함수 위 설명 주석 필수
 - 프레임워크 선제 도입 금지(Hilt/Room 등 의도적 미채택) — 전환 조건은 주석으로
@@ -32,7 +32,8 @@
 ./gradlew test                      # 단위 테스트 (Paparazzi 미포함)
 ./gradlew recordPaparazziDebug      # 스크린샷 스냅샷 갱신
 ./gradlew verifyPaparazziDebug      # 스냅샷 회귀 검증
-./gradlew :app:assembleDebug        # APK → app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+./gradlew :app:assembleRelease      # 배포 APK → app/build/outputs/apk/release/app-arm64-v8a-release.apk
+./gradlew :app:assembleDebug        # 개발용 APK → app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
 
 ## Routing

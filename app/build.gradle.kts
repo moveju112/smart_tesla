@@ -14,8 +14,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 159
-        versionName = "0.9.46"
+        versionCode = 160
+        versionName = "0.9.47"
 
         // 공개 버전에서는 외부 네이버 지도만 사용하므로 KNSDK 키를 포함하지 않는다.
         buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"\"")
@@ -34,6 +34,10 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            // 기기에 깔린 앱이 debug 키로 서명돼 있다. 키가 바뀌면 자가 업데이트가 서명 불일치로
+            // 막혀 사용자가 지우고 다시 깔아야 한다 — 같은 키를 그대로 쓴다
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -45,6 +49,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    lint {
+        // KNSDK가 끌고 오는 fragment 1.1.0 때문에 뜨는 오탐. MainActivity는 ComponentActivity라
+        // FragmentActivity의 onRequestPermissionsResult 결함과 무관하다
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true   // 업데이트 확인에서 현재 버전(VERSION_NAME) 비교용

@@ -77,6 +77,8 @@ class WideFontScaleTest {
         paparazzi.snapshot("F3-settings-fontscale") {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
                         vin = "5YJS0000000000000",
                         vehicleName = "내 테슬라",
@@ -110,6 +112,8 @@ class WideFontScaleTest {
         paparazzi.snapshot("F5-settings-automation-fontscale") {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
                         vin = "5YJS0000000000000",
                         stealthCharging = true,

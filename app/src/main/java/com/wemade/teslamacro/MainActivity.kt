@@ -217,6 +217,7 @@ private fun AppRoot(factory: ViewModelFactory) {
     val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
     val settings by settingsViewModel.settings.collectAsState()
     val stealthChargeRuntime by settingsViewModel.stealthChargeRuntime.collectAsState()
+    val chargeHistory by settingsViewModel.chargeHistory.collectAsState()
 
     var skippedPairing by rememberSaveable { mutableStateOf(false) }
     var current by rememberSaveable { mutableStateOf(Destination.Macros) }
@@ -390,6 +391,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
                         onStealthMaxAmpsChange = settingsViewModel::setStealthMaxAmps,
                         onStealthMinAmpsChange = settingsViewModel::setStealthMinAmps,
+                        chargeHistory = chargeHistory,
                         onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
                         onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
                         onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,

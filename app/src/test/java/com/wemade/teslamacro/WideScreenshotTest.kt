@@ -264,6 +264,8 @@ class WideScreenshotTest {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
                         vin = "5YJS0000000000000",
                         vehicleName = "내 테슬라",
@@ -397,6 +399,8 @@ class WideScreenshotTest {
         paparazzi.snapshot("W8-update-notes") {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
                         vin = "5YJS0000000000000",
                     ),

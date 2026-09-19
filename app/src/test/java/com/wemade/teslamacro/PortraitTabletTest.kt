@@ -74,6 +74,8 @@ class PortraitTabletTest {
         paparazzi.snapshot("V3-settings-portrait") {
             AppFrame(Destination.Settings) {
                 com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
                         vin = "5YJS0000000000000",
                         vehicleName = "내 테슬라",

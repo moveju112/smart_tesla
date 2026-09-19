@@ -64,6 +64,9 @@ fun SettingsScreen(
     stealthSecondsUntilNextChange: Int? = null,
     onStealthMaxAmpsChange: (Int) -> Unit = {},
     onStealthMinAmpsChange: (Int?) -> Unit = {},
+    chargeHistory: List<com.wemade.teslamacro.data.charge.ChargeBucket> = emptyList(),
+    /** 그래프의 "지금". 스냅샷 테스트가 같은 그림을 얻도록 밖에서 넣을 수 있게 둔다 */
+    chargeHistoryNowMillis: Long = System.currentTimeMillis(),
     onStealthScheduleEnabledChange: (Boolean) -> Unit = {},
     onStealthStartMinutesChange: (Int) -> Unit = {},
     onStealthEndMinutesChange: (Int) -> Unit = {},
@@ -203,6 +206,8 @@ fun SettingsScreen(
                                 onEnabledChange = onStealthChargingChange,
                                 onMaxAmpsChange = onStealthMaxAmpsChange,
                                 onMinAmpsChange = onStealthMinAmpsChange,
+                                chargeHistory = chargeHistory,
+                                chargeHistoryNowMillis = chargeHistoryNowMillis,
                                 onScheduleEnabledChange = onStealthScheduleEnabledChange,
                                 onStartMinutesChange = onStealthStartMinutesChange,
                                 onEndMinutesChange = onStealthEndMinutesChange,
@@ -265,6 +270,8 @@ private fun StealthChargePanel(
     onEnabledChange: (Boolean) -> Unit,
     onMaxAmpsChange: (Int) -> Unit,
     onMinAmpsChange: (Int?) -> Unit,
+    chargeHistory: List<com.wemade.teslamacro.data.charge.ChargeBucket>,
+    chargeHistoryNowMillis: Long,
     onScheduleEnabledChange: (Boolean) -> Unit,
     onStartMinutesChange: (Int) -> Unit,
     onEndMinutesChange: (Int) -> Unit,
@@ -276,6 +283,9 @@ private fun StealthChargePanel(
             checked = settings.stealthCharging,
             onCheckedChange = onEnabledChange,
         )
+        // 그래프는 1회 설정과 무관하게 늘 보여준다 — 지난 충전이 어땠는지가 켜기 판단의 근거다
+        Spacer(Modifier.height(Space.md))
+        ChargeChart(buckets = chargeHistory, nowMillis = chargeHistoryNowMillis)
         if (!settings.stealthCharging) return@TCard
 
         Spacer(Modifier.height(Space.sm))

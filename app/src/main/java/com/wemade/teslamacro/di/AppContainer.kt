@@ -102,6 +102,9 @@ class AppContainer(private val context: Context) {
     val scanner = com.wemade.teslable.TeslaBleScanner(context)
 
     val ruleStore = RuleStore(context)
+
+    /** 설정 화면의 15분 단위 충전 전류 그래프가 읽는 기록 */
+    val chargeHistory = com.wemade.teslamacro.data.charge.ChargeHistoryStore(context)
     private val macroShortcutPublisher = MacroShortcutPublisher(context)
 
     /** 예보. 계정도 키도 없는 Open-Meteo를 쓴다 */
@@ -133,6 +136,7 @@ class AppContainer(private val context: Context) {
     /** VIN 등록 여부에 따라 실차/시뮬레이터를 고른다 */
     suspend fun initialize() {
         ruleStore.load()
+        chargeHistory.load()
         // 저장·삭제·이름 변경 직후 빅스비 루틴 목록도 같은 매크로를 보게 한다.
         appScope.launch {
             ruleStore.rules.collect(macroShortcutPublisher::publish)
@@ -168,6 +172,7 @@ class AppContainer(private val context: Context) {
             gateway, ruleStore, settingsStore, runner, latestReading,
             locationReader = ::readLocationWithFallback,
             forecastReader = weatherClient::forecast,
+            chargeHistory = chargeHistory,
         )
         stealthCharge = com.wemade.teslamacro.data.charge.StealthChargeController(
             gateway, poller, settingsStore,

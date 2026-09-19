@@ -186,6 +186,8 @@ class PhoneScreenshotTest {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings, dark = dark) {
                 SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = AppSettings(
                         vin = "5YJS0000000000000",
                         smartThingsEnabled = true,
@@ -219,6 +221,8 @@ class PhoneScreenshotTest {
         paparazzi.snapshot("P7-safe-drive-test") {
             AppFrame(Destination.Settings) {
                 SettingsScreen(
+                    chargeHistory = sampleChargeHistory(),
+                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = AppSettings(autoStartNavigatorSafeDrive = true),
                     onAutomationChange = {},
                     onUnpair = {},
@@ -278,6 +282,8 @@ class PhoneScreenshotTest {
             paparazzi.snapshot("P17-theme-settings-${if (dark) "dark" else "light"}") {
                 AppFrame(Destination.Settings, dark = dark) {
                     SettingsScreen(
+                        chargeHistory = sampleChargeHistory(),
+                        chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                         settings = AppSettings(themeMode = if (dark) com.wemade.teslamacro.data.settings.ThemeMode.DARK else com.wemade.teslamacro.data.settings.ThemeMode.LIGHT),
                         onAutomationChange = {}, onUnpair = {}, onStartPairing = {},
                         initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DEVICE,

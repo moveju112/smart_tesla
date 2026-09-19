@@ -222,6 +222,8 @@ class ScreenshotTest {
     fun `08 설정 - 시뮬레이터`() {
         snapshot("08-settings", Destination.Settings) {
             SettingsScreen(
+                chargeHistory = sampleChargeHistory(),
+                chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                 settings = AppSettings(vin = ""),
                 onAutomationChange = {},
                 onUnpair = {},

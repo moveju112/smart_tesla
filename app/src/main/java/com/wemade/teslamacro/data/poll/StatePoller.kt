@@ -59,6 +59,8 @@ class StatePoller(
     private val locationReader: suspend () -> GeoPoint? = { null },
     /** 오늘 예보. 예보 조건을 쓰는 매크로가 있을 때만, 한 시간에 한 번 호출된다 */
     private val forecastReader: suspend (GeoPoint, Long) -> WeatherForecast? = { _, _ -> null },
+    /** 15분 단위 충전 전류 그래프의 원본. 없으면 기록만 안 남고 폴링은 그대로 돈다 */
+    private val chargeHistory: com.wemade.teslamacro.data.charge.ChargeHistoryStore? = null,
 ) {
     private var job: Job? = null
 
@@ -350,6 +352,9 @@ class StatePoller(
                 ?.let { fresh -> merge(_snapshot.value, fresh) }
                 ?.let { withRideMinutes(it) }
                 ?: _snapshot.value
+
+            // 3-0. 충전 전류를 15분 칸에 적산한다. 읽은 사이클에서만 센다
+            chargeHistory?.record(merged, now())
 
             // 3-1. 좀비 GATT 워치독 — 한 사이클이 통째로 실패하는 게 이어지면 강제 재접속.
             //      하나라도 성공했으면 링크는 산 것이다 (빈 차 사이클도 VCSEC는 항상 응답해야 정상)

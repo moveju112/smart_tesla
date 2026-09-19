@@ -37,6 +37,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val stealthChargeRuntime = container.stealthCharge.runtime
 
+    /** 15분 단위 충전 전류 그래프의 원본 */
+    val chargeHistory = container.chargeHistory.buckets
+
     val settings: StateFlow<AppSettings> = container.settingsStore.settings.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),

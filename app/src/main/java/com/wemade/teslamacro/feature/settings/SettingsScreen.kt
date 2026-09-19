@@ -280,7 +280,7 @@ private fun StealthChargePanel(
 
         Spacer(Modifier.height(Space.sm))
         Text(
-            text = "대기·충전 중에만 차량 연결을 유지하고, 종료하면 휴대폰 키 보호 정책으로 돌아가요.",
+            text = "충전 중에만 연결을 유지하고, 대기 중에는 10분마다 잠깐 확인만 해요. 종료하면 휴대폰 키 보호 정책으로 돌아가요.",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )

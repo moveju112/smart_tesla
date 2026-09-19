@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.poll
 
 import com.wemade.teslamacro.data.charge.isWithinStealthChargeWindow
+import com.wemade.teslamacro.data.charge.stealthChargeNeedsConnection
 import com.wemade.teslamacro.data.macro.RuleStore
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
@@ -616,13 +617,18 @@ class StatePoller(
             appVisible = now() < appVisibleUntil,
             commandActive = commandConnections.get() > 0,
             macroRunning = runner.running.value.isNotEmpty(),
-            stealthChargeNeedsConnection = settings.stealthChargeModified ||
-                settings.stealthCharging && isWithinStealthChargeWindow(
+            stealthChargeNeedsConnection = stealthChargeNeedsConnection(
+                modified = settings.stealthChargeModified,
+                enabled = settings.stealthCharging,
+                inWindow = isWithinStealthChargeWindow(
                     nowMinutes = TimeContext.of(now()).minutesOfDay,
                     enabled = settings.stealthScheduleEnabled,
                     startMinutes = settings.stealthStartMinutes,
                     endMinutes = settings.stealthEndMinutes,
                 ),
+                chargingConfirmed = _snapshot.value.isCharging == true,
+                nowMillis = now(),
+            ),
             manuallyPaused = manualConnectionPause.get(),
         )
 

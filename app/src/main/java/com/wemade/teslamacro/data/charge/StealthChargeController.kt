@@ -83,10 +83,28 @@ class StealthChargeController(
             )
         ) {
             StealthChargeAction.RESTORE_DISABLED -> restoreAndClose(settings, "사용자 해제")
-            StealthChargeAction.COMPLETE -> restoreAndClose(settings, "충전 완료")
+            StealthChargeAction.COMPLETE -> confirmStoppedThenClose()
             StealthChargeAction.RUN -> runLoop()
             StealthChargeAction.WAIT -> Unit
         }
+    }
+
+    /**
+     * 충전 중단은 한 번 본 것으로 끝내지 않는다.
+     *
+     * isCharging은 charger_power(kW 정수)가 0보다 큰지로 판정한다. 저전류 구간에서는 0으로
+     * 보고될 수 있고, 차량이 전력을 잠시 거두기도 한다. 한 번의 false로 1회 세션을 닫으면
+     * 사용자는 아직 충전 중인데 조절이 끝나 버린다. 다시 충전이 보이면 collectLatest가
+     * 이 대기를 취소하고 RUN으로 돌아간다.
+     */
+    private suspend fun confirmStoppedThenClose() {
+        delay(CHARGE_STOP_CONFIRM_MILLIS)
+        if (poller.snapshot.value.isCharging == true) {
+            com.wemade.teslable.DiagLog.add("스텔스 충전 — 충전 중단이 아니었다, 조절 계속")
+            return
+        }
+        // 3분을 기다렸으니 원복에 쓸 값은 지금 저장된 것으로 다시 읽는다
+        restoreAndClose(settingsStore.settings.first(), "충전 완료")
     }
 
     /** 충전 중에는 시간대와 실제 상한을 매 스텝 다시 확인한다. */
@@ -95,6 +113,7 @@ class StealthChargeController(
             var current = poller.snapshot.value.chargingAmps ?: currentMaxAmps()
             var stepCount = 0
             var waitingLogged = false
+            var ampsWaitLogged = false
 
             while (true) {
                 var settings = settingsStore.settings.first()
@@ -128,7 +147,21 @@ class StealthChargeController(
                 waitingLogged = false
 
                 if (!settings.stealthChargeStarted) {
-                    val originalAmps = poller.snapshot.value.chargingAmps ?: current
+                    // 원래 전류를 모르는 채 시작하면 끝나고 엉뚱한 값(차량 상한·폴백 16A)으로
+                    // 되돌린다. CHARGE를 실제로 읽을 때까지 기다린다
+                    val originalAmps = poller.snapshot.value.chargingAmps
+                    if (originalAmps == null) {
+                        if (!ampsWaitLogged) {
+                            com.wemade.teslable.DiagLog.add(
+                                "스텔스 충전 대기 — 현재 전류를 아직 못 읽었다"
+                            )
+                            ampsWaitLogged = true
+                        }
+                        delay(AMPS_WAIT_MILLIS)
+                        continue
+                    }
+                    ampsWaitLogged = false
+                    current = originalAmps
                     settingsStore.beginStealthCharge(originalAmps)
                     com.wemade.teslable.DiagLog.add(
                         "스텔스 충전 1회 시작 — 원래 전류 ${originalAmps}A"
@@ -238,6 +271,8 @@ class StealthChargeController(
         const val DEFAULT_MAX_AMPS = 16
         const val SEND_ATTEMPTS = 3
         const val WINDOW_CHECK_MILLIS = 60_000L
+        const val CHARGE_STOP_CONFIRM_MILLIS = 180_000L
+        const val AMPS_WAIT_MILLIS = 15_000L
         val RETRY_DELAYS_MILLIS = longArrayOf(2_000L, 5_000L)
     }
 }
@@ -280,6 +315,37 @@ internal fun isWithinStealthChargeWindow(
         nowMinutes >= startMinutes || nowMinutes <= endMinutes
     }
 }
+
+/**
+ * 1회 충전을 위해 지금 차량 연결을 붙잡아야 하는가.
+ *
+ * 전류를 이미 바꿨으면 원복할 때까지 놓지 않는다. 아직 충전이 확인되지 않은 동안에는
+ * 계속 붙어 있지 않는다 — 거치 태블릿이 밤새 연결을 잡으면 배터리도 먹고 공식 휴대폰 키의
+ * 근접 판정도 방해한다. 대신 [STEALTH_PROBE_PERIOD_MILLIS] 주기의 앞
+ * [STEALTH_PROBE_ON_MILLIS] 동안만 붙어 충전이 시작됐는지 확인한다. 연결을 아예 놓으면
+ * 충전이 시작된 것을 읽을 방법이 없기 때문이다.
+ */
+internal fun stealthChargeNeedsConnection(
+    modified: Boolean,
+    enabled: Boolean,
+    inWindow: Boolean,
+    chargingConfirmed: Boolean,
+    nowMillis: Long,
+): Boolean {
+    if (modified) return true
+    if (!enabled || !inWindow) return false
+    return chargingConfirmed || isStealthProbeWindow(nowMillis)
+}
+
+/** 벽시계를 주기로 잘라 앞부분만 확인 창으로 쓴다. 기기 상태 없이 판정해 재시작에도 흔들리지 않는다. */
+internal fun isStealthProbeWindow(
+    nowMillis: Long,
+    periodMillis: Long = STEALTH_PROBE_PERIOD_MILLIS,
+    onMillis: Long = STEALTH_PROBE_ON_MILLIS,
+): Boolean = nowMillis.mod(periodMillis) < onMillis
+
+internal const val STEALTH_PROBE_PERIOD_MILLIS = 10 * 60_000L
+internal const val STEALTH_PROBE_ON_MILLIS = 3 * 60_000L
 
 /** 차량 상한, 현재 전류, 폴백 순으로 고르되 명령 가능한 최솟값은 지킨다. */
 internal fun effectiveMaxChargingAmps(

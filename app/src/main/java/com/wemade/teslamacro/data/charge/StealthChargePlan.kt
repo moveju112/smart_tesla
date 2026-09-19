@@ -10,23 +10,22 @@ object StealthChargePlan {
     /** 한 스텝의 결과: 이 전류로 바꾸고, 이만큼 뒤에 다시 정한다. */
     data class Step(val amps: Int, val holdSeconds: Int)
 
-    /** [minAmps]~[maxAmps] 범위 안에서 높은 전류 쪽에 가중치를 둔다. */
-    fun next(current: Int, minAmps: Int, maxAmps: Int, random: Random = Random.Default): Step {
-        val highBandStart = minAmps.coerceAtMost(maxAmps)
+    /**
+     * [minAmps]~[maxAmps] 범위 안에서 높은 전류 쪽에 가중치를 둔다.
+     *
+     * 예전에는 뽑은 값을 현재 전류와 절반씩 섞어 급격한 점프를 줄였는데, 5~13A처럼 좁은
+     * 범위에서는 변화폭까지 반으로 깎여 한 값(10A)에 40% 몰렸다. 패턴을 숨기려고 흔드는
+     * 기능이 흔들리지 않으면 의미가 없어 섞기를 뺐다.
+     */
+    fun next(minAmps: Int, maxAmps: Int, random: Random = Random.Default): Step {
+        val lo = minAmps.coerceAtMost(maxAmps)
         val hi = maxAmps.coerceAtLeast(minAmps)
-        val span = hi - highBandStart
+        val span = hi - lo
 
-        // 지수가 1보다 작으면 상한 쪽 표본이 많아진다. 0.75는 균등(1.0)과 예전 sqrt(0.5)의 중간으로,
-        // 상한 선호는 남기되 낮은 전류도 눈에 띄게 나오게 한다. 현재값과 절반씩 섞어 급격한 점프만 줄인다.
-        val sampled = highBandStart +
-            (span * random.nextDouble().pow(HIGH_BIAS_EXPONENT)).roundToInt()
-        val target = if (current in highBandStart..hi) {
-            ((current + sampled) / 2.0).roundToInt()
-        } else {
-            sampled
-        }.coerceIn(highBandStart, hi)
+        // 지수가 1보다 작으면 상한 쪽 표본이 많아진다. 0.75는 균등(1.0)과 예전 sqrt(0.5)의 중간
+        val target = lo + (span * random.nextDouble().pow(HIGH_BIAS_EXPONENT)).roundToInt()
 
-        return Step(target, holdSeconds = randomInterval(random))
+        return Step(target.coerceIn(lo, hi), holdSeconds = randomInterval(random))
     }
 
     /** 사용자가 하한을 정하지 않았을 때 쓰는 자동 하한 — 상한의 위쪽 25%로 충전 속도를 지킨다. */

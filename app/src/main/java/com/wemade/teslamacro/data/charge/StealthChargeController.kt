@@ -174,7 +174,7 @@ class StealthChargeController(
                 val minAmps = settings.stealthMinAmps
                     ?.coerceIn(MIN_AMPS, maxAmps)
                     ?: StealthChargePlan.autoMinAmps(MIN_AMPS, maxAmps)
-                val step = StealthChargePlan.next(current, minAmps, maxAmps)
+                val step = StealthChargePlan.next(minAmps, maxAmps)
                 _runtime.value = StealthChargeRuntime(running = true)
                 val sent = sendWithRetry(step.amps)
                 stepCount++
@@ -184,14 +184,17 @@ class StealthChargeController(
                         step.amps != settings.stealthChargeOriginalAmps
                     )
                 }
-                when {
-                    sent.isFailure -> com.wemade.teslable.DiagLog.add(
-                        "스텔스 충전 전송 실패 — 3회 재시도 · ${sent.exceptionOrNull()?.message}"
-                    )
-                    stepCount == 1 || stepCount % 10 == 0 -> com.wemade.teslable.DiagLog.add(
-                        "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A / 범위 ${minAmps}~${maxAmps}A)"
-                    )
-                }
+                // 스텝마다 남긴다. 10스텝에 한 줄만 남기던 때는 "전류가 안 바뀐다"는 의심이 들어도
+                // 무엇을 보냈고 먹혔는지 확인할 방법이 없었다
+                com.wemade.teslable.DiagLog.add(
+                    if (sent.isSuccess) {
+                        "스텔스 충전 ${stepCount}스텝 · ${step.amps}A 전송 성공 " +
+                            "(범위 ${minAmps}~${maxAmps}A, 다음 ${step.holdSeconds}초 뒤)"
+                    } else {
+                        "스텔스 충전 ${stepCount}스텝 · ${step.amps}A 전송 실패 — 3회 재시도 · " +
+                            "${sent.exceptionOrNull()?.message}"
+                    }
+                )
                 waitForNextStep(step.holdSeconds)
             }
         } finally {
@@ -229,10 +232,12 @@ class StealthChargeController(
     /** 원래 전류가 있고 실제로 바꾼 세션만 최대 3회 복구한다. */
     private suspend fun restoreOriginalAmps(settings: AppSettings): Boolean {
         val originalAmps = settings.stealthChargeOriginalAmps ?: return true
+        com.wemade.teslable.DiagLog.add("스텔스 충전 원복 시도 — ${originalAmps}A")
         val result = sendWithRetry(originalAmps)
-        if (result.isSuccess) {
-            com.wemade.teslable.DiagLog.add("스텔스 충전 전류 원복 완료 — ${originalAmps}A")
-        }
+        com.wemade.teslable.DiagLog.add(
+            if (result.isSuccess) "스텔스 충전 전류 원복 완료 — ${originalAmps}A"
+            else "스텔스 충전 전류 원복 실패 — ${originalAmps}A · ${result.exceptionOrNull()?.message}"
+        )
         return result.isSuccess
     }
 
@@ -242,6 +247,11 @@ class StealthChargeController(
         repeat(SEND_ATTEMPTS) { attempt ->
             last = gateway.send(VehicleCommand.SetChargingAmps(amps))
             if (last.isSuccess) return last
+            // 몇 번째 시도가 왜 실패했는지 남긴다 — 차량 수면·무응답과 거부를 구분해야 한다
+            com.wemade.teslable.DiagLog.add(
+                "스텔스 충전 ${amps}A 전송 ${attempt + 1}/$SEND_ATTEMPTS 실패 · " +
+                    "${last.exceptionOrNull()?.message}"
+            )
             if (attempt < SEND_ATTEMPTS - 1) delay(RETRY_DELAYS_MILLIS[attempt])
         }
         return last

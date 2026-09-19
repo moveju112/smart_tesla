@@ -15,7 +15,6 @@ class StealthChargePlanTest {
         var current = 16
         repeat(500) {
             val step = StealthChargePlan.next(
-                current,
                 minAmps = StealthChargePlan.autoMinAmps(5, 16),
                 maxAmps = 16,
                 random = random,
@@ -31,7 +30,7 @@ class StealthChargePlanTest {
         var current = 14
         val values = buildList {
             repeat(500) {
-                val step = StealthChargePlan.next(current, StealthChargePlan.autoMinAmps(5, 16), 16, random)
+                val step = StealthChargePlan.next(StealthChargePlan.autoMinAmps(5, 16), 16, random)
                 add(step.amps)
                 current = step.amps
             }
@@ -44,7 +43,7 @@ class StealthChargePlanTest {
     fun `보고 상한이 10A면 8~10A로 자동 축소한다`() {
         val random = Random(99)
         repeat(200) {
-            val step = StealthChargePlan.next(10, StealthChargePlan.autoMinAmps(5, 10), 10, random)
+            val step = StealthChargePlan.next(StealthChargePlan.autoMinAmps(5, 10), 10, random)
             assertTrue(step.amps in 8..10)
         }
     }
@@ -53,7 +52,7 @@ class StealthChargePlanTest {
     fun `간격은 60~300초 사이다`() {
         val random = Random(11)
         repeat(200) {
-            val step = StealthChargePlan.next(14, StealthChargePlan.autoMinAmps(5, 16), 16, random)
+            val step = StealthChargePlan.next(StealthChargePlan.autoMinAmps(5, 16), 16, random)
             assertTrue("간격 ${step.holdSeconds}", step.holdSeconds in 60..300)
         }
     }
@@ -73,7 +72,7 @@ class StealthChargePlanTest {
         var current = 30
         val values = buildList {
             repeat(500) {
-                val step = StealthChargePlan.next(current, minAmps = 8, maxAmps = 48, random = random)
+                val step = StealthChargePlan.next(minAmps = 8, maxAmps = 48, random = random)
                 add(step.amps)
                 current = step.amps
             }
@@ -91,7 +90,7 @@ class StealthChargePlanTest {
 
     @Test
     fun `밴드가 한 점으로 좁아도 터지지 않는다`() {
-        val step = StealthChargePlan.next(5, minAmps = 5, maxAmps = 5, random = Random(0))
+        val step = StealthChargePlan.next(minAmps = 5, maxAmps = 5, random = Random(0))
         assertEquals(5, step.amps)
     }
 }

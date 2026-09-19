@@ -389,6 +389,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onStealthChargingChange = settingsViewModel::setStealthCharging,
                         stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
                         onStealthMaxAmpsChange = settingsViewModel::setStealthMaxAmps,
+                        onStealthMinAmpsChange = settingsViewModel::setStealthMinAmps,
                         onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
                         onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
                         onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,

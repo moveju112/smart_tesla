@@ -53,6 +53,7 @@ class StealthChargeController(
                     linked = link is LinkState.Ready,
                     isCharging = snapshot.isCharging,
                     maxAmps = settings.stealthMaxAmps,
+                    minAmps = settings.stealthMinAmps,
                     scheduleEnabled = settings.stealthScheduleEnabled,
                     startMinutes = settings.stealthStartMinutes,
                     endMinutes = settings.stealthEndMinutes,
@@ -136,7 +137,11 @@ class StealthChargeController(
                 }
 
                 val maxAmps = minOf(currentMaxAmps(), settings.stealthMaxAmps).coerceAtLeast(MIN_AMPS)
-                val step = StealthChargePlan.next(current, MIN_AMPS, maxAmps)
+                // 하한을 직접 정했으면 그 값을, 안 정했으면 예전처럼 상한의 75% 자동 하한을 쓴다
+                val minAmps = settings.stealthMinAmps
+                    ?.coerceIn(MIN_AMPS, maxAmps)
+                    ?: StealthChargePlan.autoMinAmps(MIN_AMPS, maxAmps)
+                val step = StealthChargePlan.next(current, minAmps, maxAmps)
                 _runtime.value = StealthChargeRuntime(running = true)
                 val sent = sendWithRetry(step.amps)
                 stepCount++
@@ -151,7 +156,7 @@ class StealthChargeController(
                         "스텔스 충전 전송 실패 — 3회 재시도 · ${sent.exceptionOrNull()?.message}"
                     )
                     stepCount == 1 || stepCount % 10 == 0 -> com.wemade.teslable.DiagLog.add(
-                        "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A / 상한 ${maxAmps}A)"
+                        "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A / 범위 ${minAmps}~${maxAmps}A)"
                     )
                 }
                 waitForNextStep(step.holdSeconds)
@@ -222,6 +227,7 @@ class StealthChargeController(
         val linked: Boolean,
         val isCharging: Boolean?,
         val maxAmps: Int,
+        val minAmps: Int?,
         val scheduleEnabled: Boolean,
         val startMinutes: Int,
         val endMinutes: Int,

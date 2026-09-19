@@ -92,6 +92,8 @@ data class AppSettings(
     val stealthChargeModified: Boolean = false,
     /** 스텔스 충전이 넘지 않을 사용자 지정 전류 상한. 차량 상한이 더 낮으면 차량값을 따른다. */
     val stealthMaxAmps: Int = 48,
+    /** 사용자가 직접 정한 전류 하한. null이면 상한의 75% 자동 하한을 쓴다. */
+    val stealthMinAmps: Int? = null,
     /** 정한 시간대 안에서만 전류를 조절할지. */
     val stealthScheduleEnabled: Boolean = false,
     /** 스텔스 충전 시작 시각. 자정부터 흐른 분이다. */
@@ -149,6 +151,7 @@ class SettingsStore(
             stealthChargeOriginalAmps = prefs[KeyStealthChargeOriginalAmps],
             stealthChargeModified = prefs[KeyStealthChargeModified] ?: false,
             stealthMaxAmps = (prefs[KeyStealthMaxAmps] ?: 48).coerceIn(5, 48),
+            stealthMinAmps = prefs[KeyStealthMinAmps]?.coerceIn(5, 48),
             stealthScheduleEnabled = prefs[KeyStealthScheduleEnabled] ?: false,
             stealthStartMinutes = (prefs[KeyStealthStartMinutes] ?: 23 * 60).coerceIn(0, 1439),
             stealthEndMinutes = (prefs[KeyStealthEndMinutes] ?: 7 * 60).coerceIn(0, 1439),
@@ -237,7 +240,21 @@ class SettingsStore(
 
     /** 차량 상한보다 높은 값도 안전하게 저장 범위에서 제한하고 실제 실행 때 다시 차량값과 비교한다. */
     suspend fun setStealthMaxAmps(amps: Int) = edit {
-        it[KeyStealthMaxAmps] = amps.coerceIn(5, 48)
+        val max = amps.coerceIn(5, 48)
+        it[KeyStealthMaxAmps] = max
+        // 상한을 내리면 하한이 상한을 넘을 수 있다. 범위가 뒤집히지 않게 같이 내린다
+        val min = it[KeyStealthMinAmps]
+        if (min != null && min > max) it[KeyStealthMinAmps] = max
+    }
+
+    /** 하한은 저장 범위와 현재 상한 안에서만 받는다. null이면 자동 하한으로 되돌린다. */
+    suspend fun setStealthMinAmps(amps: Int?) = edit {
+        if (amps == null) {
+            it.remove(KeyStealthMinAmps)
+        } else {
+            val max = (it[KeyStealthMaxAmps] ?: 48).coerceIn(5, 48)
+            it[KeyStealthMinAmps] = amps.coerceIn(5, 48).coerceAtMost(max)
+        }
     }
 
     /** 시간대 제한 사용 여부를 저장한다. */
@@ -390,6 +407,7 @@ class SettingsStore(
         val KeyStealthChargeOriginalAmps = intPreferencesKey("stealth_charge_original_amps")
         val KeyStealthChargeModified = booleanPreferencesKey("stealth_charge_modified")
         val KeyStealthMaxAmps = intPreferencesKey("stealth_max_amps")
+        val KeyStealthMinAmps = intPreferencesKey("stealth_min_amps")
         val KeyStealthScheduleEnabled = booleanPreferencesKey("stealth_schedule_enabled")
         val KeyStealthStartMinutes = intPreferencesKey("stealth_start_minutes")
         val KeyStealthEndMinutes = intPreferencesKey("stealth_end_minutes")

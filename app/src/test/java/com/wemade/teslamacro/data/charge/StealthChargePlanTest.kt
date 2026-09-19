@@ -14,7 +14,12 @@ class StealthChargePlanTest {
         val random = Random(42)
         var current = 16
         repeat(500) {
-            val step = StealthChargePlan.next(current, minAmps = 5, maxAmps = 16, random = random)
+            val step = StealthChargePlan.next(
+                current,
+                minAmps = StealthChargePlan.autoMinAmps(5, 16),
+                maxAmps = 16,
+                random = random,
+            )
             assertTrue("전류 ${step.amps}가 고전류 밴드를 벗어났다", step.amps in 12..16)
             current = step.amps
         }
@@ -26,7 +31,7 @@ class StealthChargePlanTest {
         var current = 14
         val values = buildList {
             repeat(500) {
-                val step = StealthChargePlan.next(current, 5, 16, random)
+                val step = StealthChargePlan.next(current, StealthChargePlan.autoMinAmps(5, 16), 16, random)
                 add(step.amps)
                 current = step.amps
             }
@@ -39,7 +44,7 @@ class StealthChargePlanTest {
     fun `보고 상한이 10A면 8~10A로 자동 축소한다`() {
         val random = Random(99)
         repeat(200) {
-            val step = StealthChargePlan.next(10, 5, 10, random)
+            val step = StealthChargePlan.next(10, StealthChargePlan.autoMinAmps(5, 10), 10, random)
             assertTrue(step.amps in 8..10)
         }
     }
@@ -48,7 +53,7 @@ class StealthChargePlanTest {
     fun `간격은 60~300초 사이다`() {
         val random = Random(11)
         repeat(200) {
-            val step = StealthChargePlan.next(14, 5, 16, random)
+            val step = StealthChargePlan.next(14, StealthChargePlan.autoMinAmps(5, 16), 16, random)
             assertTrue("간격 ${step.holdSeconds}", step.holdSeconds in 60..300)
         }
     }
@@ -60,6 +65,28 @@ class StealthChargePlanTest {
         assertFalse(isWithinStealthChargeWindow(12 * 60, true, 22 * 60, 6 * 60))
         assertTrue(isWithinStealthChargeWindow(12 * 60, false, 22 * 60, 6 * 60))
         assertTrue(isWithinStealthChargeWindow(12 * 60, true, 7 * 60, 7 * 60))
+    }
+
+    @Test
+    fun `직접 정한 하한은 자동 하한보다 낮아도 그대로 쓴다`() {
+        val random = Random(5)
+        var current = 30
+        val values = buildList {
+            repeat(500) {
+                val step = StealthChargePlan.next(current, minAmps = 8, maxAmps = 48, random = random)
+                add(step.amps)
+                current = step.amps
+            }
+        }
+        assertTrue("하한 8A 아래로 내려갔다 (${values.min()})", values.min() >= 8)
+        assertTrue("자동 하한 36A 아래를 한 번도 안 썼다", values.min() < 36)
+    }
+
+    @Test
+    fun `자동 하한은 상한의 75퍼센트다`() {
+        assertEquals(36, StealthChargePlan.autoMinAmps(5, 48))
+        assertEquals(12, StealthChargePlan.autoMinAmps(5, 16))
+        assertEquals(16, StealthChargePlan.autoMinAmps(20, 16))
     }
 
     @Test

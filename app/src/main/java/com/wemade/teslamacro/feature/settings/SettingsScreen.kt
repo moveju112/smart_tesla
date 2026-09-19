@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.wemade.teslamacro.data.charge.StealthChargePlan
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.ThemeMode
 import com.wemade.teslamacro.data.settings.DeviceMode
@@ -62,6 +63,7 @@ fun SettingsScreen(
     onStealthChargingChange: (Boolean) -> Unit = {},
     stealthSecondsUntilNextChange: Int? = null,
     onStealthMaxAmpsChange: (Int) -> Unit = {},
+    onStealthMinAmpsChange: (Int?) -> Unit = {},
     onStealthScheduleEnabledChange: (Boolean) -> Unit = {},
     onStealthStartMinutesChange: (Int) -> Unit = {},
     onStealthEndMinutesChange: (Int) -> Unit = {},
@@ -200,6 +202,7 @@ fun SettingsScreen(
                                 secondsUntilNextChange = stealthSecondsUntilNextChange,
                                 onEnabledChange = onStealthChargingChange,
                                 onMaxAmpsChange = onStealthMaxAmpsChange,
+                                onMinAmpsChange = onStealthMinAmpsChange,
                                 onScheduleEnabledChange = onStealthScheduleEnabledChange,
                                 onStartMinutesChange = onStealthStartMinutesChange,
                                 onEndMinutesChange = onStealthEndMinutesChange,
@@ -261,6 +264,7 @@ private fun StealthChargePanel(
     secondsUntilNextChange: Int?,
     onEnabledChange: (Boolean) -> Unit,
     onMaxAmpsChange: (Int) -> Unit,
+    onMinAmpsChange: (Int?) -> Unit,
     onScheduleEnabledChange: (Boolean) -> Unit,
     onStartMinutesChange: (Int) -> Unit,
     onEndMinutesChange: (Int) -> Unit,
@@ -305,6 +309,38 @@ private fun StealthChargePanel(
             color = T.InkFaint,
             modifier = Modifier.padding(top = Space.xs),
         )
+        Spacer(Modifier.height(Space.md))
+        ToggleRow(
+            title = "최소 전류 직접 지정",
+            subtitle = "끄면 최대 전류의 75%까지만 내려가 충전 속도를 지켜요",
+            checked = settings.stealthMinAmps != null,
+            onCheckedChange = { on ->
+                // 켤 때는 지금 쓰던 자동 하한에서 시작해야 충전 속도가 갑자기 떨어지지 않는다
+                onMinAmpsChange(
+                    if (on) StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps) else null
+                )
+            },
+        )
+        val minAmps = settings.stealthMinAmps
+        if (minAmps != null) {
+            Spacer(Modifier.height(Space.md))
+            Text("최소 전류", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+            Spacer(Modifier.height(Space.sm))
+            com.wemade.teslamacro.ui.component.NumberStepper(
+                value = minAmps.toDouble(),
+                min = 5.0,
+                max = settings.stealthMaxAmps.toDouble(),
+                step = 1.0,
+                unit = "A",
+                onChange = { onMinAmpsChange(it.toInt()) },
+            )
+            Text(
+                text = "전류는 ${minAmps}~${settings.stealthMaxAmps}A 사이에서만 바뀌어요.",
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+                modifier = Modifier.padding(top = Space.xs),
+            )
+        }
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "시간대 제한",

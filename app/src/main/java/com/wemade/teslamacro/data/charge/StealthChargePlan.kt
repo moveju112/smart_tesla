@@ -10,11 +10,10 @@ object StealthChargePlan {
     /** 한 스텝의 결과: 이 전류로 바꾸고, 이만큼 뒤에 다시 정한다. */
     data class Step(val amps: Int, val holdSeconds: Int)
 
-    /** 16A 이하 충전기도 실제 상한 안에서 높은 전류 쪽에 가중치를 둔다. */
+    /** [minAmps]~[maxAmps] 범위 안에서 높은 전류 쪽에 가중치를 둔다. */
     fun next(current: Int, minAmps: Int, maxAmps: Int, random: Random = Random.Default): Step {
-        val lo = minAmps.coerceAtMost(maxAmps)
+        val highBandStart = minAmps.coerceAtMost(maxAmps)
         val hi = maxAmps.coerceAtLeast(minAmps)
-        val highBandStart = highBandStartAmps(lo, hi)
         val span = hi - highBandStart
 
         // sqrt 난수는 상한 쪽 표본이 더 많다. 현재값과 절반씩 섞어 급격한 점프만 줄인다.
@@ -28,8 +27,8 @@ object StealthChargePlan {
         return Step(target, holdSeconds = randomInterval(random))
     }
 
-    /** 충전기 상한의 위쪽 25%를 사용하되 차량 명령 하한보다 낮아지지 않게 한다. */
-    internal fun highBandStartAmps(minAmps: Int, maxAmps: Int): Int {
+    /** 사용자가 하한을 정하지 않았을 때 쓰는 자동 하한 — 상한의 위쪽 25%로 충전 속도를 지킨다. */
+    fun autoMinAmps(minAmps: Int, maxAmps: Int): Int {
         val lo = minAmps.coerceAtMost(maxAmps)
         val hi = maxAmps.coerceAtLeast(minAmps)
         return maxOf(lo, (hi * HIGH_BAND_RATIO).roundToInt()).coerceAtMost(hi)

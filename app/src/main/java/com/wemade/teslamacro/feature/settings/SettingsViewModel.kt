@@ -79,6 +79,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setStealthMaxAmps(amps) }
     }
 
+    /** 스텔스 충전이 내려갈 수 있는 전류 하한을 저장한다. null이면 자동 하한으로 돌아간다. */
+    fun setStealthMinAmps(amps: Int?) {
+        viewModelScope.launch { container.settingsStore.setStealthMinAmps(amps) }
+    }
+
     /** 스텔스 충전의 시간대 제한 사용 여부를 저장한다. */
     fun setStealthScheduleEnabled(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setStealthScheduleEnabled(enabled) }

@@ -64,9 +64,21 @@ object SnapshotDecoder {
         },
     )
 
+    /** 둘 중 하나라도 0보다 크면 충전 중. 둘 다 못 읽었으면 모른다(null). */
+    internal fun chargingState(powerKw: Int?, actualAmps: Int?): Boolean? = when {
+        powerKw == null && actualAmps == null -> null
+        else -> (powerKw ?: 0) > 0 || (actualAmps ?: 0) > 0
+    }
+
     private fun VehicleSnapshot.withCharge(charge: Vehicle.ChargeState): VehicleSnapshot = copy(
         batteryLevelPercent = charge.takeIf { it.hasBatteryLevel() }?.batteryLevel,
-        isCharging = charge.takeIf { it.hasChargerPower() }?.let { it.chargerPower > 0 },
+        // charger_power는 kW 정수라 저전류(5~9A)에서 0으로 내려앉는다. 그걸로만 판정하면
+        // 전류를 낮게 흔드는 스텔스 충전이 스스로를 "충전 완료"로 오인한다.
+        // 실측 전류가 흐르고 있으면 그것도 충전이다
+        isCharging = chargingState(
+            powerKw = charge.takeIf { it.hasChargerPower() }?.chargerPower,
+            actualAmps = charge.takeIf { it.hasChargerActualCurrent() }?.chargerActualCurrent,
+        ),
         chargeLimitPercent = charge.takeIf { it.hasChargeLimitSoc() }?.chargeLimitSoc,
         chargingAmps = charge.takeIf { it.hasChargingAmps() }?.chargingAmps,
         actualChargingAmps = charge.takeIf { it.hasChargerActualCurrent() }?.chargerActualCurrent,

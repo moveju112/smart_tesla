@@ -274,9 +274,12 @@ class WideScreenshotTest {
                         autoStartNavigatorSafeDrive = true,
                         smartThingsEnabled = group == SettingsGroup.AUTOMATION,
                         stealthCharging = group == SettingsGroup.AUTOMATION,
+                        stealthMaxAmps = 13,
                         stealthScheduleEnabled = group == SettingsGroup.AUTOMATION,
                     ),
                     onAutomationChange = {},
+                    stealthSecondsUntilNextChange =
+                        if (group == SettingsGroup.AUTOMATION) 134 else null,
                     onUnpair = {},
                     onStartPairing = {},
                     battery = com.wemade.teslamacro.feature.settings.BatteryControls(

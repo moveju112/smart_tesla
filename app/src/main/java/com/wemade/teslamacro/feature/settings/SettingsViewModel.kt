@@ -35,6 +35,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun simulateBoarding() = simulator?.simulateBoarding()
     fun simulateLeaving() = simulator?.simulateLeaving()
 
+    val stealthChargeRuntime = container.stealthCharge.runtime
+
     val settings: StateFlow<AppSettings> = container.settingsStore.settings.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -70,6 +72,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** 다음 충전 1회의 스텔스 전류 조절 사용 여부를 저장한다. */
     fun setStealthCharging(enabled: Boolean) {
         viewModelScope.launch { container.setStealthCharging(enabled) }
+    }
+
+    /** 스텔스 충전이 사용할 전류 상한을 저장한다. */
+    fun setStealthMaxAmps(amps: Int) {
+        viewModelScope.launch { container.settingsStore.setStealthMaxAmps(amps) }
     }
 
     /** 스텔스 충전의 시간대 제한 사용 여부를 저장한다. */

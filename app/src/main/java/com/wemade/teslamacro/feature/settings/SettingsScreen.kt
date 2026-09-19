@@ -60,6 +60,8 @@ fun SettingsScreen(
     onAutomationChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     onStealthChargingChange: (Boolean) -> Unit = {},
+    stealthSecondsUntilNextChange: Int? = null,
+    onStealthMaxAmpsChange: (Int) -> Unit = {},
     onStealthScheduleEnabledChange: (Boolean) -> Unit = {},
     onStealthStartMinutesChange: (Int) -> Unit = {},
     onStealthEndMinutesChange: (Int) -> Unit = {},
@@ -195,7 +197,9 @@ fun SettingsScreen(
                             SectionHeader("충전")
                             StealthChargePanel(
                                 settings = settings,
+                                secondsUntilNextChange = stealthSecondsUntilNextChange,
                                 onEnabledChange = onStealthChargingChange,
+                                onMaxAmpsChange = onStealthMaxAmpsChange,
                                 onScheduleEnabledChange = onStealthScheduleEnabledChange,
                                 onStartMinutesChange = onStealthStartMinutesChange,
                                 onEndMinutesChange = onStealthEndMinutesChange,
@@ -254,7 +258,9 @@ fun SettingsScreen(
 @Composable
 private fun StealthChargePanel(
     settings: AppSettings,
+    secondsUntilNextChange: Int?,
     onEnabledChange: (Boolean) -> Unit,
+    onMaxAmpsChange: (Int) -> Unit,
     onScheduleEnabledChange: (Boolean) -> Unit,
     onStartMinutesChange: (Int) -> Unit,
     onEndMinutesChange: (Int) -> Unit,
@@ -274,6 +280,31 @@ private fun StealthChargePanel(
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )
+        if (secondsUntilNextChange != null) {
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                text = "다음 전류 변경 · ${formatStealthCountdown(secondsUntilNextChange)} 뒤",
+                style = MaterialTheme.typography.labelMedium,
+                color = T.Electric,
+            )
+        }
+        Spacer(Modifier.height(Space.md))
+        Text("최대 전류", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+        Spacer(Modifier.height(Space.sm))
+        com.wemade.teslamacro.ui.component.NumberStepper(
+            value = settings.stealthMaxAmps.toDouble(),
+            min = 5.0,
+            max = 48.0,
+            step = 1.0,
+            unit = "A",
+            onChange = { onMaxAmpsChange(it.toInt()) },
+        )
+        Text(
+            text = "차량이 허용하는 상한이 더 낮으면 차량값을 따라요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+            modifier = Modifier.padding(top = Space.xs),
+        )
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "시간대 제한",
@@ -292,6 +323,14 @@ private fun StealthChargePanel(
             HourMinuteStepper(settings.stealthEndMinutes, onEndMinutesChange)
         }
     }
+}
+
+/** 남은 초를 한눈에 읽히는 분·초 문구로 바꾼다. */
+internal fun formatStealthCountdown(seconds: Int): String {
+    val safeSeconds = seconds.coerceAtLeast(0)
+    val minutes = safeSeconds / 60
+    val remainder = safeSeconds % 60
+    return if (minutes > 0) "${minutes}분 ${remainder}초" else "${remainder}초"
 }
 
 /** 빈 차에서 앱의 인증 BLE를 놓아 공식 휴대폰 키의 근접 판정을 방해하지 않게 한다. */

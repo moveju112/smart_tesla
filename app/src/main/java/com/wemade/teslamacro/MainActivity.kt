@@ -216,6 +216,7 @@ internal fun runtimePermissionsFor(sdkInt: Int): List<String> = buildList {
 private fun AppRoot(factory: ViewModelFactory) {
     val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
     val settings by settingsViewModel.settings.collectAsState()
+    val stealthChargeRuntime by settingsViewModel.stealthChargeRuntime.collectAsState()
 
     var skippedPairing by rememberSaveable { mutableStateOf(false) }
     var current by rememberSaveable { mutableStateOf(Destination.Macros) }
@@ -386,6 +387,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onAutomationChange = settingsViewModel::setAutomationEnabled,
                         onThemeModeChange = settingsViewModel::setThemeMode,
                         onStealthChargingChange = settingsViewModel::setStealthCharging,
+                        stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
+                        onStealthMaxAmpsChange = settingsViewModel::setStealthMaxAmps,
                         onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
                         onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
                         onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,

@@ -48,6 +48,7 @@ import kotlinx.coroutines.withTimeout
 class MacroService : LifecycleService() {
 
     private var safeDriveTestJob: Job? = null
+    private var stealthChargeWakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -64,6 +65,7 @@ class MacroService : LifecycleService() {
             // 스텔스 충전도 같은 서비스 수명에 맞춰 돈다. 안에서 설정·충전 여부를 스스로 게이트한다
             app.container.stealthCharge.start(lifecycleScope)
         }
+        keepCpuAwakeForStealthCharge(app)
 
         // 새 버전 확인은 컨테이너·차량과 무관하니 따로 돈다
         checkForUpdate()
@@ -554,8 +556,35 @@ class MacroService : LifecycleService() {
         }
     }
 
+    /** 화면이 잠겨 CPU가 잘 때도 활성 충전의 1~5분 전류 전환 시각을 지킨다. */
+    private fun keepCpuAwakeForStealthCharge(app: TeslaMacroApplication) {
+        lifecycleScope.launch {
+            try {
+                app.ready.first { it }
+                app.container.stealthCharge.runtime.collectLatest { runtime ->
+                    if (runtime.running) {
+                        val lock = stealthChargeWakeLock
+                            ?: getSystemService(PowerManager::class.java)
+                                .newWakeLock(
+                                    PowerManager.PARTIAL_WAKE_LOCK,
+                                    "$packageName:stealthCharge",
+                                )
+                                .apply { setReferenceCounted(false) }
+                                .also { stealthChargeWakeLock = it }
+                        if (!lock.isHeld) lock.acquire(STEALTH_WAKE_LOCK_TIMEOUT_MILLIS)
+                    } else {
+                        stealthChargeWakeLock?.let { if (it.isHeld) it.release() }
+                    }
+                }
+            } finally {
+                stealthChargeWakeLock?.let { if (it.isHeld) it.release() }
+            }
+        }
+    }
+
     override fun onDestroy() {
         safeDriveTestJob?.cancel()
+        stealthChargeWakeLock?.let { if (it.isHeld) it.release() }
         overlay.hide()
         runCatching { (application as TeslaMacroApplication).container.safeDrive.stop() }
         runCatching { unregisterReceiver(powerReceiver) }
@@ -621,6 +650,8 @@ class MacroService : LifecycleService() {
         private const val SAFE_DRIVE_TEST_DELAY_MILLIS = 10_000L
         // 10초 예약 뒤 시스템 인증을 최대 60초 기다리고 전달할 시간을 남긴다.
         private const val SAFE_DRIVE_TEST_TIMEOUT_MILLIS = 90_000L
+        // 랜덤 전환 최대 간격(5분)보다 길고, 상태는 매초 재확인한다.
+        private const val STEALTH_WAKE_LOCK_TIMEOUT_MILLIS = 6 * 60_000L
 
         /** 새 버전 알림 — 감시 알림과 달리 눈에 보여야 해서 채널이 따로다 */
         private const val UPDATE_CHANNEL_ID = "update_available"

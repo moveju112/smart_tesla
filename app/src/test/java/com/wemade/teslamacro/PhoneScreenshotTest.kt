@@ -173,14 +173,27 @@ class PhoneScreenshotTest {
 
     @Test
     fun `P6 설정`() {
-        paparazzi.snapshot("P6-settings") {
-            AppFrame(Destination.Settings) {
+        settingsAutomationSnapshot("P6-settings", dark = false)
+    }
+
+    @Test
+    fun `P6N 설정 - 밤`() {
+        settingsAutomationSnapshot("P6N-settings-night", dark = true)
+    }
+
+    /** 스텔스 전류 설정과 남은 시간이 휴대 화면의 낮·밤 팔레트에서 읽히는지 렌더링한다. */
+    private fun settingsAutomationSnapshot(name: String, dark: Boolean) {
+        paparazzi.snapshot(name) {
+            AppFrame(Destination.Settings, dark = dark) {
                 SettingsScreen(
                     settings = AppSettings(
                         vin = "5YJS0000000000000",
                         smartThingsEnabled = true,
                         stealthCharging = true,
+                        stealthMaxAmps = 13,
+                        stealthScheduleEnabled = true,
                     ),
+                    stealthSecondsUntilNextChange = 134,
                     onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
@@ -194,6 +207,7 @@ class PhoneScreenshotTest {
                         onCommandTextChange = { _, _ -> },
                         onRequestNotificationAccess = {},
                     ),
+                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
                 )
             }
         }

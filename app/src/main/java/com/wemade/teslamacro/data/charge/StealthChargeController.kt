@@ -14,9 +14,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** 화면과 서비스가 함께 쓰는 스텔스 충전 실행 상태. */
+data class StealthChargeRuntime(
+    val running: Boolean = false,
+    val secondsUntilNextChange: Int? = null,
+)
 
 /** 다음 충전 1회만 전류를 조절하고 원래 전류와 연결 보호 정책을 복구한다. */
 class StealthChargeController(
@@ -27,6 +36,8 @@ class StealthChargeController(
     private val fallbackMaxAmps: Int = DEFAULT_MAX_AMPS,
 ) {
     private var job: Job? = null
+    private val _runtime = MutableStateFlow(StealthChargeRuntime())
+    val runtime: StateFlow<StealthChargeRuntime> = _runtime.asStateFlow()
 
     /** 설정·연결·충전 상태가 바뀌면 기존 작업을 취소하고 필요한 동작만 다시 고른다. */
     fun start(scope: CoroutineScope) {
@@ -41,6 +52,7 @@ class StealthChargeController(
                     enabled = settings.stealthCharging,
                     linked = link is LinkState.Ready,
                     isCharging = snapshot.isCharging,
+                    maxAmps = settings.stealthMaxAmps,
                     scheduleEnabled = settings.stealthScheduleEnabled,
                     startMinutes = settings.stealthStartMinutes,
                     endMinutes = settings.stealthEndMinutes,
@@ -78,67 +90,87 @@ class StealthChargeController(
 
     /** 충전 중에는 시간대와 실제 상한을 매 스텝 다시 확인한다. */
     private suspend fun runLoop() {
-        var current = poller.snapshot.value.chargingAmps ?: currentMaxAmps()
-        var stepCount = 0
-        var waitingLogged = false
+        try {
+            var current = poller.snapshot.value.chargingAmps ?: currentMaxAmps()
+            var stepCount = 0
+            var waitingLogged = false
 
-        while (true) {
-            var settings = settingsStore.settings.first()
-            val nowMinutes = TimeContext.of(System.currentTimeMillis()).minutesOfDay
-            val inWindow = isWithinStealthChargeWindow(
-                nowMinutes = nowMinutes,
-                enabled = settings.stealthScheduleEnabled,
-                startMinutes = settings.stealthStartMinutes,
-                endMinutes = settings.stealthEndMinutes,
-            )
-            if (!inWindow) {
-                if (settings.stealthChargeModified) {
-                    val restored = restoreOriginalAmps(settings)
-                    settingsStore.setStealthChargeModified(false)
-                    if (restored) {
-                        current = settings.stealthChargeOriginalAmps ?: current
-                    } else {
-                        com.wemade.teslable.DiagLog.add(
-                            "스텔스 충전 시간대 종료 원복 실패 — 휴대폰 키 보호 정책부터 복귀"
-                        )
+            while (true) {
+                var settings = settingsStore.settings.first()
+                val nowMinutes = TimeContext.of(System.currentTimeMillis()).minutesOfDay
+                val inWindow = isWithinStealthChargeWindow(
+                    nowMinutes = nowMinutes,
+                    enabled = settings.stealthScheduleEnabled,
+                    startMinutes = settings.stealthStartMinutes,
+                    endMinutes = settings.stealthEndMinutes,
+                )
+                if (!inWindow) {
+                    _runtime.value = StealthChargeRuntime()
+                    if (settings.stealthChargeModified) {
+                        val restored = restoreOriginalAmps(settings)
+                        settingsStore.setStealthChargeModified(false)
+                        if (restored) {
+                            current = settings.stealthChargeOriginalAmps ?: current
+                        } else {
+                            com.wemade.teslable.DiagLog.add(
+                                "스텔스 충전 시간대 종료 원복 실패 — 휴대폰 키 보호 정책부터 복귀"
+                            )
+                        }
                     }
+                    if (!waitingLogged) {
+                        com.wemade.teslable.DiagLog.add("스텔스 충전 1회 대기 — 설정 시간대 밖")
+                        waitingLogged = true
+                    }
+                    delay(WINDOW_CHECK_MILLIS)
+                    continue
                 }
-                if (!waitingLogged) {
-                    com.wemade.teslable.DiagLog.add("스텔스 충전 1회 대기 — 설정 시간대 밖")
-                    waitingLogged = true
+                waitingLogged = false
+
+                if (!settings.stealthChargeStarted) {
+                    val originalAmps = poller.snapshot.value.chargingAmps ?: current
+                    settingsStore.beginStealthCharge(originalAmps)
+                    com.wemade.teslable.DiagLog.add(
+                        "스텔스 충전 1회 시작 — 원래 전류 ${originalAmps}A"
+                    )
+                    settings = settingsStore.settings.first()
                 }
-                delay(WINDOW_CHECK_MILLIS)
-                continue
-            }
-            waitingLogged = false
 
-            if (!settings.stealthChargeStarted) {
-                val originalAmps = poller.snapshot.value.chargingAmps ?: current
-                settingsStore.beginStealthCharge(originalAmps)
-                com.wemade.teslable.DiagLog.add(
-                    "스텔스 충전 1회 시작 — 원래 전류 ${originalAmps}A"
-                )
-                settings = settingsStore.settings.first()
+                val maxAmps = minOf(currentMaxAmps(), settings.stealthMaxAmps).coerceAtLeast(MIN_AMPS)
+                val step = StealthChargePlan.next(current, MIN_AMPS, maxAmps)
+                _runtime.value = StealthChargeRuntime(running = true)
+                val sent = sendWithRetry(step.amps)
+                stepCount++
+                if (sent.isSuccess) {
+                    current = step.amps
+                    settingsStore.setStealthChargeModified(
+                        step.amps != settings.stealthChargeOriginalAmps
+                    )
+                }
+                when {
+                    sent.isFailure -> com.wemade.teslable.DiagLog.add(
+                        "스텔스 충전 전송 실패 — 3회 재시도 · ${sent.exceptionOrNull()?.message}"
+                    )
+                    stepCount == 1 || stepCount % 10 == 0 -> com.wemade.teslable.DiagLog.add(
+                        "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A / 상한 ${maxAmps}A)"
+                    )
+                }
+                waitForNextStep(step.holdSeconds)
             }
-
-            val maxAmps = currentMaxAmps()
-            val step = StealthChargePlan.next(current, MIN_AMPS, maxAmps)
-            val sent = sendWithRetry(step.amps)
-            stepCount++
-            if (sent.isSuccess) {
-                current = step.amps
-                settingsStore.setStealthChargeModified(step.amps != settings.stealthChargeOriginalAmps)
-            }
-            when {
-                sent.isFailure -> com.wemade.teslable.DiagLog.add(
-                    "스텔스 충전 전송 실패 — 3회 재시도 · ${sent.exceptionOrNull()?.message}"
-                )
-                stepCount == 1 || stepCount % 10 == 0 -> com.wemade.teslable.DiagLog.add(
-                    "스텔스 충전 진행 중 (${stepCount}스텝, 현재 ${step.amps}A / 상한 ${maxAmps}A)"
-                )
-            }
-            delay(step.holdSeconds * 1000L)
+        } finally {
+            _runtime.value = StealthChargeRuntime()
         }
+    }
+
+    /** 화면 잠금 중에도 같은 기준 시각을 보도록 1초마다 남은 시간을 발행한다. */
+    private suspend fun waitForNextStep(holdSeconds: Int) {
+        for (remaining in holdSeconds downTo 1) {
+            _runtime.value = StealthChargeRuntime(
+                running = true,
+                secondsUntilNextChange = remaining,
+            )
+            delay(1_000L)
+        }
+        _runtime.value = StealthChargeRuntime(running = true)
     }
 
     /** 원래 전류 복구를 시도한 뒤 결과와 무관하게 1회 상태를 닫고 보호 정책을 되살린다. */
@@ -189,6 +221,7 @@ class StealthChargeController(
         val enabled: Boolean,
         val linked: Boolean,
         val isCharging: Boolean?,
+        val maxAmps: Int,
         val scheduleEnabled: Boolean,
         val startMinutes: Int,
         val endMinutes: Int,

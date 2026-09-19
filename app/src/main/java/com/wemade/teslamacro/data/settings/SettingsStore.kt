@@ -90,6 +90,8 @@ data class AppSettings(
     val stealthChargeOriginalAmps: Int? = null,
     /** 마지막 전류 명령이 원래 값과 다른지. 원복이 필요한 세션만 연결을 잠시 유지한다. */
     val stealthChargeModified: Boolean = false,
+    /** 스텔스 충전이 넘지 않을 사용자 지정 전류 상한. 차량 상한이 더 낮으면 차량값을 따른다. */
+    val stealthMaxAmps: Int = 48,
     /** 정한 시간대 안에서만 전류를 조절할지. */
     val stealthScheduleEnabled: Boolean = false,
     /** 스텔스 충전 시작 시각. 자정부터 흐른 분이다. */
@@ -146,6 +148,7 @@ class SettingsStore(
             stealthChargeStarted = prefs[KeyStealthChargeStarted] ?: false,
             stealthChargeOriginalAmps = prefs[KeyStealthChargeOriginalAmps],
             stealthChargeModified = prefs[KeyStealthChargeModified] ?: false,
+            stealthMaxAmps = (prefs[KeyStealthMaxAmps] ?: 48).coerceIn(5, 48),
             stealthScheduleEnabled = prefs[KeyStealthScheduleEnabled] ?: false,
             stealthStartMinutes = (prefs[KeyStealthStartMinutes] ?: 23 * 60).coerceIn(0, 1439),
             stealthEndMinutes = (prefs[KeyStealthEndMinutes] ?: 7 * 60).coerceIn(0, 1439),
@@ -230,6 +233,11 @@ class SettingsStore(
         it.remove(KeyStealthChargeStarted)
         it.remove(KeyStealthChargeOriginalAmps)
         it.remove(KeyStealthChargeModified)
+    }
+
+    /** 차량 상한보다 높은 값도 안전하게 저장 범위에서 제한하고 실제 실행 때 다시 차량값과 비교한다. */
+    suspend fun setStealthMaxAmps(amps: Int) = edit {
+        it[KeyStealthMaxAmps] = amps.coerceIn(5, 48)
     }
 
     /** 시간대 제한 사용 여부를 저장한다. */
@@ -381,6 +389,7 @@ class SettingsStore(
         val KeyStealthChargeStarted = booleanPreferencesKey("stealth_charge_started")
         val KeyStealthChargeOriginalAmps = intPreferencesKey("stealth_charge_original_amps")
         val KeyStealthChargeModified = booleanPreferencesKey("stealth_charge_modified")
+        val KeyStealthMaxAmps = intPreferencesKey("stealth_max_amps")
         val KeyStealthScheduleEnabled = booleanPreferencesKey("stealth_schedule_enabled")
         val KeyStealthStartMinutes = intPreferencesKey("stealth_start_minutes")
         val KeyStealthEndMinutes = intPreferencesKey("stealth_end_minutes")

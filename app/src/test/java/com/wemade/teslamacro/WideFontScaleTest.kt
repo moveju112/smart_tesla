@@ -104,6 +104,28 @@ class WideFontScaleTest {
         }
     }
 
+    /** 스텔스 충전의 전류 조절기와 남은 시간이 글자 확대에서도 겹치지 않는지 본다. */
+    @Test
+    fun `F5 설정 자동화 - 글자 확대`() {
+        paparazzi.snapshot("F5-settings-automation-fontscale") {
+            AppFrame(Destination.Settings) {
+                com.wemade.teslamacro.feature.settings.SettingsScreen(
+                    settings = com.wemade.teslamacro.data.settings.AppSettings(
+                        vin = "5YJS0000000000000",
+                        stealthCharging = true,
+                        stealthMaxAmps = 13,
+                        stealthScheduleEnabled = true,
+                    ),
+                    stealthSecondsUntilNextChange = 134,
+                    onAutomationChange = {},
+                    onUnpair = {},
+                    onStartPairing = {},
+                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
+                )
+            }
+        }
+    }
+
     /** 등록 안내와 하단 두 동작이 글자 확대에서도 잘리지 않는지 본다 */
     @Test
     fun `F4 차량 등록 - 글자 확대`() {

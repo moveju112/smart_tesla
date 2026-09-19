@@ -51,10 +51,37 @@ class ChargeChartTest {
         assertTrue(labels.all { it.endsWith("시") })
     }
 
+    @Test
+    fun `요약은 전류와 전력과 사용량을 함께 적는다`() {
+        // 15분씩 두 칸을 10A 220V로 채우면 0.5시간 · 2.2kW · 1.1kWh
+        val buckets = listOf(
+            bucket(now - ChargeHistory.BUCKET_MILLIS, amps = 10.0, volts = 220),
+            bucket(now, amps = 10.0, volts = 220),
+        )
+
+        val summary = chargeSummary(buckets)
+
+        assertEquals("충전 0.5시간 · 평균 10.0A · 평균 2.2kW · 합계 1.1kWh", summary)
+    }
+
+    @Test
+    fun `충전 기록이 없으면 요약을 내지 않는다`() {
+        val idle = ChargeBucket(now, ampsMillis = 0, coveredMillis = ChargeHistory.BUCKET_MILLIS)
+
+        assertEquals(null, chargeSummary(listOf(idle)))
+    }
+
+    @Test
+    fun `전압을 못 읽으면 꼭대기 글자에 전류만 적는다`() {
+        assertEquals("최대 13A", topLabel(listOf(bucket(now, 12.4)), 13.0))
+        assertEquals("최대 13A · 2.7kW", topLabel(listOf(bucket(now, 12.4, volts = 220)), 13.0))
+    }
+
     /** 한 칸을 온전히 채운 기록. */
-    private fun bucket(start: Long, amps: Double) = ChargeBucket(
+    private fun bucket(start: Long, amps: Double, volts: Int = 0) = ChargeBucket(
         startMillis = start,
         ampsMillis = (amps * ChargeHistory.BUCKET_MILLIS).toLong(),
         coveredMillis = ChargeHistory.BUCKET_MILLIS,
+        wattMillis = (amps * volts * ChargeHistory.BUCKET_MILLIS).toLong(),
     )
 }

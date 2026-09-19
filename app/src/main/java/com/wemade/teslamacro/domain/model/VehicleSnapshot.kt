@@ -89,6 +89,17 @@ data class VehicleSnapshot(
     /** 충전 전류 설정값(A). 충전 화면 슬라이더의 현재 위치가 된다 */
     val chargingAmps: Int? = null,
     /**
+     * 실제로 흐르고 있는 전류(A).
+     *
+     * [chargingAmps]는 "이만큼 달라"는 설정이라, 충전기 용량·전압 강하·배터리 온도 때문에
+     * 실제와 벌어진다. 사용량 그래프는 설정이 아니라 이 값으로 그려야 맞다
+     */
+    val actualChargingAmps: Int? = null,
+    /** 충전기 전압(V). 전류와 곱해 전력을 낸다 */
+    val chargerVoltage: Int? = null,
+    /** 차량이 보고하는 충전 전력(kW 정수). 전압을 못 읽을 때의 대안 */
+    val chargerPowerKw: Int? = null,
+    /**
      * 지금 물린 충전기가 받아주는 최대 전류(A).
      * 벽 콘센트냐 완속기냐에 따라 달라서, 상한을 코드에 박으면 절반이 헛값이 된다
      */
@@ -168,6 +179,9 @@ fun VehicleSnapshot.overlay(fresh: VehicleSnapshot): VehicleSnapshot = copy(
     isCharging = fresh.isCharging ?: isCharging,
     chargeLimitPercent = fresh.chargeLimitPercent ?: chargeLimitPercent,
     chargingAmps = fresh.chargingAmps ?: chargingAmps,
+    actualChargingAmps = fresh.actualChargingAmps ?: actualChargingAmps,
+    chargerVoltage = fresh.chargerVoltage ?: chargerVoltage,
+    chargerPowerKw = fresh.chargerPowerKw ?: chargerPowerKw,
     maxChargingAmps = fresh.maxChargingAmps ?: maxChargingAmps,
     rangeKm = fresh.rangeKm ?: rangeKm,
     isChargePortOpen = fresh.isChargePortOpen ?: isChargePortOpen,

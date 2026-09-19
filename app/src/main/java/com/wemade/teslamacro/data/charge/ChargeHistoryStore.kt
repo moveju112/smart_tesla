@@ -29,9 +29,10 @@ class ChargeHistoryStore(context: Context) {
     /** 마지막으로 기록에 쓴 CHARGE 읽기 시각. 같은 읽기를 폴링마다 다시 세지 않는다 */
     private var lastReadAt = 0L
 
-    /** 직전 표본의 시각과 전류. 이 사이 구간을 그 전류로 채운다 */
+    /** 직전 표본의 시각과 값. 이 사이 구간을 그 값으로 채운다 */
     private var lastSampleAt = 0L
     private var lastAmps = 0
+    private var lastWatts = 0
 
     private var lastPersistAt = 0L
 
@@ -58,7 +59,12 @@ class ChargeHistoryStore(context: Context) {
         lastReadAt = readAt
 
         // 충전 중이 아니면 0A. 빈 칸으로 두면 "안 읽었다"와 "안 했다"가 구분되지 않는다
-        val amps = if (snapshot.isCharging == true) snapshot.chargingAmps ?: return else 0
+        val charging = snapshot.isCharging == true
+        // 설정값(chargingAmps)이 아니라 실제로 흐르는 전류를 먼저 쓴다. 옛 펌웨어라 없으면 설정값
+        val amps = if (charging) {
+            snapshot.actualChargingAmps ?: snapshot.chargingAmps ?: return
+        } else 0
+        val watts = if (charging) chargingWatts(amps, snapshot.chargerVoltage, snapshot.chargerPowerKw) else 0
 
         if (lastSampleAt > 0) {
             _buckets.value = ChargeHistory.accumulate(
@@ -66,10 +72,12 @@ class ChargeHistoryStore(context: Context) {
                 fromMillis = lastSampleAt,
                 toMillis = nowMillis,
                 amps = lastAmps,
+                watts = lastWatts,
             )
         }
         lastSampleAt = nowMillis
         lastAmps = amps
+        lastWatts = watts
 
         // 폴링마다 파일을 쓰면 하룻밤에 수천 번이다. 1분에 한 번이면 재시작에도 거의 안 잃는다
         if (nowMillis - lastPersistAt < PERSIST_INTERVAL_MILLIS) return
@@ -82,6 +90,17 @@ class ChargeHistoryStore(context: Context) {
     }
 
     private companion object {
+        /**
+         * 전압을 읽었으면 전류×전압, 아니면 차량이 보고한 kW를 쓴다.
+         *
+         * charger_power는 kW 정수라 저전류에서 0으로 내려앉는다. 전압이 있을 때 굳이 쓰지 않는다.
+         */
+        fun chargingWatts(amps: Int, voltage: Int?, powerKw: Int?): Int = when {
+            voltage != null && voltage > 0 -> amps * voltage
+            powerKw != null -> powerKw * 1_000
+            else -> 0
+        }
+
         const val PERSIST_INTERVAL_MILLIS = 60_000L
         val bucketListSerializer = ListSerializer(ChargeBucket.serializer())
     }

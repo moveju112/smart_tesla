@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
  * (10×10 + 5×5) / 15 = 8.3A다.
  *
  * @param ampsMillis 전류 × 유지 시간(ms)의 합
+ * @param wattMillis 전력(W) × 유지 시간(ms)의 합. 전압을 못 읽은 구간은 0이다
  * @param coveredMillis 실제로 관측된 시간(ms). 연결이 끊긴 구간은 여기에 들어가지 않는다
  */
 @Serializable
@@ -17,10 +18,19 @@ data class ChargeBucket(
     val startMillis: Long,
     val ampsMillis: Long,
     val coveredMillis: Long,
+    /** 옛 기록에는 없던 값이라 기본값을 둔다 — 0이면 전력 축만 비고 전류는 그대로 보인다 */
+    val wattMillis: Long = 0,
 ) {
     /** 이 칸에서 관측된 시간에 대한 가중 평균 전류. */
     val averageAmps: Double
         get() = if (coveredMillis <= 0) 0.0 else ampsMillis.toDouble() / coveredMillis
+
+    /** 같은 방식의 가중 평균 전력(kW). */
+    val averageKilowatts: Double
+        get() = if (coveredMillis <= 0) 0.0 else wattMillis.toDouble() / coveredMillis / 1_000
+
+    /** 이 칸에서 들어간 전력량(Wh). 시간 가중이라 칸을 더하면 총 사용량이 된다. */
+    val energyWattHours: Double get() = wattMillis.toDouble() / 3_600_000
 
     /** 15분 중 얼마나 관측됐는가. 0.5면 절반은 모르는 구간이다. */
     val coverage: Double
@@ -55,6 +65,7 @@ object ChargeHistory {
         fromMillis: Long,
         toMillis: Long,
         amps: Int,
+        watts: Int = 0,
     ): List<ChargeBucket> {
         if (toMillis <= fromMillis) return buckets
         if (toMillis - fromMillis > MAX_GAP_MILLIS) return prune(buckets, toMillis)
@@ -70,6 +81,7 @@ object ChargeHistory {
                 startMillis = start,
                 ampsMillis = (previous?.ampsMillis ?: 0L) + amps * span,
                 coveredMillis = (previous?.coveredMillis ?: 0L) + span,
+                wattMillis = (previous?.wattMillis ?: 0L) + watts * span,
             )
             cursor = end
         }

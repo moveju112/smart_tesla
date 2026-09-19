@@ -21,6 +21,29 @@ class ChargeHistoryTest {
     }
 
     @Test
+    fun `전력도 같은 방식으로 시간 가중해 kWh를 낸다`() {
+        // 10분 동안 10A × 220V = 2.2kW → 0.367kWh
+        val buckets = ChargeHistory.accumulate(
+            emptyList(),
+            base,
+            base + 10 * MINUTE,
+            amps = 10,
+            watts = 2_200,
+        )
+
+        assertEquals(2.2, buckets.single().averageKilowatts, 0.001)
+        assertEquals(366.7, buckets.single().energyWattHours, 0.5)
+    }
+
+    @Test
+    fun `전압을 못 읽은 옛 기록도 전류는 그대로 읽힌다`() {
+        val legacy = ChargeBucket(base, ampsMillis = 10 * 15 * MINUTE, coveredMillis = 15 * MINUTE)
+
+        assertEquals(10.0, legacy.averageAmps, 0.001)
+        assertEquals(0.0, legacy.averageKilowatts, 0.001)
+    }
+
+    @Test
     fun `칸 경계를 넘는 구간은 걸친 만큼 나눠 담는다`() {
         // 10분~20분을 12A로 채우면 앞 칸에 5분, 뒤 칸에 5분
         val buckets = ChargeHistory.accumulate(

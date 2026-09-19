@@ -52,6 +52,27 @@ internal fun planChargeBars(
     }
 }
 
+/**
+ * 그래프 아래에 붙는 한 줄 요약.
+ *
+ * 전류만 보면 같은 10A도 220V냐 110V냐에 따라 들어간 전력이 두 배 차이 난다.
+ * 그래서 전류와 전력을 함께 적고, 실제로 들어간 양(kWh)도 같이 낸다.
+ */
+internal fun chargeSummary(buckets: List<ChargeBucket>): String? {
+    val charging = buckets.filter { it.coveredMillis > 0 && it.ampsMillis > 0 }
+    if (charging.isEmpty()) return null
+
+    val coveredMillis = charging.sumOf { it.coveredMillis }
+    val averageAmps = charging.sumOf { it.ampsMillis }.toDouble() / coveredMillis
+    val averageKilowatts = charging.sumOf { it.wattMillis }.toDouble() / coveredMillis / 1_000
+    val energyKilowattHours = charging.sumOf { it.energyWattHours } / 1_000
+    val hours = coveredMillis.toDouble() / 3_600_000
+
+    val power = if (averageKilowatts > 0) " · 평균 %.1fkW".format(averageKilowatts) else ""
+    val energy = if (energyKilowattHours > 0) " · 합계 %.1fkWh".format(energyKilowattHours) else ""
+    return "충전 %.1f시간 · 평균 %.1fA".format(hours, averageAmps) + power + energy
+}
+
 /** 세로 눈금 꼭대기 값. 관측 최댓값을 1A 단위로 올림하되 최소 5A는 잡는다. */
 internal fun chartTopAmps(buckets: List<ChargeBucket>): Double {
     val observed = buckets.maxOfOrNull { it.averageAmps } ?: 0.0
@@ -86,7 +107,7 @@ internal fun ChargeChart(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "최대 ${top.roundToInt()}A",
+                text = topLabel(buckets, top),
                 style = MaterialTheme.typography.labelSmall,
                 color = T.InkFaint,
             )
@@ -128,6 +149,15 @@ internal fun ChargeChart(
                 )
             }
         }
+        val summary = chargeSummary(buckets)
+        if (summary != null) {
+            Spacer(Modifier.height(Space.xs))
+            Text(
+                text = summary,
+                style = MaterialTheme.typography.labelMedium,
+                color = T.Ink,
+            )
+        }
         if (bars.isEmpty()) {
             Spacer(Modifier.height(Space.xs))
             Text(
@@ -137,6 +167,13 @@ internal fun ChargeChart(
             )
         }
     }
+}
+
+/** 눈금 꼭대기 글자. 전압을 읽은 차는 kW까지 함께 적는다. */
+internal fun topLabel(buckets: List<ChargeBucket>, topAmps: Double): String {
+    val peakKilowatts = buckets.maxOfOrNull { it.averageKilowatts } ?: 0.0
+    val amps = "최대 ${topAmps.roundToInt()}A"
+    return if (peakKilowatts > 0) amps + " · %.1fkW".format(peakKilowatts) else amps
 }
 
 /** 6시간 간격 눈금 글자. 왼쪽이 24시간 전, 오른쪽이 지금이다. */

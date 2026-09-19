@@ -20,6 +20,7 @@ fun sampleChargeHistory(nowMillis: Long = SNAPSHOT_NOW_MILLIS): List<ChargeBucke
             startMillis = start,
             ampsMillis = value * ChargeHistory.BUCKET_MILLIS,
             coveredMillis = ChargeHistory.BUCKET_MILLIS,
+            wattMillis = value * 220L * ChargeHistory.BUCKET_MILLIS,
         )
     }
 }

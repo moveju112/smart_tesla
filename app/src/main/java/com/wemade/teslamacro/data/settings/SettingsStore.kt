@@ -203,11 +203,16 @@ class SettingsStore(
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     /** 새 1회 세션은 이전 실행 흔적을 지우고, 수동 해제는 원복이 끝날 때까지 흔적을 남긴다. */
     suspend fun setStealthCharging(enabled: Boolean) = edit {
+        // 이미 켜져 진행 중인 세션에 매크로가 "켜기"를 또 넣어도 원래 전류를 잊으면 안 된다.
+        // 지우면 조절 중인 값이 새 "원래 전류"가 되어 끝나고 낮은 전류에 그대로 남는다
+        val alreadyOn = it[KeyStealthCharging] == true
         it[KeyStealthCharging] = enabled
         if (enabled) {
-            it.remove(KeyStealthChargeStarted)
-            it.remove(KeyStealthChargeOriginalAmps)
-            it.remove(KeyStealthChargeModified)
+            if (!alreadyOn) {
+                it.remove(KeyStealthChargeStarted)
+                it.remove(KeyStealthChargeOriginalAmps)
+                it.remove(KeyStealthChargeModified)
+            }
         } else if (it[KeyStealthChargeModified] != true) {
             // 전류를 바꾸지 않았다면 연결해서 되돌릴 것도 없다. 내부 진행 상태를 바로 비운다.
             it.remove(KeyStealthChargeStarted)

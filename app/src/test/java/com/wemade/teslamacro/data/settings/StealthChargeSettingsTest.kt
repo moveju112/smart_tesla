@@ -36,6 +36,27 @@ class StealthChargeSettingsTest {
         )
     }
 
+    /** 진행 중인 세션에 매크로가 "켜기"를 또 넣어도 원래 전류를 잊지 않는다. */
+    @Test
+    fun `진행 중 다시 켜도 원래 전류를 지키고 새 세션은 흔적을 비운다`() = runTest {
+        val preferences = PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            File(temporaryFolder.root, "stealth-charge-restart.preferences_pb")
+        }
+        val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
+
+        store.setStealthCharging(true)
+        store.beginStealthCharge(16)
+        store.setStealthChargeModified(true)
+
+        store.setStealthCharging(true)
+        assertEquals(16, store.settings.first().stealthChargeOriginalAmps)
+
+        // 종료 뒤 새로 켜는 것은 이전 흔적을 비운다
+        store.completeStealthCharge()
+        store.setStealthCharging(true)
+        assertNull(store.settings.first().stealthChargeOriginalAmps)
+    }
+
     /** 하한은 기본이 자동(null)이고, 상한을 내리면 하한도 함께 내려간다. */
     @Test
     fun `최소 전류는 자동이 기본이고 상한을 넘지 않는다`() = runTest {

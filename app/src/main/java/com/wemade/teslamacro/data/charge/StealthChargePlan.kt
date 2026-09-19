@@ -1,7 +1,7 @@
 package com.wemade.teslamacro.data.charge
 
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
+import kotlin.math.pow
 import kotlin.random.Random
 
 /** 충전 속도가 과도하게 떨어지지 않도록 상한 주변에서 다음 전류를 고른다. */
@@ -16,8 +16,10 @@ object StealthChargePlan {
         val hi = maxAmps.coerceAtLeast(minAmps)
         val span = hi - highBandStart
 
-        // sqrt 난수는 상한 쪽 표본이 더 많다. 현재값과 절반씩 섞어 급격한 점프만 줄인다.
-        val sampled = highBandStart + (span * sqrt(random.nextDouble())).roundToInt()
+        // 지수가 1보다 작으면 상한 쪽 표본이 많아진다. 0.75는 균등(1.0)과 예전 sqrt(0.5)의 중간으로,
+        // 상한 선호는 남기되 낮은 전류도 눈에 띄게 나오게 한다. 현재값과 절반씩 섞어 급격한 점프만 줄인다.
+        val sampled = highBandStart +
+            (span * random.nextDouble().pow(HIGH_BIAS_EXPONENT)).roundToInt()
         val target = if (current in highBandStart..hi) {
             ((current + sampled) / 2.0).roundToInt()
         } else {
@@ -39,6 +41,7 @@ object StealthChargePlan {
         MIN_INTERVAL_S + random.nextInt(MAX_INTERVAL_S - MIN_INTERVAL_S + 1)
 
     private const val HIGH_BAND_RATIO = 0.75
+    private const val HIGH_BIAS_EXPONENT = 0.75
     private const val MIN_INTERVAL_S = 60
     private const val MAX_INTERVAL_S = 300
 }

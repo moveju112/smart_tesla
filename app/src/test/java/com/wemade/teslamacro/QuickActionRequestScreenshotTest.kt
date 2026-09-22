@@ -42,15 +42,25 @@ class QuickActionRequestScreenshotTest(private val dark: Boolean, private val wi
         snapshot(listOf(Request(1, "트렁크 열기", Status.Cancelled), Request(2, "프렁크 열기", Status.Expired)))
     }
 
+    /** Fleet 준비 중 제한과 깨우기 중 취소 버튼을 휴대폰·큰 글자 가로에서 함께 검증한다. */
+    @Test
+    fun `fleet settings and waking request`() {
+        snapshot(listOf(Request(1, "보닛(프렁크) 열기", Status.Waking)), fleetEnabled = true)
+    }
+
     /** 실제 루트처럼 탐색 영역 위에 표시하고 남은 높이를 본문에 배정한다. */
-    private fun snapshot(requests: List<Request>) {
+    private fun snapshot(requests: List<Request>, fleetEnabled: Boolean = false) {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
                 Column(Modifier.fillMaxSize()) {
                     QuickActionRequestPanel(requests, onCancel = {}, onDismiss = {})
                     Box(Modifier.weight(1f)) {
                         AppFrame(Destination.Settings, dark = dark) {
-                            SettingsScreen(settings = com.wemade.teslamacro.data.settings.AppSettings(), onAutomationChange = {}, onUnpair = {}, onStartPairing = {})
+                            SettingsScreen(
+                                settings = com.wemade.teslamacro.data.settings.AppSettings(fleetApiEnabled = fleetEnabled),
+                                onAutomationChange = {}, onUnpair = {}, onStartPairing = {},
+                                onFleetApiEnabledChange = if (fleetEnabled) ({ _: Boolean -> }) else null,
+                            )
                         }
                     }
                 }

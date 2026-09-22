@@ -32,7 +32,7 @@ fun QuickActionRequestPanel(
     LazyColumn(
         modifier = Modifier.fillMaxWidth().heightIn(max = Space.xxl * 5).background(T.Slate),
     ) {
-        items(requests.sortedBy { if (it.status == QuickActionRequests.Status.Waiting) 0 else if (it.active) 1 else 2 }, key = { it.id }) { request ->
+        items(requests.sortedBy { if (it.canCancel) 0 else if (it.active) 1 else 2 }, key = { it.id }) { request ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(Space.md),
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
@@ -45,7 +45,7 @@ fun QuickActionRequestPanel(
                     Text(request.label, style = MaterialTheme.typography.titleSmall, color = T.Ink)
                     Text(request.status.message, style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                 }
-                if (request.status == QuickActionRequests.Status.Waiting) {
+                if (request.canCancel) {
                     TButton(text = "취소", small = true, fillWidth = false, onClick = { onCancel(request.id) })
                 } else if (!request.active) {
                     TButton(text = "닫기", tone = ButtonTone.Ghost, small = true, fillWidth = false, onClick = { onDismiss(request.id) })

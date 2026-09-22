@@ -64,6 +64,11 @@ class AppContainer(private val context: Context) {
             .deleteNotificationChannel("boot_notice")
     }
 
+    val commandFeedback = com.wemade.teslamacro.data.gateway.CommandFeedback(context, appScope)
+    val fleetCommands = com.wemade.teslamacro.data.fleet.FleetCommandClient(
+        com.wemade.teslamacro.data.fleet.UnconfiguredFleetApi,
+        onConfirmed = commandFeedback::confirmed,
+    )
     val settingsStore = SettingsStore(context)
     val seatStore = com.wemade.teslamacro.data.settings.SeatStore(context)
 
@@ -152,6 +157,7 @@ class AppContainer(private val context: Context) {
             initial = if (settings.isPaired) BleVehicleGateway(context, settingsStore, appScope)
             else SimulatedVehicleGateway(),
             scope = appScope,
+            onCommandConfirmed = commandFeedback::confirmed,
         )
 
         // 어느 내비로 보낼지는 실행 순간의 설정을 따른다 — 컨테이너 조립 시점에 굳히면

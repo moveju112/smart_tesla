@@ -63,6 +63,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSmartThingsValiditySeconds(seconds) }
     }
 
+    /** 서버 계약이 준비되기 전에도 사용자가 고른 음성 명령 경로를 보존한다. */
+    fun setFleetApiEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setFleetApiEnabled(enabled) }
+    }
+
     fun setSmartThingsEnabled(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setSmartThingsEnabled(enabled) }
     }

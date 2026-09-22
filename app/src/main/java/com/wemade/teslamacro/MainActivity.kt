@@ -441,6 +441,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             message = backupMessage,
                             onDismissMessage = settingsViewModel::clearBackupMessage,
                         ),
+                        onFleetApiEnabledChange = settingsViewModel::setFleetApiEnabled,
                         smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
                             notificationAccessGranted = notificationAccessGranted,
                             onEnabledChange = settingsViewModel::setSmartThingsEnabled,

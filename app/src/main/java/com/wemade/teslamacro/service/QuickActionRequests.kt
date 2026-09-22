@@ -13,7 +13,8 @@ import kotlinx.coroutines.job
 /** 연결 대기 취소와 전송 진입을 같은 잠금으로 결정해 취소된 명령의 뒤늦은 전송을 막는다. */
 class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagLog::add) {
     enum class Status(val message: String) {
-        Waiting("차량 연결 대기 중"),
+        Waiting("차량 응답 대기 중"),
+        Waking("Fleet · 차량 깨우는 중"),
         Sending("전송 처리 중 · 이미 전달된 명령은 취소할 수 없어요"),
         Cancelled("취소 완료 · 차량에 명령을 보내지 않았어요"),
         Expired("유효시간 만료 · 이미 전달된 명령은 취소할 수 없어요"),
@@ -22,7 +23,8 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
     }
 
     data class Request(val id: Long, val label: String, val status: Status) {
-        val active: Boolean get() = status == Status.Waiting || status == Status.Sending
+        val canCancel: Boolean get() = status == Status.Waiting || status == Status.Waking
+        val active: Boolean get() = canCancel || status == Status.Sending
     }
 
     private val lock = Any()
@@ -32,7 +34,11 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
     val requests = mutableRequests.asStateFlow()
 
     /** 서비스 작업을 추적하되 화면 재생성이나 화면 이동으로 대기 명령이 사라지지 않게 한다. */
-    suspend fun track(label: String, execute: suspend (beforeDispatch: () -> Unit) -> Unit) {
+    suspend fun track(label: String, execute: suspend (beforeDispatch: () -> Unit) -> Unit) =
+        trackWithProgress(label) { beforeDispatch, _ -> execute(beforeDispatch) }
+
+    /** Fleet 깨우기 중에도 동일한 취소 경계를 유지한다. */
+    suspend fun trackWithProgress(label: String, execute: suspend (beforeDispatch: () -> Unit, onWaking: () -> Unit) -> Unit) {
         val job = currentCoroutineContext().job
         val id = synchronized(lock) {
             val id = ++nextId
@@ -41,20 +47,26 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
             id
         }
         try {
-            execute {
+            execute({
                 synchronized(lock) {
                     job.ensureActive()
-                    check(mutableRequests.value.first { it.id == id }.status == Status.Waiting)
+                    check(mutableRequests.value.first { it.id == id }.canCancel)
                     setStatus(id, Status.Sending)
                 }
-            }
+            }, {
+                synchronized(lock) {
+                    job.ensureActive()
+                    check(mutableRequests.value.first { it.id == id }.canCancel)
+                    setStatus(id, Status.Waking)
+                }
+            })
             synchronized(lock) { if (mutableRequests.value.any { it.id == id && it.active }) setStatus(id, Status.Finished) }
         } catch (expired: CommandExpiredException) {
             synchronized(lock) { if (mutableRequests.value.any { it.id == id && it.active }) setStatus(id, Status.Expired) }
         } catch (cancelled: CancellationException) {
             synchronized(lock) {
                 val request = mutableRequests.value.firstOrNull { it.id == id }
-                if (request?.active == true) setStatus(id, if (request.status == Status.Waiting) Status.Cancelled else Status.Failed)
+                if (request?.active == true) setStatus(id, if (request.canCancel) Status.Cancelled else Status.Failed)
             }
             throw cancelled
         } catch (error: Exception) {
@@ -68,7 +80,7 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
     /** 전송 진입보다 취소가 먼저일 때만 성공을 돌려주고 대기 코루틴도 중단한다. */
     fun cancel(id: Long): Boolean = synchronized(lock) {
         val request = mutableRequests.value.firstOrNull { it.id == id } ?: return false
-        if (request.status != Status.Waiting) return false
+        if (!request.canCancel) return false
         setStatus(id, Status.Cancelled)
         jobs[id]?.cancel()
         diagnosticLogger("빠른 명령 [${request.label}] 사용자 취소 — 차량 명령 미전송")

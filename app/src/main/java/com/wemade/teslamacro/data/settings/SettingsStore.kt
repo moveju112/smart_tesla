@@ -59,6 +59,7 @@ data class AppSettings(
     val automationEnabled: Boolean = true,
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
     val smartThingsEnabled: Boolean = false,
+    val fleetApiEnabled: Boolean = false,
     val smartThingsValiditySeconds: Int = 120,
     /** 빠른 차량 동작별로 정확히 일치해야 하는 스마트싱스 알림 문구 */
     val smartThingsCommandTexts: Map<String, String> = SmartThingsCommands.defaults(),
@@ -141,6 +142,7 @@ class SettingsStore(
                 ?: false,
             smartThingsCommandTexts = commandTexts(prefs),
             smartThingsValiditySeconds = (prefs[KeySmartThingsValiditySeconds] ?: 120).coerceIn(10, 600),
+            fleetApiEnabled = prefs[KeyFleetApiEnabled] ?: false,
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             isEnrolled = prefs[KeyEnrolled] ?: false,
@@ -402,7 +404,11 @@ class SettingsStore(
         return SmartThingsCommands.normalized(stored ?: SmartThingsCommands.defaults(legacyFrunkText))
     }
 
+    /** Fleet 선택은 음성·바로가기 수신 시 한 번 읽으며 실패해도 BLE로 자동 전환하지 않는다. */
+    suspend fun setFleetApiEnabled(enabled: Boolean) = edit { it[KeyFleetApiEnabled] = enabled }
+
     private companion object {
+        val KeyFleetApiEnabled = booleanPreferencesKey("fleet_api_enabled")
         val KeyThemeMode = stringPreferencesKey("theme_mode")
         val KeyVin = stringPreferencesKey("vin")
         val KeyLegacyVoiceAlwaysOn = booleanPreferencesKey("voice_always_on")

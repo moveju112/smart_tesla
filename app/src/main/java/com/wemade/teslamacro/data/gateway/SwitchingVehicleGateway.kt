@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.stateIn
 class SwitchingVehicleGateway(
     initial: VehicleGateway,
     scope: CoroutineScope,
+    private val onCommandConfirmed: (VehicleCommand) -> Unit = {},
 ) : VehicleGateway {
 
     private val delegate = MutableStateFlow(initial)
@@ -57,7 +58,13 @@ class SwitchingVehicleGateway(
     override suspend fun verifyKeyEnrollment() = delegate.value.verifyKeyEnrollment()
     override suspend fun disconnect() = delegate.value.disconnect()
     override suspend fun requestKeyEnrollment() = delegate.value.requestKeyEnrollment()
-    override suspend fun send(command: VehicleCommand) = delegate.value.send(command)
+    /** 음성·화면·매크로 모두 같은 성공 경로에서 알리고 시뮬레이터는 실차 효과음을 내지 않는다. */
+    override suspend fun send(command: VehicleCommand): Result<Unit> {
+        val target = delegate.value
+        val result = target.send(command)
+        if (result.isSuccess && target !is SimulatedVehicleGateway) runCatching { onCommandConfirmed(command) }
+        return result
+    }
     override suspend fun read(category: StateCategory): Result<VehicleSnapshot> =
         delegate.value.read(category)
 

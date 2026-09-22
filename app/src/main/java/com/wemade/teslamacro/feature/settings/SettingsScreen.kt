@@ -85,6 +85,7 @@ fun SettingsScreen(
     backup: BackupControls? = null,
     navigation: NavigationControls? = null,
     smartThings: SmartThingsControls? = null,
+    onFleetApiEnabledChange: ((Boolean) -> Unit)? = null,
     /**
      * 처음 펼칠 칸. 안 주면 상황이 정한다(미등록이면 차량, 아니면 자동화).
      * 특정 칸을 곧바로 보여야 할 때 쓴다 — 스냅샷 검증이 지금의 유일한 사용처다.
@@ -144,6 +145,10 @@ fun SettingsScreen(
                                     checked = settings.automationEnabled,
                                     onCheckedChange = onAutomationChange,
                                 )
+                            }
+                            if (onFleetApiEnabledChange != null) {
+                                SectionHeader("음성 명령 전송")
+                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange)
                             }
                             if (smartThings != null) {
                                 SectionHeader("음성 연결")
@@ -630,6 +635,24 @@ data class BatteryControls(
     val unrestricted: Boolean,
     val onOpenSettings: () -> Unit,
 )
+
+/** 미정 서버 계약을 사용 가능한 서비스로 오인하지 않게 현재 제한을 토글과 함께 표시한다. */
+@Composable
+internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    TCard {
+        ToggleRow(
+            title = "Fleet API 사용",
+            subtitle = "음성·바로가기 명령을 서버로 전송 · 앱 직접 제어는 BLE 유지",
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+        )
+        Spacer(Modifier.height(Space.sm))
+        Text(com.wemade.teslamacro.data.fleet.UnconfiguredFleetApi.BASE_URL,
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        Text("연동 준비 중 · 서버 경로와 인증 설정 전에는 Fleet 명령이 실행되지 않아요. BLE로 자동 전환하지 않아요.",
+            style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+    }
+}
 
 /** 스마트싱스 알림 기반 차량 명령과 시스템 알림 접근 권한을 묶는다. */
 data class SmartThingsControls(

@@ -27,6 +27,44 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class MacroRunnerTest {
 
+    /** 하차 종료가 이전 열선 타이머를 취소해 재탑승 통풍을 뒤늦게 끄지 않는다. */
+    @Test
+    fun `seat exit cancels old heater timer`() = runTest {
+        val presets = com.wemade.teslamacro.data.macro.SeatComfortPresets.defaults()
+        val heater = presets.single { it.id == "preset-seat-driver-heat" }
+        val exit = presets.single { it.id == "preset-seat-exit-off" }
+        val cooler = presets.single { it.id == "preset-seat-driver-cool-3" }
+        val runner = MacroRunner(gateway, this, MutableStateFlow<Reading?>(readingWith(10.0)),
+            now = { currentTimeMs() }, diagnosticLogger = {})
+        runner.launch(heater, 0L)
+        advanceTimeBy(1000L)
+        assertEquals(1, sent.size)
+        runner.launch(exit, currentTimeMs())
+        advanceTimeBy(1000L)
+        runner.launch(cooler, currentTimeMs())
+        advanceTimeBy(1000L)
+        val afterNewBoarding = sent.toList()
+        advanceTimeBy(900_000L)
+        advanceUntilIdle()
+        assertEquals(afterNewBoarding, sent.toList())
+        assertTrue(heater.id !in runner.running.value)
+    }
+
+    /** 열선은 900초 전에는 끄지 않고 시간이 지난 뒤 정확히 한 번 끈다. */
+    @Test
+    fun `preset heater stops at fifteen minutes`() = runTest {
+        val heater = com.wemade.teslamacro.data.macro.SeatComfortPresets.defaults()
+            .single { it.id == "preset-seat-passenger-heat" }
+        val runner = MacroRunner(gateway, this, MutableStateFlow<Reading?>(readingWith(10.0)),
+            now = { currentTimeMs() }, diagnosticLogger = {})
+        runner.launch(heater, 0L)
+        advanceTimeBy(899_999L)
+        assertEquals(1, sent.size)
+        advanceUntilIdle()
+        assertEquals(2, sent.size)
+        assertEquals((heater.actions.last() as ActionStep.Run).command, sent.last())
+    }
+
     private val sent = mutableListOf<VehicleCommand>()
 
     private val gateway = object : VehicleGateway {

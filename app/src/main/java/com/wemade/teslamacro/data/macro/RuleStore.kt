@@ -50,7 +50,11 @@ class RuleStore(context: Context) {
             } else emptySet()
         }.getOrDefault(emptySet())
 
-        _rules.value = loaded?.filterNot { it.id == REMOVED_AFTER_BLOW_PRESET_ID }?.let { existing ->
+        // 손대지 않은 옛 여름·겨울 프리셋만 교체해 서로 다른 단계가 동시에 켜지지 않게 한다.
+        val obsolete = listOf(MacroPresets.summerBoarding(), MacroPresets.winterBoarding())
+        _rules.value = loaded?.filterNot { rule ->
+            rule.id == REMOVED_AFTER_BLOW_PRESET_ID || obsolete.any { rule == it || rule == it.copy(enabled = false) }
+        }?.let { existing ->
             val knownIds = existing.map { it.id }.toSet() + seen
             val missing = MacroPresets.defaults().filter { it.id !in knownIds }
             if (missing.isEmpty() && existing.size == loaded.size) existing
@@ -60,7 +64,7 @@ class RuleStore(context: Context) {
         // 지금 시점의 프리셋 전부를 "소개함"으로 기록한다
         runCatching {
             seenPresetsFile.writeText(
-                json.encodeToString(presetIdSerializer, MacroPresets.defaults().map { it.id }.toSet())
+                json.encodeToString(presetIdSerializer, seen + MacroPresets.defaults().map { it.id }.toSet())
             )
         }
     }

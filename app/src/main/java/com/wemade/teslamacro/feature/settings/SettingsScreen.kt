@@ -72,7 +72,6 @@ fun SettingsScreen(
     onStealthEndMinutesChange: (Int) -> Unit = {},
     onProtectPhoneKeyChange: (Boolean) -> Unit = {},
     onDeviceModeChange: (DeviceMode) -> Unit = {},
-    onDisconnectVehicle: () -> Unit = {},
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
     modifier: Modifier = Modifier,
@@ -147,13 +146,13 @@ fun SettingsScreen(
                                     onCheckedChange = onAutomationChange,
                                 )
                             }
-                            if (onFleetApiEnabledChange != null) {
-                                SectionHeader("음성 명령 전송")
-                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
-                            }
                             if (smartThings != null) {
                                 SectionHeader("음성 연결")
                                 SmartThingsPanel(settings, smartThings)
+                            }
+                            if (onFleetApiEnabledChange != null) {
+                                SectionHeader("음성 명령 전송")
+                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
                             }
                         }
 
@@ -175,7 +174,6 @@ fun SettingsScreen(
                                     settings = settings,
                                     onDeviceModeChange = onDeviceModeChange,
                                     onProtectPhoneKeyChange = onProtectPhoneKeyChange,
-                                    onDisconnectVehicle = onDisconnectVehicle,
                                 )
                             }
                         }
@@ -393,7 +391,6 @@ private fun PhoneKeyProtectionPanel(
     settings: AppSettings,
     onDeviceModeChange: (DeviceMode) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit,
-    onDisconnectVehicle: () -> Unit,
 ) {
     TCard {
         Text(
@@ -441,25 +438,6 @@ private fun PhoneKeyProtectionPanel(
                     "스텔스 충전 1회는 실행 시간대에만 연결을 유지해요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
-            )
-        }
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "강제 종료 대신 실행 중 매크로를 멈추고 연결만 놓습니다.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(Space.md))
-            TButton(
-                text = "지금 연결 끊기",
-                tone = ButtonTone.Secondary,
-                fillWidth = false,
-                small = true,
-                onClick = onDisconnectVehicle,
             )
         }
     }

@@ -591,6 +591,7 @@ private fun DayToggles(days: Set<Int>, onChange: (Set<Int>) -> Unit) {
 /** 신호별로 현실적인 조절 범위를 준다. 배터리를 -40까지 내릴 이유가 없다 */
 private fun numericRange(signal: Signal): Pair<Double, Double> = when (signal) {
     Signal.BATTERY_LEVEL -> 0.0 to 100.0
+    Signal.SEAT_COOLING_LEVEL -> 0.0 to 3.0
     Signal.RIDE_MINUTES -> 0.0 to 300.0
     else -> -20.0 to 60.0
 }
@@ -604,6 +605,7 @@ fun defaultConditionFor(signal: Signal): Condition = when (signal.kind) {
 private fun defaultThreshold(signal: Signal): Double = when (signal) {
     Signal.INSIDE_TEMP -> 27.0     // 통풍 자동화의 기본 임계값
     Signal.OUTSIDE_TEMP -> 30.0
+    Signal.SEAT_COOLING_LEVEL -> 1.0
     Signal.BATTERY_LEVEL -> 20.0
     Signal.RIDE_MINUTES -> 30.0    // 오래 운행한 뒤 실행할 조건의 기본선
     else -> 0.0

@@ -8,7 +8,11 @@ package com.wemade.teslamacro.domain.macro
 /** "운전석 도어 열림" */
 fun describe(trigger: Trigger): String = when (trigger) {
     is Trigger.SignalBecomes ->
-        if (trigger.to) trigger.signal.label else "${trigger.signal.label} 해제"
+        (if (trigger.to) trigger.signal.label else "${trigger.signal.label} 해제") + when (trigger.afterDriving) {
+            true -> " · 주행 후 P단"
+            false -> " · 탑승 시 P단"
+            null -> ""
+        }
 
     is Trigger.AtTime -> {
         val time = "%02d:%02d".format(trigger.hour, trigger.minute)

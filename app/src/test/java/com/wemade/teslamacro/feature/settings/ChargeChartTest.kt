@@ -9,6 +9,19 @@ import org.junit.Test
 
 /** 그래프가 칸을 제자리에 놓고 눈금 꼭대기를 값에서 뽑는지 검증한다. */
 class ChargeChartTest {
+    /** 24시간 경계·미래·관측 없음은 숨기고 최근 실제 기록만 남긴다. */
+    @org.junit.Test
+    fun `empty and expired history hides chart`() {
+        val now = 100_000_000L
+        val recent = ChargeBucket(now - 1000L, 1000L, 1000L)
+        val expired = recent.copy(startMillis = now - ChargeHistory.WINDOW_MILLIS)
+        val future = recent.copy(startMillis = now + 1L)
+        val unobserved = recent.copy(coveredMillis = 0L)
+        org.junit.Assert.assertTrue(recentChargeBuckets(emptyList(), now).isEmpty())
+        org.junit.Assert.assertTrue(recentChargeBuckets(listOf(expired, future, unobserved), now).isEmpty())
+        org.junit.Assert.assertEquals(listOf(recent), recentChargeBuckets(listOf(expired, recent), now))
+    }
+
 
     private val now = ChargeHistory.bucketStart(1_800_000_000_000L)
 

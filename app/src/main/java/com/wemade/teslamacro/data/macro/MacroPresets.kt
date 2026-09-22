@@ -15,9 +15,8 @@ import com.wemade.teslamacro.domain.model.Signal
  */
 object MacroPresets {
 
-    fun defaults(): List<MacroRule> = listOf(
-        summerBoarding(),
-        winterBoarding(),
+    /** 좌석 자동화를 먼저 제공하고 기존 수동 선택 프리셋은 뒤에 둔다. */
+    fun defaults(): List<MacroRule> = SeatComfortPresets.defaults() + listOf(
         leaveCar(),
         eveningPrecondition(),
         parkedOverheatVent(),

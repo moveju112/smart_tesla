@@ -36,22 +36,24 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         Text(if (state.stored) "토큰 저장됨" else "토큰 미등록",
             style = MaterialTheme.typography.bodyMedium, color = T.Ink)
-        DraftField(
-            value = token,
-            onValueChange = { if (it.length <= 8192) token = it },
-            label = if (state.stored) "새 API 토큰으로 교체" else "사용자 API 토큰",
-            enabled = !state.busy,
-            placeholder = "API 토큰 붙여넣기",
-            note = "Tesla Client Secret은 입력하지 마세요",
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-            visualTransformation = PasswordVisualTransformation(),
-        )
-        TButton(text = if (state.busy) "처리 중…" else "토큰 저장", enabled = !state.busy && token.isNotBlank(), onClick = {
-            val submitted = token
-            token = ""
-            focus.clearFocus()
-            controls.onSave(submitted)
-        })
+        if (!state.stored) {
+            DraftField(
+                value = token,
+                onValueChange = { if (it.length <= 8192) token = it },
+                label = "사용자 API 토큰",
+                enabled = !state.busy,
+                placeholder = "API 토큰 붙여넣기",
+                note = "Tesla Client Secret은 입력하지 마세요",
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                visualTransformation = PasswordVisualTransformation(),
+            )
+            TButton(text = if (state.busy) "처리 중…" else "토큰 저장", enabled = !state.busy && token.isNotBlank(), onClick = {
+                val submitted = token
+                token = ""
+                focus.clearFocus()
+                controls.onSave(submitted)
+            })
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             TButton(text = "연결 확인", tone = ButtonTone.Ghost, modifier = Modifier.weight(1f),
                 enabled = state.stored && !state.busy, onClick = controls.onCheck)

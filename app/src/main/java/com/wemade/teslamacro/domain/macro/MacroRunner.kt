@@ -93,6 +93,12 @@ class MacroRunner(
                         return@withLock
                     }
                 }
+                // 좌석 종료·설정 변경 뒤 이전 15분 타이머가 새 설정을 끄지 않게 한다.
+                rule.cancelRunningIds.filter { it != rule.id }.forEach { id ->
+                    jobs.remove(id)?.cancel()
+                    _running.update { it - id }
+                    _progress.update { it - id }
+                }
                 jobs.remove(rule.id)?.cancel()
                 jobs[rule.id] = scope.launch { execute(rule, nowMillis, onAccepted) }
             }

@@ -79,6 +79,10 @@ internal fun chartTopAmps(buckets: List<ChargeBucket>): Double {
     return maxOf(5.0, kotlin.math.ceil(observed))
 }
 
+/** 최근 24시간에 관측된 칸만 표시하며 미래·빈 기록은 그래프를 만들지 않는다. */
+internal fun recentChargeBuckets(buckets: List<ChargeBucket>, nowMillis: Long): List<ChargeBucket> =
+    ChargeHistory.prune(buckets, nowMillis).filter { it.startMillis <= nowMillis && it.coveredMillis > 0 }
+
 internal const val SLOT_COUNT = 96
 
 /**
@@ -92,8 +96,10 @@ internal fun ChargeChart(
     nowMillis: Long,
     modifier: Modifier = Modifier,
 ) {
-    val top = chartTopAmps(buckets)
-    val bars = planChargeBars(buckets, nowMillis, top)
+    val recentBuckets = recentChargeBuckets(buckets, nowMillis)
+    if (recentBuckets.isEmpty()) return
+    val top = chartTopAmps(recentBuckets)
+    val bars = planChargeBars(recentBuckets, nowMillis, top)
     val barColor = T.Electric
     val fadedColor = T.ElectricFaint
     val lineColor = T.Hairline
@@ -107,7 +113,7 @@ internal fun ChargeChart(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = topLabel(buckets, top),
+                text = topLabel(recentBuckets, top),
                 style = MaterialTheme.typography.labelSmall,
                 color = T.InkFaint,
             )
@@ -149,7 +155,7 @@ internal fun ChargeChart(
                 )
             }
         }
-        val summary = chargeSummary(buckets)
+        val summary = chargeSummary(recentBuckets)
         if (summary != null) {
             Spacer(Modifier.height(Space.xs))
             Text(

@@ -407,7 +407,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,
                         onProtectPhoneKeyChange = settingsViewModel::setProtectPhoneKey,
                         onDeviceModeChange = settingsViewModel::setDeviceMode,
-                        onDisconnectVehicle = settingsViewModel::disconnectVehicle,
                         onUnpair = settingsViewModel::unpair,
                         onStartPairing = { skippedPairing = false },
                         simulator = simulated?.let {

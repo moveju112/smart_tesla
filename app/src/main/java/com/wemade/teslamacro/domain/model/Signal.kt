@@ -15,6 +15,7 @@ enum class Signal(
 ) {
     INSIDE_TEMP("실내 온도", SignalKind.NUMBER, "℃"),
     OUTSIDE_TEMP("외부 온도", SignalKind.NUMBER, "℃"),
+    SEAT_COOLING_LEVEL("권장 통풍 단계", SignalKind.NUMBER, "단"),
     BATTERY_LEVEL("배터리", SignalKind.NUMBER, "%"),
     RANGE("주행 가능 거리", SignalKind.NUMBER, "km"),
     SPEED("속도", SignalKind.NUMBER, "km/h"),
@@ -44,6 +45,7 @@ enum class Signal(
     fun numberOf(snapshot: VehicleSnapshot): Double? = when (this) {
         INSIDE_TEMP -> snapshot.insideTempC
         OUTSIDE_TEMP -> snapshot.outsideTempC
+        SEAT_COOLING_LEVEL -> recommendedSeatCoolingLevel(snapshot.insideTempC, snapshot.outsideTempC)?.toDouble()
         BATTERY_LEVEL -> snapshot.batteryLevelPercent?.toDouble()
         RANGE -> snapshot.rangeKm?.toDouble()
         SPEED -> snapshot.speedKph?.toDouble()
@@ -75,7 +77,7 @@ enum class Signal(
     /** 이 신호를 읽으려면 어느 카테고리를 폴링해야 하는가 — 폴링 계획 수립에 쓴다 */
     val sourceCategory: StateCategory
         get() = when (this) {
-            INSIDE_TEMP, OUTSIDE_TEMP, CLIMATE_ON, PRECONDITIONING -> StateCategory.CLIMATE
+            INSIDE_TEMP, OUTSIDE_TEMP, SEAT_COOLING_LEVEL, CLIMATE_ON, PRECONDITIONING -> StateCategory.CLIMATE
             BATTERY_LEVEL, CHARGING, RANGE, CHARGE_PORT_OPEN -> StateCategory.CHARGE
             PARKED, DRIVING, SPEED -> StateCategory.DRIVE
             TIRE_PRESSURE_MIN -> StateCategory.TIRES

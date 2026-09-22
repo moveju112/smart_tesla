@@ -20,7 +20,12 @@ sealed interface Trigger {
 
     /** 상태 신호가 바뀌는 순간 (문이 열릴 때, 운전자가 탈 때) */
     @Serializable @SerialName("signal_becomes")
-    data class SignalBecomes(val signal: Signal, val to: Boolean) : Trigger
+    data class SignalBecomes(
+        val signal: Signal,
+        val to: Boolean,
+        /** null은 일반 신호, false는 탑승 문 열림, true는 주행 후 P단 하차 문 열림이다. */
+        val afterDriving: Boolean? = null,
+    ) : Trigger
 
     /**
      * 정해진 시각이 되는 순간.
@@ -177,6 +182,8 @@ data class MacroRule(
     val actions: List<ActionStep>,
     /** 재발동 억제 시간. 문을 여닫을 때마다 중복 실행되는 걸 막는다 */
     val cooldownSeconds: Int = 300,
+    /** 하차·새 좌석 설정 후 이전 열선 타이머가 뒤늦게 끄지 않도록 먼저 중단한다. */
+    val cancelRunningIds: Set<String> = emptySet(),
 ) {
     /** 목록 화면에 보여줄 한 줄 요약 */
     val summary: String
@@ -208,7 +215,9 @@ data class MacroRule(
 
 /** 트리거가 참조하는 차량 신호 (폴링 계획 수립용) */
 fun Trigger.signals(): List<Signal> = when (this) {
-    is Trigger.SignalBecomes -> listOf(signal)
+    is Trigger.SignalBecomes -> if (afterDriving == null) listOf(signal)
+        else listOf(signal, Signal.DRIVING, Signal.PARKED, Signal.USER_PRESENT,
+            Signal.DOOR_DRIVER_FRONT, Signal.DOOR_PASSENGER_FRONT)
     // 시간 기반/호출 트리거는 차량을 읽을 필요가 없다.
     // Always는 조건의 신호가 requiredCategories에 이미 들어간다
     is Trigger.AtTime, is Trigger.Every, is Trigger.Manual, is Trigger.Always -> emptyList()

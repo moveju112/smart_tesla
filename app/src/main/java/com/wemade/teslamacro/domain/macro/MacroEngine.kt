@@ -21,6 +21,8 @@ class MacroEngine {
      */
     private val alwaysHeld = mutableMapOf<String, Boolean>()
     private val pendingDoorContext = mutableMapOf<MacroRule, Long>()
+    private var droveThisTrip = false
+    private var exitDoorObserved = false
 
     /** 전원·수동 해제 경계를 넘은 문 이벤트가 나중에 실행되지 않도록 버린다. */
     @Synchronized
@@ -49,6 +51,25 @@ class MacroEngine {
         onBlocked: (MacroRule, List<Condition>) -> Unit = { _, _ -> },
         allowPendingDoorRetry: Boolean = true,
     ): List<MacroRule> {
+        // 주행을 직접 본 세션만 하차로 인정한다. 재시작·연결 공백은 추측하지 않는다.
+        if (previous == null) {
+            droveThisTrip = false
+            exitDoorObserved = false
+        }
+        if (Signal.DRIVING.booleanOf(current.snapshot) == true ||
+            previous?.let { Signal.DRIVING.booleanOf(it.snapshot) } == true) {
+            droveThisTrip = true
+            exitDoorObserved = false
+        }
+        val parked = Signal.PARKED.booleanOf(current.snapshot) == true
+        val driverOpen = Signal.DOOR_DRIVER_FRONT.booleanOf(current.snapshot)
+        if (droveThisTrip && parked && driverOpen == true) exitDoorObserved = true
+        if (exitDoorObserved && parked && driverOpen == false &&
+            Signal.DOOR_PASSENGER_FRONT.booleanOf(current.snapshot) == false &&
+            current.snapshot.isUserPresent == false) {
+            droveThisTrip = false
+            exitDoorObserved = false
+        }
         // 꺼졌거나 삭제된 룰의 래치는 잊는다 — 다시 켜면 "이미 참"도 1회 발동한다
         alwaysHeld.keys.retainAll(rules.filter { it.enabled }.map { it.id }.toSet())
         pendingDoorContext.keys.retainAll(rules.filter { it.enabled }.toSet())
@@ -62,6 +83,10 @@ class MacroEngine {
 
             // 2. 트리거가 없으면 발동할 수 없다 (조건만으로는 절대 실행되지 않는다)
             if (rule.triggers.isEmpty()) return@filter false
+            if (rule.triggers.all { it is Trigger.SignalBecomes && it.afterDriving == false } && droveThisTrip) {
+                pendingDoorContext.remove(rule)
+                return@filter false
+            }
 
             // 3. 트리거 평가를 쿨다운보다 먼저 — Always 래치는 쿨다운 중에도 갱신돼야 한다.
             //    쿨다운이 먼저 자르면 래치가 발동 시점의 참으로 굳어, 쿨다운이 끝나도
@@ -119,7 +144,9 @@ class MacroEngine {
         when (trigger) {
 
             is Trigger.SignalBecomes -> {
-                if (trigger.signal == Signal.USER_PRESENT && trigger.to) {
+                if (trigger.afterDriving != null &&
+                    (Signal.PARKED.booleanOf(current.snapshot) != true || trigger.afterDriving != droveThisTrip)) false
+                else if (trigger.signal == Signal.USER_PRESENT && trigger.to) {
                     userBecamePresent(previous, current, knownPresenceBeforeRestart)
                 } else {
                     val now = trigger.signal.booleanOf(current.snapshot)

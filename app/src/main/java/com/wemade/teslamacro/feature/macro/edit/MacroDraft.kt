@@ -21,6 +21,7 @@ data class MacroDraft(
     val actions: List<ActionStep>,
     val cooldownSeconds: Int,
     val isNew: Boolean,
+    val cancelRunningIds: Set<String> = emptySet(),
 ) {
     /** 저장 가능한지. 이유가 있으면 문자열, 없으면 null */
     val blockReason: String?
@@ -57,6 +58,7 @@ data class MacroDraft(
         conditions = conditions,
         actions = actions,
         cooldownSeconds = cooldownSeconds,
+        cancelRunningIds = cancelRunningIds,
     )
 
     // ---- 트리거 ----
@@ -103,6 +105,7 @@ data class MacroDraft(
             actions = rule.actions,
             cooldownSeconds = rule.cooldownSeconds,
             isNew = false,
+            cancelRunningIds = rule.cancelRunningIds,
         )
 
         fun blank() = MacroDraft(

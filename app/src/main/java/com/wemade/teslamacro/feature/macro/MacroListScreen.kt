@@ -1,7 +1,6 @@
 package com.wemade.teslamacro.feature.macro
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,11 +14,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,7 +50,9 @@ import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
+import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlinx.coroutines.delay
@@ -70,30 +76,43 @@ fun MacroListScreen(
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 큰 글씨에서는 카드 폭을 확보하고, 기본 휴대폰은 두 열로 공간을 활용한다.
+    val columns = if (LocalDensity.current.fontScale >= 1.3f) {
+        LocalPane.current.columns
+    } else {
+        LocalPane.current.columns.coerceAtLeast(2)
+    }
     Column(modifier = modifier.fillMaxSize()) {
-        // 생성은 하단에 고정하고 상단에는 현재 자동화 상태만 남긴다.
+        // 추가 버튼을 요약 옆에 두어 하단 고정 버튼이 목록을 가리지 않게 한다.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Space.lg, vertical = Space.sm),
+                .padding(horizontal = Space.md, vertical = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "매크로 ${rules.size}개 · 사용 중 ${rules.count { it.enabled }}개",
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = T.InkMuted,
                 modifier = Modifier.weight(1f),
             )
-            if (runningIds.isNotEmpty()) {
-                TButton(
-                    text = "실행 중단",
-                    tone = ButtonTone.Danger,
-                    fillWidth = false,
-                    small = true,
-                    onClick = onStopAll,
-                )
-                Spacer(Modifier.width(Space.sm))
-            }
+            TButton(
+                text = "추가",
+                icon = DraftMark.Add,
+                fillWidth = false,
+                small = true,
+                onClick = onCreate,
+            )
+        }
+
+        if (runningIds.isNotEmpty()) {
+            TButton(
+                text = "실행 중단",
+                tone = ButtonTone.Danger,
+                small = true,
+                modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
+                onClick = onStopAll,
+            )
         }
 
         if (rules.isEmpty()) {
@@ -106,13 +125,15 @@ fun MacroListScreen(
             )
         }
 
-        LazyColumn(
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = Space.md, vertical = Space.sm),
-            verticalArrangement = Arrangement.spacedBy(Space.md),
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             items(rules, key = { it.id }) { rule ->
-                MacroRow(
+                MacroCard(
                     rule = rule,
                     isRunning = rule.id in runningIds,
                     progress = progress[rule.id],
@@ -123,20 +144,16 @@ fun MacroListScreen(
                     onDelete = { onDelete(rule) },
                 )
             }
-            item { RevisionBlock(log) }
+            item(key = "revisionLog", span = { GridItemSpan(maxLineSpan) }) {
+                RevisionBlock(log)
+            }
         }
-        TButton(
-            text = "새 매크로 만들기",
-            icon = DraftMark.Add,
-            modifier = Modifier.padding(horizontal = Space.md, vertical = Space.sm),
-            onClick = onCreate,
-        )
     }
 }
 
 /** 조건·동작은 편집 화면에 두고 카드에는 이름과 실행 조작만 남긴다. */
 @Composable
-private fun MacroRow(
+private fun MacroCard(
     rule: MacroRule,
     isRunning: Boolean,
     progress: MacroProgress?,
@@ -150,16 +167,16 @@ private fun MacroRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = Space.xxl)
-                .padding(vertical = Space.sm),
+                .heightIn(min = Space.xxl),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f).padding(end = Space.sm)) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     text = rule.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (rule.enabled) T.Ink else T.InkFaint,
-                    maxLines = 2,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = T.Ink,
+                    minLines = 2,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -174,9 +191,8 @@ private fun MacroRow(
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
+            modifier = Modifier.fillMaxWidth().padding(top = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             DraftToggle(
                 checked = rule.enabled,
@@ -184,14 +200,19 @@ private fun MacroRow(
                 modifier = Modifier.semantics { contentDescription = "${rule.name} 자동 실행" },
             )
             Spacer(Modifier.weight(1f))
-            TButton(
-                text = "지금 실행",
-                icon = DraftMark.Run,
-                tone = ButtonTone.Secondary,
-                small = true,
-                fillWidth = false,
+            IconButton(
                 onClick = onRunNow,
-            )
+                modifier = Modifier
+                    .size(Space.xxl)
+                    .background(T.ElectricFaint, RoundedCornerShape(Radius.button)),
+            ) {
+                Icon(
+                    imageVector = DraftMark.Run,
+                    contentDescription = "${rule.name} 지금 실행",
+                    tint = T.Electric,
+                    modifier = Modifier.size(Space.lg),
+                )
+            }
         }
     }
 }
@@ -213,17 +234,15 @@ private fun RowActions(
         }
     }
     Box {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clickable { menuOpen = true },
-            contentAlignment = Alignment.Center,
+        IconButton(
+            onClick = { menuOpen = true },
+            modifier = Modifier.size(Space.xxl),
         ) {
             Icon(
                 imageVector = DraftMark.More,
-                contentDescription = "복제·삭제 메뉴",
+                contentDescription = "${rule.name} 복제·삭제 메뉴",
                 tint = T.InkMuted,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(Space.lg),
             )
         }
         DropdownMenu(

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.os.SystemClock
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -30,7 +31,7 @@ class SpeedMeter(private val context: Context) {
      * 속도 스트림. 구독하는 동안만 GPS를 켠다 —
      * 상시 켜두면 주차된 차에서 밤새 위성을 잡는다.
      */
-    fun speedKph(): Flow<Double> = locations().map(::kphOf)
+    fun speedKph(): Flow<Double?> = locations().map { freshSpeedKph(it) }
 
     /** 안전안내와 HUD가 같은 GPS 좌표를 공유한다. */
     fun locations(): Flow<Location> = callbackFlow {
@@ -64,9 +65,18 @@ class SpeedMeter(private val context: Context) {
     }
 }
 
-/**
- * 위치의 속도를 km/h로. 속도를 안 실어 보내는 기기가 있어 그때는 0으로 본다 —
- * 여기서는 "모름"과 "정지"를 굳이 가르지 않는다. 둘 다 화면에서 0이고, 달리는 중이면 값이 온다.
- */
-internal fun kphOf(location: Location): Double =
-    if (location.hasSpeed()) (location.speed * 3.6).toDouble().coerceAtLeast(0.0) else 0.0
+/** 속도 누락·음수·비정상 수치는 정차(0)가 아니라 확인 불가(null)다. */
+internal fun kphOf(location: Location): Double? =
+    if (location.hasSpeed() && location.speed.isFinite() && location.speed >= 0f) location.speed * 3.6 else null
+
+/** 수신 시점이 아니라 실제 측정 시점부터 5초 미만인 위치만 사용한다. */
+internal fun isFreshLocation(measuredNanos: Long, nowNanos: Long): Boolean =
+    measuredNanos >= 0 && measuredNanos <= nowNanos && nowNanos - measuredNanos < 5_000_000_000L
+
+/** HUD와 안전 안내가 같은 품질·유효기간의 GPS 속도를 쓰게 한다. */
+internal fun freshSpeedKph(location: Location, nowNanos: Long = SystemClock.elapsedRealtimeNanos()): Double? {
+    if (!isFreshLocation(location.elapsedRealtimeNanos, nowNanos) ||
+        !location.hasAccuracy() || location.accuracy !in 0f..30f ||
+        location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0) return null
+    return kphOf(location)
+}

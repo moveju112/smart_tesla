@@ -28,6 +28,10 @@ import com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
 import com.wemade.teslamacro.data.nav.forAutomaticStart
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.domain.command.confirmCategory
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -140,33 +144,45 @@ class MacroService : LifecycleService() {
                             " · 위치권한=${container.speedMeter.hasPermission()}" +
                             " · 오버레이권한=${overlay.canDraw})"
                     )
-                    container.speedMeter.locations().collect { location ->
-                        container.safeDrive.onLocation(location)
-                        val kph = com.wemade.teslamacro.data.location.kphOf(location)
-                        if (kph < MOVING_KPH) {
-                            overlay.hide()
-                            // 세우면 과속 상태도 함께 내린다. 안 내리면 다음 주행 첫 순간에
-                            // "과속 해제"가 거짓으로 한 줄 찍힌다
-                            overSpeedLogged = false
-                            return@collect
+                    coroutineScope {
+                        val locations = MutableStateFlow<android.location.Location?>(null)
+                        launch {
+                            container.speedMeter.locations().collect { location ->
+                                container.safeDrive.onLocation(location)
+                                locations.value = location
+                            }
                         }
-                        val safety = container.safeDrive.state.value
-                        val over = safety.isOverSpeed(kph, container.safeDrive.toleranceKph)
-                        // 매 초 찍으면 로그가 이거로만 찬다 — 넘어간 순간과 돌아온 순간만
-                        if (over != overSpeedLogged) {
-                            overSpeedLogged = over
-                            val limit = safety.alert?.speedLimitKph
-                            com.wemade.teslable.DiagLog.add(
-                                if (over) "과속 ${kph.toInt()}km/h (제한 ${limit ?: "?"})"
-                                else "과속 해제 ${kph.toInt()}km/h"
-                            )
-                        }
-                        if (showOverlay) {
-                            overlay.show(
-                                speedKph = kph,
-                                warning = warningTextOf(safety),
-                                over = over,
-                            )
+                        // GPS 콜백이 끊겨도 이전 속도를 지우고 안내 상태 변경을 바로 반영한다.
+                        combine(locations, container.safeDrive.state, flow {
+                            while (true) {
+                                emit(Unit)
+                                delay(1_000)
+                            }
+                        }) { location, safety, _ -> location to safety }.collect { (location, safety) ->
+                            val kph = location?.let { com.wemade.teslamacro.data.location.freshSpeedKph(it) }
+                            if (kph == null || kph < MOVING_KPH) {
+                                overlay.hide()
+                                // 정차·위치 만료 뒤 첫 주행에서 거짓 "과속 해제" 로그를 남기지 않는다.
+                                overSpeedLogged = false
+                                return@collect
+                            }
+                            val over = safety.isOverSpeed(toleranceKph = container.safeDrive.toleranceKph)
+                            // 매 초 찍으면 로그가 이거로만 찬다 — 넘어간 순간과 돌아온 순간만
+                            if (over != overSpeedLogged) {
+                                overSpeedLogged = over
+                                val limit = safety.alert?.speedLimitKph
+                                com.wemade.teslable.DiagLog.add(
+                                    if (over) "과속 ${kph.toInt()}km/h (제한 ${limit ?: "?"})"
+                                    else "과속 해제 ${kph.toInt()}km/h"
+                                )
+                            }
+                            if (showOverlay) {
+                                overlay.show(
+                                    speedKph = kph,
+                                    warning = warningTextOf(safety),
+                                    over = over || safety.alert?.limitConflict == true,
+                                )
+                            }
                         }
                     }
                 }
@@ -744,12 +760,15 @@ private const val MOVING_KPH = 5.0
 
 /** 오버레이 아래 줄에 넣을 경고 한 마디. 안내할 게 없으면 null */
 private fun warningTextOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {
+    if (state.stalled) return state.unavailableReason ?: "위치 없음"
+    if (!state.ready) return null
     val alert = state.alert ?: return null
     val distance = alert.distanceMeters
     val limit = alert.speedLimitKph
     return buildString {
         append(alert.kind.label)
-        if (limit != null) append(" $limit")
+        if (alert.limitConflict) append(" · 제한 확인 필요")
+        else if (limit != null) append(" $limit")
         if (distance != null) append(" · ${distance}m")
     }
 }

@@ -25,6 +25,9 @@ def convert(row):
         latitude = float(row["LATITUDE"])
         longitude = float(row["LONGITUDE"])
         limit = int(row["LMTT_VE"])
+        # 소수 속도를 정수로 잘라 잘못된 제한속도로 배포하지 않는다.
+        if isinstance(row["LMTT_VE"], float) and row["LMTT_VE"] != limit:
+            return None
         category = str(row["REGLT_SE"]).strip()
         if not (33 <= latitude <= 39 and 124 <= longitude <= 132 and 10 <= limit <= 130):
             return None
@@ -38,7 +41,7 @@ def convert(row):
             "section": str(row.get("REGLT_SCTN_LC_SE", "")).strip() in ("1", "2", "01", "02"),
             "referenceDate": str(row.get("REFERENCE_DATE", "")),
         }
-    except (ValueError, TypeError, KeyError):
+    except (ValueError, TypeError, KeyError, OverflowError):
         return None
 
 

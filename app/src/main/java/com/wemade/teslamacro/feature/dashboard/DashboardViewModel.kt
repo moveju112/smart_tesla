@@ -132,16 +132,16 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             tireWarning = tireWarningOf(effective),
             vehicleSoftware = vehicleSoftwareOf(effective),
             parkSummary = parkSummaryOf(aux.parkStart, effective.batteryLevelPercent),
-            // 차가 보고한 속도. 달릴 때만 적는다 — 여기에 GPS를 쓰면 주차 중에도
-            // 위성을 잡아야 해서, 화면 안 표시는 이미 읽고 있는 값으로 충분하다
-            speedKph = effective.speedKph?.toInt()?.takeIf { it > 0 },
+            // 안내 중에는 표시·소리 모두 같은 GPS 속도를 쓴다. 안내가 꺼져 있으면
+            // 이미 읽고 있는 차량 속도를 재사용해 화면 때문에 GPS를 켜지 않는다.
+            speedKph = (if (settings.safeDrive) aux.safety.speedKph else effective.speedKph?.toDouble())
+                ?.toInt()?.takeIf { it > 0 },
             // 오버레이는 다른 앱 위에만 뜬다 — 우리 화면을 보고 있을 때도
             // 경보가 보여야 해서 기입란에 같은 값을 적는다
             safetyLabel = safetyLabelOf(aux.safety),
             safetyValue = safetyValueOf(aux.safety),
-            safetyAlarming = aux.safety.stalled || aux.safety.isOverSpeed(
-                effective.speedKph?.toDouble() ?: 0.0,
-                settings.safeDriveToleranceKph,
+            safetyAlarming = aux.safety.stalled || aux.safety.alert?.limitConflict == true || aux.safety.isOverSpeed(
+                toleranceKph = settings.safeDriveToleranceKph,
             ),
             // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다.
             // 전역 타임스탬프는 아무 카테고리 하나만 성공해도 갱신되므로,
@@ -480,10 +480,10 @@ private fun safetyLabelOf(state: com.wemade.teslamacro.domain.safety.SafetyState
 }
 
 private fun safetyValueOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {
-    if (state.stalled) return "위치 없음"
+    if (state.stalled) return state.unavailableReason ?: "위치 없음"
     val alert = state.alert ?: return null
     val parts = listOfNotNull(
-        alert.speedLimitKph?.let { "$it" },
+        if (alert.limitConflict) "제한 확인 필요" else alert.speedLimitKph?.let { "$it" },
         alert.distanceMeters?.let { "${it}m" },
     )
     return if (parts.isEmpty()) "안내 중" else parts.joinToString(" · ")

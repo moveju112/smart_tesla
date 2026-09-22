@@ -23,6 +23,77 @@ class CameraIndexTest {
         assertNull(index.nearest(37.0, 127.0, Double.NaN, 60.0, 10.0))
     }
 
+    /** 비정상 데이터만 든 목록을 정상 로드로 취급하지 않는다. */
+    @Test fun invalidDatasetIsEmpty() {
+        assertTrue(CameraIndex(emptyList()).isEmpty)
+        assertTrue(CameraIndex(listOf(
+            OfflineCamera("bad-coordinate", Double.NaN, 127.0, 50),
+            OfflineCamera("bad-limit", 37.0, 127.0, 0),
+            OfflineCamera("foreign", 0.0, 0.0, 50),
+        )).isEmpty)
+        assertFalse(index.isEmpty)
+    }
+
+    /** 제한 경계·음수·비정상 입력은 후보 판정을 우회하지 못한다. */
+    @Test fun motionAndAccuracyBoundaries() {
+        assertNotNull(index.nearest(37.0, 127.0, 0.0, 5.0, 30.0))
+        assertNull(index.nearest(37.0, 127.0, 0.0, 4.999, 30.0))
+        assertNull(index.nearest(37.0, 127.0, 0.0, 60.0, -1.0))
+        assertNull(index.nearest(37.0, 127.0, 0.0, 60.0, Double.NaN))
+        assertNull(index.nearest(37.0, 127.0, 0.0, Double.NaN, 10.0))
+        assertNull(index.nearest(Double.NaN, 127.0, 0.0, 60.0, 10.0))
+        assertEquals(index.nearest(37.0, 127.0, 0.0, 60.0, 10.0),
+            index.nearest(37.0, 127.0, 360.0, 60.0, 10.0))
+    }
+
+    /** 이웃 격자 경계에서도 599m 후보를 놓치지 않고 601m는 제외한다. */
+    @Test fun allHeadingsAcrossCells() {
+        for (latitude in listOf(33.0199, 37.0199, 38.9799)) {
+            for (bearing in 0 until 360 step 15) {
+                for (distance in listOf(9, 11, 599, 601)) {
+                    val angle = Math.toRadians(bearing.toDouble())
+                    val north = distance * kotlin.math.cos(angle) / 111_195.0
+                    val east = distance * kotlin.math.sin(angle) /
+                        (111_195.0 * kotlin.math.cos(Math.toRadians(latitude)))
+                    val local = CameraIndex(listOf(OfflineCamera("edge", latitude + north, 127.0199 + east, 50)))
+                    val alert = local.nearest(latitude, 127.0199, bearing.toDouble(), 60.0, 10.0)
+                    assertEquals("$latitude / $bearing / $distance", distance in 10..600, alert != null)
+                }
+            }
+        }
+    }
+
+    /** 가장 가까운 유효 후보와 구간 카메라 표기를 확인한다. */
+    @Test fun closestCandidateAndSection() {
+        val local = CameraIndex(listOf(
+            OfflineCamera("far", 37.004, 127.0, 80),
+            OfflineCamera("near", 37.002, 127.0, 30, section = true),
+            OfflineCamera("behind", 36.999, 127.0, 50),
+        ))
+        val alert = local.nearest(37.0, 127.0, 0.0, 60.0, 10.0)
+        assertEquals(30, alert?.speedLimitKph)
+        assertEquals(SafetyKind.SECTION_CAMERA, alert?.kind)
+    }
+
+    /** 같은 좌표의 30/50 제한을 파일 순서로 택하지 않고 불확실성을 표시한다. */
+    @Test fun conflictingLimitsRequireRoadSign() {
+        val cameras = listOf(
+            OfflineCamera("first", 37.003, 127.0, 30),
+            OfflineCamera("second", 37.003, 127.0, 50),
+        )
+        val first = CameraIndex(cameras).nearest(37.0, 127.0, 0.0, 60.0, 10.0)
+        val reversed = CameraIndex(cameras.reversed()).nearest(37.0, 127.0, 0.0, 60.0, 10.0)
+        assertEquals(first, reversed)
+        assertTrue(first!!.limitConflict)
+        assertNull(first.speedLimitKph)
+        assertFalse(SafetyState(ready = true, alert = first, speedKph = 60.0).isOverSpeed())
+        assertFalse(SafetyState(ready = true, alert = first.copy(speedLimitKph = 30), speedKph = 60.0).isOverSpeed())
+        val duplicates = CameraIndex(listOf(cameras[0], cameras[0]))
+            .nearest(37.0, 127.0, 0.0, 60.0, 10.0)
+        assertEquals(30, duplicates?.speedLimitKph)
+        assertFalse(duplicates!!.limitConflict)
+    }
+
     /** GPS 단절이나 미준비 상태에 남은 카메라로 경보를 만들지 않는다. */
     @Test fun unavailableState() {
         val alert = SafetyAlert(SafetyKind.SPEED_CAMERA, 300, 50)

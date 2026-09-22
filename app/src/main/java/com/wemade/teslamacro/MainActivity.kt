@@ -369,18 +369,17 @@ private fun AppRoot(factory: ViewModelFactory) {
                         }
                     }
 
-                    // 안드로이드 12부터 BLE는 위치 권한 없이도 돌아서, 첫 실행 요청 목록에
-                    // 위치가 빠져 있다. 그 결과 HUD·과속 안내는 GPS를 한 번도 못 받았다 —
-                    // 주행 기능을 켜는 이 자리에서 따로 받는다
+                    // 첫 실행에서 거부했어도 주행 기능을 켜는 자리에서 다시 요청한다.
+                    // Android 12+는 정확한 위치와 대략적인 위치를 함께 요청해야 한다.
                     // 권한 대화상자는 액티비티를 잠깐 내리므로 돌아올 때 다시 읽힌다
                     val locationPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
                         context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
                             android.content.pm.PackageManager.PERMISSION_GRANTED
                     }
                     val askLocation = rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestPermission()
-                    ) { granted ->
-                        if (granted) {
+                        ActivityResultContracts.RequestMultiplePermissions()
+                    ) { grants ->
+                        if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
                             // GPS 스트림은 구독하는 순간 권한을 본다 — 지금 알려주지 않으면
                             // 토글을 껐다 켜기 전까지 HUD도 과속 판정도 계속 멈춘 채다
                             (context.applicationContext as TeslaMacroApplication)
@@ -479,7 +478,10 @@ private fun AppRoot(factory: ViewModelFactory) {
                             overlayPermitted = overlayPermitted,
                             locationPermitted = locationPermitted,
                             onRequestLocationPermission = {
-                                askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                                askLocation.launch(arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                ))
                             },
                             onRequestOverlayPermission = {
                                 openOverlayPermissionSettings(context)

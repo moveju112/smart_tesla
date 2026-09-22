@@ -1,6 +1,20 @@
 package com.wemade.teslamacro.data.settings
 
 import android.content.ContextWrapper
+import android.app.Application
+import android.location.Location
+import com.wemade.teslamacro.data.location.freshSpeedKph
+import com.wemade.teslamacro.data.safety.SafeDriveGuide
+import com.wemade.teslamacro.domain.safety.CameraIndex
+import com.wemade.teslamacro.domain.safety.OfflineCamera
+import com.wemade.teslamacro.domain.safety.SafetyState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.setMain
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import app.cash.paparazzi.Paparazzi
 import com.wemade.teslamacro.data.backup.BackupFile
@@ -39,6 +53,125 @@ class SafetySettingsTest {
         assertEquals(9, store.settings.first().safeDriveToleranceKph)
         store.restore(BackupSettings(safeDriveToleranceKph = 99))
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
+    }
+
+    /** 안내 설정이 연결하는 실제 안내기의 GPS 단절·복구·오입력·종료를 이미지 없이 검증한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun guideLifecycleAndUnknownFixes() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 100_000_000_000L
+        val guide = SafeDriveGuide(Application()) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50))))
+        // 실차 위치 대신 고정 가상 좌표로 측정 시각과 센서 필드를 조절한다.
+        fun fix(ageNanos: Long = 0): Location = Location("gps").apply {
+            latitude = 37.0
+            longitude = 127.0
+            speed = 20f
+            bearing = 0f
+            accuracy = 10f
+            elapsedRealtimeNanos = nowNanos - ageNanos
+        }
+        try {
+            guide.start()
+            runCurrent()
+            assertTrue(guide.state.value.stalled)
+            guide.onLocation(fix())
+            assertEquals(72.0, guide.state.value.speedKph!!, 0.001)
+            assertTrue(guide.state.value.isOverSpeed(toleranceKph = 5))
+            assertEquals(50, guide.state.value.alert?.speedLimitKph)
+
+            val invalidFixes = listOf<(Location) -> Unit>(
+                { it.removeSpeed() }, { it.speed = Float.NaN }, { it.speed = -1f },
+                { it.speed = Float.POSITIVE_INFINITY }, { it.removeBearing() },
+                { it.removeAccuracy() }, { it.accuracy = 31f },
+                { it.accuracy = Float.NaN }, { it.latitude = Double.NaN },
+                { it.longitude = 181.0 }, { it.elapsedRealtimeNanos = nowNanos + 1 },
+                { it.elapsedRealtimeNanos = nowNanos - 5_000_000_000L },
+            )
+            invalidFixes.forEachIndexed { position, mutate ->
+                guide.onLocation(fix().also(mutate))
+                assertTrue("누락·비정상 입력 $position", guide.state.value.stalled)
+                assertNull(guide.state.value.alert)
+                guide.onLocation(fix())
+                assertFalse(guide.state.value.stalled)
+            }
+            guide.onLocation(fix().apply { speed = 0f; removeBearing() })
+            assertFalse(guide.state.value.stalled)
+            assertNull(guide.state.value.alert)
+
+            val delayed = fix(4_900_000_000L)
+            guide.onLocation(delayed)
+            assertNotNull(guide.state.value.alert)
+            nowNanos += 1_000_000_000L
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertTrue(guide.state.value.stalled)
+            assertNull(freshSpeedKph(delayed, nowNanos))
+            guide.onLocation(fix())
+            assertNotNull(guide.state.value.alert)
+            nowNanos += 5_000_000_000L
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertTrue(guide.state.value.stalled)
+
+            guide.stop()
+            guide.onLocation(fix())
+            assertEquals(SafetyState(), guide.state.value)
+            guide.start()
+            runCurrent()
+            guide.onLocation(fix())
+            assertNotNull(guide.state.value.alert)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 부팅 직후 첫 경보는 막지 않고 같은 후보의 소리 요청은 10초 간격을 지킨다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun soundRequestCooldownAndSettings() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val guide = SafeDriveGuide(Application()) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("sound-test", 37.003, 127.0, 50))))
+        val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
+        // 실제 스피커 출력 대신 요청 시각만 검증하고 JVM의 미구현 ToneGenerator는 비운다.
+        fun approach() {
+            guide.onLocation(Location("gps").apply {
+                latitude = 37.0; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+        }
+        try {
+            guide.setSound(true, 99, -1)
+            assertEquals(0, guide.toleranceKph)
+            guide.start()
+            runCurrent()
+            approach()
+            assertEquals(1_000L, lastSound.get(guide))
+            nowNanos += 9_999_000_000L
+            approach()
+            assertEquals(1_000L, lastSound.get(guide))
+            nowNanos += 1_000_000L
+            approach()
+            assertEquals(11_000L, lastSound.get(guide))
+            guide.setSound(false, -1, 99)
+            assertEquals(30, guide.toleranceKph)
+            nowNanos += 10_000_000_000L
+            approach()
+            assertEquals(11_000L, lastSound.get(guide))
+            guide.stop()
+            assertNull(lastSound.get(guide))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
     }
 
     /** 구형 백업은 기본값으로 열고 새 설정은 JSON 왕복 후에도 유지한다. */

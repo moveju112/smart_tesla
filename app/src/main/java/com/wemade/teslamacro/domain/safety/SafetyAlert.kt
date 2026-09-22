@@ -11,6 +11,8 @@ data class SafetyAlert(
     val distanceMeters: Int?,
     /** 이 지점의 제한속도(km/h). 단속 카메라가 아니면 null */
     val speedLimitKph: Int? = null,
+    /** 같은 좌표에 서로 다른 제한속도가 있어 도로 표지 확인이 필요한가. */
+    val limitConflict: Boolean = false,
 )
 
 /**
@@ -57,6 +59,10 @@ data class SafetyState(
      * 그 둘을 가르려고 따로 든다.
      */
     val stalled: Boolean = false,
+    /** 경보 판정에 사용한 GPS 속도. BLE 화면 속도와 섞지 않는다. */
+    val speedKph: Double? = null,
+    /** 목록 오류와 위치·속도·방향 누락을 구분해 알려준다. */
+    val unavailableReason: String? = null,
 ) {
     /**
      * 후보 제한속도 + [toleranceKph]에 도달했는가. 경계값부터 경보한다.
@@ -65,9 +71,9 @@ data class SafetyState(
      * 공공데이터에는 모든 도로의 제한속도나 정확한 단속 방향이 없다.
      * 그래서 카메라가 안 잡히는 구간의 과속은 이 앱이 알 수 없다. 모르는 것을 아는 척하지 않는다.
      */
-    fun isOverSpeed(currentKph: Double, toleranceKph: Int = 0): Boolean {
-        if (!ready || stalled || !currentKph.isFinite()) return false
+    fun isOverSpeed(currentKph: Double = speedKph ?: Double.NaN, toleranceKph: Int = 0): Boolean {
+        if (!ready || stalled || alert?.limitConflict == true || !currentKph.isFinite()) return false
         val limit = alert?.speedLimitKph?.takeIf { it > 0 } ?: return false
-        return currentKph >= limit.toDouble() + toleranceKph.coerceAtLeast(0)
+        return currentKph >= limit.toDouble() + toleranceKph.coerceIn(0, 30)
     }
 }

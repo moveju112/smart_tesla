@@ -59,6 +59,28 @@ class SafetyStateTest {
         assertTrue(state.isOverSpeed(130.0, 30))
     }
 
+    /** 화면·HUD·소리는 차량 폴링 값 대신 판정에 사용한 GPS 속도를 공유한다. */
+    @Test fun sharedGpsSpeedAndInvalidTolerance() {
+        val state = SafetyState(ready = true, alert = camera, speedKph = 85.0)
+        assertTrue(state.isOverSpeed(toleranceKph = 5))
+        assertFalse(state.copy(speedKph = 84.99).isOverSpeed(toleranceKph = 5))
+        assertFalse(state.copy(speedKph = null).isOverSpeed())
+        assertFalse(state.copy(stalled = true).isOverSpeed())
+        assertTrue(state.isOverSpeed(110.0, Int.MAX_VALUE))
+        assertTrue(state.isOverSpeed(80.0, -1))
+    }
+
+    /** 지연·미래·음수 시각과 정확한 5초 경계를 동일한 함수로 거른다. */
+    @Test fun measuredLocationExpiry() {
+        val now = 100_000_000_000L
+        assertTrue(com.wemade.teslamacro.data.location.isFreshLocation(now, now))
+        assertTrue(com.wemade.teslamacro.data.location.isFreshLocation(now - 4_999_999_999, now))
+        assertFalse(com.wemade.teslamacro.data.location.isFreshLocation(now - 5_000_000_000, now))
+        assertFalse(com.wemade.teslamacro.data.location.isFreshLocation(now + 1, now))
+        assertFalse(com.wemade.teslamacro.data.location.isFreshLocation(-1, now))
+        assertFalse(com.wemade.teslamacro.data.location.isFreshLocation(Long.MIN_VALUE, Long.MAX_VALUE))
+    }
+
     @Test
     fun `안내를 못 하는 상태는 ready가 false다`() {
         assertFalse(SafetyState().ready)

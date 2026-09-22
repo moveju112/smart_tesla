@@ -14,7 +14,10 @@
 - POST `/v1/vehicles/<VIN>/commands`: `type`, `parameters`, `expiresInSeconds`.
 - `Idempotency-Key`: 새 실행마다 UUID. 현재 클라이언트는 POST 자체를 자동 재전송하지 않는다.
 - 현재 지원: door_lock / auto_conditioning_start / auto_conditioning_stop / charge_start / charge_stop / set_temps / set_charge_limit.
-- 보닛·트렁크·문 잠금 해제·깨우기는 미지원으로 **토큰 조회·HTTP 이전에 차단**한다.
+- 0.9.62: 보닛 열기는 `actuate_trunk` + `which_trunk: front`, 뒤 트렁크 열기/닫기는 둘 다 `which_trunk: rear`로 인코딩한다.
+- rear는 현재 차량 상태에 따른 작동이다. 사용자가 이 동작을 확인하고 양쪽 명령의 동일 매핑을 승인했다. 방향/무조건 닫기를 보장하지 않는다.
+- 개폐의 `expiresInSeconds`는 남은 기한을 늘리지 않으면서 최대 15초로 제한한다.
+- 문 잠금 해제·깨우기는 미지원으로 **토큰 조회·HTTP 이전에 차단**한다.
 - POST 전에 기존 `CommandDeadline`의 남은 시간을 내림해 5~300초로 제한한다. 5초 미만은 연장하지 않고 거부한다.
 - 서버 TTL은 서버 접수 시점부터의 상대 기한이다. 네트워크 전송 지연까지 포함한 앱 수신 시점의 엄밀한 절대 기한 보장에는 별도 서버 계약이 필요하다.
 - 202는 queued/running뿐 아니라 기존 종료 결과일 수도 있다. 그대로 상태를 해석한다.
@@ -36,16 +39,18 @@
 6. 결과 확인 중단 시 코루틴만 취소하고 원격 명령 취소 요청을 만들지 않는다. 알려진 명령 ID를 UI 상태에 보존한다.
 7. `CommandFeedback.confirmed`를 성공 콜백으로 재사용한다. 기존 BLE는 수정하지 않는다.
 
-## 보닛·트렁크 서버 확장 수신 시
+## 서버 개폐 계약 반영 및 후속 연결
 
-- 확정된 `type`/`parameters`/차량 모델별 지원을 `fleetCommandBody()`에 추가한다. 추정한 `actuate_trunk` 등의 이름은 넣지 않는다.
+- 확정된 `actuate_trunk`와 front/rear 매핑은 기존 `fleetCommandBody()`에 반영했다. 앞 트렁크 닫기는 지원하지 않는다.
+- 토큰 입력 UI·AppContainer·MacroService 연결은 여전히 미완료다. 이번 변경은 사전 구현 통신부의 매핑 확장이며 실제 앱 Fleet 실행을 활성화하지 않는다.
 - 서버의 깨우기/취소/기한 보장 동작이 바뀌면 그 계약부터 반영한다. 깨우기 중 취소를 기존 UI 문구만으로 흉내 내지 않는다.
 - 기존 BLE의 P단 확인 등 개폐 안전 조건을 서버에서도 보장하는지 확인한다.
 - 동일 멱등키 재전송이 필요해지면 원래 키·본문을 함께 보존해 같은 요청으로 재전송한다. unknown 이후 새 키 자동 발급은 금지한다.
 
 ## 검증
 
-- 오프라인 가짜 전송으로 7명령 매핑·범위·queued/running/terminal·응답 유실·미지원 개폐·TTL·취소·식별자 검증.
+- 오프라인 가짜 전송으로 기존 7명령 및 개폐 매핑·범위·queued/running/terminal·응답 유실·미지원 명령·TTL·취소·식별자 검증.
+- 개폐별 front/rear 본문·15초 상한·열기/닫기 본문 동일·단일 POST/GET·성공 응답에서만 효과음 콜백을 검증한다.
 - JVM AES-GCM 왕복·무작위 IV·변조·다른 키 거부 테스트.
 - 기존 `CommandDeadline`과 `VehicleCommand` 재사용. `OpenMeteoClient.httpGet`은 인증/POST/취소/리다이렉트 제어가 없어 그대로 재사용하지 않았다.
 - 테스트: `./gradlew :app:testDebugUnitTest --tests '*FleetQueuedClientTest' --tests '*FleetTokenCipherTest'`.

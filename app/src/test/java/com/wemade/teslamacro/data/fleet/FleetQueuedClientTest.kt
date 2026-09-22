@@ -39,9 +39,9 @@ class FleetQueuedClientTest {
             put("created", 1800000000.0); put("expires", 1800000060.0)
         }.toString())
 
-    /** 현 서버의 7가지 명령 이름·필드만 보내며 개폐/해제/깨우기는 추정하지 않는다. */
+    /** 기존 7가지 명령 매핑을 유지하고 서버 미지원 명령은 차단한다. */
     @Test
-    fun `supported command mapping and unsupported closures`() {
+    fun `supported command mapping and unsupported commands`() {
         val cases = listOf(
             VehicleCommand.Lock to "door_lock", VehicleCommand.ClimateOn to "auto_conditioning_start",
             VehicleCommand.ClimateOff to "auto_conditioning_stop", VehicleCommand.SetCharging(true) to "charge_start",
@@ -57,8 +57,48 @@ class FleetQueuedClientTest {
         assertEquals(22.0, temps.getValue("driver_temp").jsonPrimitive.double, 0.0)
         assertEquals(temps["driver_temp"], temps["passenger_temp"])
         assertEquals(80, fleetCommandBody(VehicleCommand.SetChargeLimit(80), 60).getValue("parameters").jsonObject.getValue("percent").jsonPrimitive.int)
-        for (command in listOf(VehicleCommand.OpenFrunk, VehicleCommand.OpenTrunk, VehicleCommand.CloseTrunk, VehicleCommand.Unlock)) {
+        for (command in listOf(VehicleCommand.Unlock, VehicleCommand.VentWindows, VehicleCommand.CloseWindows)) {
             assertThrows(IllegalArgumentException::class.java) { fleetCommandBody(command, 60) }
+        }
+    }
+
+    /** 열어/닫아 모두 승인된 rear 작동으로 보내되 보닛은 front로 구분한다. */
+    @Test
+    fun `trunk direction commands map to the same rear actuation`() {
+        for ((command, trunk) in listOf(VehicleCommand.OpenFrunk to "front",
+            VehicleCommand.OpenTrunk to "rear", VehicleCommand.CloseTrunk to "rear")) {
+            for (seconds in listOf(5, 10, 15, 60, 300)) {
+                val body = fleetCommandBody(command, seconds)
+                assertEquals("actuate_trunk", body.getValue("type").jsonPrimitive.content)
+                assertEquals(buildJsonObject { put("which_trunk", trunk) }, body.getValue("parameters"))
+                assertEquals(seconds.coerceAtMost(15), body.getValue("expiresInSeconds").jsonPrimitive.int)
+            }
+        }
+        assertEquals(fleetCommandBody(VehicleCommand.OpenTrunk, 15), fleetCommandBody(VehicleCommand.CloseTrunk, 15))
+    }
+
+    /** 개폐도 기존 접수/조회 경로만 쓰고 성공 응답일 때만 해당 명령 효과음을 낸다. */
+    @Test
+    fun `trunk submissions use the existing queue and success feedback`() = runTest {
+        for (command in listOf(VehicleCommand.OpenFrunk, VehicleCommand.OpenTrunk, VehicleCommand.CloseTrunk)) {
+            for (status in listOf("succeeded", "failed", "unknown", "expired")) {
+                val transport = FakeTransport().apply {
+                    responses.add(response("queued").let { it.copy(body = it.body.replace("door_lock", "actuate_trunk")) })
+                    responses.add(response(status, 200).let { it.copy(body = it.body.replace("door_lock", "actuate_trunk")) })
+                }
+                val confirmed = mutableListOf<VehicleCommand>()
+                val client = FleetQueuedClient(transport, { "dummy-token" }) { confirmed += it }
+                withContext(CommandDeadline(testScheduler.currentTime + 120_000) { testScheduler.currentTime }) {
+                    client.execute(vin, command, {})
+                }
+                assertEquals(listOf("POST", "GET"), transport.calls.map { it.method })
+                val sent = Json.parseToJsonElement(transport.calls.first().body!!).jsonObject
+                assertEquals("actuate_trunk", sent.getValue("type").jsonPrimitive.content)
+                assertEquals(if (command == VehicleCommand.OpenFrunk) "front" else "rear",
+                    sent.getValue("parameters").jsonObject.getValue("which_trunk").jsonPrimitive.content)
+                assertEquals(15, sent.getValue("expiresInSeconds").jsonPrimitive.int)
+                assertEquals(if (status == "succeeded") listOf(command) else emptyList<VehicleCommand>(), confirmed)
+            }
         }
     }
 
@@ -142,13 +182,13 @@ class FleetQueuedClientTest {
         assertEquals(2, transport.calls.size)
     }
 
-    /** 미지원 보닛은 토큰 조회/네트워크보다 먼저 차단한다. */
+    /** 미지원 잠금 해제는 토큰 조회/네트워크보다 먼저 차단한다. */
     @Test
-    fun `unsupported frunk has no network or token access`() = runTest {
+    fun `unsupported unlock has no network or token access`() = runTest {
         val transport = FakeTransport()
         val client = FleetQueuedClient(transport, { error("must not load token") })
         try {
-            withContext(CommandDeadline(60_000) { 0L }) { client.submit(vin, VehicleCommand.OpenFrunk, { fail("no dispatch") }) }
+            withContext(CommandDeadline(60_000) { 0L }) { client.submit(vin, VehicleCommand.Unlock, { fail("no dispatch") }) }
             fail("unsupported")
         } catch (_: IllegalArgumentException) { }
         assertTrue(transport.calls.isEmpty())

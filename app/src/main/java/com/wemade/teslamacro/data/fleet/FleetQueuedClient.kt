@@ -22,11 +22,20 @@ data class FleetReceipt(
     val pending: Boolean get() = status == FleetQueueStatus.Queued || status == FleetQueueStatus.Running
 }
 
-/** 서버가 명시한 명령만 인코딩한다. 보닛/트렁크는 계약 수신 전 임의 이름으로 보내지 않는다. */
+/** 확정된 서버 계약만 인코딩한다. rear는 방향 지정이 아닌 작동 명령이다. */
 internal fun fleetCommandBody(command: VehicleCommand, expiresInSeconds: Int): JsonObject {
     require(expiresInSeconds in 5..300) { "Fleet 전송 유효시간은 5~300초여야 해요" }
     var parameters = buildJsonObject { }
     val type = when (command) {
+        VehicleCommand.OpenFrunk -> {
+            parameters = buildJsonObject { put("which_trunk", "front") }
+            "actuate_trunk"
+        }
+        VehicleCommand.OpenTrunk, VehicleCommand.CloseTrunk -> {
+            // 사용자 승인: 열어/닫아 모두 동일한 rear 작동을 요청하며 방향을 보장하지 않는다.
+            parameters = buildJsonObject { put("which_trunk", "rear") }
+            "actuate_trunk"
+        }
         VehicleCommand.Lock -> "door_lock"
         VehicleCommand.ClimateOn -> "auto_conditioning_start"
         VehicleCommand.ClimateOff -> "auto_conditioning_stop"
@@ -43,7 +52,9 @@ internal fun fleetCommandBody(command: VehicleCommand, expiresInSeconds: Int): J
         }
         else -> throw IllegalArgumentException("서버가 아직 지원하지 않는 Fleet 명령이에요")
     }
-    return buildJsonObject { put("type", type); put("parameters", parameters); put("expiresInSeconds", expiresInSeconds) }
+    // 지연된 개폐 작동을 줄이기 위해 서버 예시의 15초를 상한으로 쓰되 남은 수명을 늘리지는 않는다.
+    val lifetime = if (type == "actuate_trunk") expiresInSeconds.coerceAtMost(15) else expiresInSeconds
+    return buildJsonObject { put("type", type); put("parameters", parameters); put("expiresInSeconds", lifetime) }
 }
 
 /** 깨우기 없는 현 서버 계약 전용. 기존 FleetCommandClient의 깨우기 흐름에 끼워 넣지 않는다. */
@@ -71,7 +82,7 @@ class FleetQueuedClient(
     suspend fun submit(vin: String, command: VehicleCommand, beforeSubmit: () -> Unit): FleetReceipt {
         require(Regex("[A-HJ-NPR-Z0-9]{17}").matches(vin)) { "차량 식별값을 확인해 주세요" }
         val deadline = checkNotNull(coroutineContext[CommandDeadline]) { "Fleet 명령에는 유효시간이 필요해요" }
-        // 미지원 개폐는 인증·네트워크보다 먼저 차단한다.
+        // 미지원 명령은 인증·네트워크보다 먼저 차단한다.
         fleetCommandBody(command, 5)
         val token = tokenProvider()
         ensureCommandActive()

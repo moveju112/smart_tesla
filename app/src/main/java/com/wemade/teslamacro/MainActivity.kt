@@ -305,14 +305,11 @@ private fun AppRoot(factory: ViewModelFactory) {
                         val rules by vm.rules.collectAsState()
                         val running by vm.running.collectAsState()
                         val progress by vm.progress.collectAsState()
-                        val log by vm.log.collectAsState()
                         MacroListScreen(
                             rules = rules,
                             runningIds = running,
                             progress = progress,
-                            log = log,
                             onToggle = vm::setEnabled,
-                            onRunNow = vm::runNow,
                             onStopAll = vm::stopAll,
                             onEdit = vm::editMacro,
                             onDuplicate = vm::duplicate,

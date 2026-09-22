@@ -1,24 +1,18 @@
 package com.wemade.teslamacro.feature.macro
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -38,8 +32,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.wemade.teslamacro.domain.macro.MacroLogEntry
 import com.wemade.teslamacro.domain.macro.MacroProgress
 import com.wemade.teslamacro.domain.macro.MacroRule
 import com.wemade.teslamacro.domain.macro.formatDuration
@@ -47,28 +39,20 @@ import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.DraftToggle
 import com.wemade.teslamacro.ui.component.EmptyState
-import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.layout.LocalPane
-import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
-import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-/** 이름 중심의 카드에서 필요한 매크로만 편집하거나 실행한다. */
+/** 이름 중심의 카드에서 매크로를 편집하고 자동 실행 여부를 선택한다. */
 @Composable
 fun MacroListScreen(
     rules: List<MacroRule>,
     runningIds: Set<String>,
     progress: Map<String, MacroProgress>,
-    log: List<MacroLogEntry>,
     onToggle: (String, Boolean) -> Unit,
-    onRunNow: (MacroRule) -> Unit,
     onStopAll: () -> Unit,
     onEdit: (MacroRule) -> Unit,
     onDuplicate: (MacroRule) -> Unit,
@@ -138,27 +122,22 @@ fun MacroListScreen(
                     isRunning = rule.id in runningIds,
                     progress = progress[rule.id],
                     onToggle = { onToggle(rule.id, it) },
-                    onRunNow = { onRunNow(rule) },
                     onEdit = { onEdit(rule) },
                     onDuplicate = { onDuplicate(rule) },
                     onDelete = { onDelete(rule) },
                 )
             }
-            item(key = "revisionLog", span = { GridItemSpan(maxLineSpan) }) {
-                RevisionBlock(log)
-            }
         }
     }
 }
 
-/** 조건·동작은 편집 화면에 두고 카드에는 이름과 실행 조작만 남긴다. */
+/** 조건·동작은 편집 화면에 두고 카드에는 이름과 자동 실행 토글만 남긴다. */
 @Composable
 private fun MacroCard(
     rule: MacroRule,
     isRunning: Boolean,
     progress: MacroProgress?,
     onToggle: (Boolean) -> Unit,
-    onRunNow: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
@@ -199,25 +178,11 @@ private fun MacroCard(
                 onCheckedChange = onToggle,
                 modifier = Modifier.semantics { contentDescription = "${rule.name} 자동 실행" },
             )
-            Spacer(Modifier.weight(1f))
-            IconButton(
-                onClick = onRunNow,
-                modifier = Modifier
-                    .size(Space.xxl)
-                    .background(T.ElectricFaint, RoundedCornerShape(Radius.button)),
-            ) {
-                Icon(
-                    imageVector = DraftMark.Run,
-                    contentDescription = "${rule.name} 지금 실행",
-                    tint = T.Electric,
-                    modifier = Modifier.size(Space.lg),
-                )
-            }
         }
     }
 }
 
-/** 행 끝의 실행·더보기. 부가 동작은 ⋯로 접는다 */
+/** 복제·삭제는 더보기 메뉴로 접는다. */
 @Composable
 private fun RowActions(
     rule: MacroRule,
@@ -282,62 +247,6 @@ private fun RowActions(
 }
 
 /**
- * 개정란 — 도면 하단의 변경 이력.
- *
- * 최근 것이 위로 온다. 도면의 개정란도 최신 개정을 맨 위에 쌓는다.
- * 화면을 많이 먹지 않게 세 줄만 보인다 — 더 필요하면 진단 로그가 전부 들고 있다.
- */
-@Composable
-private fun RevisionBlock(log: List<MacroLogEntry>) {
-    Hairline()
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(T.Carbon)
-            .padding(horizontal = Space.lg, vertical = Space.sm),
-    ) {
-        Text(
-            text = "최근 실행 기록",
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.xs))
-        if (log.isEmpty()) {
-            Text(
-                text = "매크로가 실행되면 결과가 여기에 표시돼요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-            )
-        } else {
-            log.asReversed().take(3).forEach { entry ->
-                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-                    Text(
-                        text = timeFormat.format(Date(entry.timestampMillis)),
-                        style = CalloutNumberStyle,
-                        color = T.InkFaint,
-                        modifier = Modifier.padding(end = Space.sm),
-                    )
-                    Text(
-                        text = entry.ruleName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = T.InkFaint,
-                        maxLines = 1,
-                        modifier = Modifier.width(120.dp),
-                    )
-                    Text(
-                        text = entry.message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (entry.isError) T.Danger else T.InkMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
  * "3/5 · 4분 12초" 처럼 진행 상황을 한 조각으로 만든다.
  * 대기 중이면 남은 시간이 1초마다 줄어드는 걸 보여줘야 멈춘 게 아님을 안다.
  */
@@ -360,5 +269,3 @@ private fun runningLabel(progress: MacroProgress?): String {
     }
     return "$step · ${formatDuration(remaining)}"
 }
-
-private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.KOREA)

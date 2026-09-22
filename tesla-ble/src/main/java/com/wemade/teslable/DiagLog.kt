@@ -156,8 +156,8 @@ object DiagLog {
     /** 화면에 들고 있는 줄 수 */
     const val MAX_LINES = 100
 
-    /** 재시작 전 원인이 화면 버퍼보다 오래 남도록 파일은 별도 상한을 쓴다. */
-    const val MAX_FILE_LINES = 1_000
+    /** 문제 직후 공유할 로그 양을 줄이기 위해 파일도 화면과 같은 100줄로 제한한다. */
+    const val MAX_FILE_LINES = MAX_LINES
 
     /** 로그 한 줄의 최대 보관 시간 */
     const val MAX_AGE_HOURS = 12L

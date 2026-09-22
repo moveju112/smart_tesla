@@ -6,12 +6,13 @@
 
 1. **버전 올리기** — `app/build.gradle.kts`의 versionCode +1, versionName을 다음 미사용 패치 버전으로 갱신 (예: 26/"0.4.3" → 27/"0.4.4")
    - versionCode를 안 올리면 기기에서 덮어쓰기 설치가 거부될 수 있다
-2. **테스트 + 스냅샷 + 빌드** — 한 번에:
+2. **비이미지 테스트 + 빌드** — 한 번에:
    ```bash
-   ./gradlew test verifyPaparazziDebug :app:assembleRelease
+   ./gradlew test :app:assembleRelease
    ```
-   - `test`에는 Paparazzi가 포함되지 않는다 ([PITFALLS.md](../PITFALLS.md))
-   - UI를 바꿨으면 먼저 `recordPaparazziDebug`로 관련 기준 이미지만 갱신하고 휴대폰·`WideScreenshotTest`를 눈으로 확인한 뒤 전체 `verifyPaparazziDebug`를 통과시킨다
+   - `test` excludes rendering tests by default via `app/build.gradle.kts`; ordinary tests can otherwise render Paparazzi reports even without record/verify tasks ([PITFALLS.md](../PITFALLS.md)).
+   - CLI default: NEVER generate/open snapshots, recommend visual checks, ask permission for them, or block release on missing snapshots. UI edits and release requests are NOT explicit image requests.
+   - Only if the user explicitly requests images, enable `-PallowSnapshots=true` for `recordPaparazziDebug` / `verifyPaparazziDebug`; review relevant phone day/night, `WideFontScaleTest`, and `WideScreenshotTest` cases. Otherwise skip image verification without asking again.
 3. **산출물 확인** — `app/build/outputs/apk/release/app-arm64-v8a-release.apk`
    - universal APK는 없다 (ABI split, `app/build.gradle.kts:24`). 실기기는 arm64
    - 배포는 **release 빌드**다 (R8 축소, 39.9MB → 17.6MB). 자가 업데이트가 끊기지 않게

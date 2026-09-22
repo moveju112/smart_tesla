@@ -1,10 +1,7 @@
 package com.wemade.teslamacro.feature.settings
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -15,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,9 +24,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.charge.StealthChargePlan
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.ThemeMode
@@ -40,6 +33,9 @@ import com.wemade.teslamacro.data.settings.SmartThingsCommands
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.ui.component.ButtonTone
+import com.wemade.teslamacro.ui.component.ChoiceGrid
+import com.wemade.teslamacro.ui.component.DisclosureHeader
+import com.wemade.teslamacro.ui.component.SectionTabs
 import com.wemade.teslamacro.ui.component.DiagLogPanel
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.Hairline
@@ -48,10 +44,7 @@ import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.component.ToggleRow
-import com.wemade.teslamacro.ui.theme.Motion
-import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
-import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.T
 
 /** 설정. */
@@ -110,13 +103,13 @@ fun SettingsScreen(
             .padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
     ) {
         Text("설정", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
-        Text("차량과 자동화를 내 사용 방식에 맞춰요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        Spacer(Modifier.height(Space.md))
-        // 분류를 고정해 긴 설정에서도 다른 항목으로 바로 이동한다.
-        ChoiceRow(
-            options = SettingsGroup.entries.map { it.name to it.label },
-            selected = group.name,
-            onSelect = { picked -> group = SettingsGroup.valueOf(picked) },
+        Spacer(Modifier.height(Space.sm))
+        // 탐색은 밑줄로만 표시해 실제 설정값 선택과 구분한다.
+        SectionTabs(
+            options = SettingsGroup.entries,
+            selected = group,
+            label = { it.label },
+            onSelect = { group = it },
         )
         Spacer(Modifier.height(Space.md))
 
@@ -137,7 +130,7 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.AUTOMATION -> {
-                            SectionHeader("자동화", topPadding = Space.md)
+                            SectionHeader("매크로", topPadding = Space.sm)
                             TCard {
                                 ToggleRow(
                                     title = "매크로 자동 실행",
@@ -146,14 +139,19 @@ fun SettingsScreen(
                                     onCheckedChange = onAutomationChange,
                                 )
                             }
-                            if (smartThings != null) {
-                                SectionHeader("음성 연결")
-                                SmartThingsPanel(settings, smartThings)
-                            }
-                            if (onFleetApiEnabledChange != null) {
-                                SectionHeader("음성 명령 전송")
-                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
-                            }
+                            SectionHeader("충전")
+                            StealthChargePanel(
+                                settings = settings,
+                                secondsUntilNextChange = stealthSecondsUntilNextChange,
+                                onEnabledChange = onStealthChargingChange,
+                                onMaxAmpsChange = onStealthMaxAmpsChange,
+                                onMinAmpsChange = onStealthMinAmpsChange,
+                                chargeHistory = chargeHistory,
+                                chargeHistoryNowMillis = chargeHistoryNowMillis,
+                                onScheduleEnabledChange = onStealthScheduleEnabledChange,
+                                onStartMinutesChange = onStealthStartMinutesChange,
+                                onEndMinutesChange = onStealthEndMinutesChange,
+                            )
                         }
 
                         SettingsGroup.VEHICLE -> {
@@ -188,9 +186,11 @@ fun SettingsScreen(
                                     selected = settings.themeMode.name,
                                     onSelect = { onThemeModeChange(ThemeMode.of(it)) },
                                 )
-                                Text("자동은 오전 7시~오후 7시에는 라이트, 나머지 시간에는 다크로 바뀌어요.",
-                                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-                                    modifier = Modifier.padding(top = Space.sm))
+                                if (settings.themeMode == ThemeMode.AUTO) {
+                                    Text("07~19시 라이트 · 나머지 시간 다크",
+                                        style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                                        modifier = Modifier.padding(top = Space.sm))
+                                }
                             }
                             SectionHeader("업데이트")
                             UpdatePanel(
@@ -213,29 +213,24 @@ fun SettingsScreen(
                             if (navigation != null) {
                                 SectionHeader("속도 표시", topPadding = Space.md)
                                 SpeedPanel(settings, navigation)
-                                SectionHeader("무료 단속 안내")
+                                SectionHeader("단속 안내")
                                 SafeDrivePanel(settings, navigation)
                             }
                         }
 
                         SettingsGroup.AUTOMATION -> {
-                            SectionHeader("충전")
-                            StealthChargePanel(
-                                settings = settings,
-                                secondsUntilNextChange = stealthSecondsUntilNextChange,
-                                onEnabledChange = onStealthChargingChange,
-                                onMaxAmpsChange = onStealthMaxAmpsChange,
-                                onMinAmpsChange = onStealthMinAmpsChange,
-                                chargeHistory = chargeHistory,
-                                chargeHistoryNowMillis = chargeHistoryNowMillis,
-                                onScheduleEnabledChange = onStealthScheduleEnabledChange,
-                                onStartMinutesChange = onStealthStartMinutesChange,
-                                onEndMinutesChange = onStealthEndMinutesChange,
-                            )
+                            if (smartThings != null) {
+                                SectionHeader("음성 명령", topPadding = if (compact) Space.lg else Space.sm)
+                                SmartThingsPanel(settings, smartThings)
+                            }
+                            if (onFleetApiEnabledChange != null) {
+                                SectionHeader("음성 명령 전송", topPadding = if (compact || smartThings != null) Space.lg else Space.sm)
+                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
+                            }
                         }
 
                         SettingsGroup.VEHICLE -> {
-                            SectionHeader("차량", topPadding = Space.md)
+                            SectionHeader("차량 등록", topPadding = Space.lg)
                             VehiclePanel(
                                 settings = settings,
                                 onUnpair = onUnpair,
@@ -296,7 +291,7 @@ private fun StealthChargePanel(
 
         Spacer(Modifier.height(Space.sm))
         Text(
-            text = "충전 중에만 연결을 유지하고, 대기 중에는 10분마다 잠깐 확인만 해요. 종료하면 휴대폰 키 보호 정책으로 돌아가요.",
+            text = "충전 중에는 BLE 연결 유지 · 대기 중에는 10분마다 확인",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )
@@ -309,72 +304,72 @@ private fun StealthChargePanel(
             )
         }
         Spacer(Modifier.height(Space.md))
-        Text("최대 전류", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
-        Spacer(Modifier.height(Space.sm))
-        com.wemade.teslamacro.ui.component.NumberStepper(
-            value = settings.stealthMaxAmps.toDouble(),
-            min = 5.0,
-            max = 48.0,
-            step = 1.0,
-            unit = "A",
-            onChange = { onMaxAmpsChange(it.toInt()) },
-        )
-        Text(
-            text = "차량이 허용하는 상한이 더 낮으면 차량값을 따라요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-            modifier = Modifier.padding(top = Space.xs),
-        )
-        Spacer(Modifier.height(Space.md))
-        ToggleRow(
-            title = "최소 전류 직접 지정",
-            subtitle = "끄면 최대 전류의 75%까지만 내려가 충전 속도를 지켜요",
-            checked = settings.stealthMinAmps != null,
-            onCheckedChange = { on ->
-                // 켤 때는 지금 쓰던 자동 하한에서 시작해야 충전 속도가 갑자기 떨어지지 않는다
-                onMinAmpsChange(
-                    if (on) StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps) else null
-                )
-            },
-        )
-        val minAmps = settings.stealthMinAmps
-        if (minAmps != null) {
-            Spacer(Modifier.height(Space.md))
-            Text("최소 전류", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
+        SettingsDetails("충전 설정", stealthSettingsSummary(settings)) {
+            Text("최대 전류", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
             Spacer(Modifier.height(Space.sm))
             com.wemade.teslamacro.ui.component.NumberStepper(
-                value = minAmps.toDouble(),
-                min = 5.0,
-                max = settings.stealthMaxAmps.toDouble(),
-                step = 1.0,
-                unit = "A",
-                onChange = { onMinAmpsChange(it.toInt()) },
+                value = settings.stealthMaxAmps.toDouble(),
+                min = 5.0, max = 48.0, step = 1.0, unit = "A",
+                onChange = { onMaxAmpsChange(it.toInt()) },
             )
-            Text(
-                text = "전류는 ${minAmps}~${settings.stealthMaxAmps}A 사이에서만 바뀌어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-                modifier = Modifier.padding(top = Space.xs),
+            Text("차량이 허용하는 상한을 넘지 않아요.",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            Spacer(Modifier.height(Space.lg))
+            ToggleRow(
+                title = "최소 전류 직접 지정",
+                subtitle = "끄면 최대 전류의 약 75%로 자동 설정",
+                checked = settings.stealthMinAmps != null,
+                onCheckedChange = { on ->
+                    // 직접 지정도 현재 자동 하한에서 시작해 충전 속도의 급변을 막는다.
+                    onMinAmpsChange(if (on) StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps) else null)
+                },
             )
-        }
-        Spacer(Modifier.height(Space.md))
-        ToggleRow(
-            title = "시간대 제한",
-            subtitle = "설정한 시간 안에서만 전류를 조절해요",
-            checked = settings.stealthScheduleEnabled,
-            onCheckedChange = onScheduleEnabledChange,
-        )
-        if (settings.stealthScheduleEnabled) {
-            Spacer(Modifier.height(Space.md))
-            Text("시작", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
-            Spacer(Modifier.height(Space.sm))
-            HourMinuteStepper(settings.stealthStartMinutes, onStartMinutesChange)
-            Spacer(Modifier.height(Space.md))
-            Text("종료", style = MaterialTheme.typography.labelSmall, color = T.InkFaint)
-            Spacer(Modifier.height(Space.sm))
-            HourMinuteStepper(settings.stealthEndMinutes, onEndMinutesChange)
+            settings.stealthMinAmps?.let { minAmps ->
+                Spacer(Modifier.height(Space.sm))
+                com.wemade.teslamacro.ui.component.NumberStepper(
+                    value = minAmps.toDouble(),
+                    min = 5.0, max = settings.stealthMaxAmps.toDouble(), step = 1.0, unit = "A",
+                    onChange = { onMinAmpsChange(it.toInt()) },
+                )
+            }
+            Spacer(Modifier.height(Space.lg))
+            ToggleRow(
+                title = "시간대 제한",
+                subtitle = "선택한 시간 안에서만 전류 조절",
+                checked = settings.stealthScheduleEnabled,
+                onCheckedChange = onScheduleEnabledChange,
+            )
+            if (settings.stealthScheduleEnabled) {
+                Spacer(Modifier.height(Space.md))
+                Text("시작", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                HourMinuteStepper(settings.stealthStartMinutes, onStartMinutesChange)
+                Spacer(Modifier.height(Space.md))
+                Text("종료", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                HourMinuteStepper(settings.stealthEndMinutes, onEndMinutesChange)
+                if (settings.stealthStartMinutes == settings.stealthEndMinutes) {
+                    Text("시작과 종료가 같으면 하루 종일 적용돼요.",
+                        style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                        modifier = Modifier.padding(top = Space.sm))
+                }
+            }
         }
     }
+}
+
+/** 접어도 실제 전류 범위와 자정을 넘는 설정 시간대를 확인할 수 있게 한다. */
+internal fun stealthSettingsSummary(settings: AppSettings): String {
+    val minimum = settings.stealthMinAmps ?: StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps)
+    val schedule = when {
+        !settings.stealthScheduleEnabled -> "시간 제한 없음"
+        settings.stealthStartMinutes == settings.stealthEndMinutes -> "하루 종일"
+        else -> "%02d:%02d~%02d:%02d".format(
+            settings.stealthStartMinutes / 60, settings.stealthStartMinutes % 60,
+            settings.stealthEndMinutes / 60, settings.stealthEndMinutes % 60,
+        )
+    }
+    return "$minimum~${settings.stealthMaxAmps}A · $schedule"
 }
 
 /** 남은 초를 한눈에 읽히는 분·초 문구로 바꾼다. */
@@ -399,7 +394,7 @@ private fun PhoneKeyProtectionPanel(
             color = T.Ink,
         )
         Text(
-            text = "기기 종류와 상관없이 차량에 계속 두면 거치, 들고 다니면 휴대를 고르세요.",
+            text = "차에 두면 거치 · 들고 다니면 휴대",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
             modifier = Modifier.padding(top = Space.xs),
@@ -423,8 +418,7 @@ private fun PhoneKeyProtectionPanel(
             )
         } else {
             Text(
-                text = "앱 화면이나 직접 명령을 쓸 때만 연결해요. " +
-                    "자동 매크로는 거치 모드에서만 실행하고, 안심운전은 자동 시작 옵션을 따릅니다.",
+                text = "앱 사용·직접 명령 때만 연결해요. 자동 매크로는 거치 모드 전용이며, 안심운전 자동 시작은 별도 설정을 따라요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -434,8 +428,7 @@ private fun PhoneKeyProtectionPanel(
             Hairline()
             Spacer(Modifier.height(Space.md))
             Text(
-                text = "빈 차 상시 상태 감시·예약 매크로는 멈춥니다. " +
-                    "스텔스 충전 1회는 실행 시간대에만 연결을 유지해요.",
+                text = "빈 차에서는 상시 감시·예약 매크로가 멈춰요. 스텔스 충전은 실행 시간대에 연결을 유지해요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -449,11 +442,11 @@ private fun PhoneKeyProtectionPanel(
  * 소분류(섹션)가 10개까지 늘면서 한 장에 다 세우니 스크롤로만 찾게 됐고,
  * 좌우 2단의 "자주 만지는 것 / 어쩌다 보는 것" 배분도 기능이 늘어 무너졌다
  * (오른쪽 칸에 업데이트·절전·길안내·백업·차량·음성·진단이 몰렸다).
- * 순서는 주행 중 필요한 것부터다.
+ * 기본 진입점인 자동화부터 주행·차량·기기 순서로 탐색한다.
  */
 enum class SettingsGroup(val label: String) {
-    DRIVING("주행"),
     AUTOMATION("자동화"),
+    DRIVING("주행"),
     VEHICLE("차량"),
     DEVICE("기기"),
 }
@@ -655,60 +648,37 @@ internal fun SmartThingsPanel(
     TCard {
         ToggleRow(
             title = "스마트싱스 음성 명령",
-            subtitle = "알림 문구마다 실행할 차량 동작을 정해요",
+            subtitle = "알림 문구로 차량 동작 실행",
             checked = settings.smartThingsEnabled,
             onCheckedChange = controls.onEnabledChange,
         )
         if (!settings.smartThingsEnabled) return@TCard
         Spacer(Modifier.height(Space.md))
-        Text("명령 유효시간", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
-        Text(
-            "알림 수신부터 이 시간 안에 실행하지 못하면 취소해요. 이미 전송한 명령은 취소할 수 없어요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-        )
-        com.wemade.teslamacro.ui.component.NumberStepper(
-            value = settings.smartThingsValiditySeconds.toDouble(),
-            min = 10.0, max = 600.0, step = 10.0, unit = "초",
-            onChange = { controls.onValiditySecondsChange(it.toInt()) },
-        )
-
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("연결된 명령", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
-                Text("${configured}개 사용 중 · 프렁크, 트렁크 등",
-                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        if (!controls.notificationAccessGranted) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("명령 수신에 알림 접근 권한이 필요해요.",
+                    style = MaterialTheme.typography.bodySmall, color = T.Danger,
+                    modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(Space.sm))
+                TButton("권한 허용", fillWidth = false, small = true, onClick = controls.onRequestNotificationAccess)
             }
-            TButton("명령 관리", ButtonTone.Secondary, fillWidth = false, small = true) {
-                manageCommands = true
-            }
+            Spacer(Modifier.height(Space.md))
         }
+        TButton("명령 관리 · ${configured}개", ButtonTone.Secondary) { manageCommands = true }
+        Text("전달한 알림은 삭제돼요. 이미 전송한 명령은 취소할 수 없어요.",
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+            modifier = Modifier.padding(top = Space.sm))
         Spacer(Modifier.height(Space.md))
         Hairline()
-        Spacer(Modifier.height(Space.md))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (controls.notificationAccessGranted) {
-                    "알림 접근 허용됨 · 명령 전달 뒤 해당 알림을 지워요"
-                } else {
-                    "알림 접근을 허용해 주세요"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = if (controls.notificationAccessGranted) T.InkFaint else T.Danger,
-                modifier = Modifier.weight(1f),
+        Spacer(Modifier.height(Space.sm))
+        SettingsDetails("명령 유효시간", "${settings.smartThingsValiditySeconds}초") {
+            com.wemade.teslamacro.ui.component.NumberStepper(
+                value = settings.smartThingsValiditySeconds.toDouble(),
+                min = 10.0, max = 600.0, step = 10.0, unit = "초",
+                onChange = { controls.onValiditySecondsChange(it.toInt()) },
             )
-            if (!controls.notificationAccessGranted) {
-                Spacer(Modifier.width(Space.md))
-                TButton(
-                    text = "권한 허용",
-                    fillWidth = false,
-                    small = true,
-                    onClick = controls.onRequestNotificationAccess,
-                )
-            }
+            Text("수신 후 유효시간이 지나면 보내지 않은 명령을 취소해요.",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         }
     }
     if (manageCommands) {
@@ -854,17 +824,9 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
     var showTrustedDevicePrompt by rememberSaveable { mutableStateOf(false) }
     TCard {
-        Text(
-            text = "지도 안내와 탑승 시 안심운전은 네이버 지도로 실행합니다.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
         ToggleRow(
-            title = "탑승하면 안심운전 자동 실행",
-            subtitle = "운전자를 감지하면 네이버 지도의 안심운전을 열어요",
+            title = "탑승 시 안심운전 실행",
+            subtitle = "네이버 지도",
             checked = settings.autoStartNavigatorSafeDrive,
             onCheckedChange = { enabled ->
                 controls.onAutoStartSafeDriveChange(enabled)
@@ -872,55 +834,42 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             },
         )
         if (settings.autoStartNavigatorSafeDrive) {
-            Spacer(Modifier.height(Space.sm))
-            TButton("신뢰 기기 설정 안내", ButtonTone.Secondary) { showTrustedDevicePrompt = true }
             if (!controls.overlayPermitted) {
                 OverlayPermissionNotice(controls)
             }
             Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
-            Text(
-                text = "안심운전 실행 방식",
-                style = MaterialTheme.typography.titleMedium,
-                color = T.Ink,
-            )
-            Text(
-                text = "전체 진단은 수동 점검용이고, 실제 탑승은 한 번만 열어요",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-                modifier = Modifier.padding(top = Space.xs),
-            )
+            TButton("신뢰 기기 설정 안내", ButtonTone.Secondary) { showTrustedDevicePrompt = true }
             Spacer(Modifier.height(Space.sm))
-            ChoiceRow(
-                options = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode.entries.map {
-                    it.settingValue to it.label
-                },
-                selected = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
-                    .of(settings.navigatorSafeDriveLaunchMode)
-                    .settingValue,
-                onSelect = controls.onSafeDriveLaunchModeChange,
-            )
-            Spacer(Modifier.height(Space.sm))
-            TButton(
-                text = "10초 뒤 실행 점검",
-                tone = ButtonTone.Secondary,
-                enabled = controls.overlayPermitted,
-                onClick = controls.onSafeDriveTest,
-            )
-            Text(
-                text = controls.safeDriveTestMessage
-                    ?: "누른 뒤 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.xs),
-            )
-            Text(
-                text = "실행 뒤 홈 화면으로 이동하지 않아요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.xs),
-            )
+            SettingsDetails("실행 점검") {
+                Text("점검 방식", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                ChoiceRow(
+                    options = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode.entries.map {
+                        it.settingValue to it.label
+                    },
+                    selected = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
+                        .of(settings.navigatorSafeDriveLaunchMode).settingValue,
+                    onSelect = controls.onSafeDriveLaunchModeChange,
+                )
+                Text("전체 진단은 수동 점검에만 적용돼요.",
+                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                    modifier = Modifier.padding(top = Space.sm))
+                Spacer(Modifier.height(Space.md))
+                TButton(
+                    text = "10초 뒤 실행 점검",
+                    tone = ButtonTone.Secondary,
+                    enabled = controls.overlayPermitted,
+                    onClick = controls.onSafeDriveTest,
+                )
+                Text("누른 뒤 화면을 잠가 주세요. 인증이 필요하면 직접 잠금을 해제해 주세요.",
+                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                    modifier = Modifier.padding(top = Space.sm))
+            }
+            // 점검을 접어도 실행 결과·실패 안내는 가리지 않는다.
+            controls.safeDriveTestMessage?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                    modifier = Modifier.padding(top = Space.sm))
+            }
         }
     }
     if (showTrustedDevicePrompt) {
@@ -1010,16 +959,20 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
 
         ToggleRow(
             title = "안내 받기",
-            subtitle = "공공데이터와 GPS로 전방 단속 후보를 알려줘요. 인터넷은 쓰지 않아요",
+            subtitle = "공공데이터·GPS 기반 오프라인 안내",
             checked = settings.safeDrive,
             onCheckedChange = controls.onSafeDriveChange,
         )
 
         Text(
-            text = "출처: 공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 모든 도로의 제한속도·구간 평균속도는 알 수 없어요. 도로 표지를 우선하세요.",
+            text = "오인·누락이 있을 수 있어요. 도로 표지를 우선하세요.",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkMuted,
         )
+        SettingsDetails("데이터 출처·안내 범위") {
+            Text("공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 모든 도로의 제한속도·구간 평균속도는 알 수 없어요.",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        }
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)
         }
@@ -1121,8 +1074,7 @@ data class BackupControls(
 private fun BackupPanel(backup: BackupControls) {
     TCard {
         Text(
-            text = "매크로와 설정을 파일로 내보내고 되돌립니다.\n" +
-                "차량 등록과 키는 담기지 않아요 — 기기를 바꾸면 등록은 다시 해야 해요.",
+            text = "매크로·설정 백업. 차량 등록과 키는 제외되므로 새 기기에서는 다시 등록해야 해요.",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )
@@ -1161,44 +1113,31 @@ data class SimulatorControls(
     val onLeave: () -> Unit,
 )
 
-/** 주기 선택. 큼직한 버튼 나열 대신 옅은 트랙 위 세그먼트 — 좌석 단계 선택기와 같은 말투다 */
+/** 큰 글씨에서도 설정값을 자르지 않고 공용 선택기의 행 높이·접근성을 따른다. */
 @Composable
 private fun ChoiceRow(
     options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(T.Slate, RoundedCornerShape(Radius.button))
-            .padding(Space.xs),
-        horizontalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        options.forEach { (value, label) ->
-            val isSelected = value == selected
-            val background by animateColorAsState(
-                targetValue = if (isSelected) T.Carbon else Color.Transparent,
-                animationSpec = Motion.quick(),
-                label = "choiceBackground",
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    // 주행 중 태블릿 조작 — 터치 타깃 최소 48dp
-                    .height(48.dp)
-                    .clip(RoundedCornerShape(Radius.segment))
-                    .background(background)
-                    .clickable { onSelect(value) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isSelected) T.Electric else T.InkMuted,
-                    maxLines = 1,
-                )
-            }
+    ChoiceGrid(
+        options = options,
+        selected = options.firstOrNull { it.first == selected },
+        label = { it.second },
+        onSelect = { onSelect(it.first) },
+        columns = options.size.coerceIn(1, 3),
+    )
+}
+
+/** 드물게 바꾸는 세부 설정은 요약만 남기고 필요할 때 같은 자리에서 펼친다. */
+@Composable
+private fun SettingsDetails(title: String, summary: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column {
+        DisclosureHeader(title, expanded, { expanded = !expanded }, subtitle = summary)
+        if (expanded) {
+            Spacer(Modifier.height(Space.md))
+            content()
         }
     }
 }

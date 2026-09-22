@@ -14,8 +14,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 188
-        versionName = "0.9.75"
+        versionCode = 189
+        versionName = "0.9.76"
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.
@@ -50,6 +50,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true   // 업데이트 확인에서 현재 버전(VERSION_NAME) 비교용
+    }
+}
+
+// CLI 기본 검증은 이미지를 만들지 않고, 명시 요청이 있을 때만 렌더링 테스트를 실행한다.
+val allowSnapshots = providers.gradleProperty("allowSnapshots").map { it.toBoolean() }.getOrElse(false)
+tasks.withType<Test>().configureEach {
+    if (!allowSnapshots) {
+        exclude("**/*ScreenshotTest*", "**/WideFontScaleTest*", "**/PortraitTabletTest*")
     }
 }
 

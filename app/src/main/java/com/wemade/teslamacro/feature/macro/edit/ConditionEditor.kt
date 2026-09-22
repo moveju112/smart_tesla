@@ -64,18 +64,40 @@ fun TriggerCard(
     onToggle: () -> Unit = {},
 ) {
     TCard(modifier = modifier) {
-        EditorItemHeader(describe(trigger), expanded, onToggle)
+        EditorItemHeader(triggerEventSummary(trigger), expanded, onToggle, triggerDrivingSummary(trigger))
         if (!expanded) return@TCard
         Spacer(Modifier.height(Space.md))
 
         when (trigger) {
             is Trigger.SignalBecomes -> {
+                Text("발생 시점", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
                 ChipRow(
                     options = listOf(true, false),
                     selected = trigger.to,
                     label = { if (it) "발생할 때" else "해제될 때" },
                     onSelect = { onChange(trigger.copy(to = it)) },
                 )
+                Spacer(Modifier.height(Space.lg))
+                Text("이 시점의 주행 조건", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                ChipRow(
+                    options = listOf<Boolean?>(null, false, true),
+                    selected = trigger.afterDriving,
+                    label = { drivingRequirementLabel(it) },
+                    columns = 3,
+                    outlined = true,
+                    onSelect = { onChange(trigger.copy(afterDriving = it)) },
+                )
+                trigger.afterDriving?.let { afterDriving ->
+                    Spacer(Modifier.height(Space.sm))
+                    Text(
+                        text = if (afterDriving) "앱에서 주행을 확인한 뒤 P단일 때만 적용해요."
+                            else "앱에서 주행을 관측하지 않은 P단에서만 적용해요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = T.InkMuted,
+                    )
+                }
             }
 
             is Trigger.Every -> ChipRow(
@@ -110,6 +132,21 @@ fun TriggerCard(
         }
         RemoveEditorItem("실행 시점 삭제", onRemove)
     }
+}
+
+/** 발생 사건은 제목에, 해당 사건에만 적용되는 주행 제한은 별도 줄에 표시한다. */
+internal fun triggerEventSummary(trigger: Trigger): String =
+    describe(if (trigger is Trigger.SignalBecomes) trigger.copy(afterDriving = null) else trigger)
+
+/** 전체 조건으로 옮기면 다른 OR 트리거까지 제한되므로 해당 시점의 보조 설명으로 남긴다. */
+internal fun triggerDrivingSummary(trigger: Trigger): String? =
+    (trigger as? Trigger.SignalBecomes)?.afterDriving?.let { "주행 조건 · ${drivingRequirementLabel(it)}" }
+
+/** 프리셋과 직접 추가한 트리거가 동일한 세 가지 주행 제한을 편집한다. */
+internal fun drivingRequirementLabel(afterDriving: Boolean?): String = when (afterDriving) {
+    null -> "제한 없음"
+    false -> "주행 전 · P단"
+    true -> "주행 후 · P단"
 }
 
 /** 조건 카드 — "~라면" */

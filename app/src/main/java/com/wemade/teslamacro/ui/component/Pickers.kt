@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -211,6 +212,29 @@ fun <T> ChoiceGrid(
                         modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onSelect(option) })
                 }
                 repeat(columnCount - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** 탐색은 값 선택 버튼과 구별하고 긴 탭 이름도 잘리지 않게 줄바꿈한다. */
+@Composable
+fun <T> SectionTabs(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
+    Row(Modifier.fillMaxWidth().selectableGroup().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+        options.forEach { option ->
+            Column(
+                modifier = Modifier.weight(1f).fillMaxHeight()
+                    .clip(RoundedCornerShape(Radius.segment))
+                    .selectable(selected = option == selected, role = Role.Tab, onClick = { onSelect(option) })
+                    .heightIn(min = Space.xxl).padding(top = Space.sm),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(Modifier.weight(1f).padding(bottom = Space.sm), contentAlignment = Alignment.Center) {
+                    Text(label(option), style = MaterialTheme.typography.labelLarge,
+                        color = if (option == selected) T.Electric else T.InkMuted, textAlign = TextAlign.Center)
+                }
+                Spacer(Modifier.fillMaxWidth().height(Stroke.bold)
+                    .background(if (option == selected) T.Electric else Color.Transparent))
             }
         }
     }

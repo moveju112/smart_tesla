@@ -6,9 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.ui.draw.clip
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -38,7 +35,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
 import com.wemade.teslamacro.ui.component.DraftMark
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -62,8 +58,7 @@ import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
-import androidx.compose.ui.graphics.Color
-import com.wemade.teslamacro.ui.theme.Stroke
+import com.wemade.teslamacro.ui.component.SectionTabs
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
@@ -149,30 +144,12 @@ fun MacroEditScreen(
             // 탭에 현재 위치가 드러나므로 중복 단계 숫자는 표시하지 않는다.
         }
         Spacer(Modifier.height(Space.sm))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-        ) {
-            listOf("언제", "조건", "동작", "마무리").forEachIndexed { index, label ->
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(Radius.segment))
-                        .selectable(selected = index == step, role = Role.Tab, onClick = { step = index })
-                        .heightIn(min = Space.xxl)
-                        .padding(vertical = Space.sm),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(label, style = MaterialTheme.typography.labelLarge,
-                        color = if (index == step) T.Electric else T.InkMuted)
-                    Spacer(Modifier.height(Space.sm))
-                    // 탐색은 밑줄만 강조해 실제 값을 고르는 버튼과 구분한다.
-                    Spacer(Modifier.fillMaxWidth().height(Stroke.bold)
-                        .background(if (index == step) T.Electric else Color.Transparent))
-                }
-            }
-        }
+        SectionTabs(
+            options = listOf(0, 1, 2, 3),
+            selected = step,
+            label = { listOf("언제", "조건", "동작", "마무리")[it] },
+            onSelect = { step = it },
+        )
         Spacer(Modifier.height(Space.md))
 
         // 본문 — 현재 페이지만. 페이지가 옆으로 밀려 들어와 "넘어간다"는 감각을 준다
@@ -507,7 +484,7 @@ private fun TriggerPicker(onDismiss: () -> Unit, onPick: (Trigger) -> Unit) {
                     )
                     PickerRow(
                         label = "호출될 때만",
-                        detail = "자동 발동 없음.\n바로가기나 목록에서 직접 실행",
+                        detail = "등록한 바로가기로 실행",
                         onClick = { onPick(Trigger.Manual) },
                     )
                     PickerRow(
@@ -519,7 +496,7 @@ private fun TriggerPicker(onDismiss: () -> Unit, onPick: (Trigger) -> Unit) {
             } else {
                 PickerRow(
                     label = signal.label,
-                    detail = "이 상태가 되는 순간",
+                    detail = "발생 시점과 주행 조건을 추가 후 설정",
                     onClick = { onPick(Trigger.SignalBecomes(signal, to = true)) },
                 )
             }

@@ -1,55 +1,33 @@
 package com.wemade.teslamacro.feature.macro.edit
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import com.wemade.teslamacro.ui.component.DraftMark
-import com.wemade.teslamacro.ui.theme.Space
-import com.wemade.teslamacro.ui.theme.T
+import com.wemade.teslamacro.ui.component.DisclosureHeader
 
 /** 요약 행 전체를 눌러 편집하고, 다른 항목이 접혀도 현재 제목을 화면에 유지한다. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-internal fun EditorItemHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {
+internal fun EditorItemHeader(title: String, expanded: Boolean, onToggle: () -> Unit, subtitle: String? = null) {
     val requester = remember { BringIntoViewRequester() }
     var placed by remember { mutableStateOf(false) }
     LaunchedEffect(expanded, placed) {
         if (expanded && placed) requester.bringIntoView()
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = Space.xxl)
-            .bringIntoViewRequester(requester)
-            .onPlaced { placed = true }
-            .semantics { stateDescription = if (expanded) "편집 중" else "접힘" }
-            .clickable(role = Role.Button, onClickLabel = if (expanded) "접기" else "편집", onClick = onToggle),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink, modifier = Modifier.weight(1f))
-        Icon(DraftMark.Expand, contentDescription = null, tint = T.InkMuted,
-            modifier = Modifier.size(Space.lg).rotate(if (expanded) 180f else 0f))
-    }
+    DisclosureHeader(
+        title = title,
+        expanded = expanded,
+        onToggle = onToggle,
+        subtitle = subtitle,
+        modifier = Modifier.bringIntoViewRequester(requester).onPlaced { placed = true },
+    )
 }
 
 /** 같은 요약을 누르면 닫고 다른 요약을 누르면 편집 대상 하나만 교체한다. */

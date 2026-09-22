@@ -639,23 +639,15 @@ data class BatteryControls(
     val onOpenSettings: () -> Unit,
 )
 
-/** 토큰 등록과 전송 선택을 같은 곳에 두고 서버가 지원하지 않는 기능을 명시한다. */
+/** 사용 여부와 토큰 관리만 남겨 설정 카드를 짧게 유지한다. */
 @Composable
 internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, credentials: FleetCredentialControls? = null) {
     TCard {
         ToggleRow(
             title = "Fleet API 사용",
-            subtitle = "음성·바로가기 명령을 서버로 전송 · 앱 직접 제어는 BLE 유지",
             checked = enabled,
             onCheckedChange = onEnabledChange,
         )
-        Spacer(Modifier.height(Space.sm))
-        Text(com.wemade.teslamacro.data.fleet.UnconfiguredFleetApi.BASE_URL,
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        Text("토큰 저장 후 켜면 별도 확인 없이 전송해요. 자동 깨우기는 서버 미지원이며 BLE로 자동 전환하지 않아요.",
-            style = MaterialTheme.typography.bodyMedium, color = T.Ink)
-        Text("뒤 트렁크 열기·닫기는 같은 작동 명령이에요. 접수 뒤에는 결과 확인만 중단할 수 있어요.",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         if (credentials != null) {
             Spacer(Modifier.height(Space.md))
             FleetCredentialPanel(credentials)

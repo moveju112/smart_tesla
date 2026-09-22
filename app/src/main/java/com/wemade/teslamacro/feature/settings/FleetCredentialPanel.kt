@@ -34,15 +34,15 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
     val focus = LocalFocusManager.current
     val state = controls.state
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Text(if (state.stored) "API 토큰 저장됨 · 암호화 보관" else "사용자 API 토큰을 등록해 주세요",
+        Text(if (state.stored) "토큰 저장됨" else "토큰 미등록",
             style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         DraftField(
             value = token,
             onValueChange = { if (it.length <= 8192) token = it },
             label = if (state.stored) "새 API 토큰으로 교체" else "사용자 API 토큰",
             enabled = !state.busy,
-            placeholder = "관리자가 발급한 API 토큰 붙여넣기",
-            note = "Tesla Client Secret이 아니에요 · 저장된 토큰은 다시 표시하지 않아요",
+            placeholder = "API 토큰 붙여넣기",
+            note = "Tesla Client Secret은 입력하지 마세요",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
             visualTransformation = PasswordVisualTransformation(),
         )

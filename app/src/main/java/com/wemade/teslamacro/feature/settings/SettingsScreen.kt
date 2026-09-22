@@ -125,7 +125,7 @@ fun SettingsScreen(
         Column(Modifier.weight(1f).verticalScroll(scroll)) {
             // 넓으면 좌우 2단(설정 시트만의 예외). 자주 만지는 것을 왼쪽에 둔다
             TwoColumns(
-                compact = compact,
+                compact = compact || group == SettingsGroup.VEHICLE,
                 left = {
                     when (group) {
                         SettingsGroup.DRIVING -> {
@@ -158,12 +158,26 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.VEHICLE -> {
-                            SectionHeader("차량", topPadding = Space.md)
-                            VehiclePanel(
-                                settings = settings,
-                                onUnpair = onUnpair,
-                                onStartPairing = onStartPairing,
-                            )
+                            // 연결 설정을 먼저 읽고 등록·해제 카드는 맨 아래에서 찾는다.
+                            if (simulator != null) {
+                                SectionHeader("시뮬레이터", topPadding = Space.md)
+                                SimulatorPanel(
+                                    insideTemp = simulator.insideTemp,
+                                    outsideTemp = simulator.outsideTemp,
+                                    onInsideTempChange = simulator.onInsideTempChange,
+                                    onOutsideTempChange = simulator.onOutsideTempChange,
+                                    onBoard = simulator.onBoard,
+                                    onLeave = simulator.onLeave,
+                                )
+                            } else if (settings.isPaired) {
+                                SectionHeader("연결 안전", topPadding = Space.md)
+                                PhoneKeyProtectionPanel(
+                                    settings = settings,
+                                    onDeviceModeChange = onDeviceModeChange,
+                                    onProtectPhoneKeyChange = onProtectPhoneKeyChange,
+                                    onDisconnectVehicle = onDisconnectVehicle,
+                                )
+                            }
                         }
 
                         SettingsGroup.DEVICE -> {
@@ -223,26 +237,12 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.VEHICLE -> {
-                            // 차량 미등록 상태에서만 나온다. 매크로를 실제로 발동시켜볼 유일한 방법
-                            if (simulator != null) {
-                                SectionHeader("시뮬레이터", topPadding = Space.md)
-                                SimulatorPanel(
-                                    insideTemp = simulator.insideTemp,
-                                    outsideTemp = simulator.outsideTemp,
-                                    onInsideTempChange = simulator.onInsideTempChange,
-                                    onOutsideTempChange = simulator.onOutsideTempChange,
-                                    onBoard = simulator.onBoard,
-                                    onLeave = simulator.onLeave,
-                                )
-                            } else if (settings.isPaired) {
-                                SectionHeader("연결 안전", topPadding = Space.md)
-                                PhoneKeyProtectionPanel(
-                                    settings = settings,
-                                    onDeviceModeChange = onDeviceModeChange,
-                                    onProtectPhoneKeyChange = onProtectPhoneKeyChange,
-                                    onDisconnectVehicle = onDisconnectVehicle,
-                                )
-                            }
+                            SectionHeader("차량", topPadding = Space.md)
+                            VehiclePanel(
+                                settings = settings,
+                                onUnpair = onUnpair,
+                                onStartPairing = onStartPairing,
+                            )
                         }
 
                         SettingsGroup.DEVICE -> {

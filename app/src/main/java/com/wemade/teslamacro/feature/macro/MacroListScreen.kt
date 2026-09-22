@@ -38,7 +38,6 @@ import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.macro.MacroLogEntry
 import com.wemade.teslamacro.domain.macro.MacroProgress
 import com.wemade.teslamacro.domain.macro.MacroRule
-import com.wemade.teslamacro.domain.macro.describeRule
 import com.wemade.teslamacro.domain.macro.formatDuration
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftMark
@@ -55,7 +54,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 이름과 발동 조건을 먼저 읽고, 필요한 매크로만 편집하거나 실행한다. */
+/** 이름 중심의 카드에서 필요한 매크로만 편집하거나 실행한다. */
 @Composable
 fun MacroListScreen(
     rules: List<MacroRule>,
@@ -71,11 +70,6 @@ fun MacroListScreen(
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 이름별 마지막 실행 시각. 목록에서 진짜 궁금한 건 "언제 마지막으로 뛰었나"다
-    val lastRunByName = remember(log) {
-        log.groupBy { it.ruleName }.mapValues { (_, entries) -> entries.maxOf { it.timestampMillis } }
-    }
-
     Column(modifier = modifier.fillMaxSize()) {
         // 생성은 하단에 고정하고 상단에는 현재 자동화 상태만 남긴다.
         Row(
@@ -121,7 +115,6 @@ fun MacroListScreen(
                 MacroRow(
                     rule = rule,
                     isRunning = rule.id in runningIds,
-                    lastRunMillis = lastRunByName[rule.name],
                     progress = progress[rule.id],
                     onToggle = { onToggle(rule.id, it) },
                     onRunNow = { onRunNow(rule) },
@@ -141,12 +134,11 @@ fun MacroListScreen(
     }
 }
 
-/** 휴대폰에서 이름·조건·동작을 읽고 하단에서 바로 실행하거나 사용 여부를 바꾼다. */
+/** 조건·동작은 편집 화면에 두고 카드에는 이름과 실행 조작만 남긴다. */
 @Composable
 private fun MacroRow(
     rule: MacroRule,
     isRunning: Boolean,
-    lastRunMillis: Long?,
     progress: MacroProgress?,
     onToggle: (Boolean) -> Unit,
     onRunNow: () -> Unit,
@@ -154,7 +146,7 @@ private fun MacroRow(
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    TCard(onClick = onEdit) {
+    TCard(onClick = onEdit, outlined = isRunning) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -170,33 +162,17 @@ private fun MacroRow(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(Space.sm))
-                Text(
-                    text = "언제 · ${describeRule(rule)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(Space.xs))
-                Text(
-                    text = "동작 · ${rule.summary}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkMuted,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
             RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete)
         }
-        Text(
-            text = if (isRunning) "실행 중 · ${runningLabel(progress)}"
-                else "최근 실행 ${lastRunLabel(lastRunMillis)} · 눌러서 수정",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isRunning) T.Electric else T.InkFaint,
-            modifier = Modifier.padding(bottom = Space.sm),
-        )
-        Hairline()
+        if (isRunning) {
+            Text(
+                text = "실행 중 · ${runningLabel(progress)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = T.Electric,
+                modifier = Modifier.padding(bottom = Space.sm),
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
@@ -339,22 +315,6 @@ private fun RevisionBlock(log: List<MacroLogEntry>) {
                 }
             }
         }
-    }
-}
-
-/** "마지막 실행 …" 문구. 오래된 건 날짜로, 최근 건 상대 시간으로 */
-private fun lastRunLabel(millis: Long?): String {
-    if (millis == null) return "없음"
-    val elapsed = System.currentTimeMillis() - millis
-    val minutes = elapsed / 60_000
-    return when {
-        minutes < 1 -> "방금"
-        minutes < 60 -> "${minutes}분 전"
-        minutes < 24 * 60 -> "${minutes / 60}시간 전"
-        minutes < 48 * 60 -> "어제"
-        // 아주 오래된 값은 날짜 수가 의미 없다 — 자릿수만 늘어나 읽기 방해된다
-        minutes < 30 * 24 * 60 -> "${minutes / (24 * 60)}일 전"
-        else -> "한참 전"
     }
 }
 

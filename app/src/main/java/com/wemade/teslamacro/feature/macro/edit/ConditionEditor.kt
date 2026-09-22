@@ -60,9 +60,12 @@ fun TriggerCard(
     onChange: (Trigger) -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    expanded: Boolean = true,
+    onToggle: () -> Unit = {},
 ) {
     TCard(modifier = modifier) {
-        CardHeader(describe(trigger), onRemove)
+        EditorItemHeader(describe(trigger), expanded, onToggle)
+        if (!expanded) return@TCard
         Spacer(Modifier.height(Space.md))
 
         when (trigger) {
@@ -93,7 +96,7 @@ fun TriggerCard(
 
             is Trigger.Manual -> Text(
                 text = "자동으로 발동하지 않아요.\n" +
-                    "바로가기나 목록에서 \"지금 실행\"을 눌러 주세요.",
+                    "등록한 바로가기로 실행해 주세요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -105,6 +108,7 @@ fun TriggerCard(
                 color = T.InkFaint,
             )
         }
+        RemoveEditorItem("실행 시점 삭제", onRemove)
     }
 }
 
@@ -115,9 +119,12 @@ fun ConditionCard(
     onChange: (Condition) -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    expanded: Boolean = true,
+    onToggle: () -> Unit = {},
 ) {
     TCard(modifier = modifier) {
-        CardHeader(describe(condition), onRemove)
+        EditorItemHeader(describe(condition), expanded, onToggle)
+        if (!expanded) return@TCard
         Spacer(Modifier.height(Space.md))
 
         when (condition) {
@@ -146,6 +153,7 @@ fun ConditionCard(
 
             is Condition.ForecastInRange -> ForecastEditor(condition, onChange)
         }
+        RemoveEditorItem("조건 삭제", onRemove)
     }
 }
 
@@ -414,22 +422,12 @@ private fun RadiusField(meters: Int, onChange: (Int) -> Unit) {
     }
 }
 
+/** 삭제 버튼은 펼친 편집기의 끝에서만 보여 요약 읽기와 분리한다. */
 @Composable
-private fun CardHeader(title: String, onRemove: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = T.Ink,
-            modifier = Modifier.weight(1f),
-        )
-        // 삭제는 파괴적 동작 — ActionCard 헤더와 같은 아이콘·Danger 색 패턴으로 통일한다
-        // 삭제는 행마다 있는 평상 조작이다 — 경보 잉크를 쓰면 모든 행이 경보로 보인다
-        CardIconButton(DraftMark.Strike, "삭제", tint = T.InkMuted, onClick = onRemove)
+private fun RemoveEditorItem(label: String, onRemove: () -> Unit) {
+    Spacer(Modifier.height(Space.sm))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        CardIconButton(DraftMark.Strike, label, tint = T.InkMuted, onClick = onRemove)
     }
 }
 

@@ -78,9 +78,9 @@ internal fun handleEditorBack(pickerOpen: Boolean, closePicker: () -> Unit, clos
 private data class WizardStep(val title: String, val subtitle: String)
 
 private val STEPS = listOf(
-    WizardStep("실행할 순간을 정하세요", "등록한 시점 중 하나가 되면 매크로를 시작합니다."),
-    WizardStep("필요할 때만 실행하세요", "조건을 모두 만족할 때 실행합니다. 조건은 생략해도 됩니다."),
-    WizardStep("차가 할 일을 순서대로", "동작은 위에서 아래로 실행합니다. 화살표로 순서를 바꿀 수 있습니다."),
+    WizardStep("실행 시점", "등록한 시점 중 하나가 되면 시작합니다. 항목을 누르면 수정할 수 있습니다."),
+    WizardStep("실행 조건", "조건을 모두 만족해야 실행합니다. 항목을 누르면 수정할 수 있습니다."),
+    WizardStep("실행 순서", "위에서 아래로 실행합니다. 항목을 누르면 수정할 수 있습니다."),
     WizardStep("이름을 정하고 저장하세요", "자동 실행 여부와 다시 실행할 수 있는 간격을 설정합니다."),
 )
 
@@ -105,6 +105,10 @@ fun MacroEditScreen(
 ) {
     var picker by remember { mutableStateOf(OpenPicker.NONE) }
     var step by rememberSaveable(draft.id) { mutableStateOf(if (draft.isNew) 0 else 2) }
+    // 상세 입력은 한 항목만 펼치되 탭 전환·화면 회전 후에도 같은 대상을 편집한다.
+    var triggerIndex by rememberSaveable(draft.id) { mutableStateOf(-1) }
+    var conditionIndex by rememberSaveable(draft.id) { mutableStateOf(-1) }
+    var actionIndex by rememberSaveable(draft.id) { mutableStateOf(-1) }
     val compact = LocalPane.current.isCompact
     val last = step == STEPS.lastIndex
 
@@ -204,13 +208,14 @@ fun MacroEditScreen(
                     Spacer(Modifier.height(Space.lg))
 
                     when (current) {
-                        0 -> StepTriggers(draft, onChange) { picker = OpenPicker.TRIGGER }
-                        1 -> StepConditions(draft, onChange) { picker = OpenPicker.CONDITION }
+                        0 -> StepTriggers(draft, onChange, triggerIndex, { triggerIndex = it }) { picker = OpenPicker.TRIGGER }
+                        1 -> StepConditions(draft, onChange, conditionIndex, { conditionIndex = it }) { picker = OpenPicker.CONDITION }
                         2 -> StepActions(
                             draft = draft,
                             onChange = onChange,
+                            expandedIndex = actionIndex,
+                            onExpandedChange = { actionIndex = it },
                             onPickAction = { picker = OpenPicker.ACTION },
-                            onPickWaitUntil = { picker = OpenPicker.WAIT_UNTIL },
                         )
                         else -> StepFinish(draft, onChange, onDelete)
                     }
@@ -273,6 +278,7 @@ fun MacroEditScreen(
         OpenPicker.TRIGGER -> TriggerPicker(
             onDismiss = { picker = OpenPicker.NONE },
             onPick = {
+                triggerIndex = draft.triggers.size
                 onChange(draft.addTrigger(it))
                 picker = OpenPicker.NONE
             },
@@ -281,6 +287,7 @@ fun MacroEditScreen(
         OpenPicker.CONDITION -> ConditionPicker(
             onDismiss = { picker = OpenPicker.NONE },
             onPick = {
+                conditionIndex = draft.conditions.size
                 onChange(draft.addCondition(it))
                 picker = OpenPicker.NONE
             },
@@ -289,23 +296,33 @@ fun MacroEditScreen(
         OpenPicker.ACTION -> ActionPicker(
             onDismiss = { picker = OpenPicker.NONE },
             onPick = { template ->
+                actionIndex = draft.actions.size
                 onChange(draft.addAction(ActionStep.Run(CommandCatalog.defaultCommand(template))))
                 picker = OpenPicker.NONE
             },
             onPickNavigate = {
+                actionIndex = draft.actions.size
                 onChange(draft.addAction(ActionStep.Navigate(destinationName = "", address = "")))
                 picker = OpenPicker.NONE
             },
             onPickStealthCharging = {
+                actionIndex = draft.actions.size
                 onChange(draft.addAction(ActionStep.SetStealthCharging()))
                 picker = OpenPicker.NONE
             },
+            onPickWait = {
+                actionIndex = draft.actions.size
+                onChange(draft.addAction(ActionStep.Wait(60)))
+                picker = OpenPicker.NONE
+            },
+            onPickWaitUntil = { picker = OpenPicker.WAIT_UNTIL },
         )
 
         OpenPicker.WAIT_UNTIL -> ConditionPicker(
             title = "이 조건이 될 때까지 대기",
             onDismiss = { picker = OpenPicker.NONE },
             onPick = {
+                actionIndex = draft.actions.size
                 onChange(draft.addAction(ActionStep.WaitUntil(it)))
                 picker = OpenPicker.NONE
             },
@@ -321,6 +338,8 @@ fun MacroEditScreen(
 private fun StepTriggers(
     draft: MacroDraft,
     onChange: (MacroDraft) -> Unit,
+    expandedIndex: Int,
+    onExpandedChange: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -334,7 +353,12 @@ private fun StepTriggers(
             TriggerCard(
                 trigger = trigger,
                 onChange = { onChange(draft.replaceTrigger(index, it)) },
-                onRemove = { onChange(draft.removeTrigger(index)) },
+                expanded = expandedIndex == index,
+                onToggle = { onExpandedChange(toggleEditorIndex(expandedIndex, index)) },
+                onRemove = {
+                    onExpandedChange(editorIndexAfterRemoval(expandedIndex, index))
+                    onChange(draft.removeTrigger(index))
+                },
             )
         }
         TButton("실행 시점 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onAdd)
@@ -346,6 +370,8 @@ private fun StepTriggers(
 private fun StepConditions(
     draft: MacroDraft,
     onChange: (MacroDraft) -> Unit,
+    expandedIndex: Int,
+    onExpandedChange: (Int) -> Unit,
     onAdd: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -360,7 +386,12 @@ private fun StepConditions(
             ConditionCard(
                 condition = condition,
                 onChange = { onChange(draft.replaceCondition(index, it)) },
-                onRemove = { onChange(draft.removeCondition(index)) },
+                expanded = expandedIndex == index,
+                onToggle = { onExpandedChange(toggleEditorIndex(expandedIndex, index)) },
+                onRemove = {
+                    onExpandedChange(editorIndexAfterRemoval(expandedIndex, index))
+                    onChange(draft.removeCondition(index))
+                },
             )
         }
         TButton("조건 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onAdd)
@@ -372,10 +403,11 @@ private fun StepConditions(
 private fun StepActions(
     draft: MacroDraft,
     onChange: (MacroDraft) -> Unit,
+    expandedIndex: Int,
+    onExpandedChange: (Int) -> Unit,
     onPickAction: () -> Unit,
-    onPickWaitUntil: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         if (draft.actions.isEmpty()) {
             EmptyState(
                 title = "실행할 동작이 없어요",
@@ -390,21 +422,23 @@ private fun StepActions(
                 template = (step as? ActionStep.Run)
                     ?.let { templateFor(it.command, CommandCatalog.all) },
                 onChange = { onChange(draft.replaceAction(index, it)) },
-                onMove = { onChange(draft.moveAction(index, it)) },
-                onRemove = { onChange(draft.removeAction(index)) },
+                expanded = expandedIndex == index,
+                onToggle = { onExpandedChange(toggleEditorIndex(expandedIndex, index)) },
+                onMove = { offset ->
+                    val target = index + offset
+                    if (target in draft.actions.indices) {
+                        onExpandedChange(editorIndexAfterMove(expandedIndex, index, target))
+                        onChange(draft.moveAction(index, offset))
+                    }
+                },
+                onRemove = {
+                    onExpandedChange(editorIndexAfterRemoval(expandedIndex, index))
+                    onChange(draft.removeAction(index))
+                },
             )
         }
-        // 동작 추가를 가장 크게 보여주고 대기 설정은 보조 행으로 분리한다.
-        TButton("실행할 동작 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onPickAction)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            TButton("시간 대기", ButtonTone.Ghost, modifier = Modifier.weight(1f), fillWidth = false) {
-                onChange(draft.addAction(ActionStep.Wait(60)))
-            }
-            TButton("조건 대기", ButtonTone.Ghost, modifier = Modifier.weight(1f), fillWidth = false, onClick = onPickWaitUntil)
-        }
+        // 대기도 동작 추가에서 선택해 목록 하단에 버튼 세 개가 경쟁하지 않게 한다.
+        TButton("동작 추가", ButtonTone.Secondary, icon = DraftMark.Add, onClick = onPickAction)
     }
 }
 
@@ -551,51 +585,40 @@ private fun ConditionPicker(
     }
 }
 
+/** 차량 명령과 대기·기타 동작을 분류해 한 번에 한 종류만 보여준다. */
 @Composable
 private fun ActionPicker(
     onDismiss: () -> Unit,
     onPick: (CommandTemplate) -> Unit,
     onPickNavigate: () -> Unit,
     onPickStealthCharging: () -> Unit,
+    onPickWait: () -> Unit,
+    onPickWaitUntil: () -> Unit,
 ) {
-    var group by remember { mutableStateOf(CommandGroup.CLIMATE) }
+    var group by remember { mutableStateOf<CommandGroup?>(CommandGroup.CLIMATE) }
 
     PickerSheet(title = "실행할 동작", onDismiss = onDismiss) {
         Column {
-            // 차량 명령이 아닌 태블릿 동작. 그룹 밖 최상단에 둔다
-            // 맨몸 텍스트는 눌리는 항목으로 안 보여서 옅은 면으로 감싸 "버튼"임을 드러낸다
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(Radius.button))
-                    .background(T.Slate)
-                    .padding(horizontal = Space.md),
-            ) {
-                PickerRow(
-                    label = "네이버 지도 안내",
-                    detail = "저장한 주소로 길안내를 자동 시작",
-                    onClick = onPickNavigate,
-                )
-                Hairline()
-                PickerRow(
-                    label = "스텔스 충전 1회",
-                    detail = "다음 충전에서 전류를 자동 조절하도록 켜기",
-                    onClick = onPickStealthCharging,
-                )
-            }
-            // 구분선으로 아래 그룹 칩과 시각적으로 분리한다
-            Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
             ChipRow(
-                options = CommandGroup.entries,
+                options = CommandGroup.entries + listOf(null),
                 selected = group,
-                label = { it.label },
+                label = { it?.label ?: "대기 · 기타" },
                 onSelect = { group = it },
             )
             Spacer(Modifier.height(Space.md))
-            PickerList(items = CommandCatalog.byGroup[group].orEmpty()) { template ->
-                PickerRow(label = template.label, onClick = { onPick(template) })
+            if (group == null) {
+                PickerList(items = listOf(
+                    "시간 대기" to onPickWait,
+                    "조건 대기" to onPickWaitUntil,
+                    "네이버 지도 안내" to onPickNavigate,
+                    "스텔스 충전 1회" to onPickStealthCharging,
+                )) { (label, onSelect) ->
+                    PickerRow(label = label, onClick = onSelect)
+                }
+            } else {
+                PickerList(items = CommandCatalog.byGroup[group].orEmpty()) { template ->
+                    PickerRow(label = template.label, onClick = { onPick(template) })
+                }
             }
         }
     }

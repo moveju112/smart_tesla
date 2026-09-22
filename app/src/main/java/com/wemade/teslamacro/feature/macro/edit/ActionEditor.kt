@@ -58,23 +58,12 @@ fun ActionCard(
     onMove: (Int) -> Unit,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
+    expanded: Boolean = true,
+    onToggle: () -> Unit = {},
 ) {
     TCard(modifier = modifier) {
-        // 긴 동작 이름과 목적지는 카드 너비 전체에서 줄바꿈한다.
-        Text(
-            text = when (step) {
-                is ActionStep.Run -> step.command.label
-                is ActionStep.Wait -> "${formatDuration(step.seconds)} 대기"
-                is ActionStep.WaitUntil -> "${describe(step.condition)}까지 대기"
-                is ActionStep.Navigate ->
-                    "지도 안내 — ${step.destinationName.ifBlank { "목적지 미입력" }}"
-                is ActionStep.SetStealthCharging ->
-                    "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
-            },
-            style = MaterialTheme.typography.titleMedium,
-            color = if (step is ActionStep.Run) T.Ink else T.InkMuted,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        EditorItemHeader("${index + 1}. ${actionSummary(step)}", expanded, onToggle)
+        if (!expanded) return@TCard
 
         val editor = parameterEditor(step, template)
         if (editor != null) {
@@ -84,7 +73,7 @@ fun ActionCard(
         // 순서·삭제 조작은 별도 행으로 내려 휴대폰에서 제목을 밀어내지 않는다.
         Spacer(Modifier.height(Space.sm))
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${index + 1}번째 동작", style = MaterialTheme.typography.labelMedium,
+            Text("순서", style = MaterialTheme.typography.labelMedium,
                 color = T.InkMuted, modifier = Modifier.weight(1f))
             CardIconButton(DraftMark.ArrowUp, "${index + 1}번째 동작 위로 이동", enabled = index > 0) { onMove(-1) }
             CardIconButton(DraftMark.ArrowDown, "${index + 1}번째 동작 아래로 이동", enabled = index < total - 1) { onMove(1) }
@@ -93,9 +82,18 @@ fun ActionCard(
     }
 }
 
+/** 접힌 상태에서도 실행 값과 최대 대기 시간을 빠뜨리지 않고 보여준다. */
+internal fun actionSummary(step: ActionStep): String = when (step) {
+    is ActionStep.Run -> step.command.label
+    is ActionStep.Wait -> "${formatDuration(step.seconds)} 대기"
+    is ActionStep.WaitUntil -> "${describe(step.condition)}까지 대기 · 최대 ${formatDuration(step.timeoutSeconds)}"
+    is ActionStep.Navigate -> "지도 안내 — ${step.destinationName.ifBlank { "목적지 미입력" }}"
+    is ActionStep.SetStealthCharging -> "스텔스 충전 1회 ${if (step.enabled) "켜기" else "끄기"}"
+}
+
 /**
  * 카드 헤더용 아이콘 버튼.
- * 아이콘은 20dp지만 터치 타깃은 48dp를 보장한다.
+ * 아이콘은 24dp지만 터치 타깃은 48dp를 보장한다.
  * ConditionEditor의 카드 헤더도 같은 패턴을 쓴다.
  */
 @Composable

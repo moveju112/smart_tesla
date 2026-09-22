@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.border
+import com.wemade.teslamacro.ui.theme.Stroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -198,13 +200,14 @@ fun <T> ChoiceGrid(
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
     columns: Int = 2,
+    outlined: Boolean = false,
 ) {
     val columnCount = if (LocalDensity.current.fontScale >= 1.3f) columns.coerceAtMost(2) else columns
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         options.chunked(columnCount).forEach { row ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 row.forEach { option ->
-                    ChoiceChip(label(option), option == selected, compact = true,
+                    ChoiceChip(label(option), option == selected, compact = true, outlined = outlined,
                         modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onSelect(option) })
                 }
                 repeat(columnCount - row.size) { Spacer(Modifier.weight(1f)) }
@@ -215,20 +218,21 @@ fun <T> ChoiceGrid(
 
 /** 자유 배치 칩과 정렬된 편집 선택지가 동일한 색·높이·접근성 규격을 공유한다. */
 @Composable
-private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, compact: Boolean = false, onClick: () -> Unit) {
+private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, compact: Boolean = false, outlined: Boolean = false, onClick: () -> Unit) {
     val background by animateColorAsState(
-        targetValue = if (selected) T.Electric else T.Slate,
+        targetValue = if (outlined) Color.Transparent else if (selected) T.Electric else T.Slate,
         animationSpec = Motion.quick(), label = "chipBackground",
     )
     Box(
         modifier = modifier.clip(RoundedCornerShape(Radius.button)).background(background)
+            .then(if (outlined) Modifier.border(Stroke.thin, if (selected) T.Electric else T.Hairline, RoundedCornerShape(Radius.button)) else Modifier)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .defaultMinSize(minHeight = Space.xxl)
             .padding(horizontal = if (compact) Space.sm else Space.md, vertical = if (compact) Space.sm else Space.sm + Space.xs),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge,
-            color = if (selected) T.Void else T.InkMuted, textAlign = TextAlign.Center)
+            color = if (selected && outlined) T.Electric else if (selected) T.Void else T.InkMuted, textAlign = TextAlign.Center)
     }
 }
 

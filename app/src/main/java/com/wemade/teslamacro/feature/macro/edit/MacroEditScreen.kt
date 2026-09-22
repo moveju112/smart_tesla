@@ -62,6 +62,8 @@ import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
+import androidx.compose.ui.graphics.Color
+import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
@@ -152,7 +154,6 @@ fun MacroEditScreen(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(Radius.segment))
-                        .background(if (index == step) T.Electric else T.Slate)
                         .selectable(selected = index == step, role = Role.Tab, onClick = { step = index })
                         .heightIn(min = Space.xxl)
                         .padding(vertical = Space.sm),
@@ -160,8 +161,11 @@ fun MacroEditScreen(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(label, style = MaterialTheme.typography.labelLarge,
-                        color = if (index == step) T.Void else T.Ink)
-                    // 탭 높이를 줄여 편집 내용에 공간을 우선 배분한다.
+                        color = if (index == step) T.Electric else T.InkMuted)
+                    Spacer(Modifier.height(Space.sm))
+                    // 탐색은 밑줄만 강조해 실제 값을 고르는 버튼과 구분한다.
+                    Spacer(Modifier.fillMaxWidth().height(Stroke.bold)
+                        .background(if (index == step) T.Electric else Color.Transparent))
                 }
             }
         }

@@ -182,18 +182,24 @@ private fun parameterEditor(
         val seat = seatOf(command)
         val level = levelOf(command)
         Column {
+            // 대상 위치와 실행 값을 같은 버튼 묶음으로 오해하지 않게 구역을 나눈다.
+            Text("좌석", style = MaterialTheme.typography.labelMedium, color = T.InkMuted)
+            Spacer(Modifier.height(Space.sm))
             ChipRow(
+                outlined = true,
                 options = template.seats,
                 selected = seat,
                 label = { it.label },
                 onSelect = { onChange(ActionStep.Run(template.build(it, level))) },
             )
+            Spacer(Modifier.height(Space.lg))
+            Text("작동 단계", style = MaterialTheme.typography.labelMedium, color = T.InkMuted)
             Spacer(Modifier.height(Space.sm))
             ChipRow(
                 options = Level.entries,
                 columns = 4,
                 selected = level,
-                label = { it.label },
+                label = { if (it == Level.OFF) "끄기" else "${it.label}단" },
                 onSelect = { onChange(ActionStep.Run(template.build(seat, it))) },
             )
         }

@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 잠금 테스트 예약·인증 대기·전달 동안만 CPU를 유지한다 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 차량 명령 성공은 진동 모드에서도 촉각으로 확인한다 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 태블릿은 차량에 상시 거치되므로 재부팅 후 자동 복귀시킨다 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

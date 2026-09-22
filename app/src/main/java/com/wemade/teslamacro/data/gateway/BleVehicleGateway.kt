@@ -61,6 +61,9 @@ class BleVehicleGateway(
     private val _enrollmentState = MutableStateFlow<EnrollmentState>(EnrollmentState.NotEnrolled)
     override val enrollmentState: StateFlow<EnrollmentState> = _enrollmentState.asStateFlow()
 
+    /** UI 상태의 갱신 지연 대신 실제 GATT와 명령 클라이언트를 함께 확인한다. */
+    val isCommandConnected: Boolean get() = link.isConnected && client != null
+
     override suspend fun connect(vin: String, allowProbe: Boolean): Result<Unit> = connectMutex.withLock {
         if (link.isConnected && client != null) return@withLock Result.success(Unit)
         if (!scanner.isBluetoothReady) {

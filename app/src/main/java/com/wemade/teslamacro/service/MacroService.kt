@@ -446,8 +446,15 @@ class MacroService : LifecycleService() {
 
         com.wemade.teslable.DiagLog.add("빅스비 요청 처리 시작 — $requestLabel")
         val settings = app.container.settingsStore.settings.first()
-        if (settings.fleetApiEnabled) {
-            // Fleet는 BLE 연결 사용권을 얻지 않는다. 실패해도 BLE 명령으로 대체하지 않는다.
+        val bleConnected = (app.container.gateway.current as?
+            com.wemade.teslamacro.data.gateway.BleVehicleGateway)?.isCommandConnected == true
+        val useFleet = shouldUseFleetForQuickAction(settings.fleetApiEnabled, bleConnected)
+        com.wemade.teslable.DiagLog.add(
+            "빠른 명령 경로 — " + if (useFleet) "Fleet · 차량 BLE 미연결"
+            else if (bleConnected) "BLE · 기존 차량 연결 우선" else "BLE · 연결 후 전송",
+        )
+        if (useFleet) {
+            // 경로는 전송 전에 한 번만 고른다. 실패 뒤 다른 경로로 재전송하지 않는다.
             if (rule != null || command == null) {
                 quickActionFailed(requestLabel, "Fleet는 현재 단일 차량 명령만 지원해요 · 매크로는 BLE를 선택해 주세요")
                 return

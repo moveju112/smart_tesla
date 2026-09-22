@@ -351,11 +351,78 @@ class PortableBoardingPollTest {
         fixture.poller.stop()
     }
 
+    /** GPS·예보 지연 중에도 트렁크→동승석→운전석 순서의 상태를 계속 읽는다. */
+    @Test
+    fun `늦은 GPS와 예보가 운전석 이벤트를 막지 않는다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false, doorMacro = true,
+            locationDelayMillis = 12_000L, forecastDelayMillis = 90_000L)
+        fixture.gateway.onRead = { count -> fixture.snapshot(false, driver = count >= 4,
+            passenger = count >= 3, trunk = count >= 2) }
+        fixture.start()
+        advanceTimeBy(20_000)
+        runCurrent()
+        assertTrue(fixture.gateway.reads.size >= 5)
+        assertEquals(1, fixture.gateway.commands.size)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, fixture.gateway.commands.size)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 전원 해제 후 늦게 완료되는 위치는 문 매크로를 실행할 수 없다. */
+    @Test
+    fun `문 이벤트 보류 중 전원을 끊으면 GPS가 돌아와도 실행하지 않는다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false, doorMacro = true,
+            locationDelayMillis = 12_000L)
+        fixture.gateway.onRead = { count -> fixture.snapshot(false, driver = count >= 2) }
+        fixture.start()
+        advanceTimeBy(6_000)
+        runCurrent()
+        fixture.poller.setVehiclePowerConnected(false, endAppSession = true)
+        fixture.poller.enforceConnectionGuard()
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(0, fixture.gateway.commands.size)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 문을 열어 둔 채 늦게 착석해도 문 매크로는 재발동하지 않는다. */
+    @Test
+    fun `운전석 문 열고 늦게 타면 안내는 한 번만 실행한다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false, doorMacro = true)
+        fixture.gateway.onRead = { count -> fixture.snapshot(count >= 12, driver = count >= 2) }
+        fixture.start()
+        advanceTimeBy(70_000)
+        runCurrent()
+        assertEquals(1, fixture.gateway.commands.size)
+        fixture.poller.stop()
+    }
+
+    /** 만료된 예보를 새 조회 실패 뒤에도 참인 조건으로 재사용하지 않는다. */
+    @Test
+    fun `예보 만료 후 실패하면 옛 예보를 버린다`() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.forecastResult = com.wemade.teslamacro.domain.macro.WeatherForecast(todayMaxTempC = 30.0)
+        fixture.start()
+        assertEquals(30.0, fixture.reading.value?.weather?.todayMaxTempC)
+        fixture.forecastResult = null
+        advanceTimeBy(3_630_000)
+        runCurrent()
+        assertTrue(fixture.forecastReads >= 2)
+        assertEquals(null, fixture.reading.value?.weather)
+        fixture.poller.stop()
+    }
+
     /** 저장 상태를 초기화하고 휴대 기본값을 유지한 채 거치 모드도 같은 폴러로 검증한다. */
     private suspend fun TestScope.fixture(
         mode: DeviceMode = DeviceMode.PORTABLE,
         autoStart: Boolean = true,
         locationDelayMillis: Long = 0L,
+        forecastDelayMillis: Long = 0L,
+        doorMacro: Boolean = false,
     ): Fixture {
         val context = object : ContextWrapper(paparazzi.context) {
             /** 매크로 파일도 테스트 종료 때 함께 지워지도록 임시 폴더로 격리한다. */
@@ -385,7 +452,14 @@ class PortableBoardingPollTest {
             ),
             actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn)),
         ))
-        return Fixture(this, settings, rules, locationDelayMillis)
+        if (doorMacro) rules.upsert(MacroRule(
+            id = "door-poll-test", name = "운전석 안내 회귀",
+            triggers = listOf(Trigger.SignalBecomes(Signal.DOOR_DRIVER_FRONT, true)),
+            conditions = listOf(Condition.NearLocation(0.0, 0.0, 400)),
+            actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn)),
+            cooldownSeconds = 0,
+        ))
+        return Fixture(this, settings, rules, locationDelayMillis, forecastDelayMillis)
     }
 
     /** 실제 StatePoller에 저장소와 가짜 BLE만 연결하며 시간을 코루틴 스케줄러와 맞춘다. */
@@ -394,13 +468,15 @@ class PortableBoardingPollTest {
         settings: SettingsStore,
         rules: RuleStore,
         locationDelayMillis: Long,
+        forecastDelayMillis: Long,
     ) {
         val gateway = TestGateway()
         var boardings = 0
         var locationReads = 0
         var forecastReads = 0
+        var forecastResult: com.wemade.teslamacro.domain.macro.WeatherForecast? = null
         private val epoch = System.currentTimeMillis()
-        private val reading = MutableStateFlow<Reading?>(null)
+        val reading = MutableStateFlow<Reading?>(null)
         val poller = StatePoller(
             gateway = gateway,
             ruleStore = rules,
@@ -413,7 +489,7 @@ class PortableBoardingPollTest {
                 delay(locationDelayMillis)
                 GeoPoint(0.0, 0.0)
             },
-            forecastReader = { _, _ -> forecastReads++; null },
+            forecastReader = { _, _ -> forecastReads++; delay(forecastDelayMillis); forecastResult },
         )
 
         init {
@@ -421,10 +497,16 @@ class PortableBoardingPollTest {
         }
 
         /** VCSEC 소유권까지 포함해 옛 스냅샷이 아닌 새 차량 응답을 만든다. */
-        fun snapshot(present: Boolean?): Result<VehicleSnapshot> = Result.success(
+        fun snapshot(present: Boolean?, driver: Boolean = false, passenger: Boolean = false,
+                     trunk: Boolean = false): Result<VehicleSnapshot> = Result.success(
             VehicleSnapshot(
                 timestampMillis = epoch + scope.testScheduler.currentTime,
                 isUserPresent = present,
+                doorOpen = mapOf(
+                    com.wemade.teslamacro.domain.model.Door.DRIVER_FRONT to driver,
+                    com.wemade.teslamacro.domain.model.Door.PASSENGER_FRONT to passenger,
+                    com.wemade.teslamacro.domain.model.Door.TRUNK to trunk,
+                ),
                 isLocked = true,
                 categoryReadAt = mapOf(StateCategory.BODY_CONTROLLER to epoch + scope.testScheduler.currentTime),
             )
@@ -444,6 +526,7 @@ class PortableBoardingPollTest {
         override val linkState = MutableStateFlow<LinkState>(LinkState.Idle)
         override val enrollmentState = MutableStateFlow<EnrollmentState>(EnrollmentState.Enrolled)
         var connections = 0
+        val commands = mutableListOf<VehicleCommand>()
         val reads = mutableListOf<Set<StateCategory>>()
         var onConnect: suspend (Int) -> Result<Unit> = { Result.success(Unit) }
         var onRead: suspend (Int) -> Result<VehicleSnapshot> = { Result.success(VehicleSnapshot.Empty) }
@@ -464,7 +547,10 @@ class PortableBoardingPollTest {
         override suspend fun requestKeyEnrollment() = Result.success(Unit)
 
         /** 직접 차량 명령 대신 조회·연결 정책만 검증한다. */
-        override suspend fun send(command: VehicleCommand) = Result.success(Unit)
+        override suspend fun send(command: VehicleCommand): Result<Unit> {
+            commands += command
+            return Result.success(Unit)
+        }
 
         /** 단일 조회도 같은 응답 제어를 사용한다. */
         override suspend fun read(category: StateCategory) = readBundle(setOf(category))

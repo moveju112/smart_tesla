@@ -33,7 +33,12 @@ data class TimeContext(
 }
 
 /** 위도·경도 한 쌍. 태블릿 GPS에서 온다 */
-data class GeoPoint(val latitude: Double, val longitude: Double)
+data class GeoPoint(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Double? = null,
+    val observedAtMillis: Long? = null,
+)
 
 /** 한 번의 폴링 결과 = 차량 상태 + 그 시점의 시각 + (조건이 쓸 때만) 태블릿 위치·예보 */
 data class Reading(

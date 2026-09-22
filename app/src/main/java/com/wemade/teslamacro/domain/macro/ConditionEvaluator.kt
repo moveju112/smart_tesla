@@ -55,7 +55,10 @@ object ConditionEvaluator {
             val lng = condition.longitude
             // 위치를 못 읽었거나 아직 저장 전이면 불충족 — 엉뚱한 곳에서 안내가 뜨는 것보다 안 뜨는 게 낫다
             here != null && lat != null && lng != null &&
-                distanceMeters(here.latitude, here.longitude, lat, lng) <= condition.radiusMeters
+                (here.observedAtMillis == null || reading.time.epochMillis - here.observedAtMillis in 0..120_000L) &&
+                (here.accuracyMeters == null || (here.accuracyMeters.isFinite() && here.accuracyMeters >= 0)) &&
+                distanceMeters(here.latitude, here.longitude, lat, lng) +
+                    (here.accuracyMeters ?: 0.0) <= condition.radiusMeters
         }
     }
 

@@ -45,24 +45,22 @@ class TabletLocation(private val context: Context) {
         return runCatching {
             // 1. 최근 위치가 신선하면 그대로 쓴다 — 지하주차장은 새 측위가 안 된다
             val cached = lastKnown(manager)
-            if (cached != null && ageMillis(cached) < FRESH_MILLIS) {
+            if (cached != null && ageMillis(cached) in 0 until FRESH_MILLIS) {
                 logOutcome("최근위치", "최근 위치 사용 (${ageMillis(cached) / 60_000}분 전)")
                 return cached.toPoint()
             }
 
-            // 2. 새로 한 번 측위. 실패하면 오래된 최근 위치라도 쓴다 —
-            //    차에 거치된 태블릿의 마지막 위치는 대개 차가 있는 곳이다
+            // 오래된 집 좌표로 다른 장소에서 자동 실행하지 않도록 과거 위치 대체는 금지한다.
             val fresh = withTimeoutOrNull(FIX_TIMEOUT_MILLIS) { requestOnce(manager) }
+                ?.takeIf { ageMillis(it) in 0 until FRESH_MILLIS }
             when {
                 fresh != null ->
                     logOutcome("신규", "새 측위 성공 (${fresh.provider}, 정확도 ${fresh.accuracy.toInt()}m)")
-                cached != null ->
-                    logOutcome("대체", "새 측위 실패 → ${ageMillis(cached) / 60_000}분 전 위치로 대체")
                 else ->
                     logOutcome("실패", "측위 실패 — 사용할 위치 없음")
             }
-            (fresh ?: cached)?.toPoint()
-        }.getOrNull()
+            fresh?.toPoint()
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
     }
 
     // 같은 결과가 반복될 땐 침묵한다 — 매 측위(주행 중 분당 1회)를 다 남기면
@@ -129,11 +127,14 @@ class TabletLocation(private val context: Context) {
     private fun ageMillis(location: Location): Long =
         System.currentTimeMillis() - location.time
 
-    private fun Location.toPoint() = GeoPoint(latitude, longitude)
+    // 위치 조건이 오차와 오래된 측위를 구분할 수 있도록 원본 품질을 전달한다.
+    private fun Location.toPoint(): GeoPoint? = if (hasAccuracy() && accuracy.isFinite() && accuracy >= 0) {
+        GeoPoint(latitude, longitude, accuracy.toDouble(), time)
+    } else null
 
     private companion object {
         /** 이 안쪽이면 굳이 새로 측위하지 않는다 */
-        const val FRESH_MILLIS = 10 * 60 * 1000L
+        const val FRESH_MILLIS = 2 * 60 * 1000L
         /** 새 측위 대기 상한. 폴링 한 바퀴를 너무 오래 잡아먹으면 안 된다 */
         const val FIX_TIMEOUT_MILLIS = 8_000L
     }

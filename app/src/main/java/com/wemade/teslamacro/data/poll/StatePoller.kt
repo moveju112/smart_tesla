@@ -25,6 +25,8 @@ import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import com.wemade.teslamacro.domain.model.overlay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -120,6 +122,7 @@ class StatePoller(
     }
 
     private suspend fun loop() = coroutineScope {
+        val pollScope = this
         // 재시작 전 탑승 상태를 읽어 둔다. 신선할 때만 믿는다 —
         // 밤새 꺼져 있던 태블릿의 기록은 그 사이 타고 내렸을 수 있어 의미가 없다
         // 앱이 꺼져 있던 사이의 주차도 이어서 센다
@@ -167,6 +170,12 @@ class StatePoller(
         }
 
         var previous: Reading? = null
+        var doorLocationRead: Deferred<GeoPoint?>? = null
+        var doorLocation: GeoPoint? = null
+        var doorLocationReadAt = 0L
+        var doorForecastRead: Deferred<WeatherForecast?>? = null
+        var doorForecast: WeatherForecast? = null
+        var doorForecastReadAt = 0L
         var activeUntil = 0L
         var needFullRead = true   // 연결 직후 첫 사이클 — 자동화에 필요한 것만
         // 명령 후 확인 읽기로 요청된 카테고리 — 확인 창(짧게) 동안만 읽는다.
@@ -203,6 +212,16 @@ class StatePoller(
             // 기본 보호 모드에서는 사람이 앱·명령·매크로를 쓰지 않는 빈 차와 인증 연결을
             // 유지하지 않는다. 공식 휴대폰 키가 유일한 근접 키로 판정될 여지를 남긴다
             if (!shouldKeepConnection(settings)) {
+                engine.discardPendingDoorEvents()
+                previous = null
+                doorLocationRead?.cancel()
+                doorLocationRead = null
+                doorLocation = null
+                doorLocationReadAt = 0L
+                doorForecastRead?.cancel()
+                doorForecastRead = null
+                doorForecast = null
+                doorForecastReadAt = 0L
                 enforceConnectionGuard()
                 sleep(NORMAL_POLL_SECONDS * 1000L)
                 continue
@@ -387,11 +406,38 @@ class StatePoller(
             //    GPS는 위치 조건이 실제로 걸려 있을 때만 읽는다 — 매 폴링마다 켜면 배터리를 먹는다
             // 위치·예보도 확인 예산에 포함해 늦은 조회가 종료된 탑승 요청을 되살리지 못하게 한다.
             val current = withTimeoutOrNull(boardingCheck?.remainingMillis(now()) ?: Long.MAX_VALUE) {
-                val location = if (portableCheck == null && needsLocation()) cachedLocation() else null
-                // 좌표가 있어야 예보를 받으며, 거치 매크로에 필요한 조회는 유지한다.
-                val weather = if (portableCheck == null && needsForecast()) {
-                    cachedForecast(location ?: cachedLocation())
-                } else null
+                // 문 감시는 GPS·예보를 기다리며 멈추지 않는다. 완료된 결과만 다음 판정에 합친다.
+                if (doorMacroCheck) {
+                    if (doorLocationRead?.isCompleted == true) {
+                        doorLocation = doorLocationRead?.await()
+                        doorLocationReadAt = now()
+                        doorLocationRead = null
+                    }
+                    if (doorForecastRead?.isCompleted == true) {
+                        doorForecast = doorForecastRead?.await()
+                        doorForecastReadAt = now()
+                        doorForecastRead = null
+                    }
+                    if ((needsLocation() || needsForecast()) && doorLocationRead == null &&
+                        now() - doorLocationReadAt >= if (doorLocation == null) 2_000L else LOCATION_TTL_MS
+                    ) {
+                        doorLocationRead = pollScope.async { locationReader() }
+                    }
+                    val forecastLocation = doorLocation
+                    if (needsForecast() && forecastLocation != null && doorForecastRead == null &&
+                        now() - doorForecastReadAt >= if (doorForecast == null) 10_000L else FORECAST_TTL_MS
+                    ) {
+                        doorForecastRead = pollScope.async { forecastReader(forecastLocation, now()) }
+                    }
+                }
+                val location = if (doorMacroCheck) doorLocation?.takeIf {
+                    it.observedAtMillis == null || now() - it.observedAtMillis in 0..120_000L
+                }
+                    else if (portableCheck == null && needsLocation()) cachedLocation() else null
+                val weather = if (doorMacroCheck) doorForecast.takeIf { now() - doorForecastReadAt < FORECAST_TTL_MS }
+                    else if (portableCheck == null && needsForecast()) {
+                        cachedForecast(location ?: cachedLocation())
+                    } else null
                 Reading(merged, TimeContext.of(now()), location, weather)
             }
             if (boardingCheck != null &&
@@ -460,6 +506,7 @@ class StatePoller(
                     current = current,
                     lastFiredAtMillis = lastFiredAt,
                     knownPresenceBeforeRestart = evaluationKnownPresence,
+                    allowPendingDoorRetry = fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true,
                     // 트리거는 발동했는데 조건이 막았으면 무엇이 막았는지 남긴다
                     onBlocked = { rule, unmet ->
                         com.wemade.teslable.DiagLog.add(
@@ -473,6 +520,8 @@ class StatePoller(
                     lastFiredAt[rule.id] = current.time.epochMillis
                     runner.launch(rule, current.time.epochMillis)
                 }
+            } else {
+                engine.discardPendingDoorEvents()
             }
 
             // 이번 VCSEC 응답은 다음 판정부터 직전값으로 쓴다.
@@ -531,6 +580,7 @@ class StatePoller(
     /** 차량 USB 전원 상태를 연결 정책에 반영한다. */
     fun setVehiclePowerConnected(connected: Boolean, endAppSession: Boolean = false) {
         val wasConnected = vehiclePowerConnected
+        if (wasConnected != connected) engine.discardPendingDoorEvents()
         vehiclePowerConnected = connected
         if (connected) {
             if (!wasConnected) {
@@ -603,6 +653,7 @@ class StatePoller(
 
     /** 사용자가 강제 종료하지 않아도 다음 명시적 사용 전까지 자동 연결을 멈춘다. */
     suspend fun disconnectUntilNextUse() {
+        engine.discardPendingDoorEvents()
         manualConnectionPause.set(true)
         vehiclePowerWakeCheck.set(null)
         val decision = connectionDecision(settingsStore.settings.first())
@@ -763,23 +814,22 @@ class StatePoller(
      * 남의 무료 API를 하루 수천 번 두드리게 된다.
      */
     private suspend fun cachedForecast(at: GeoPoint?): WeatherForecast? {
-        if (at == null) return forecastCache
+        if (at == null) return null
         if (now() - forecastFetchedAt < FORECAST_TTL_MS && forecastCache != null) return forecastCache
         forecastFetchedAt = now()
         val fresh = forecastReader(at, now())
         if (fresh == null) {
             com.wemade.teslable.DiagLog.add("예보 읽기 실패 — 예보 조건은 불충족으로 처리")
-        } else {
-            forecastCache = fresh
         }
-        return forecastCache
+        forecastCache = fresh
+        return fresh
     }
 
     private var forecastCache: WeatherForecast? = null
     private var forecastFetchedAt = 0L
 
     private suspend fun cachedLocation(): GeoPoint? {
-        if (now() - locationCachedAt < LOCATION_TTL_MS) return locationCache
+        if (now() - locationCachedAt < if (locationCache == null) 2_000L else LOCATION_TTL_MS) return locationCache
         locationCache = locationReader()
         locationCachedAt = now()
         // 위치 조건이 필요한 순간의 측위 실패는 매크로 오판 원인 1순위 — 흔적을 남긴다

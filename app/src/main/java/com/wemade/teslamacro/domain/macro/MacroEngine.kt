@@ -9,7 +9,7 @@ import com.wemade.teslamacro.domain.model.Signal
  * **트리거 중 하나가 방금 발생했고, 조건이 전부 참이면 실행한다.**
  *
  * 안드로이드 의존이 전혀 없어 단위 테스트로 전부 검증한다.
- * "항상 감시" 재발동 억제용 룰별 래치 하나만 상태로 가진다 — 같은 인스턴스로 연속 호출해야 한다.
+ * 항상 감시 래치와 최대 30초 문 이벤트 보류 상태를 가지므로 같은 인스턴스로 연속 호출한다.
  */
 class MacroEngine {
 
@@ -20,6 +20,13 @@ class MacroEngine {
      * "22~24℃면 통풍"을 22.5℃에 만들었더니 범위를 벗어난 적이 없어 영영 안 터졌다
      */
     private val alwaysHeld = mutableMapOf<String, Boolean>()
+    private val pendingDoorContext = mutableMapOf<MacroRule, Long>()
+
+    /** 전원·수동 해제 경계를 넘은 문 이벤트가 나중에 실행되지 않도록 버린다. */
+    @Synchronized
+    fun discardPendingDoorEvents() {
+        pendingDoorContext.clear()
+    }
 
     /**
      * @param previous 직전 판정 시점. 트리거는 "변화"라서 직전 값이 필요하다
@@ -32,6 +39,7 @@ class MacroEngine {
      *   앱이 죽었다 살면 [previous]가 null이라 엣지를 못 보는데, 이 값이 있으면
      *   "이미 타 있었다"를 알아 헛발동을 막는다. 오래된 값은 호출부가 null로 걸러 넣는다.
      */
+    @Synchronized
     fun evaluate(
         rules: List<MacroRule>,
         previous: Reading?,
@@ -39,9 +47,14 @@ class MacroEngine {
         lastFiredAtMillis: Map<String, Long>,
         knownPresenceBeforeRestart: Boolean? = null,
         onBlocked: (MacroRule, List<Condition>) -> Unit = { _, _ -> },
+        allowPendingDoorRetry: Boolean = true,
     ): List<MacroRule> {
         // 꺼졌거나 삭제된 룰의 래치는 잊는다 — 다시 켜면 "이미 참"도 1회 발동한다
         alwaysHeld.keys.retainAll(rules.filter { it.enabled }.map { it.id }.toSet())
+        pendingDoorContext.keys.retainAll(rules.filter { it.enabled }.toSet())
+        pendingDoorContext.entries.removeAll { (_, observedAt) ->
+            current.time.epochMillis - observedAt !in 0 until 30_000L || previous == null
+        }
 
         return rules.filter { rule ->
             // 1. 꺼진 매크로는 건너뛴다
@@ -54,23 +67,43 @@ class MacroEngine {
             //    쿨다운이 먼저 자르면 래치가 발동 시점의 참으로 굳어, 쿨다운이 끝나도
             //    조건 이탈-재진입을 한 번 더 해야만 발동하는 침묵 구간이 생긴다.
             //    any 대신 map+any — 래치 갱신 때문에 모든 트리거를 반드시 평가한다
-            val triggered = rule.triggers.map { fired(rule, it, previous, current, knownPresenceBeforeRestart) }.any { it }
-            if (!triggered) return@filter false
+            val firedTriggers = rule.triggers.filter { fired(rule, it, previous, current, knownPresenceBeforeRestart) }
+            val pending = rule in pendingDoorContext
+            if (firedTriggers.isEmpty() && (!pending || !allowPendingDoorRetry)) return@filter false
 
             // 4. 쿨다운 중이면 발동하지 않는다
             val lastFired = lastFiredAtMillis[rule.id]
             if (lastFired != null &&
                 current.time.epochMillis - lastFired < rule.cooldownSeconds * 1000L
             ) {
+                pendingDoorContext.remove(rule)
                 return@filter false
             }
 
             // 어떤 조건이 막았는지 알려준다 — 진단 로그 없이는 "왜 안 터졌는지" 알 길이 없다
             val unmet = rule.conditions.filter { !holds(it, current) }
             if (unmet.isNotEmpty()) {
-                onBlocked(rule, unmet)
+                // 위치·예보 미확인만 잠시 기다린다. 범위 밖·시간·기어 등 실제 불충족은 소급하지 않는다.
+                val missingContextOnly = unmet.all {
+                    when (it) {
+                        is Condition.NearLocation -> current.location == null && it.latitude != null && it.longitude != null
+                        is Condition.ForecastInRange -> current.weather == null
+                        else -> false
+                    }
+                }
+                val openedDoor = firedTriggers.any {
+                    it is Trigger.SignalBecomes && it.to &&
+                        it.signal in setOf(Signal.DOOR_DRIVER_FRONT, Signal.DOOR_PASSENGER_FRONT)
+                }
+                if (missingContextOnly && (openedDoor || pending)) {
+                    pendingDoorContext.putIfAbsent(rule, current.time.epochMillis)
+                } else {
+                    pendingDoorContext.remove(rule)
+                }
+                if (!pending || !missingContextOnly) onBlocked(rule, unmet)
                 return@filter false
             }
+            pendingDoorContext.remove(rule)
             true
         }
     }

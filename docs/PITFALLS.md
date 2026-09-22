@@ -54,6 +54,14 @@
 
 ## 런타임
 
+- **Symptom:** 앱 재시작 뒤 같은 매크로가 쿨다운을 무시하거나 실행 중 재발동이 쿨다운을 계속 미룸
+  - Cause: 폴러 메모리에만 기록하고 러너가 중복 요청을 거절하기 전에 시각을 갱신함
+  - Fix: `MacroRunner.launch`의 수락 시점에 기존 `StatePoller.recordFired`를 호출하고 기존 `SettingsStore.edit`로 기록을 원자 저장한다(0.9.56). 복구는 `StatePoller.loop`, 회귀 검증은 `MacroCooldownSettingsTest`·`PortableBoardingPollTest`. 일부 명령이 적용됐을 수 있어 실패 후 쿨다운 해제·전체 재시도는 하지 않는다.
+
+- **Symptom:** 안내 실패나 조건 대기 시간 초과가 있었는데 마지막 로그만 보면 완료로 보임
+  - Cause: 개별 실패와 최종 종료 결과를 구분하지 않음
+  - Fix: 기존 `MacroRunner` 단계 실행 함수를 재사용해 실패·시간 초과 개수를 최종 로그에 남긴다(0.9.56). 조건 대기의 시간 초과 후 계속 진행 의미와 안내 요청/실제 화면 표시 구분은 유지한다.
+
 - **Symptom:** 빅스비 루틴의 "앱을 열거나 앱 동작 바로 실행"에 `Smart Tesla 열기`만 보임
   - Cause: APK의 정적 바로가기는 삼성 루틴 목록에 앱 동작으로 수집되지 않음 (갤럭시 실기기 2026-09-02)
   - Fix: `MacroShortcutPublisher`가 저장 매크로를 런타임 동적 바로가기로 발행한다. 시스템 슬롯이 적으면 수동 매크로를 우선한다 (0.9.7, 실기기 미확인)

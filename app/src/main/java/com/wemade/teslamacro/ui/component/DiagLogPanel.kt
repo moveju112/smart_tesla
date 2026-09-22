@@ -112,12 +112,12 @@ fun DiagLogPanel(
             // 줄을 늘어놓지 않는다 — 사용자가 읽을 내용이 아니고, 여기가 화면을 제일 많이 먹었다.
             // 공유 한 번으로 최근 기록이 나가므로 몇 줄 쌓였는지만 알려준다
             // 재시작 전 파일 기록까지 포함한 실제 보관 줄 수와 상한을 함께 보여준다.
-            val storedLines = remember(lines.size) { DiagLog.storedLineCount() }
+            val storedLines = remember(lines) { DiagLog.storedLineCount() }
             Text(
                 text = when {
                     storedLines <= 0 -> "아직 기록이 없어요."
                     else -> "기록 ${storedLines}줄 · 최근 ${DiagLog.MAX_AGE_HOURS}시간, " +
-                        "최대 ${DiagLog.MAX_LINES}줄. 문제가 생기면 공유를 눌러 보내주세요."
+                        "최대 ${DiagLog.MAX_FILE_LINES}줄. 문제가 생기면 공유를 눌러 보내주세요."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,

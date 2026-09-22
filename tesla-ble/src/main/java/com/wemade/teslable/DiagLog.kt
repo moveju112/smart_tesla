@@ -30,7 +30,7 @@ object DiagLog {
     /** 지금 쓰는 파일과 직전 파일. 붙기 전에는 메모리만 쓴다 */
     private var current: File? = null
     private var previous: File? = null
-    private var fileMaxLines = MAX_LINES
+    private var fileMaxLines = MAX_FILE_LINES
     private var fileMaxAgeMillis = DEFAULT_MAX_AGE_MILLIS
     private var fileLineCount = 0
     private var oldestFileTimestampMillis: Long? = null
@@ -47,7 +47,7 @@ object DiagLog {
     fun attachFile(
         logFile: File,
         previousFile: File,
-        maxLines: Int = MAX_LINES,
+        maxLines: Int = MAX_FILE_LINES,
         maxAgeMillis: Long = DEFAULT_MAX_AGE_MILLIS,
         nowMillis: Long = System.currentTimeMillis(),
     ) {
@@ -71,9 +71,10 @@ object DiagLog {
     fun addAt(message: String, timestampMillis: Long) {
         val time = SimpleDateFormat(TIME_FORMAT, Locale.US).format(Date(timestampMillis))
         val line = "$time $message"
+        // 파일 줄 수도 확정한 뒤 화면에 알려 100줄 이후에도 보관 개수가 갱신되게 한다.
+        appendToFile(line, timestampMillis)
         // 줄 수와 시간을 함께 제한한다. 낮은 빈도로 오래 켜 둔 기기도 묵은 로그를 품지 않는다.
         _lines.update { retainedLines(it + line, timestampMillis, MAX_LINES, DEFAULT_MAX_AGE_MILLIS) }
-        appendToFile(line, timestampMillis)
         // 개발 중에는 adb로도 본다. 실기기에서는 이 통로를 쓸 수 없다
         android.util.Log.i(TAG, message)
     }
@@ -154,6 +155,9 @@ object DiagLog {
 
     /** 화면에 들고 있는 줄 수 */
     const val MAX_LINES = 100
+
+    /** 재시작 전 원인이 화면 버퍼보다 오래 남도록 파일은 별도 상한을 쓴다. */
+    const val MAX_FILE_LINES = 1_000
 
     /** 로그 한 줄의 최대 보관 시간 */
     const val MAX_AGE_HOURS = 12L

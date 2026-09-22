@@ -400,6 +400,27 @@ class PortableBoardingPollTest {
         fixture.poller.stop()
     }
 
+    /** 새 폴러 인스턴스에서도 직전 실제 실행의 쿨다운을 복원한다. */
+    @Test
+    fun `폴러를 다시 만들어도 문 매크로 쿨다운이 유지된다`() = runTest {
+        val first = fixture(mode = DeviceMode.MOUNTED, autoStart = false, doorMacro = true)
+        first.rules.upsert(first.rules.rules.value.first { it.id == "door-poll-test" }.copy(cooldownSeconds = 300))
+        first.gateway.onRead = { count -> first.snapshot(true, driver = count >= 2) }
+        first.start()
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals(1, first.gateway.commands.size)
+        first.poller.stop()
+
+        val restarted = Fixture(this, first.settings, first.rules, 0L, 0L)
+        restarted.gateway.onRead = { count -> restarted.snapshot(true, driver = count >= 2) }
+        restarted.start()
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals(0, restarted.gateway.commands.size)
+        restarted.poller.stop()
+    }
+
     /** 만료된 예보를 새 조회 실패 뒤에도 참인 조건으로 재사용하지 않는다. */
     @Test
     fun `예보 만료 후 실패하면 옛 예보를 버린다`() = runTest {
@@ -465,8 +486,8 @@ class PortableBoardingPollTest {
     /** 실제 StatePoller에 저장소와 가짜 BLE만 연결하며 시간을 코루틴 스케줄러와 맞춘다. */
     private class Fixture(
         val scope: TestScope,
-        settings: SettingsStore,
-        rules: RuleStore,
+        val settings: SettingsStore,
+        val rules: RuleStore,
         locationDelayMillis: Long,
         forecastDelayMillis: Long,
     ) {

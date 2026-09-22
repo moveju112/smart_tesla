@@ -109,7 +109,7 @@ class StatePoller(
     private val _parkStart = MutableStateFlow<Pair<Long, Int?>?>(null)
     val parkStart: StateFlow<Pair<Long, Int?>?> = _parkStart.asStateFlow()
 
-    private val lastFiredAt = mutableMapOf<String, Long>()
+    private val lastFiredAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     fun start(scope: CoroutineScope) {
         if (job?.isActive == true) return
@@ -123,6 +123,10 @@ class StatePoller(
 
     private suspend fun loop() = coroutineScope {
         val pollScope = this
+        // 실행 전에 저장한 기록을 복구하되 시작 도중 들어온 수동 실행 기록은 덮지 않는다.
+        settingsStore.macroLastFired().forEach { (id, timestamp) ->
+            lastFiredAt.putIfAbsent(id, timestamp.coerceAtMost(now()))
+        }
         // 재시작 전 탑승 상태를 읽어 둔다. 신선할 때만 믿는다 —
         // 밤새 꺼져 있던 태블릿의 기록은 그 사이 타고 내렸을 수 있어 의미가 없다
         // 앱이 꺼져 있던 사이의 주차도 이어서 센다
@@ -517,8 +521,7 @@ class StatePoller(
                         )
                     },
                 ).forEach { rule ->
-                    lastFiredAt[rule.id] = current.time.epochMillis
-                    runner.launch(rule, current.time.epochMillis)
+                    runner.launch(rule, current.time.epochMillis, onAccepted = { recordFired(rule.id) })
                 }
             } else {
                 engine.discardPendingDoorEvents()
@@ -726,8 +729,10 @@ class StatePoller(
         java.util.concurrent.atomic.AtomicReference<Set<StateCategory>>(emptySet())
 
     /** 수동 실행(목록·바로가기)도 쿨다운에 기록한다 — 방금 돈 매크로가 트리거로 곧장 또 돌지 않게 */
-    fun recordFired(ruleId: String) {
-        lastFiredAt[ruleId] = now()
+    suspend fun recordFired(ruleId: String) {
+        val timestamp = now()
+        settingsStore.saveMacroFired(ruleId, timestamp, ruleStore.rules.value.map { it.id }.toSet())
+        lastFiredAt[ruleId] = timestamp
     }
 
     /** 명령 성공 직후 호출 — 해당 카테고리를 집중 폴링에 태우고 폴러를 즉시 깨운다 */

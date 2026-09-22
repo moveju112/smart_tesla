@@ -4,6 +4,7 @@ import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,7 +79,12 @@ class MacroRunner(
      * "창문 열기 → 10분 대기 → 창문 닫기"의 닫기가 재발동마다 유실된다 (쿨다운 < 총 대기 시간일 때).
      * 수동 실행([restartIfRunning])만 기존 실행을 끊고 처음부터 다시 돈다 — 사람 의도가 우선.
      */
-    fun launch(rule: MacroRule, nowMillis: Long, restartIfRunning: Boolean = false) {
+    fun launch(
+        rule: MacroRule,
+        nowMillis: Long,
+        restartIfRunning: Boolean = false,
+        onAccepted: suspend () -> Unit = {},
+    ) {
         scope.launch {
             lock.withLock {
                 if (jobs[rule.id]?.isActive == true) {
@@ -86,9 +92,9 @@ class MacroRunner(
                         append(nowMillis, rule.name, "재발동 무시 — 이미 실행 중")
                         return@withLock
                     }
-                    jobs.remove(rule.id)?.cancel()
                 }
-                jobs[rule.id] = scope.launch { execute(rule, nowMillis) }
+                jobs.remove(rule.id)?.cancel()
+                jobs[rule.id] = scope.launch { execute(rule, nowMillis, onAccepted) }
             }
         }
     }
@@ -116,26 +122,44 @@ class MacroRunner(
         }
     }
 
-    private suspend fun execute(rule: MacroRule, startedAt: Long) {
+    // 저장 대기부터 취소 가능한 실행 잡에 포함해 수동 중단 뒤 명령이 새로 나가지 않게 한다.
+    private suspend fun execute(rule: MacroRule, startedAt: Long, onAccepted: suspend () -> Unit) {
         val myJob = kotlin.coroutines.coroutineContext[Job]
         _running.update { it + rule.id }
-        append(startedAt, rule.name, "시작")
         try {
+            // 실행을 받았을 때만 쿨다운을 저장한다. 중복 요청은 만료 시간을 밀지 않는다.
+            try {
+                onAccepted()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                append(now(), rule.name, "시작 보류 — 실행 기록 저장 실패: ${error.message}", isError = true)
+                return
+            }
+            append(startedAt, rule.name, "시작")
+            var failedSteps = 0
             rule.actions.forEachIndexed { index, step ->
-                when (step) {
-                    is ActionStep.Wait -> runFixedWait(rule, index, step)
+                myJob?.ensureActive()
+                val succeeded = when (step) {
+                    is ActionStep.Wait -> { runFixedWait(rule, index, step); true }
                     is ActionStep.WaitUntil -> runConditionalWait(rule, index, step)
                     is ActionStep.Run -> runCommand(rule, index, step)
                     is ActionStep.Navigate -> runNavigate(rule, index, step)
                     is ActionStep.SetStealthCharging -> runStealthCharging(rule, index, step)
                 }
+                if (!succeeded) failedSteps++
             }
-            append(now(), rule.name, "완료")
+            append(now(), rule.name,
+                if (failedSteps == 0) "완료" else "종료 — 실패·시간 초과 ${failedSteps}단계",
+                isError = failedSteps > 0,
+            )
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             // 취소도 흔적을 남긴다 — "시작만 있고 끝이 없는" 제3의 상태를 로그에서 없앤다.
             // 안 남기면 하차 정리의 잠금 걸음이 왜 안 됐는지 추적할 수 없다
             append(now(), rule.name, "중단됨 (사람 조작 또는 재발동)", isError = true)
             throw cancelled
+        } catch (error: Exception) {
+            append(now(), rule.name, "오류로 중단: ${error.message}", isError = true)
         } finally {
             // 내 항목일 때만 지운다 — 재발동으로 방금 등록된 새 잡의 항목을
             // 취소된 이전 잡의 finally가 지우면, 새 잡이 추적을 벗어나
@@ -170,7 +194,7 @@ class MacroRunner(
         rule: MacroRule,
         index: Int,
         step: ActionStep.WaitUntil,
-    ) {
+    ): Boolean {
         val endsAt = now() + step.timeoutSeconds * 1000L
         _progress.update {
             it + (rule.id to MacroProgress(
@@ -186,7 +210,7 @@ class MacroRunner(
             val current = reading.value
             if (current != null && ConditionEvaluator.holds(step.condition, current)) {
                 append(now(), rule.name, "조건 충족 — ${describe(step.condition)}")
-                return
+                return true
             }
             delay(CONDITION_POLL_MS)
         }
@@ -197,9 +221,11 @@ class MacroRunner(
             "대기 시간 초과 — ${describe(step.condition)} (계속 진행)",
             isError = true,
         )
+        return false
     }
 
-    private suspend fun runCommand(rule: MacroRule, index: Int, step: ActionStep.Run) {
+    // 차량 명령 실패는 다음 단계를 막지 않되 최종 결과에 반영한다.
+    private suspend fun runCommand(rule: MacroRule, index: Int, step: ActionStep.Run): Boolean {
         _progress.update {
             it + (rule.id to MacroProgress(rule.id, index, rule.actions.size))
         }
@@ -214,9 +240,11 @@ class MacroRunner(
         } else {
             append(now(), rule.name, step.command.label)
         }
+        return result.isSuccess
     }
 
-    private suspend fun runNavigate(rule: MacroRule, index: Int, step: ActionStep.Navigate) {
+    // 안내 요청의 실패를 집계하며 실제 화면 표시 성공으로 단정하지 않는다.
+    private suspend fun runNavigate(rule: MacroRule, index: Int, step: ActionStep.Navigate): Boolean {
         _progress.update {
             it + (rule.id to MacroProgress(rule.id, index, rule.actions.size))
         }
@@ -231,6 +259,7 @@ class MacroRunner(
             // 화면 표시 여부는 Android가 알려주지 않는다 — 인텐트를 보낸 사실만 기록한다
             append(now(), rule.name, "${step.destinationName} 안내 실행 요청")
         }
+        return result.isSuccess
     }
 
     /** 앱의 1회 설정을 바꾸고 결과를 다른 매크로 걸음과 같은 형식으로 남긴다. */
@@ -238,7 +267,7 @@ class MacroRunner(
         rule: MacroRule,
         index: Int,
         step: ActionStep.SetStealthCharging,
-    ) {
+    ): Boolean {
         _progress.update {
             it + (rule.id to MacroProgress(rule.id, index, rule.actions.size))
         }
@@ -259,6 +288,7 @@ class MacroRunner(
         } else {
             append(now(), rule.name, label)
         }
+        return result.isSuccess
     }
 
     private fun append(timestamp: Long, ruleName: String, message: String, isError: Boolean = false) {

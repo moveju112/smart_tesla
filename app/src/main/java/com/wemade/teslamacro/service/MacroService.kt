@@ -468,8 +468,8 @@ class MacroService : LifecycleService() {
                     rule,
                     System.currentTimeMillis(),
                     restartIfRunning = true,
+                    onAccepted = { app.container.poller.recordFired(rule.id) },
                 )
-                app.container.poller.recordFired(rule.id)
                 // launch는 비동기다. 러너가 연결 사용권을 이어받은 뒤에 단발 사용권을 놓는다
                 kotlinx.coroutines.withTimeoutOrNull(2_000L) {
                     app.container.runner.running.first { running -> rule.id in running }

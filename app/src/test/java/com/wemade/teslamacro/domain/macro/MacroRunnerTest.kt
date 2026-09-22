@@ -211,5 +211,72 @@ class MacroRunnerTest {
     }
 
     /** 가상 시계의 현재 시각. 실제 벽시계를 쓰면 테스트가 흔들린다 */
+    /** 실행 중 무시한 요청은 쿨다운을 갱신하지 않는다. */
+    @Test
+    fun `실행 수락 기록은 중복 요청에서 반복되지 않는다`() = runTest {
+        val runner = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)),
+            now = { currentTimeMs() }, diagnosticLogger = {})
+        var accepted = 0
+        val waiting = rule(ActionStep.Wait(10))
+        runner.launch(waiting, 0L, onAccepted = { accepted++ })
+        advanceTimeBy(1_000)
+        runner.launch(waiting, 1_000L, onAccepted = { accepted++ })
+        advanceUntilIdle()
+        assertEquals(1, accepted)
+        runner.launch(waiting, 10_000L, onAccepted = { accepted++ })
+        advanceUntilIdle()
+        assertEquals(2, accepted)
+    }
+
+    /** 저장 실패 시 차량 명령을 먼저 보내면 재시작 중복 방지가 무너진다. */
+    @Test
+    fun `실행 기록 저장 실패는 명령을 보내지 않고 알린다`() = runTest {
+        val runner = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)), diagnosticLogger = {})
+        runner.launch(rule(ActionStep.Run(VehicleCommand.ClimateOn)), 0L,
+            onAccepted = { throw java.io.IOException("테스트 저장 실패") })
+        advanceUntilIdle()
+        assertTrue(sent.isEmpty())
+        assertTrue(runner.running.value.isEmpty())
+        assertTrue(runner.log.value.last().isError)
+        assertTrue(runner.log.value.last().message.contains("실행 기록 저장 실패"))
+    }
+
+    /** 저장 대기 중 사용자 중단도 즉시 잡을 취소해 다음 차량 명령을 막는다. */
+    @Test
+    fun `실행 기록 저장 중 취소하면 명령을 보내지 않는다`() = runTest {
+        val runner = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)), diagnosticLogger = {})
+        runner.launch(rule(ActionStep.Run(VehicleCommand.ClimateOn)), 0L,
+            onAccepted = { kotlinx.coroutines.delay(10_000) })
+        advanceTimeBy(1_000)
+        runner.cancelAll()
+        advanceUntilIdle()
+        assertTrue(sent.isEmpty())
+        assertTrue(runner.running.value.isEmpty())
+    }
+
+    /** 안내 실패 뒤 다른 단계는 유지하되 전체 성공으로 오인시키지 않는다. */
+    @Test
+    fun `안내 요청 실패는 최종 결과에도 남는다`() = runTest {
+        val runner = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)),
+            navigator = { _, _ -> Result.failure(IllegalStateException("실행 불가")) }, diagnosticLogger = {})
+        runner.launch(rule(ActionStep.Navigate("목적지", "테스트 주소"), ActionStep.Run(VehicleCommand.ClimateOn)), 0L)
+        advanceUntilIdle()
+        assertEquals(listOf(VehicleCommand.ClimateOn), sent)
+        assertTrue(runner.log.value.last().isError)
+        assertTrue(runner.log.value.last().message.contains("1단계"))
+    }
+
+    /** 의존 코드 예외도 실행 상태를 정리하며 서비스 전체로 전파하지 않는다. */
+    @Test
+    fun `안내 예외는 오류 종료로 기록한다`() = runTest {
+        val runner = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)),
+            navigator = { _, _ -> error("테스트 예외") }, diagnosticLogger = {})
+        runner.launch(rule(ActionStep.Navigate("목적지", "테스트 주소")), 0L)
+        advanceUntilIdle()
+        assertTrue(runner.running.value.isEmpty())
+        assertTrue(runner.log.value.last().message.contains("오류로 중단"))
+    }
+
+    /** 가상 시각을 러너에 주입한다. */
     private fun TestScope.currentTimeMs(): Long = testScheduler.currentTime
 }

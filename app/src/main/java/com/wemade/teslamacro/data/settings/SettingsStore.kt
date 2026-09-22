@@ -364,6 +364,21 @@ class SettingsStore(
         return present to (prefs[KeyLastPresenceAt] ?: 0L)
     }
 
+    /** 재시작 직후에도 최근 실행의 쿨다운을 이어받는다. */
+    suspend fun macroLastFired(): Map<String, Long> = macroFiredTimes(store.data.first())
+
+    /** 원자적 설정 갱신으로 동시 매크로 기록을 합치고 삭제된 규칙 기록은 정리한다. */
+    suspend fun saveMacroFired(ruleId: String, timestampMillis: Long, ruleIds: Set<String>) = edit { prefs ->
+        val retained = macroFiredTimes(prefs).filterKeys { it in ruleIds }
+        prefs[KeyMacroLastFired] = Json.encodeToString(retained + (ruleId to timestampMillis))
+    }
+
+    /** 아직 기록이 없거나 손상됐으면 빈 기록으로 시작한다. */
+    private fun macroFiredTimes(prefs: Preferences): Map<String, Long> =
+        prefs[KeyMacroLastFired]?.let { encoded ->
+            runCatching { Json.decodeFromString<Map<String, Long>>(encoded) }.getOrNull()
+        } ?: emptyMap()
+
     /** 저장된 마지막 좌표와 저장 시각. 저장된 적 없으면 null */
     suspend fun lastGeo(): Pair<com.wemade.teslamacro.domain.macro.GeoPoint, Long>? {
         val prefs = store.data.first()
@@ -419,6 +434,7 @@ class SettingsStore(
         val KeyLastGeoLat = doublePreferencesKey("last_geo_lat")
         val KeyLastGeoLng = doublePreferencesKey("last_geo_lng")
         val KeyLastGeoAt = longPreferencesKey("last_geo_at")
+        val KeyMacroLastFired = stringPreferencesKey("macro_last_fired")
         val KeyLastPresence = booleanPreferencesKey("last_presence")
         val KeyLastPresenceAt = longPreferencesKey("last_presence_at")
         val KeyNavigatorApp = stringPreferencesKey("navigator_app")

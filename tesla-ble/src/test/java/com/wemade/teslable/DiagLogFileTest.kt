@@ -86,6 +86,33 @@ class DiagLogFileTest {
         assertTrue(DiagLog.dumpAll().contains("채우는 줄 119"))
     }
 
+    /** 화면에서 밀려난 원인도 파일 공유와 재시작 후에는 읽을 수 있다. */
+    @Test
+    fun `기본 파일 버퍼는 화면의 100줄보다 오래 보관한다`() {
+        val now = System.currentTimeMillis()
+        DiagLog.attachFile(current, previous, nowMillis = now)
+        DiagLog.addAt("문 열림 원인", now)
+        repeat(110) { DiagLog.addAt("후속 이벤트 $it", now + it + 1L) }
+        assertFalse(DiagLog.dump().contains("문 열림 원인"))
+        assertTrue(DiagLog.dumpAll().contains("문 열림 원인"))
+        DiagLog.attachFile(current, previous, nowMillis = now + 200L)
+        assertTrue(DiagLog.dumpAll().contains("문 열림 원인"))
+        assertEquals(100, DiagLog.lines.value.size)
+    }
+
+    /** 파일을 늘려도 무한 축적하지 않도록 별도 1000줄 상한을 지킨다. */
+    @Test
+    fun `기본 파일은 1000줄을 넘지 않는다`() {
+        val now = System.currentTimeMillis()
+        current.writeText((0..1_005).joinToString("\n", postfix = "\n") {
+            "${timestamp(now - 1_000L)} 보관 줄 $it"
+        })
+        DiagLog.attachFile(current, previous, nowMillis = now)
+        assertEquals(DiagLog.MAX_FILE_LINES, current.readLines().size)
+        assertFalse(DiagLog.dumpAll().contains("보관 줄 0\n"))
+        assertTrue(DiagLog.dumpAll().contains("보관 줄 1005"))
+    }
+
     /** 정확히 12시간이 된 줄도 보관 대상에서 빠져야 한다. */
     @Test
     fun `12시간 이상 지난 로그를 붙일 때 지운다`() {

@@ -327,11 +327,13 @@ class MacroService : LifecycleService() {
                 val action = intent.getStringExtra(QuickActionActivity.EXTRA_ACTION)
                 val macroId = intent.getStringExtra(QuickActionActivity.EXTRA_MACRO_ID)
                 val receivedAt = intent.getLongExtra(EXTRA_RECEIVED_AT, android.os.SystemClock.elapsedRealtime())
+                val app = application as TeslaMacroApplication
+                val label = app.container.ruleStore.rules.value.firstOrNull { it.id == macroId }?.name
+                    ?: QuickActionActivity.ACTIONS[action]?.label ?: "빠른 명령"
                 lifecycleScope.launch {
-                    if (action != null && macroId == null && (action == "open_frunk" || intent.hasExtra(EXTRA_VALIDITY_SECONDS))) {
-                        handleTimedQuickAction(action, receivedAt, intent.getIntExtra(EXTRA_VALIDITY_SECONDS, 120).coerceIn(10, 600))
-                    } else {
-                        handleQuickAction(action, macroId)
+                    app.container.quickActionRequests.track(label) { beforeDispatch ->
+                        handleTimedQuickAction(action, macroId, receivedAt,
+                            intent.getIntExtra(EXTRA_VALIDITY_SECONDS, 120).coerceIn(10, 600), beforeDispatch)
                     }
                 }
             }
@@ -397,8 +399,10 @@ class MacroService : LifecycleService() {
     }
 
     /** 수신 당시 유효시간을 연결·깨우기·전송 전체에 적용한다. */
-    private suspend fun handleTimedQuickAction(action: String, receivedAt: Long, validitySeconds: Int) {
-        val label = QuickActionActivity.ACTIONS[action]?.label ?: action
+    private suspend fun handleTimedQuickAction(
+        action: String?, macroId: String?, receivedAt: Long, validitySeconds: Int, beforeDispatch: () -> Unit,
+    ) {
+        val label = QuickActionActivity.ACTIONS[action]?.label ?: "매크로"
         val deadline = com.wemade.teslable.CommandDeadline(receivedAt + validitySeconds * 1000L) {
             android.os.SystemClock.elapsedRealtime()
         }
@@ -409,19 +413,20 @@ class MacroService : LifecycleService() {
             wakeLock.acquire(deadline.remainingMillis())
             com.wemade.teslable.DiagLog.add("$label 요청 대기 — 수신부터 최대 ${validitySeconds}초 · 만료 후 전송 취소")
             val completed = kotlinx.coroutines.withTimeoutOrNull(deadline.remainingMillis()) {
-                kotlinx.coroutines.withContext(deadline) { handleQuickAction(action, null) }
+                kotlinx.coroutines.withContext(deadline) { handleQuickAction(action, macroId, beforeDispatch) }
                 true
             }
             if (completed == null) throw com.wemade.teslable.CommandExpiredException()
         } catch (expired: com.wemade.teslable.CommandExpiredException) {
             quickActionFailed(label, "요청 후 ${validitySeconds}초가 지나 취소했어요 · 이미 전송한 명령은 취소할 수 없어요")
+            throw expired
         } finally {
             if (wakeLock.isHeld) wakeLock.release()
         }
     }
 
     /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
-    private suspend fun handleQuickAction(action: String?, macroId: String?) {
+    private suspend fun handleQuickAction(action: String?, macroId: String?, beforeDispatch: () -> Unit) {
         val app = application as TeslaMacroApplication
         app.ready.first { it }
 
@@ -462,6 +467,9 @@ class MacroService : LifecycleService() {
                 return
             }
 
+            // 취소와 전송 진입을 원자적으로 결정한다. 이후에는 차량 전달 철회를 보장하지 않는다.
+            com.wemade.teslable.ensureCommandActive()
+            beforeDispatch()
             if (rule != null) {
                 // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
                 app.container.runner.launch(

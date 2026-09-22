@@ -175,11 +175,21 @@ class MainActivity : ComponentActivity() {
                     // 키보드가 높이를 줄여도 세로 본문이 좌우 분할되지 않도록 OS 방향을 쓴다.
                     val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
                     CompositionLocalProvider(LocalPane provides Pane.of(maxWidth, portrait)) {
-                        if (!ready) {
-                            AppSplash()
-                        } else {
-                            val factory = remember { ViewModelFactory(app.container) }
-                            AppRoot(factory)
+                        val requests by app.container.quickActionRequests.requests.collectAsState()
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            com.wemade.teslamacro.ui.component.QuickActionRequestPanel(
+                                requests = requests,
+                                onCancel = { app.container.quickActionRequests.cancel(it) },
+                                onDismiss = app.container.quickActionRequests::dismiss,
+                            )
+                            Box(modifier = Modifier.weight(1f)) {
+                                if (!ready) {
+                                    AppSplash()
+                                } else {
+                                    val factory = remember { ViewModelFactory(app.container) }
+                                    AppRoot(factory)
+                                }
+                            }
                         }
                     }
                 }

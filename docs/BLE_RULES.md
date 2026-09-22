@@ -51,6 +51,13 @@
 
 ## 도메인 · 요청 규율
 
+- 음성·런처 빠른 명령은 앱 상단에 대기 상태와 취소 버튼을 표시한다(0.9.59).
+  `QuickActionRequests`가 취소와 `gateway.send`/매크로 실행 진입을 같은 잠금으로 결정한다.
+  연결 대기 중 취소 성공이면 명령을 보내지 않는다. 전송 처리 진입 뒤에는 취소 버튼을 숨기고 철회를 보장하지 않는다.
+  스마트싱스는 기존 설정 유효시간(10~600초), 그 외 빠른 명령은 수신부터 120초를 적용한다.
+  기존 `CommandDeadline`/`ensureCommandActive`와 연결 사용권 정리 경로를 유지하며 프로세스 재시작 뒤 대기 요청을 재생하지 않는다.
+  단위 테스트는 취소/전송 경합과 늦은 연결을 검증한다. 실제 차량 개폐 및 UI 표시 시점은 실차 미확인이다.
+
 - 도메인 2개: **VCSEC**(잠금/개폐 — 차가 자는 중에도 동작) / **INFOTAINMENT**(공조/시트 — 차가 깨어 있어야) — `tesla-ble/src/main/java/com/wemade/teslable/TeslaClient.kt:100`
 - **[NEVER]** BLE 요청을 병렬로 보내지 않는다 — requestLock 직렬화가 응답 매칭의 유일한 안전장치
   - why: VCSEC 응답엔 request_uuid가 비어 옴. `matchesRequest`가 빈 uuid를 무조건 매칭으로 처리하므로(`TeslaClient.kt:271`), in-flight 요청이 둘이면 응답이 뒤바뀐다

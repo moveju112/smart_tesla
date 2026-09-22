@@ -12,6 +12,9 @@ import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
 import com.wemade.teslamacro.domain.macro.ConditionEvaluator
 import com.wemade.teslamacro.domain.macro.GeoPoint
+import com.wemade.teslamacro.domain.macro.MacroRule
+import com.wemade.teslamacro.domain.macro.Trigger
+import com.wemade.teslamacro.domain.model.Signal
 import com.wemade.teslamacro.domain.macro.MacroEngine
 import com.wemade.teslamacro.domain.macro.MacroRunner
 import com.wemade.teslamacro.domain.macro.Reading
@@ -181,7 +184,8 @@ class StatePoller(
             val cycleStart = now()
             val settings = settingsStore.settings.first()
             val wakeCheck = vehiclePowerWakeCheck.get()
-            if ((settings.deviceMode == DeviceMode.PORTABLE || settings.autoStartNavigatorSafeDrive) &&
+            val doorMacroCheck = needsDoorMacroWakeCheck(settings, ruleStore.rules.value)
+            if ((settings.deviceMode == DeviceMode.PORTABLE || settings.autoStartNavigatorSafeDrive || doorMacroCheck) &&
                 wakeCheck?.expired(now()) == true
             ) {
                 finishPowerWakeCheck(wakeCheck, "60초 확인 시간 종료")
@@ -190,7 +194,7 @@ class StatePoller(
             val boardingCheck = wakeCheck?.takeIf {
                 !it.expired(now()) && when (connectionDecision(settings).reason) {
                     VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK -> true
-                    VehicleConnectionReason.MOUNTED_USE -> settings.autoStartNavigatorSafeDrive
+                    VehicleConnectionReason.MOUNTED_USE -> settings.autoStartNavigatorSafeDrive || doorMacroCheck
                     else -> false
                 }
             }
@@ -243,7 +247,7 @@ class StatePoller(
                     }
                     if (boardingCheck != null) {
                         com.wemade.teslable.DiagLog.add(
-                            "안심운전 연결 대기 — ${boardingCheck.connectionAttempts}/2회 시도"
+                            "전원 상승 감시 연결 대기 — ${boardingCheck.connectionAttempts}/2회 시도"
                         )
                         if (!boardingCheck.canConnect(now())) {
                             finishPowerWakeCheck(boardingCheck, "연결 확인 기회 종료")
@@ -342,7 +346,7 @@ class StatePoller(
                     continue
                 }
                 if (!connectionDecision(settingsStore.settings.first()).keep) {
-                    finishPowerWakeCheck(boardingCheck, "안심운전 확인 해제")
+                    finishPowerWakeCheck(boardingCheck, "전원 상승 감시 해제")
                     enforceConnectionGuard()
                     continue
                 }
@@ -417,9 +421,10 @@ class StatePoller(
             val observedPresence = fresh
                 ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
                 ?.isUserPresent
-            // 자동 안심운전은 사용 모드와 무관하게 착석 또는 확인 시간 만료까지 기다린다.
+            // 문 매크로는 착석 여부와 무관하게 60초 동안 변화를 기다린다.
+            // 자동 안심운전만 쓰는 경우에는 기존처럼 착석 확인 즉시 종료한다.
             if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
-                (!settings.autoStartNavigatorSafeDrive || observedPresence == true)
+                !doorMacroCheck && (!settings.autoStartNavigatorSafeDrive || observedPresence == true)
             ) {
                 wakeCheck?.let { finishPowerWakeCheck(it, "탑승 상태 확인 완료") }
             }
@@ -440,6 +445,15 @@ class StatePoller(
             // 휴대 모드는 백그라운드 자동화 주체가 아니다. 같은 룰을 거치·휴대 기기가
             // 동시에 발동하면 명령이 중복되고, 긴 대기 동안 휴대 기기가 차량 근접 키로 남는다.
             if (settings.automationEnabled && settings.deviceMode == DeviceMode.MOUNTED) {
+                // 문 변화와 위치 판정을 함께 남기되 좌표와 매 폴링 반복 로그는 피한다.
+                if (doorMacroCheck && fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
+                    (evaluationPrevious == null || evaluationPrevious.snapshot.doorOpen != current.snapshot.doorOpen)
+                ) {
+                    com.wemade.teslable.DiagLog.add(
+                        "문 매크로 감시 — 이전=${evaluationPrevious?.snapshot?.doorOpen} · 현재=${current.snapshot.doorOpen} · " +
+                            "위치=${if (current.location != null) "확인" else "미확인"}"
+                    )
+                }
                 engine.evaluate(
                     rules = ruleStore.rules.value,
                     previous = evaluationPrevious,
@@ -615,7 +629,8 @@ class StatePoller(
             autoStartNavigatorSafeDrive = settings.autoStartNavigatorSafeDrive,
             vehiclePowerConnected = vehiclePowerConnected,
             vehiclePowerWakePending = vehiclePowerWakeCheck.get()?.let {
-                (settings.deviceMode != DeviceMode.PORTABLE && !settings.autoStartNavigatorSafeDrive) ||
+                (settings.deviceMode != DeviceMode.PORTABLE && !settings.autoStartNavigatorSafeDrive &&
+                    !needsDoorMacroWakeCheck(settings, ruleStore.rules.value)) ||
                     !it.expired(now())
             } == true,
             vehicleUserPresent = _snapshot.value.isUserPresent,
@@ -899,6 +914,15 @@ internal enum class VehicleConnectionReason(val keep: Boolean, val label: String
 internal data class VehicleConnectionDecision(val reason: VehicleConnectionReason) {
     val keep: Boolean get() = reason.keep
 }
+
+/** 거치 모드의 켜진 문 열림 매크로만 기존 60초 전원 확인 예산을 함께 쓴다. */
+internal fun needsDoorMacroWakeCheck(settings: AppSettings, rules: List<MacroRule>): Boolean =
+    settings.deviceMode == DeviceMode.MOUNTED && settings.automationEnabled && rules.any { rule ->
+        rule.enabled && rule.triggers.any { trigger ->
+            trigger is Trigger.SignalBecomes && trigger.to &&
+                trigger.signal in setOf(Signal.DOOR_DRIVER_FRONT, Signal.DOOR_PASSENGER_FRONT)
+        }
+    }
 
 /** 사용 모드와 실제 사용 사유를 한곳에서 판정한다. */
 internal fun decideVehicleConnection(

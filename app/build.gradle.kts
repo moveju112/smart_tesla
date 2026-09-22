@@ -14,8 +14,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 185
-        versionName = "0.9.72"
+        versionCode = 186
+        versionName = "0.9.73"
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.

@@ -52,7 +52,7 @@ import com.wemade.teslamacro.domain.macro.Trigger
 import com.wemade.teslamacro.domain.model.Signal
 import com.wemade.teslamacro.domain.model.SignalKind
 import com.wemade.teslamacro.ui.component.ButtonTone
-import com.wemade.teslamacro.ui.component.ChipRow
+import com.wemade.teslamacro.ui.component.ChoiceGrid as ChipRow
 import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.PickerList
 import com.wemade.teslamacro.ui.component.PickerRow
@@ -67,6 +67,11 @@ import com.wemade.teslamacro.ui.theme.T
 
 private enum class OpenPicker { NONE, TRIGGER, CONDITION, ACTION, WAIT_UNTIL }
 
+/** 탭 번호를 탐색 이력으로 취급하지 않고 열린 선택창 또는 편집 화면만 닫는다. */
+internal fun handleEditorBack(pickerOpen: Boolean, closePicker: () -> Unit, closeEditor: () -> Unit) {
+    if (pickerOpen) closePicker() else closeEditor()
+}
+
 /** 위저드 한 페이지의 제목 묶음 */
 private data class WizardStep(val title: String, val subtitle: String)
 
@@ -80,7 +85,7 @@ private val STEPS = listOf(
 /**
  * 매크로 편집 — 페이지 위저드.
  *
- * **언제 → 조건 → 실행 → 마무리**를 한 페이지에 하나씩, 이전/다음으로 넘긴다.
+ * **언제 → 조건 → 동작 → 마무리**는 탭으로 이동하고 신규 생성만 이전/다음으로 안내한다.
  * 한 번에 다 보여주는 방식은 단 사이 구분이 안 돼 폐기했다.
  * 각 페이지는 질문 하나에만 답하면 되니 설명 없이도 만들 수 있다.
  *
@@ -101,14 +106,9 @@ fun MacroEditScreen(
     val compact = LocalPane.current.isCompact
     val last = step == STEPS.lastIndex
 
-    // 시스템 뒤로가기를 받는다 — 안 받으면 편집 중에 앱이 통째로 꺼진다.
-    // 피커 닫기 → 이전 단계 → 목록 복귀 순으로, 화면의 X·이전 버튼과 같은 감각
+    // 편집 탭은 탐색 이력이 아니다. 선택창만 먼저 닫고 편집에서는 한 번에 목록으로 돌아간다.
     androidx.activity.compose.BackHandler {
-        when {
-            picker != OpenPicker.NONE -> picker = OpenPicker.NONE
-            step > 0 -> step--
-            else -> onCancel()
-        }
+        handleEditorBack(picker != OpenPicker.NONE, { picker = OpenPicker.NONE }, onCancel)
     }
 
     // 화면 크기와 관계없이 한 단계씩 편집하고, 이미 만든 매크로는 동작부터 수정한다.
@@ -129,7 +129,7 @@ fun MacroEditScreen(
                     .clip(RoundedCornerShape(Radius.pill))
                     .clickable(onClick = onCancel)
                     .padding(Space.sm + Space.xs)
-                    .size(24.dp),
+                    .size(Space.lg),
             )
             Column(modifier = Modifier.weight(1f).padding(horizontal = Space.sm)) {
                 Text(
@@ -140,11 +140,7 @@ fun MacroEditScreen(
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = "${step + 1} / ${STEPS.size}",
-                style = MaterialTheme.typography.labelLarge,
-                color = T.InkMuted,
-            )
+            // 탭에 현재 위치가 드러나므로 중복 단계 숫자는 표시하지 않는다.
         }
         Spacer(Modifier.height(Space.sm))
         Row(
@@ -158,24 +154,14 @@ fun MacroEditScreen(
                         .clip(RoundedCornerShape(Radius.segment))
                         .background(if (index == step) T.Electric else T.Slate)
                         .selectable(selected = index == step, role = Role.Tab, onClick = { step = index })
-                        .heightIn(min = 64.dp)
+                        .heightIn(min = Space.xxl)
                         .padding(vertical = Space.sm),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(label, style = MaterialTheme.typography.labelLarge,
                         color = if (index == step) T.Void else T.Ink)
-                    Text(
-                        text = when (index) {
-                            0 -> "${draft.triggers.size}개"
-                            1 -> if (draft.conditions.isEmpty()) "선택 사항" else "${draft.conditions.size}개"
-                            2 -> "${draft.actions.size}개"
-                            else -> "이름 · 옵션"
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (index == step) T.Void else T.InkMuted,
-                        modifier = Modifier.padding(top = Space.xs),
-                    )
+                    // 탭 높이를 줄여 편집 내용에 공간을 우선 배분한다.
                 }
             }
         }
@@ -268,7 +254,7 @@ fun MacroEditScreen(
                 .padding(top = Space.sm + Space.xs),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            if (step > 0) {
+            if (draft.isNew && step > 0) {
                 TButton("이전", ButtonTone.Secondary, modifier = Modifier.weight(1f)) { step-- }
             }
             if (!last && draft.isNew) {

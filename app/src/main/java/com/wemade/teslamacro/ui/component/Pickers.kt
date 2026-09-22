@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -179,30 +184,51 @@ fun <T> ChipRow(
         verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         options.forEach { option ->
-            val isSelected = option == selected
-            val background by animateColorAsState(
-                targetValue = if (isSelected) T.Electric else T.Slate,
-                animationSpec = Motion.quick(),
-                label = "chipBackground",
-            )
-            Box(
-                modifier = Modifier
-                    // clip을 먼저 — 리플이 둥근 모서리 밖으로 번지지 않게
-                    .clip(RoundedCornerShape(Radius.button))
-                    .background(background)
-                    // selectable — TalkBack이 선택 상태를 읽을 수 있게
-                    .selectable(selected = isSelected, role = Role.Button) { onSelect(option) }
-                    .defaultMinSize(minHeight = 48.dp)
-                    .padding(horizontal = Space.md, vertical = Space.sm + Space.xs),
-            ) {
-                Text(
-                    text = label(option),
-                    style = MaterialTheme.typography.labelLarge,
-                    // 낮과 밤의 포인트 명도에 맞춰 버튼과 같은 대비를 쓴다
-                    color = if (isSelected) T.Void else T.InkMuted,
-                )
+            ChoiceChip(label(option), option == selected, onClick = { onSelect(option) })
+        }
+    }
+}
+
+/** 편집 선택지는 같은 폭으로 정렬하고 마지막 줄도 앞줄의 열 규격을 유지한다. */
+@Composable
+fun <T> ChoiceGrid(
+    options: List<T>,
+    selected: T?,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    columns: Int = 2,
+) {
+    val columnCount = if (LocalDensity.current.fontScale >= 1.3f) columns.coerceAtMost(2) else columns
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        options.chunked(columnCount).forEach { row ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                row.forEach { option ->
+                    ChoiceChip(label(option), option == selected, compact = true,
+                        modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onSelect(option) })
+                }
+                repeat(columnCount - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
+    }
+}
+
+/** 자유 배치 칩과 정렬된 편집 선택지가 동일한 색·높이·접근성 규격을 공유한다. */
+@Composable
+private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Modifier, compact: Boolean = false, onClick: () -> Unit) {
+    val background by animateColorAsState(
+        targetValue = if (selected) T.Electric else T.Slate,
+        animationSpec = Motion.quick(), label = "chipBackground",
+    )
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(Radius.button)).background(background)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .defaultMinSize(minHeight = Space.xxl)
+            .padding(horizontal = if (compact) Space.sm else Space.md, vertical = if (compact) Space.sm else Space.sm + Space.xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge,
+            color = if (selected) T.Void else T.InkMuted, textAlign = TextAlign.Center)
     }
 }
 

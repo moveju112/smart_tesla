@@ -32,7 +32,7 @@ import com.wemade.teslamacro.domain.macro.formatDuration
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.ui.component.ButtonTone
-import com.wemade.teslamacro.ui.component.ChipRow
+import com.wemade.teslamacro.ui.component.ChoiceGrid as ChipRow
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.openOverlayPermissionSettings
 import com.wemade.teslamacro.ui.component.rememberOnResume
@@ -108,7 +108,7 @@ internal fun CardIconButton(
 ) {
     Box(
         modifier = Modifier
-            .size(48.dp)
+            .size(Space.xxl)
             .clip(RoundedCornerShape(Radius.pill))
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -117,7 +117,7 @@ internal fun CardIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (enabled) tint else T.InkFaint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(Space.lg),
         )
     }
 }
@@ -191,6 +191,7 @@ private fun parameterEditor(
             Spacer(Modifier.height(Space.sm))
             ChipRow(
                 options = Level.entries,
+                columns = 4,
                 selected = level,
                 label = { it.label },
                 onSelect = { onChange(ActionStep.Run(template.build(seat, it))) },

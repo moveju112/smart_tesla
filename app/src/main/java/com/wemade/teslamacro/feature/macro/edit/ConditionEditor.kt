@@ -40,7 +40,7 @@ import com.wemade.teslamacro.domain.macro.formatDuration
 import com.wemade.teslamacro.domain.model.Signal
 import com.wemade.teslamacro.domain.model.SignalKind
 import com.wemade.teslamacro.ui.component.ButtonTone
-import com.wemade.teslamacro.ui.component.ChipRow
+import com.wemade.teslamacro.ui.component.ChoiceGrid as ChipRow
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.rememberOnResume
 import com.wemade.teslamacro.ui.component.TButton
@@ -452,6 +452,7 @@ private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) ->
     Column {
         ChipRow(
             options = Comparison.entries,
+            columns = 3,
             selected = comparison,
             label = { it.label },
             onSelect = { onChange(rebuild(condition.signal, it, value)) },
@@ -568,22 +569,28 @@ private fun TimeAndDayEditor(
 /** 비어 있으면 "매일"이라는 뜻이라 전부 켜진 것처럼 보여준다 */
 @Composable
 private fun DayToggles(days: Set<Int>, onChange: (Set<Int>) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-        DAY_LABELS.forEachIndexed { index, label ->
-            val day = index + 1
-            val selected = days.isEmpty() || day in days
-            TButton(
-                text = label,
-                tone = if (selected) ButtonTone.Primary else ButtonTone.Secondary,
-                modifier = Modifier.weight(1f),
-                // 7개가 한 줄이라 기본 좌우 패딩이면 글자가 먹힌다 — 소형으로 패딩을 줄인다
-                small = true,
-                onClick = {
-                    val explicit = days.ifEmpty { (1..7).toSet() }
-                    val updated = if (day in explicit) explicit - day else explicit + day
-                    onChange(if (updated.size == 7) emptySet() else updated)
-                },
-            )
+    // 요일 7개를 한 줄에 압축하지 않아 휴대폰에서도 최소 터치 폭을 지킨다.
+    val columns = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f) 2 else 4
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        DAY_LABELS.withIndex().toList().chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                row.forEach { (index, label) ->
+                    val day = index + 1
+                    val selected = days.isEmpty() || day in days
+                    TButton(
+                        text = label,
+                        tone = if (selected) ButtonTone.Primary else ButtonTone.Secondary,
+                        modifier = Modifier.weight(1f),
+                        small = true,
+                        onClick = {
+                            val explicit = days.ifEmpty { (1..7).toSet() }
+                            val updated = if (day in explicit) explicit - day else explicit + day
+                            onChange(if (updated.size == 7) emptySet() else updated)
+                        },
+                    )
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
     }
 }

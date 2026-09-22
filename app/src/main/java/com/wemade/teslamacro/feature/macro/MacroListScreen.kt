@@ -13,6 +13,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.wemade.teslamacro.domain.macro.MacroFolder
+import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -59,7 +66,47 @@ fun MacroListScreen(
     onDelete: (MacroRule) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
+    onCreateInFolder: ((String?) -> Unit)? = null,
+    folders: List<MacroFolder> = emptyList(),
+    folderError: String? = null,
+    onSaveFolder: (String?, String) -> Unit = { _, _ -> },
+    onMoveToFolder: (String, String?) -> Unit = { _, _ -> },
 ) {
+    var selectedFolderId by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderDialog by remember { mutableStateOf(false) }
+    var renamingFolder by remember { mutableStateOf<MacroFolder?>(null) }
+    var movingRule by remember { mutableStateOf<MacroRule?>(null) }
+    val selectedFolder = folders.firstOrNull { it.id == selectedFolderId }
+    val assignedIds = folders.flatMap { it.ruleIds }.toSet()
+    val visibleRules = rules.filter { if (selectedFolder != null) it.id in selectedFolder.ruleIds else it.id !in assignedIds }
+    BackHandler(enabled = selectedFolder != null) { selectedFolderId = null }
+    if (folderDialog) {
+        FolderNameDialog(renamingFolder, folders, onDismiss = { folderDialog = false }) { name ->
+            onSaveFolder(renamingFolder?.id, name)
+            folderDialog = false
+        }
+    }
+    movingRule?.let { rule ->
+        AlertDialog(
+            onDismissRequest = { movingRule = null },
+            title = { Text("폴더로 이동") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    TButton(text = "폴더 밖", tone = ButtonTone.Ghost, onClick = {
+                        onMoveToFolder(rule.id, null)
+                        movingRule = null
+                    })
+                    folders.forEach { folder ->
+                        TButton(text = folder.name, tone = ButtonTone.Ghost, onClick = {
+                            onMoveToFolder(rule.id, folder.id)
+                            movingRule = null
+                        })
+                    }
+                }
+            },
+            confirmButton = { TButton(text = "취소", fillWidth = false, onClick = { movingRule = null }) },
+        )
+    }
     // 큰 글씨에서는 카드 폭을 확보하고, 기본 휴대폰은 두 열로 공간을 활용한다.
     val columns = if (LocalDensity.current.fontScale >= 1.3f) {
         LocalPane.current.columns
@@ -85,9 +132,26 @@ fun MacroListScreen(
                 icon = DraftMark.Add,
                 fillWidth = false,
                 small = true,
-                onClick = onCreate,
+                onClick = { onCreateInFolder?.invoke(selectedFolder?.id) ?: onCreate() },
             )
         }
+
+        Row(Modifier.fillMaxWidth().padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
+            if (selectedFolder != null) {
+                TButton(text = "목록", tone = ButtonTone.Ghost, fillWidth = false, onClick = { selectedFolderId = null })
+                Text(selectedFolder.name, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                TButton(text = "이름 변경", tone = ButtonTone.Ghost, fillWidth = false, onClick = {
+                    renamingFolder = selectedFolder
+                    folderDialog = true
+                })
+            } else {
+                TButton(text = "폴더 만들기", tone = ButtonTone.Ghost, fillWidth = false, onClick = {
+                    renamingFolder = null
+                    folderDialog = true
+                })
+            }
+        }
+        folderError?.let { Text(it, color = T.Danger, modifier = Modifier.padding(horizontal = Space.md)) }
 
         if (runningIds.isNotEmpty()) {
             TButton(
@@ -99,12 +163,12 @@ fun MacroListScreen(
             )
         }
 
-        if (rules.isEmpty()) {
+        if (visibleRules.isEmpty() && (selectedFolder != null || folders.isEmpty())) {
             EmptyState(
-                title = "반복하는 차량 동작을 자동으로",
-                description = "탑승을 감지해 통풍을 켜는 식의 자동화를 만들 수 있어요.",
+                title = if (selectedFolder != null) "폴더가 비어 있어요" else "반복하는 차량 동작을 자동으로",
+                description = if (selectedFolder != null) "매크로 더보기에서 이 폴더로 이동할 수 있어요." else "탑승을 감지해 통풍을 켜는 식의 자동화를 만들 수 있어요.",
                 actionLabel = "매크로 만들기",
-                onAction = onCreate,
+                onAction = { onCreateInFolder?.invoke(selectedFolder?.id) ?: onCreate() },
                 modifier = Modifier.padding(horizontal = Space.lg),
             )
         }
@@ -116,7 +180,16 @@ fun MacroListScreen(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            items(rules, key = { it.id }) { rule ->
+            if (selectedFolder == null) {
+                items(folders, key = { "folder-${it.id}" }) { folder ->
+                    TCard(onClick = { selectedFolderId = folder.id }) {
+                        Text(folder.name, style = MaterialTheme.typography.titleSmall, color = T.Ink,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.heightIn(min = Space.xxl))
+                        Text("폴더 · ${rules.count { it.id in folder.ruleIds }}개", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                    }
+                }
+            }
+            items(visibleRules, key = { it.id }) { rule ->
                 MacroCard(
                     rule = rule,
                     isRunning = rule.id in runningIds,
@@ -125,10 +198,28 @@ fun MacroListScreen(
                     onEdit = { onEdit(rule) },
                     onDuplicate = { onDuplicate(rule) },
                     onDelete = { onDelete(rule) },
+                    onMove = { movingRule = rule },
                 )
             }
         }
     }
+}
+
+/** 이름 입력에 집중하고 빈 이름·중복 이름은 저장 전에 안내한다. */
+@Composable
+private fun FolderNameDialog(folder: MacroFolder?, folders: List<MacroFolder>, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by remember(folder?.id) { mutableStateOf(folder?.name.orEmpty()) }
+    val duplicate = folders.any { it.id != folder?.id && it.name.equals(name.trim(), ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (folder == null) "폴더 만들기" else "이름 변경") },
+        text = {
+            DraftField(value = name, onValueChange = { if (it.length <= 40) name = it },
+                label = "폴더 이름", note = if (duplicate) "같은 이름의 폴더가 있어요." else null)
+        },
+        confirmButton = { TButton(text = "저장", fillWidth = false, enabled = name.isNotBlank() && !duplicate, onClick = { onSave(name.trim()) }) },
+        dismissButton = { TButton(text = "취소", tone = ButtonTone.Ghost, fillWidth = false, onClick = onDismiss) },
+    )
 }
 
 /** 조건·동작은 편집 화면에 두고 카드에는 이름과 자동 실행 토글만 남긴다. */
@@ -141,6 +232,7 @@ private fun MacroCard(
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    onMove: () -> Unit,
 ) {
     TCard(onClick = onEdit, outlined = isRunning) {
         Row(
@@ -159,7 +251,7 @@ private fun MacroCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete)
+            RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete, onMove = onMove)
         }
         if (isRunning) {
             Text(
@@ -188,6 +280,7 @@ private fun RowActions(
     rule: MacroRule,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
+    onMove: () -> Unit,
 ) {
     // 삭제는 실수 방지로 두 번 탭 — 다이얼로그까지 띄울 일은 아니다
     var menuOpen by remember(rule.id) { mutableStateOf(false) }
@@ -205,7 +298,7 @@ private fun RowActions(
         ) {
             Icon(
                 imageVector = DraftMark.More,
-                contentDescription = "${rule.name} 복제·삭제 메뉴",
+                contentDescription = "${rule.name} 이동·복제·삭제 메뉴",
                 tint = T.InkMuted,
                 modifier = Modifier.size(Space.lg),
             )
@@ -217,6 +310,10 @@ private fun RowActions(
                 confirmDelete = false
             },
         ) {
+            DropdownMenuItem(
+                text = { Text("폴더로 이동", color = T.Ink) },
+                onClick = { menuOpen = false; onMove() },
+            )
             DropdownMenuItem(
                 text = { Text("복제", color = T.Ink) },
                 onClick = {

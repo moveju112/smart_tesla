@@ -303,6 +303,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                         )
                     } else {
                         val rules by vm.rules.collectAsState()
+                        val folders by vm.folders.collectAsState()
+                        val folderError by vm.folderError.collectAsState()
                         val running by vm.running.collectAsState()
                         val progress by vm.progress.collectAsState()
                         MacroListScreen(
@@ -315,6 +317,11 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onDuplicate = vm::duplicate,
                             onDelete = vm::delete,
                             onCreate = vm::createMacro,
+                            onCreateInFolder = vm::createMacroInFolder,
+                            folders = folders,
+                            folderError = folderError,
+                            onSaveFolder = vm::saveFolder,
+                            onMoveToFolder = vm::moveToFolder,
                         )
                     }
                 }

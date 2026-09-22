@@ -13,6 +13,35 @@ import kotlinx.coroutines.launch
 class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
     val rules = container.ruleStore.rules
+    val folders = container.ruleStore.folders
+    private val _folderError = MutableStateFlow<String?>(null)
+    val folderError: StateFlow<String?> = _folderError.asStateFlow()
+
+    /** 생성·이름 변경 결과를 저장하고 실패는 목록에서 알린다. */
+    fun saveFolder(id: String?, name: String) {
+        viewModelScope.launch {
+            try {
+                container.ruleStore.saveFolder(id, name)
+                _folderError.value = null
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _folderError.value = error.message ?: "폴더를 저장하지 못했어요."
+            }
+        }
+    }
+
+    /** 폴더 밖 이동까지 같은 경로로 처리하며 실패를 숨기지 않는다. */
+    fun moveToFolder(ruleId: String, folderId: String?) {
+        viewModelScope.launch {
+            try {
+                container.ruleStore.moveToFolder(ruleId, folderId)
+                _folderError.value = null
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _folderError.value = error.message ?: "매크로를 이동하지 못했어요."
+            }
+        }
+    }
     val running = container.runner.running
     val progress = container.runner.progress
     val log = container.runner.log
@@ -36,7 +65,16 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
     // ---- 편집 ----
 
+    private var draftFolderId: String? = null
+
+    /** 현재 폴더에서 만든 매크로는 저장 후 같은 폴더에 넣는다. */
+    fun createMacroInFolder(folderId: String?) {
+        createMacro()
+        draftFolderId = folderId
+    }
+
     fun createMacro() {
+        draftFolderId = null
         _draft.value = MacroDraft.blank()
     }
 
@@ -57,6 +95,7 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
         if (!current.canSave) return
         viewModelScope.launch {
             container.ruleStore.upsert(current.toRule())
+            if (current.isNew && draftFolderId != null) moveToFolder(current.id, draftFolderId)
             _draft.value = null
         }
     }
@@ -76,6 +115,7 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 프리셋을 복제해 새 매크로의 출발점으로 쓴다 */
     fun duplicate(rule: MacroRule) {
+        draftFolderId = folders.value.firstOrNull { rule.id in it.ruleIds }?.id
         _draft.value = MacroDraft.from(rule).copy(
             id = "macro-${java.util.UUID.randomUUID()}",
             name = "${rule.name} 복사본",

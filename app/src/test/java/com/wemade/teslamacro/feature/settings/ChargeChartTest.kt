@@ -9,6 +9,18 @@ import org.junit.Test
 
 /** 그래프가 칸을 제자리에 놓고 눈금 꼭대기를 값에서 뽑는지 검증한다. */
 class ChargeChartTest {
+    /** 관측 시간만 있는 0A 기록은 숨기고 실제 충전과 섞인 0A 구간은 보존한다. */
+    @Test
+    fun `zero current alone never shows an empty chart`() {
+        val now = 100_000_000L
+        val zero = ChargeBucket(now - 1000L, 0L, 1000L)
+        val charging = zero.copy(startMillis = now - 2000L, ampsMillis = 10_000L)
+        assertTrue(recentChargeBuckets(listOf(zero), now).isEmpty())
+        assertTrue(recentChargeBuckets(listOf(zero, charging.copy(startMillis = now - ChargeHistory.WINDOW_MILLIS)), now).isEmpty())
+        assertEquals(listOf(zero, charging), recentChargeBuckets(listOf(zero, charging), now))
+        assertTrue(planChargeBars(listOf(zero), now, 5.0).none { it.heightRatio > 0.0 })
+    }
+
     /** 24시간 경계·미래·관측 없음은 숨기고 최근 실제 기록만 남긴다. */
     @org.junit.Test
     fun `empty and expired history hides chart`() {

@@ -1,6 +1,13 @@
 package com.wemade.teslamacro.data.macro
 
 import android.content.Context
+import android.util.AtomicFile
+import com.wemade.teslamacro.domain.macro.MacroFolder
+import com.wemade.teslamacro.domain.macro.defaultMacroFolders
+import com.wemade.teslamacro.domain.macro.saveMacroFolder
+import com.wemade.teslamacro.domain.macro.moveMacroToFolder
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.wemade.teslamacro.domain.macro.MacroRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +30,10 @@ import java.io.File
 class RuleStore(context: Context) {
 
     private val file = File(context.filesDir, "macros.json")
+    private val folderFile = AtomicFile(File(context.filesDir, "macro_folders.json"))
+    private val folderLock = Mutex()
+    private val _folders = MutableStateFlow<List<MacroFolder>>(emptyList())
+    val folders: StateFlow<List<MacroFolder>> = _folders.asStateFlow()
 
     /** 한 번이라도 깔아준 프리셋 id 목록. 지운 프리셋이 재시작마다 부활하는 걸 막는다 */
     private val seenPresetsFile = File(context.filesDir, "macro_presets_seen.json")
@@ -61,11 +72,50 @@ class RuleStore(context: Context) {
             else (existing + missing).also { persist(it) }
         } ?: MacroPresets.defaults().also { persist(it) }
 
+        folderLock.withLock {
+            // 이미 저장된 폴더가 있으면 사용자의 이동·이름 변경을 다시 분류하지 않는다.
+            _folders.value = if (folderFile.baseFile.exists() || File(folderFile.baseFile.path + ".bak").exists()) {
+                json.decodeFromString<List<MacroFolder>>(folderFile.readFully().decodeToString())
+            } else defaultMacroFolders(_rules.value).also { persistFolders(it) }
+        }
+
         // 지금 시점의 프리셋 전부를 "소개함"으로 기록한다
         runCatching {
             seenPresetsFile.writeText(
                 json.encodeToString(presetIdSerializer, seen + MacroPresets.defaults().map { it.id }.toSet())
             )
+        }
+    }
+
+    /** 폴더 생성과 이름 변경은 같은 저장 경로를 쓰고 쓰기 실패 시 화면 값을 보존한다. */
+    suspend fun saveFolder(id: String?, name: String) = mutateFolders {
+        saveMacroFolder(it, id ?: java.util.UUID.randomUUID().toString(), name)
+    }
+
+    /** 이동은 실행 중인 매크로에 영향을 주지 않는다. */
+    suspend fun moveToFolder(ruleId: String, folderId: String?) = mutateFolders {
+        require(_rules.value.any { rule -> rule.id == ruleId }) { "매크로를 찾을 수 없어요." }
+        moveMacroToFolder(it, ruleId, folderId)
+    }
+
+    /** 연속 이동·이름 변경을 직렬화하고 저장 완료 뒤에만 화면에 반영한다. */
+    private suspend fun mutateFolders(transform: (List<MacroFolder>) -> List<MacroFolder>) = withContext(Dispatchers.IO) {
+        folderLock.withLock {
+            val updated = transform(_folders.value)
+            persistFolders(updated)
+            _folders.value = updated
+        }
+    }
+
+    /** 프로세스 종료 중에도 직전 폴더 파일이 남도록 원자적으로 교체한다. */
+    private fun persistFolders(folders: List<MacroFolder>) {
+        val output = folderFile.startWrite()
+        try {
+            output.write(json.encodeToString(ListSerializer(MacroFolder.serializer()), folders).encodeToByteArray())
+            folderFile.finishWrite(output)
+        } catch (error: Exception) {
+            folderFile.failWrite(output)
+            throw error
         }
     }
 

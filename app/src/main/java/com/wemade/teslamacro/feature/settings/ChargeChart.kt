@@ -79,9 +79,11 @@ internal fun chartTopAmps(buckets: List<ChargeBucket>): Double {
     return maxOf(5.0, kotlin.math.ceil(observed))
 }
 
-/** 최근 24시간에 관측된 칸만 표시하며 미래·빈 기록은 그래프를 만들지 않는다. */
+/** 최근 24시간에 실제 충전이 있을 때만 표시한다. 0A 관측만 있으면 빈 차트도 숨긴다. */
 internal fun recentChargeBuckets(buckets: List<ChargeBucket>, nowMillis: Long): List<ChargeBucket> =
-    ChargeHistory.prune(buckets, nowMillis).filter { it.startMillis <= nowMillis && it.coveredMillis > 0 }
+    ChargeHistory.prune(buckets, nowMillis)
+        .filter { it.startMillis <= nowMillis && it.coveredMillis > 0 }
+        .takeIf { recent -> recent.any { it.ampsMillis > 0 } }.orEmpty()
 
 internal const val SLOT_COUNT = 96
 
@@ -100,6 +102,7 @@ internal fun ChargeChart(
     if (recentBuckets.isEmpty()) return
     val top = chartTopAmps(recentBuckets)
     val bars = planChargeBars(recentBuckets, nowMillis, top)
+    if (bars.none { it.heightRatio > 0.0 }) return
     val barColor = T.Electric
     val fadedColor = T.ElectricFaint
     val lineColor = T.Hairline

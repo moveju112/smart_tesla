@@ -406,6 +406,18 @@ object DraftMark {
         moveTo(6f, 13f); lineTo(12f, 19f); lineTo(18f, 13f)
     }
 
+    /** 상위 폴더로 돌아가는 탐색을 표시한다. */
+    val ArrowLeft: ImageVector = mark {
+        moveTo(18f, 12f); lineTo(6f, 12f)
+        moveTo(12f, 6f); lineTo(6f, 12f); lineTo(12f, 18f)
+    }
+
+    /** 탭이 있는 폴더 윤곽으로 매크로 카드와 분류 카드를 구분한다. */
+    val Folder: ImageVector = mark {
+        moveTo(3f, 5f); lineTo(9f, 5f); lineTo(12f, 8f)
+        lineTo(21f, 8f); lineTo(21f, 19f); lineTo(3f, 19f); close()
+    }
+
     val ArrowRight: ImageVector = mark {
         moveTo(6f, 12f); lineTo(18f, 12f)
         moveTo(12f, 6f); lineTo(18f, 12f); lineTo(12f, 18f)

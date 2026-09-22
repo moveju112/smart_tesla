@@ -76,6 +76,7 @@ fun MacroListScreen(
     var folderDialog by remember { mutableStateOf(false) }
     var renamingFolder by remember { mutableStateOf<MacroFolder?>(null) }
     var movingRule by remember { mutableStateOf<MacroRule?>(null) }
+    var headerMenuOpen by remember { mutableStateOf(false) }
     val selectedFolder = folders.firstOrNull { it.id == selectedFolderId }
     val assignedIds = folders.flatMap { it.ruleIds }.toSet()
     val visibleRules = rules.filter { if (selectedFolder != null) it.id in selectedFolder.ruleIds else it.id !in assignedIds }
@@ -114,41 +115,46 @@ fun MacroListScreen(
         LocalPane.current.columns.coerceAtLeast(2)
     }
     Column(modifier = modifier.fillMaxSize()) {
-        // 추가 버튼을 요약 옆에 두어 하단 고정 버튼이 목록을 가리지 않게 한다.
+        // 탐색·제목·추가만 한 줄에 두고 드문 관리 동작은 더보기로 모은다.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Space.md, vertical = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (selectedFolder != null) {
+                IconButton(onClick = { selectedFolderId = null }, modifier = Modifier.size(Space.xxl)) {
+                    Icon(DraftMark.ArrowLeft, contentDescription = "전체 매크로 목록", tint = T.Ink, modifier = Modifier.size(Space.lg))
+                }
+            }
             Text(
-                text = "매크로 ${rules.size}개 · 사용 중 ${rules.count { it.enabled }}개",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
+                text = selectedFolder?.name ?: "매크로",
+                style = MaterialTheme.typography.titleLarge,
+                color = T.Ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            TButton(
-                text = "추가",
-                icon = DraftMark.Add,
-                fillWidth = false,
-                small = true,
+            IconButton(
                 onClick = { onCreateInFolder?.invoke(selectedFolder?.id) ?: onCreate() },
-            )
-        }
-
-        Row(Modifier.fillMaxWidth().padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
-            if (selectedFolder != null) {
-                TButton(text = "목록", tone = ButtonTone.Ghost, fillWidth = false, onClick = { selectedFolderId = null })
-                Text(selectedFolder.name, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TButton(text = "이름 변경", tone = ButtonTone.Ghost, fillWidth = false, onClick = {
-                    renamingFolder = selectedFolder
-                    folderDialog = true
-                })
-            } else {
-                TButton(text = "폴더 만들기", tone = ButtonTone.Ghost, fillWidth = false, onClick = {
-                    renamingFolder = null
-                    folderDialog = true
-                })
+                modifier = Modifier.size(Space.xxl),
+            ) {
+                Icon(DraftMark.Add, contentDescription = "매크로 추가", tint = T.Electric, modifier = Modifier.size(Space.lg))
+            }
+            Box {
+                IconButton(onClick = { headerMenuOpen = true }, modifier = Modifier.size(Space.xxl)) {
+                    Icon(DraftMark.More, contentDescription = "목록 더보기", tint = T.InkMuted, modifier = Modifier.size(Space.lg))
+                }
+                DropdownMenu(expanded = headerMenuOpen, onDismissRequest = { headerMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (selectedFolder == null) "폴더 만들기" else "이름 변경") },
+                        onClick = {
+                            headerMenuOpen = false
+                            renamingFolder = selectedFolder
+                            folderDialog = true
+                        },
+                    )
+                }
             }
         }
         folderError?.let { Text(it, color = T.Danger, modifier = Modifier.padding(horizontal = Space.md)) }
@@ -183,8 +189,15 @@ fun MacroListScreen(
             if (selectedFolder == null) {
                 items(folders, key = { "folder-${it.id}" }) { folder ->
                     TCard(onClick = { selectedFolderId = folder.id }) {
-                        Text(folder.name, style = MaterialTheme.typography.titleSmall, color = T.Ink,
-                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.heightIn(min = Space.xxl))
+                        Row(
+                            modifier = Modifier.heightIn(min = Space.xxl),
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(DraftMark.Folder, contentDescription = null, tint = T.Electric, modifier = Modifier.size(Space.lg))
+                            Text(folder.name, style = MaterialTheme.typography.titleSmall, color = T.Ink,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        }
                         Text("폴더 · ${rules.count { it.id in folder.ruleIds }}개", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
                 }

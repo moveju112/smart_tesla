@@ -14,11 +14,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 175
-        versionName = "0.9.62"
-
-        // 공개 버전에서는 외부 네이버 지도만 사용하므로 KNSDK 키를 포함하지 않는다.
-        buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"\"")
+        versionCode = 176
+        versionName = "0.9.63"
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.
@@ -49,11 +46,6 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-    lint {
-        // KNSDK가 끌고 오는 fragment 1.1.0 때문에 뜨는 오탐. MainActivity는 ComponentActivity라
-        // FragmentActivity의 onRequestPermissionsResult 결함과 무관하다
-        disable += "InvalidFragmentVersionForActivityResult"
-    }
 
     buildFeatures {
         compose = true
@@ -63,10 +55,6 @@ android {
 
 dependencies {
     implementation(project(":tesla-ble"))
-
-    // 카카오내비 SDK — 과속·구간단속·보호구역 안내의 유일한 출처.
-    // 공개 저장소라 자격증명은 없고, 앱 키만 local.properties에서 온다
-    implementation("com.kakaomobility.knsdk:knsdk:1.12.8-hotfix03")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

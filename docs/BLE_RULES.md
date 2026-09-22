@@ -86,7 +86,9 @@
 | 사용 모드별 휴대폰 키 간섭 방지(빈 차 확인 후 GATT 종료) | ⚠️ 실차 미확인 — 거치/휴대 모드 설정 후 이탈 잠금 A/B 필요 |
 
 - 실차 연결은 아직 BLE이므로 **차 근처(~수십 m)에서만** 동작한다.
-  0.9.60부터 음성/바로가기용 Fleet 선택·깨우기·취소 흐름을 준비했지만 실제 API 경로/인증은 미정이며 전송은 차단한다.
+  음성/바로가기 단일 명령은 토큰 등록 후 Fleet를 선택할 수 있다. 직접 조작·자동 매크로·폴링은 BLE를 유지한다.
+  Fleet는 서버 대기열을 사용하며 자동 깨우기/서버 취소/자동 BLE 전환은 지원하지 않는다. 접수 뒤에는 결과 확인만 중단한다.
+  토큰 저장·전송 계약 및 미검증 안전 조건은 [FLEET_QUEUE_PREP.md](tasks/FLEET_QUEUE_PREP.md)를 따른다.
   서버는 `https://tesla.choondoggy.com`, 구현 범위·남은 계약·효과음 정책은 [FLEET_CLIENT.md](tasks/FLEET_CLIENT.md)를 따른다.
 - 좌석 통풍/열선 상태는 차에서 읽을 수 없다 → `SeatStore`에 클라 저장, 통풍/열선은 상호배타 토글(반대 모드 끄는 명령 동시 전송), 운전석·동승석은 통합 컨트롤 — `app/src/main/java/com/wemade/teslamacro/feature/dashboard/DashboardViewModel.kt:152`
 

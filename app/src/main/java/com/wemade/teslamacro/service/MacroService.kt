@@ -140,7 +140,9 @@ class MacroService : LifecycleService() {
                             " · 위치권한=${container.speedMeter.hasPermission()}" +
                             " · 오버레이권한=${overlay.canDraw})"
                     )
-                    container.speedMeter.speedKph().collect { kph ->
+                    container.speedMeter.locations().collect { location ->
+                        container.safeDrive.onLocation(location)
+                        val kph = com.wemade.teslamacro.data.location.kphOf(location)
                         if (kph < MOVING_KPH) {
                             overlay.hide()
                             // 세우면 과속 상태도 함께 내린다. 안 내리면 다음 주행 첫 순간에
@@ -149,7 +151,7 @@ class MacroService : LifecycleService() {
                             return@collect
                         }
                         val safety = container.safeDrive.state.value
-                        val over = safety.isOverSpeed(kph, OVER_SPEED_TOLERANCE_KPH)
+                        val over = safety.isOverSpeed(kph, container.safeDrive.toleranceKph)
                         // 매 초 찍으면 로그가 이거로만 찬다 — 넘어간 순간과 돌아온 순간만
                         if (over != overSpeedLogged) {
                             overSpeedLogged = over
@@ -173,26 +175,27 @@ class MacroService : LifecycleService() {
 
     /**
      * 설정이 켜져 있을 때만 안전운전 안내를 돌린다.
-     * GPS와 망을 계속 쓰는 기능이라, 꺼져 있으면 SDK를 아예 안 깨운다.
+     * GPS를 쓰는 기능이라, 꺼져 있으면 오프라인 안내를 시작하지 않는다.
      */
     private fun watchSafeDrive() {
         val app = application as TeslaMacroApplication
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.settingsStore.settings
-                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) }
+                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) to it.safeDriveToleranceKph }
                 .distinctUntilChanged()
-                .collect { (enabled, sound, volume) ->
+                .collect { (options, toleranceKph) ->
+                    val (enabled, sound, volume) = options
                     // 소리 설정을 먼저 밀어 넣는다 — start() 직후 첫 경보가
                     // 옛 설정으로 재생되면 껐는데 소리가 나는 것으로 보인다
-                    app.container.safeDrive.setSound(sound, volume)
+                    app.container.safeDrive.setSound(sound, volume, toleranceKph)
                     if (enabled) app.container.safeDrive.start()
                     else app.container.safeDrive.stop()
                 }
         }
 
         // 권한이 방금 생겼다면 이미 돌던 안내는 측위를 못 받는 채 떠 있다 —
-        // 세웠다 다시 세워야 SDK가 GPS를 새로 잡는다. 첫 값(0)은 흘려보낸다
+        // 상태를 다시 세워 위치를 기다리도록 한다. 첫 값(0)은 흘려보낸다
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.locationPermissionRevision.drop(1).collect {
@@ -331,9 +334,9 @@ class MacroService : LifecycleService() {
                 val label = app.container.ruleStore.rules.value.firstOrNull { it.id == macroId }?.name
                     ?: QuickActionActivity.ACTIONS[action]?.label ?: "빠른 명령"
                 lifecycleScope.launch {
-                    app.container.quickActionRequests.trackWithProgress(label) { beforeDispatch, onWaking ->
+                    app.container.quickActionRequests.trackWithFleetProgress(label) { beforeDispatch, _, onSubmitted ->
                         handleTimedQuickAction(action, macroId, receivedAt,
-                            intent.getIntExtra(EXTRA_VALIDITY_SECONDS, 120).coerceIn(10, 600), beforeDispatch, onWaking)
+                            intent.getIntExtra(EXTRA_VALIDITY_SECONDS, 120).coerceIn(10, 600), beforeDispatch, onSubmitted)
                     }
                 }
             }
@@ -401,7 +404,7 @@ class MacroService : LifecycleService() {
     /** 수신 당시 유효시간을 연결·깨우기·전송 전체에 적용한다. */
     private suspend fun handleTimedQuickAction(
         action: String?, macroId: String?, receivedAt: Long, validitySeconds: Int,
-        beforeDispatch: () -> Unit, onWaking: () -> Unit,
+        beforeDispatch: () -> Unit, onSubmitted: (String) -> Unit,
     ) {
         val label = QuickActionActivity.ACTIONS[action]?.label ?: "매크로"
         val deadline = com.wemade.teslable.CommandDeadline(receivedAt + validitySeconds * 1000L) {
@@ -414,12 +417,12 @@ class MacroService : LifecycleService() {
             wakeLock.acquire(deadline.remainingMillis())
             com.wemade.teslable.DiagLog.add("$label 요청 대기 — 수신부터 최대 ${validitySeconds}초 · 만료 후 전송 취소")
             val completed = kotlinx.coroutines.withTimeoutOrNull(deadline.remainingMillis()) {
-                kotlinx.coroutines.withContext(deadline) { handleQuickAction(action, macroId, beforeDispatch, onWaking) }
+                kotlinx.coroutines.withContext(deadline) { handleQuickAction(action, macroId, beforeDispatch, onSubmitted) }
                 true
             }
             if (completed == null) throw com.wemade.teslable.CommandExpiredException()
         } catch (expired: com.wemade.teslable.CommandExpiredException) {
-            quickActionFailed(label, "요청 후 ${validitySeconds}초가 지나 취소했어요 · 이미 전송한 명령은 취소할 수 없어요")
+            quickActionFailed(label, "요청 후 ${validitySeconds}초가 지나 처리를 종료했어요 · 이미 전송한 명령은 취소되지 않아요")
             throw expired
         } finally {
             if (wakeLock.isHeld) wakeLock.release()
@@ -427,7 +430,7 @@ class MacroService : LifecycleService() {
     }
 
     /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
-    private suspend fun handleQuickAction(action: String?, macroId: String?, beforeDispatch: () -> Unit, onWaking: () -> Unit) {
+    private suspend fun handleQuickAction(action: String?, macroId: String?, beforeDispatch: () -> Unit, onSubmitted: (String) -> Unit) {
         val app = application as TeslaMacroApplication
         app.ready.first { it }
 
@@ -449,15 +452,22 @@ class MacroService : LifecycleService() {
                 quickActionFailed(requestLabel, "Fleet는 현재 단일 차량 명령만 지원해요 · 매크로는 BLE를 선택해 주세요")
                 return
             }
-            when (app.container.fleetCommands.execute(settings.vin, command, beforeDispatch, onWaking)) {
-                com.wemade.teslamacro.data.fleet.FleetApi.CommandResult.Confirmed -> {
-                    com.wemade.teslable.DiagLog.add("Fleet [$requestLabel] 차량 성공 응답 확인")
-                    showQuickActionToast("$requestLabel 완료")
+            val result = app.container.fleetCommands.execute(settings.vin, command, beforeDispatch) { receipt ->
+                if (receipt.pending) receipt.id?.let(onSubmitted)
+            }
+            val fleetLabel = if (command == com.wemade.teslamacro.domain.command.VehicleCommand.OpenTrunk ||
+                command == com.wemade.teslamacro.domain.command.VehicleCommand.CloseTrunk) "뒤 트렁크 작동" else requestLabel
+            when (result.status) {
+                com.wemade.teslamacro.data.fleet.FleetQueueStatus.Succeeded -> {
+                    com.wemade.teslable.DiagLog.add("Fleet [$fleetLabel] 차량 성공 응답 확인 · 물리 상태 확인 아님")
+                    showQuickActionToast("$fleetLabel · 차량 성공 응답")
                 }
-                com.wemade.teslamacro.data.fleet.FleetApi.CommandResult.Rejected ->
-                    quickActionFailed(requestLabel, "차량이 명령을 거부했어요 · 자동 재전송하지 않아요")
-                com.wemade.teslamacro.data.fleet.FleetApi.CommandResult.Unknown ->
-                    quickActionFailed(requestLabel, "결과 미확인 · 이미 실행됐을 수 있어 재전송하지 않아요")
+                com.wemade.teslamacro.data.fleet.FleetQueueStatus.Failed ->
+                    quickActionFailed(fleetLabel, if (result.result in listOf("http_401", "http_403", "vehicle_access_denied"))
+                        "토큰 또는 차량 접근 권한을 확인해 주세요" else "서버 또는 차량이 명령을 거부했어요 · 자동 재전송하지 않아요")
+                com.wemade.teslamacro.data.fleet.FleetQueueStatus.Expired ->
+                    quickActionFailed(fleetLabel, "서버에서 전송 전에 유효시간이 만료됐어요")
+                else -> quickActionFailed(fleetLabel, "결과 미확인 · 이미 실행됐을 수 있어 재전송하지 않아요")
             }
             return
         }
@@ -724,9 +734,6 @@ class MacroService : LifecycleService() {
 
 /** 이 속도를 넘으면 달리는 중으로 본다. 보행 속도는 정지로 친다 */
 private const val MOVING_KPH = 5.0
-
-/** 이보다 넘겨야 과속으로 본다. GPS 속도는 계기판보다 1~2km/h 흔들린다 */
-private const val OVER_SPEED_TOLERANCE_KPH = 3
 
 /** 오버레이 아래 줄에 넣을 경고 한 마디. 안내할 게 없으면 null */
 private fun warningTextOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {

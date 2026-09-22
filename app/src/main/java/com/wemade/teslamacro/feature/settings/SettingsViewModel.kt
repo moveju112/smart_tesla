@@ -63,9 +63,64 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSmartThingsValiditySeconds(seconds) }
     }
 
-    /** 서버 계약이 준비되기 전에도 사용자가 고른 음성 명령 경로를 보존한다. */
+    private val mutableFleetCredentials = MutableStateFlow(FleetCredentialState(busy = true))
+    val fleetCredentials: StateFlow<FleetCredentialState> = mutableFleetCredentials.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            val stored = withContext(Dispatchers.IO) { container.fleetTokenStore.hasToken() }
+            mutableFleetCredentials.value = FleetCredentialState(stored = stored)
+        }
+    }
+
+    /** 토큰 없는 상태에서 ON을 허용해 실행 가능한 것처럼 보이지 않게 한다. */
     fun setFleetApiEnabled(enabled: Boolean) {
+        if (mutableFleetCredentials.value.busy) return
+        if (enabled && !mutableFleetCredentials.value.stored) {
+            mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = "사용자 API 토큰을 먼저 저장해 주세요")
+            return
+        }
         viewModelScope.launch { container.settingsStore.setFleetApiEnabled(enabled) }
+    }
+
+    /** 입력 토큰은 상태/로그/백업에 넣지 않고 IO에서 즉시 암호화한다. */
+    fun saveFleetToken(token: String) = fleetCredentialOperation {
+        withContext(Dispatchers.IO) { container.fleetTokenStore.save(token) }
+        "토큰을 암호화 저장했어요 · 연결 확인 후 Fleet API를 켜 주세요"
+    }
+
+    /** 삭제와 함께 다음 요청의 Fleet 사용을 끈다. 이미 접수한 명령은 취소되지 않는다. */
+    fun deleteFleetToken() = fleetCredentialOperation {
+        container.settingsStore.setFleetApiEnabled(false)
+        withContext(Dispatchers.IO) { container.fleetTokenStore.clear() }
+        "토큰을 삭제하고 Fleet API를 껐어요 · 이미 접수된 명령은 취소되지 않아요"
+    }
+
+    /** 읽기 전용 차량 목록으로 현재 등록 차량 접근만 확인하며 깨우기/실차 명령은 보내지 않는다. */
+    fun checkFleetConnection() = fleetCredentialOperation {
+        val vin = container.settingsStore.settings.first().vin
+        require(vin.isNotBlank()) { "앱에 차량을 먼저 등록해 주세요" }
+        val vehicle = container.fleetCommands.vehicles().firstOrNull { it.vin == vin }
+        if (vehicle == null) "이 토큰에서 앱에 등록된 차량을 찾지 못했어요 · Tesla 계정 연결을 확인해 주세요"
+        else "연결 확인 완료 · 현재 등록 차량에 접근할 수 있어요 (깨우기·명령 전송 없음)"
+    }
+
+    /** 저장/삭제/조회 경합을 막고 화면에는 비밀값 없는 처리 결과만 남긴다. */
+    private fun fleetCredentialOperation(operation: suspend () -> String) {
+        if (mutableFleetCredentials.value.busy) return
+        mutableFleetCredentials.value = mutableFleetCredentials.value.copy(busy = true, message = null)
+        viewModelScope.launch {
+            try {
+                val message = operation()
+                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = message)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = "처리하지 못했어요 · 토큰 형식, 차량 등록 및 서버 연결을 확인해 주세요")
+            } finally {
+                val stored = withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { container.fleetTokenStore.hasToken() }
+                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(busy = false, stored = stored)
+            }
+        }
     }
 
     fun setSmartThingsEnabled(enabled: Boolean) {
@@ -226,8 +281,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSafeDriveVolume(level) }
     }
 
-    /** 카카오내비 앱 키가 꽂혀 있는가. 없으면 과속·단속 안내를 켤 수 없다 */
-    fun safeDriveAvailable(): Boolean = container.safeDrive.hasKey
+    /** 화면·경고음의 기준을 같은 저장값으로 갱신한다. */
+    fun setSafeDriveToleranceKph(value: Int) {
+        viewModelScope.launch { container.settingsStore.setSafeDriveToleranceKph(value) }
+    }
+
+    /** 오프라인 목록은 앱에 포함되어 별도 키가 필요 없다. */
+    fun safeDriveAvailable(): Boolean = true
 
     /** 이 기기에 실제로 깔린 내비 앱. 안 깔린 걸 고르면 매크로가 실행 순간에 실패한다 */
     fun installedNavigators(): Set<String> =

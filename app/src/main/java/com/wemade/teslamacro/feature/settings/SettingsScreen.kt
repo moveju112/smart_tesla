@@ -86,6 +86,7 @@ fun SettingsScreen(
     navigation: NavigationControls? = null,
     smartThings: SmartThingsControls? = null,
     onFleetApiEnabledChange: ((Boolean) -> Unit)? = null,
+    fleetCredentials: FleetCredentialControls? = null,
     /**
      * 처음 펼칠 칸. 안 주면 상황이 정한다(미등록이면 차량, 아니면 자동화).
      * 특정 칸을 곧바로 보여야 할 때 쓴다 — 스냅샷 검증이 지금의 유일한 사용처다.
@@ -148,7 +149,7 @@ fun SettingsScreen(
                             }
                             if (onFleetApiEnabledChange != null) {
                                 SectionHeader("음성 명령 전송")
-                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange)
+                                FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
                             }
                             if (smartThings != null) {
                                 SectionHeader("음성 연결")
@@ -200,6 +201,8 @@ fun SettingsScreen(
                             if (navigation != null) {
                                 SectionHeader("속도 표시", topPadding = Space.md)
                                 SpeedPanel(settings, navigation)
+                                SectionHeader("무료 단속 안내")
+                                SafeDrivePanel(settings, navigation)
                             }
                         }
 
@@ -636,9 +639,9 @@ data class BatteryControls(
     val onOpenSettings: () -> Unit,
 )
 
-/** 미정 서버 계약을 사용 가능한 서비스로 오인하지 않게 현재 제한을 토글과 함께 표시한다. */
+/** 토큰 등록과 전송 선택을 같은 곳에 두고 서버가 지원하지 않는 기능을 명시한다. */
 @Composable
-internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, credentials: FleetCredentialControls? = null) {
     TCard {
         ToggleRow(
             title = "Fleet API 사용",
@@ -649,8 +652,14 @@ internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit)
         Spacer(Modifier.height(Space.sm))
         Text(com.wemade.teslamacro.data.fleet.UnconfiguredFleetApi.BASE_URL,
             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        Text("연동 준비 중 · 서버 경로와 인증 설정 전에는 Fleet 명령이 실행되지 않아요. BLE로 자동 전환하지 않아요.",
+        Text("토큰 저장 후 켜면 별도 확인 없이 전송해요. 자동 깨우기는 서버 미지원이며 BLE로 자동 전환하지 않아요.",
             style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+        Text("뒤 트렁크 열기·닫기는 같은 작동 명령이에요. 접수 뒤에는 결과 확인만 중단할 수 있어요.",
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        if (credentials != null) {
+            Spacer(Modifier.height(Space.md))
+            FleetCredentialPanel(credentials)
+        }
     }
 }
 
@@ -821,8 +830,9 @@ data class NavigationControls(
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
+    val onSafeDriveToleranceChange: (Int) -> Unit = {},
     /** 앱 키가 있어야 켤 수 있다. 없으면 토글을 잠그고 이유를 적는다 */
-    val safeDriveAvailable: Boolean = false,
+    val safeDriveAvailable: Boolean = true,
     /** 이 기기에 실제로 깔려 있는 앱만 고를 수 있다 */
     val installed: Set<String> = emptySet(),
     /**
@@ -1016,13 +1026,12 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
 
 /** 과속·단속 안내와 그 소리 */
 @Composable
-private fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) {
+internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) {
     TCard {
-        // 키가 없으면 토글을 아예 안 보여준다 — 눌러도 안 되는 스위치보다
-        // 왜 없는지 적힌 한 줄이 낫다
+        // 목록이 없는 구성에서는 사용할 수 없는 기능을 노출하지 않는다.
         if (!controls.safeDriveAvailable) {
             Text(
-                text = "과속·단속 안내는 카카오내비 앱 키가 있어야 켜져요.",
+                text = "오프라인 단속 목록을 사용할 수 없어요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -1031,11 +1040,16 @@ private fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) 
 
         ToggleRow(
             title = "안내 받기",
-            subtitle = "단속 카메라·구간단속·보호구역을 알려줘요. 주행 중 GPS와 데이터를 씁니다",
+            subtitle = "공공데이터와 GPS로 전방 단속 후보를 알려줘요. 인터넷은 쓰지 않아요",
             checked = settings.safeDrive,
             onCheckedChange = controls.onSafeDriveChange,
         )
 
+        Text(
+            text = "출처: 공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 모든 도로의 제한속도·구간 평균속도는 알 수 없어요. 도로 표지를 우선하세요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkMuted,
+        )
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)
         }
@@ -1045,11 +1059,22 @@ private fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) 
         if (!settings.safeDrive) return@TCard
 
         Spacer(Modifier.height(Space.md))
+        Text("경보 초과속도", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+        com.wemade.teslamacro.ui.component.NumberStepper(
+            value = settings.safeDriveToleranceKph.toDouble(),
+            min = 0.0, max = 30.0, step = 1.0, unit = "km/h",
+            onChange = { controls.onSafeDriveToleranceChange(it.toInt()) },
+        )
+        Text(
+            text = "제한속도 100km/h인 후보는 ${100 + settings.safeDriveToleranceKph}km/h부터 경보해요. 실제 도로 표지를 우선하세요.",
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+        )
+        Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "소리로도 알림",
-            subtitle = "주행 중엔 화면을 못 볼 때가 있어요. 내비 음성은 끊지 않고 잠깐 낮춥니다",
+            subtitle = "설정한 초과속도에 도달하면 짧은 경고음을 내요. 기기 미디어 음량도 적용돼요",
             checked = settings.safeDriveSound,
             onCheckedChange = controls.onSafeDriveSoundChange,
         )
@@ -1243,7 +1268,8 @@ private fun settingsDump(settings: AppSettings): String = buildString {
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
             " · 과속안내=${settings.safeDrive}" +
-            " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})",
+            " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})" +
+            " · 경보초과속도=${settings.safeDriveToleranceKph}km/h",
     )
 }
 

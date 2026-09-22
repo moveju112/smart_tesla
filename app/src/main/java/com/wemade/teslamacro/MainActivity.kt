@@ -181,6 +181,7 @@ class MainActivity : ComponentActivity() {
                                 requests = requests,
                                 onCancel = { app.container.quickActionRequests.cancel(it) },
                                 onDismiss = app.container.quickActionRequests::dismiss,
+                                onStopObserving = { app.container.quickActionRequests.stopObserving(it) },
                             )
                             Box(modifier = Modifier.weight(1f)) {
                                 if (!ready) {
@@ -227,6 +228,7 @@ internal fun runtimePermissionsFor(sdkInt: Int): List<String> = buildList {
 private fun AppRoot(factory: ViewModelFactory) {
     val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
     val settings by settingsViewModel.settings.collectAsState()
+    val fleetCredentials by settingsViewModel.fleetCredentials.collectAsState()
     val stealthChargeRuntime by settingsViewModel.stealthChargeRuntime.collectAsState()
     val chargeHistory by settingsViewModel.chargeHistory.collectAsState()
 
@@ -442,6 +444,10 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onDismissMessage = settingsViewModel::clearBackupMessage,
                         ),
                         onFleetApiEnabledChange = settingsViewModel::setFleetApiEnabled,
+                        fleetCredentials = com.wemade.teslamacro.feature.settings.FleetCredentialControls(
+                            fleetCredentials, settingsViewModel::saveFleetToken,
+                            settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,
+                        ),
                         smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
                             notificationAccessGranted = notificationAccessGranted,
                             onEnabledChange = settingsViewModel::setSmartThingsEnabled,
@@ -462,6 +468,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onSafeDriveChange = settingsViewModel::setSafeDrive,
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
                             onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
+                            onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
                             safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
                             installed = remember { settingsViewModel.installedNavigators() },
                             // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가

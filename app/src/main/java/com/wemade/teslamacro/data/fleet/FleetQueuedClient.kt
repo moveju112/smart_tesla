@@ -140,6 +140,7 @@ class FleetQueuedClient(
     suspend fun execute(vin: String, command: VehicleCommand, beforeSubmit: () -> Unit,
                         onUpdate: (FleetReceipt) -> Unit = {}): FleetReceipt {
         val result = awaitResult(submit(vin, command, beforeSubmit), onUpdate)
+        coroutineContext.ensureActive()
         if (result.status == FleetQueueStatus.Succeeded) runCatching { onConfirmed(command) }
         return result
     }

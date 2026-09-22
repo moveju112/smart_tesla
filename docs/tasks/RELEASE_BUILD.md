@@ -17,8 +17,8 @@
    - 배포는 **release 빌드**다 (R8 축소, 39.9MB → 17.6MB). 자가 업데이트가 끊기지 않게
      debug 키로 서명한다 (`signingConfig = signingConfigs.getByName("debug")`) — 키를 바꾸면
      서명 불일치로 사용자가 앱을 지우고 다시 깔아야 한다
-   - R8이 지우면 안 되는 것: protobuf 생성 클래스(`tesla-ble/consumer-rules.pro`),
-     KNSDK(`app/proguard-rules.pro`). 규칙을 지우면 VCSEC 응답이 통째로 빈다
+   - R8이 지우면 안 되는 것: protobuf 생성 클래스(`tesla-ble/consumer-rules.pro`).
+     규칙을 지우면 VCSEC 응답이 통째로 빈다
 4. **전달** — APK 파일명을 `SmartTesla-<versionName>-arm64.apk`로 바꿔 사용자에게 전달
 5. **커밋 + 푸시 + 릴리즈** — 검증을 통과한 코드 변경은 자동으로 GitHub Release까지 완료한다 (사용자 상시 허가, 2026-09-03)
    ```bash

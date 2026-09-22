@@ -1,0 +1,66 @@
+# 오프라인 단속 후보 안내
+
+- 출처: 공공데이터포털 전국무인교통단속카메라표준데이터
+  https://www.data.go.kr/data/15028200/standard.do
+- `tools/update_safety_cameras.py`는 공식 공개 다운로드를 페이지 단위로 읽고 전체 건수를 확인한 뒤 번들을 교체한다.
+- 수집 43,724건 중 속도/속도·신호 단속 구분과 유효 좌표·제한속도를 가진 12,012건 포함.
+- 번들: `app/src/main/assets/safety_cameras.json`. 출처·수집 시각·기관별 데이터 기준일 포함.
+- 앱은 네트워크 없이 기존 HUD GPS를 공유한다. 사용자가 안내를 켜야 GPS를 구독한다.
+- 5초 이상 지난 위치·30m 초과 오차는 안내 불가로 처리한다. 5km/h 미만이나 방향 미확정은 후보를 표시하지 않는다.
+- 전방 600m, 방향 차 25도 이하, 횡방향 거리 35m 이하의 가장 가까운 후보만 표시한다.
+- 설정 → 주행 → 무료 단속 안내 → 경보 초과속도: 0~30km/h, 1km/h 단위, 기본 +5km/h.
+- 후보 제한속도 + 설정값 **이상**이면 최대 10초에 한 번 경고음. 100 제한/+5 설정은 105부터이며 104.99에서는 경보하지 않는다.
+- 화면 강조·HUD·경고음이 같은 설정을 사용하고 앱 재실행·설정 백업/복원에도 보존된다. 기기 미디어 음량 적용.
+- 지도 매칭·단속 방향 확정·이동식 카메라·전체 도로 제한속도·구간 평균속도 판정은 제공하지 않는다.
+- 공식 데이터 페이지와 연결된 포털 이용정책을 읽기 전용으로 확인했다. 데이터셋별 재배포 이용허락 범위를 확정하는 별도 표시는 확인하지 못했다.
+  - 데이터셋 페이지의 `license` 메타데이터는 포털 일반 정책(`https://www.data.go.kr/ugs/selectPortalPolicyView.do`)만 가리킨다.
+  - 정책은 제3자 권리와 공공누리 유형별 조건을 구분하므로 일반 정책 링크만으로 이 병합 데이터의 재배포 권한을 확정하지 않는다.
+- 데이터 최신성은 기관별로 다르며 도로 표지가 항상 우선한다.
+
+## 구현·검증 결과
+
+- 기존 `ConditionEvaluator.distanceMeters`(거리), `NumberStepper`(설정 입력), `SafetyState.isOverSpeed`(공통 경보 판정), `SettingsStore`와 `AppSettings.toBackup`(저장·복원)를 재사용했다.
+- `./gradlew test verifyPaparazziDebug :app:assembleRelease` 통과. 0.9.63 검증에서 app 442건·BLE 30건이 debug/release 각각 실패 없이 완료됐다.
+- 휴대폰 낮/밤, `WideFontScaleTest`, `WideScreenshotTest` 주행 설정을 시각 확인했다. 전체 설정은 스크롤하고 단독 경보 패널에서 +5 예시·토글·음량이 잘리지 않는다.
+- 무관한 화면의 스냅샷 렌더링 잡음은 원복하고 `:app:verifyPaparazziDebug --tests '*WideScreenshotTest.W5*'` 재검증 통과.
+- `git diff --check` 통과. APK 내부 공공데이터 번들 포함 및 Kakao/KNSDK 명칭 파일 없음 확인.
+- 로컬 검증 APK: `app/build/outputs/apk/release/app-arm64-v8a-release.apk` (2,040,346 bytes).
+- 전달용 복사본: `/tmp/tesla-release-0.9.63/SmartTesla-0.9.63-arm64.apk`.
+- SHA-256: `d9f86d460846a23565576161f88e95137d6978f40872f027927ed844a113d247`.
+- 현재 원격 최신 릴리즈는 별도 작업의 0.9.62다. 이번 로컬 버전은 0.9.63/176으로 올려 빌드·검증했다.
+- 사용자의 최신 요청: **단독 배포하지 않고 진행 중인 Fleet 작업의 다음 릴리즈에 함께 포함하도록 준비만 한다.** 이번 변경의 커밋·푸시·태그·GitHub Release는 수행하지 않았다.
+- 실기기 GPS 주행·경고음 검증은 미실시. 단위 테스트와 스냅샷 통과를 실차 검증으로 간주하지 않는다.
+
+## 다음 통합 릴리즈 인계
+
+- 포함할 기능: KNSDK 의존성·키·저장소 제거, 공공데이터 오프라인 안내, 초과속도 설정과 저장·백업/복원, 설정 UI, 관련 테스트·스냅샷.
+- 새 파일 누락 주의: `app/src/main/assets/safety_cameras.json`, `tools/update_safety_cameras.py`, `domain/safety/CameraIndex.kt`, `CameraIndexTest.kt`, `SafetySettingsTest.kt`, `SafetySettingsScreenshotTest.kt`, 해당 신규 스냅샷 4장과 이 문서.
+- `MainActivity.kt`, `SettingsScreen.kt`, `SettingsViewModel.kt` 등 공용 파일에 진행 중인 Fleet 변경이 함께 있다. 이 작업을 제거하거나 이전 파일 전체로 덮어쓰지 않는다.
+- 위 검증은 당시 소스 기준이다. **이후 추가된 Fleet 변경을 포함한 현재 작업트리의 검증 결과가 아니다.** 통합 완료 후 `./gradlew test verifyPaparazziDebug :app:assembleRelease`를 다시 실행하고 최종 APK를 새로 만든다.
+- `/tmp`의 기존 APK는 Fleet 추가 작업을 포함하지 않는 검증 산출물이다. 통합 릴리즈에 그대로 첨부하지 않는다.
+- 0.9.63/176은 이미 로컬에 준비한 버전이다. 다음 배포 시 원격 태그·릴리즈를 다시 확인하고 미사용이면 그대로 사용하며, 사용됐으면 다음 버전으로 올린다.
+- 관련 파일만 명시적으로 스테이징한다. `test/UNITTEST_20260827_reconnect_share_release.md` 등 다른 미추적 파일은 이 작업의 결과가 아니므로 자동으로 포함하지 않는다.
+- 재배포 금지 자체를 확인한 것은 아니다. 이용조건 확인은 아직 미완료라는 사실과 출처·오인/누락 가능성·실차 미검증 상태를 다음 담당자에게 전달한다.
+
+## Fleet 통합 검증 후 상태
+
+- 사용자가 두 작업을 함께 릴리스하도록 승인하여 버전 충돌/단독 배포 보류는 해소되었다.
+- 0.9.63/176 현재 통합 소스로 `./gradlew test verifyPaparazziDebug :app:assembleRelease` 통과: app debug/release 각 460개, BLE debug/release 각 30개, 실패/오류/건너뜀 0.
+- 통합 APK는 2,056,730 bytes이며 카메라 번들 12,012건이 소스와 동일하게 포함된다. KNSDK 명칭 파일은 없다.
+- 통합 APK SHA-256: `2359472cab2fd1ea630d83df74a27091bda15a4d18abbf3f38a612d0127916d9`.
+- 이전 안전운전 단독 APK 대신 이 통합 빌드를 기준으로 한다. `app/build/reports/combined-release/verification.txt`에 검증 요약을 저장했다.
+- 사용자가 공식 이용조건 조회와 함께, 기존 이용조건 미확인 사실을 안내받은 상태에서 통합 배포를 명시적으로 승인했다.
+- 조회 결과 데이터셋의 `license`는 포털 일반 정책으로 연결되며, 해당 정책은 제3자 권리 및 공공누리 유형별 조건을 설명한다. 이를 개별 데이터셋의 무제한 재배포 허가로 해석하지 않는다.
+- 출처/제공기관/수집 시각을 번들과 이 문서에 유지하고 승인된 통합 배포를 진행한다. 데이터 재수집·변경은 하지 않았다.
+
+## 확인 명령
+
+```bash
+./gradlew :app:testDebugUnitTest --tests '*CameraIndexTest' --tests '*SafetyStateTest' --tests '*SafetySettingsTest' --tests '*BackupFileTest'
+```
+
+데이터 갱신은 위 출처에 대한 네트워크 접근 및 번들 변경이 승인된 경우에만 실행:
+
+```bash
+python3 tools/update_safety_cameras.py
+```

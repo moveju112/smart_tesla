@@ -45,6 +45,20 @@ class SafetyStateTest {
         assertFalse(state.isOverSpeed(120.0))
     }
 
+    /** 100 제한에 +5 설정이면 105부터 울리며 바로 아래에서는 울리지 않는다. */
+    @Test
+    fun `설정한 초과속도 경계부터 경보한다`() {
+        val state = SafetyState(ready = true,
+            alert = SafetyAlert(SafetyKind.SPEED_CAMERA, 300, 100))
+        assertFalse(state.isOverSpeed(104.99, 5))
+        assertTrue(state.isOverSpeed(105.0, 5))
+        assertTrue(state.isOverSpeed(106.0, 5))
+        assertFalse(state.isOverSpeed(99.99, 0))
+        assertTrue(state.isOverSpeed(100.0, 0))
+        assertFalse(state.isOverSpeed(129.99, 30))
+        assertTrue(state.isOverSpeed(130.0, 30))
+    }
+
     @Test
     fun `안내를 못 하는 상태는 ready가 false다`() {
         assertFalse(SafetyState().ready)

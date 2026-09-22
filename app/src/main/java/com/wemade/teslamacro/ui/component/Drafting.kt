@@ -258,6 +258,7 @@ fun DraftField(
     note: String? = null,
     /** 빈 기입란이 공백처럼 보이지 않도록 값이 들어갈 자리를 직접 알려준다 */
     placeholder: String? = null,
+    visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
 ) {
     var focused by remember { mutableStateOf(false) }
     val rule = if (focused) Stroke.bold else Stroke.thin
@@ -288,6 +289,7 @@ fun DraftField(
                 enabled = enabled,
                 singleLine = singleLine,
                 keyboardOptions = keyboardOptions,
+                visualTransformation = visualTransformation,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = if (enabled) T.Ink else T.InkFaint,
                 ),

@@ -65,8 +65,10 @@ class AppContainer(private val context: Context) {
     }
 
     val commandFeedback = com.wemade.teslamacro.data.gateway.CommandFeedback(context, appScope)
-    val fleetCommands = com.wemade.teslamacro.data.fleet.FleetCommandClient(
-        com.wemade.teslamacro.data.fleet.UnconfiguredFleetApi,
+    val fleetTokenStore = com.wemade.teslamacro.data.fleet.FleetTokenStore(appContext)
+    val fleetCommands = com.wemade.teslamacro.data.fleet.FleetQueuedClient(
+        com.wemade.teslamacro.data.fleet.FleetHttpsTransport(),
+        tokenProvider = { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { fleetTokenStore.read() } },
         onConfirmed = commandFeedback::confirmed,
     )
     val settingsStore = SettingsStore(context)
@@ -92,13 +94,9 @@ class AppContainer(private val context: Context) {
         locationPermissionRevision.value += 1
     }
 
-    /**
-     * 과속·구간단속·보호구역 안내. 앱 키는 local.properties에서 BuildConfig로 온다 —
-     * 키가 비어 있으면 스스로 비활성으로 남는다
-     */
+    /** 공공데이터 번들과 GPS로 단속 후보를 안내한다. */
     val safeDrive = com.wemade.teslamacro.data.safety.SafeDriveGuide(
         context.applicationContext as android.app.Application,
-        com.wemade.teslamacro.BuildConfig.KAKAO_NATIVE_APP_KEY,
     )
 
     /** 매크로의 "출발지 근처" 조건용 태블릿 위치 */

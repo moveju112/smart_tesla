@@ -9,6 +9,7 @@ import android.location.LocationManager
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 
 /**
  * 지금 속도(km/h)를 흘려보낸다.
@@ -29,14 +30,17 @@ class SpeedMeter(private val context: Context) {
      * 속도 스트림. 구독하는 동안만 GPS를 켠다 —
      * 상시 켜두면 주차된 차에서 밤새 위성을 잡는다.
      */
-    fun speedKph(): Flow<Double> = callbackFlow {
+    fun speedKph(): Flow<Double> = locations().map(::kphOf)
+
+    /** 안전안내와 HUD가 같은 GPS 좌표를 공유한다. */
+    fun locations(): Flow<Location> = callbackFlow {
         val manager = context.getSystemService(LocationManager::class.java)
         if (manager == null || !hasPermission()) {
             close()
             return@callbackFlow
         }
 
-        val listener = LocationListener { location -> trySend(kphOf(location)) }
+        val listener = LocationListener { location -> trySend(location) }
         val started = runCatching {
             manager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,

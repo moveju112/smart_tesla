@@ -141,7 +141,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             safetyValue = safetyValueOf(aux.safety),
             safetyAlarming = aux.safety.stalled || aux.safety.isOverSpeed(
                 effective.speedKph?.toDouble() ?: 0.0,
-                OVER_SPEED_TOLERANCE_KPH,
+                settings.safeDriveToleranceKph,
             ),
             // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다.
             // 전역 타임스탬프는 아무 카테고리 하나만 성공해도 갱신되므로,
@@ -463,9 +463,6 @@ internal fun parkSummaryOf(
         else -> "$elapsed · -$drop%"
     }
 }
-
-/** 과속으로 볼 허용치(km/h). GPS·차량 속도 모두 계기판보다 흔들린다 */
-private const val OVER_SPEED_TOLERANCE_KPH = 3
 
 /**
  * 기입란에 적을 안전 경보의 **값**. 안내할 게 없으면 null.

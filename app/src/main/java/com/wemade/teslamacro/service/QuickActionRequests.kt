@@ -16,15 +16,18 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
         Waiting("차량 응답 대기 중"),
         Waking("Fleet · 차량 깨우는 중"),
         Sending("전송 처리 중 · 이미 전달된 명령은 취소할 수 없어요"),
+        Observing("서버 접수 완료 · 차량 결과 확인 중"),
+        ObservationStopped("결과 확인 중단 · 서버 명령은 취소되지 않았어요"),
         Cancelled("취소 완료 · 차량에 명령을 보내지 않았어요"),
         Expired("유효시간 만료 · 이미 전달된 명령은 취소할 수 없어요"),
         Finished("요청 처리 종료 · 결과는 진단 로그에서 확인하세요"),
         Failed("요청 중단 · 차량 전달 여부는 진단 로그에서 확인하세요"),
     }
 
-    data class Request(val id: Long, val label: String, val status: Status) {
+    data class Request(val id: Long, val label: String, val status: Status, val commandId: String? = null) {
         val canCancel: Boolean get() = status == Status.Waiting || status == Status.Waking
-        val active: Boolean get() = canCancel || status == Status.Sending
+        val canStopObserving: Boolean get() = status == Status.Observing
+        val active: Boolean get() = canCancel || status == Status.Sending || canStopObserving
     }
 
     private val lock = Any()
@@ -38,7 +41,11 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
         trackWithProgress(label) { beforeDispatch, _ -> execute(beforeDispatch) }
 
     /** Fleet 깨우기 중에도 동일한 취소 경계를 유지한다. */
-    suspend fun trackWithProgress(label: String, execute: suspend (beforeDispatch: () -> Unit, onWaking: () -> Unit) -> Unit) {
+    suspend fun trackWithProgress(label: String, execute: suspend (beforeDispatch: () -> Unit, onWaking: () -> Unit) -> Unit) =
+        trackWithFleetProgress(label) { beforeDispatch, onWaking, _ -> execute(beforeDispatch, onWaking) }
+
+    /** 기존 BLE 취소 경계는 유지하고 서버 접수 뒤에는 결과 관찰만 중단할 수 있게 한다. */
+    suspend fun trackWithFleetProgress(label: String, execute: suspend (beforeDispatch: () -> Unit, onWaking: () -> Unit, onSubmitted: (String) -> Unit) -> Unit) {
         val job = currentCoroutineContext().job
         val id = synchronized(lock) {
             val id = ++nextId
@@ -58,6 +65,14 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
                     job.ensureActive()
                     check(mutableRequests.value.first { it.id == id }.canCancel)
                     setStatus(id, Status.Waking)
+                }
+            }, { commandId ->
+                synchronized(lock) {
+                    job.ensureActive()
+                    val request = mutableRequests.value.first { it.id == id }
+                    check(request.status == Status.Sending || request.status == Status.Observing)
+                    mutableRequests.value = mutableRequests.value.map { if (it.id == id) it.copy(commandId = commandId) else it }
+                    setStatus(id, Status.Observing)
                 }
             })
             synchronized(lock) { if (mutableRequests.value.any { it.id == id && it.active }) setStatus(id, Status.Finished) }
@@ -84,6 +99,16 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
         setStatus(id, Status.Cancelled)
         jobs[id]?.cancel()
         diagnosticLogger("빠른 명령 [${request.label}] 사용자 취소 — 차량 명령 미전송")
+        true
+    }
+
+    /** 서버 취소 API를 흉내 내지 않고 결과 조회 코루틴만 중단한다. */
+    fun stopObserving(id: Long): Boolean = synchronized(lock) {
+        val request = mutableRequests.value.firstOrNull { it.id == id } ?: return false
+        if (!request.canStopObserving) return false
+        setStatus(id, Status.ObservationStopped)
+        jobs[id]?.cancel()
+        diagnosticLogger("Fleet [${request.label}] 결과 확인 중단 — 서버 명령 취소 아님")
         true
     }
 

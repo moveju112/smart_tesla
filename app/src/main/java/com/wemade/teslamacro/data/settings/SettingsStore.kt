@@ -118,6 +118,7 @@ data class AppSettings(
     val safeDriveSound: Boolean = true,
     /** 경보 음량 1~3. 내비 음성과 겹쳐 들리므로 사람이 균형을 맞출 수 있어야 한다 */
     val safeDriveVolume: Int = 2,
+    val safeDriveToleranceKph: Int = 5,
 ) {
     /** 차량을 특정할 수 있는가 (연결 시도 가능) */
     val isPaired: Boolean get() = vin.isNotBlank()
@@ -164,10 +165,11 @@ class SettingsStore(
             navigatorSafeDriveLaunchMode = prefs[KeyNavigatorSafeDriveLaunchMode]
                 ?: if (prefs[KeyNavigatorSafeDriveDiagnostics] == true) "ALL" else "DEFAULT",
             hudOverlay = prefs[KeyHudOverlay] ?: false,
-            // 카카오 KNSDK 과금 경로는 공개 버전에서 실행하지 않는다.
-            safeDrive = false,
+            // 무료 오프라인 안내도 사용자가 선택한 경우에만 GPS를 사용한다.
+            safeDrive = prefs[KeySafeDrive] ?: false,
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
+            safeDriveToleranceKph = (prefs[KeySafeDriveToleranceKph] ?: 5).coerceIn(0, 30),
         )
     }
 
@@ -291,6 +293,11 @@ class SettingsStore(
     // 범위를 저장 직전에 한 번 가둔다 — 백업 파일이 손으로 고쳐져 들어올 수 있다
     suspend fun setSafeDriveVolume(level: Int) = edit { it[KeySafeDriveVolume] = level.coerceIn(1, 3) }
 
+    /** 제한속도에 더할 경보 여유를 1km/h 단위로 저장한다. */
+    suspend fun setSafeDriveToleranceKph(value: Int) = edit {
+        it[KeySafeDriveToleranceKph] = value.coerceIn(0, 30)
+    }
+
     // 마지막으로 성공한 측위 좌표를 남긴다 — 다음 측위 실패 때 대체값으로 쓴다.
     // 태블릿은 차에 상주하므로 마지막 좌표가 곧 차의 위치다
     suspend fun saveLastGeo(latitude: Double, longitude: Double) = edit {
@@ -331,6 +338,7 @@ class SettingsStore(
         it[KeySafeDrive] = backup.safeDrive
         it[KeySafeDriveSound] = backup.safeDriveSound
         it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
+        it[KeySafeDriveToleranceKph] = backup.safeDriveToleranceKph.coerceIn(0, 30)
     }
 
     // 제거된 음성·폴링 설정값을 업데이트 뒤에도 DataStore에 남기지 않는다.
@@ -452,6 +460,7 @@ class SettingsStore(
         val KeySafeDrive = booleanPreferencesKey("safe_drive")
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")
         val KeySafeDriveVolume = intPreferencesKey("safe_drive_volume")
+        val KeySafeDriveToleranceKph = intPreferencesKey("safe_drive_tolerance_kph")
         val KeyParkedAt = longPreferencesKey("parked_at")
         val KeyParkedBattery = intPreferencesKey("parked_battery")
     }

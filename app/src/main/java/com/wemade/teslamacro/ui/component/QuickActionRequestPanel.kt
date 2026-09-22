@@ -27,6 +27,7 @@ fun QuickActionRequestPanel(
     requests: List<QuickActionRequests.Request>,
     onCancel: (Long) -> Unit,
     onDismiss: (Long) -> Unit,
+    onStopObserving: (Long) -> Unit = {},
 ) {
     if (requests.isEmpty()) return
     LazyColumn(
@@ -47,6 +48,9 @@ fun QuickActionRequestPanel(
                 }
                 if (request.canCancel) {
                     TButton(text = "취소", small = true, fillWidth = false, onClick = { onCancel(request.id) })
+                } else if (request.canStopObserving) {
+                    TButton(text = "결과 확인 중단", tone = ButtonTone.Ghost, small = true, fillWidth = false,
+                        onClick = { onStopObserving(request.id) })
                 } else if (!request.active) {
                     TButton(text = "닫기", tone = ButtonTone.Ghost, small = true, fillWidth = false, onClick = { onDismiss(request.id) })
                 }

@@ -1,5 +1,7 @@
 package com.wemade.teslamacro
 
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,11 +30,9 @@ fun AppFrame(selected: Destination, dark: Boolean = false, content: @Composable 
     // 스냅샷은 시계에 흔들리면 안 된다 — 낮/밤을 자동 판정에 맡기지 않고 못 박는다
     TeslaMacroTheme(dark = dark) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(T.Void)) {
-            val pane = Pane.of(maxWidth)
-            // MainActivity는 **방향**으로 레일/탭을 가른다(`bottomNav = portrait`).
-            // 여기서 폭으로 갈랐더니 세로 태블릿(600×960dp)이 스냅샷에서는 레일,
-            // 실제 앱에서는 하단 탭으로 나와 컷이 거짓말을 했다
-            val portrait = maxHeight > maxWidth
+            // 실제 앱처럼 OS 방향으로 본문과 탐색 배치를 함께 정한다.
+            val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+            val pane = Pane.of(maxWidth, portrait)
             CompositionLocalProvider(LocalPane provides pane) {
                 if (portrait) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -55,7 +55,8 @@ fun AppFrame(selected: Destination, dark: Boolean = false, content: @Composable 
 fun FullScreenFrame(dark: Boolean = false, content: @Composable () -> Unit) {
     TeslaMacroTheme(dark = dark) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize().background(T.Void)) {
-            CompositionLocalProvider(LocalPane provides Pane.of(maxWidth)) {
+            val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+            CompositionLocalProvider(LocalPane provides Pane.of(maxWidth, portrait)) {
                 Box(modifier = Modifier.fillMaxSize()) { content() }
             }
         }

@@ -7,16 +7,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 화면 폭 등급.
+ * 화면 방향과 폭에 따른 본문 배치 등급.
  *
  * Material3 WindowSizeClass 라이브러리를 따로 붙이지 않고
  * 루트에서 실제 폭을 재서 나눈다 — 기준이 두 개뿐이라 의존성을 늘릴 이유가 없다.
  */
 enum class Pane {
-    /** 폰 세로. 한 번에 한 덩어리만 보여준다 */
+    /** 기기 크기에 관계없이 세로는 한 덩어리씩, 좁은 가로도 한 열로 보여준다 */
     Compact,
 
-    /** 폰 가로 · 작은 태블릿. 두 단까지 */
+    /** 폰 가로 · 작은 태블릿 가로. 두 단까지 */
     Medium,
 
     /** 태블릿 가로. 세 단까지 */
@@ -31,9 +31,9 @@ enum class Pane {
         }
 
     companion object {
-        /** 600/900dp는 안드로이드 표준 분기점이다 */
-        fun of(width: Dp): Pane = when {
-            width < 600.dp -> Compact
+        /** 세로는 한 열로 고정하고 가로에서만 기존 600/900dp 분기점을 적용한다. */
+        fun of(width: Dp, portrait: Boolean): Pane = when {
+            portrait || width < 600.dp -> Compact
             width < 900.dp -> Medium
             else -> Expanded
         }

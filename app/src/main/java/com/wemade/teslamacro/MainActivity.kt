@@ -172,8 +172,9 @@ class MainActivity : ComponentActivity() {
                         // 키보드가 화면 절반을 먹어 VIN·주소 입력칸이 그대로 가려졌다
                         .imePadding(),
                 ) {
-                    // 폭은 여기서 한 번만 재고 CompositionLocal로 내려보낸다
-                    CompositionLocalProvider(LocalPane provides Pane.of(maxWidth)) {
+                    // 키보드가 높이를 줄여도 세로 본문이 좌우 분할되지 않도록 OS 방향을 쓴다.
+                    val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+                    CompositionLocalProvider(LocalPane provides Pane.of(maxWidth, portrait)) {
                         if (!ready) {
                             AppSplash()
                         } else {

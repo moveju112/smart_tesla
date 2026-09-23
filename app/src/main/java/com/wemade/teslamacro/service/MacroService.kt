@@ -198,13 +198,15 @@ class MacroService : LifecycleService() {
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.settingsStore.settings
-                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) to it.safeDriveToleranceKph }
+                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) to (it.safeDriveToleranceKph to it.roadMatch) }
                 .distinctUntilChanged()
-                .collect { (options, toleranceKph) ->
+                .collect { (options, preferences) ->
+                    val (toleranceKph, roadMatch) = preferences
                     val (enabled, sound, volume) = options
                     // 소리 설정을 먼저 밀어 넣는다 — start() 직후 첫 경보가
                     // 옛 설정으로 재생되면 껐는데 소리가 나는 것으로 보인다
                     app.container.safeDrive.setSound(sound, volume, toleranceKph)
+                    app.container.safeDrive.setRoadMatchEnabled(enabled && roadMatch)
                     if (enabled) app.container.safeDrive.start()
                     else app.container.safeDrive.stop()
                 }

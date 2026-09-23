@@ -9,6 +9,7 @@ import com.wemade.teslamacro.data.location.freshSpeedKph
 import com.wemade.teslamacro.data.location.isFreshLocation
 import com.wemade.teslamacro.domain.safety.CameraDataset
 import com.wemade.teslamacro.domain.safety.CameraIndex
+import com.wemade.teslamacro.domain.macro.ConditionEvaluator
 import com.wemade.teslamacro.domain.safety.SafetyState
 import com.wemade.teslamacro.domain.safety.sourceDateWarning
 import com.wemade.teslable.DiagLog
@@ -19,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 
-/** 번들 공공데이터와 기존 HUD GPS만 사용한다. 주행 위치를 외부로 보내지 않는다. */
+/** 기본은 오프라인 안내이며, 별도 동의 시 카메라 근처에서만 도로 매칭을 보조로 사용한다. */
 class SafeDriveGuide(
     private val application: Application,
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
@@ -30,6 +31,14 @@ class SafeDriveGuide(
     private var job: Job? = null
     private var index: CameraIndex? = null
     private var lastFixNanos: Long? = null
+    private val roadMatcher = RoadMatcher()
+    private var roadMatchEnabled = false
+    private val recentPoints = ArrayDeque<RoadPoint>()
+    private var matchJob: Job? = null
+    private var lastMatchAttemptMillis = 0L
+    private var retryDelayMillis = 10_000L
+    private var tokenRejected = false
+    private var matchedRoad: Pair<Long, MatchedRoad>? = null
     private var lastSoundMillis: Long? = null
     private val soundedCameras = mutableMapOf<String, Long>()
     private var retrievedAt: String? = null
@@ -82,17 +91,26 @@ class SafeDriveGuide(
         val nowNanos = elapsedRealtimeNanos()
         val speed = freshSpeedKph(location, nowNanos)
         if (speed == null) {
+            clearRoadMatch()
             lastFixNanos = null
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "위치·속도 확인 불가", dataWarning = dataWarning)
             return
         }
         lastFixNanos = location.elapsedRealtimeNanos
         if (speed >= 5 && (!location.hasBearing() || !location.bearing.isFinite())) {
+            clearRoadMatch()
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
             return
         }
+        updateRoadMatch(location, speed, nowNanos)
+        // 결과가 GPS와 멀거나 오래되면 원래 측위로 되돌아간다. 도로 매칭만으로 단속 방향을 확정하지 않는다.
+        val snapped = matchedRoad?.takeIf { (timestamp, road) ->
+            location.time / 1_000 - timestamp in 0L..5L &&
+                ConditionEvaluator.distanceMeters(location.latitude, location.longitude, road.latitude, road.longitude) <= 30
+        }?.second
         val alert = if (location.hasBearing()) index?.nearest(
-            location.latitude, location.longitude, location.bearing.toDouble(), speed, location.accuracy.toDouble(),
+            snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
+            location.bearing.toDouble(), speed, location.accuracy.toDouble(),
         ) else null
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         val nowMillis = nowNanos / 1_000_000
@@ -110,6 +128,52 @@ class SafeDriveGuide(
         }
     }
 
+    /** 위치 전송은 별도 동의가 있을 때만 켜고, 해제 시 대기 요청도 취소한다. */
+    fun setRoadMatchEnabled(enabled: Boolean) {
+        if (enabled && !roadMatchEnabled) tokenRejected = false
+        roadMatchEnabled = enabled && roadMatcher.available
+        if (!roadMatchEnabled) clearRoadMatch()
+    }
+
+    /** 후보·주행·시각을 확인한 뒤 10초마다 최대 한 요청만 보낸다. 실패는 오프라인으로 넘긴다. */
+    private fun updateRoadMatch(location: Location, speed: Double, nowNanos: Long) {
+        if (!roadMatchEnabled || speed < 5 || !location.hasBearing() ||
+            index?.hasNearby(location.latitude, location.longitude) != true) {
+            clearRoadMatch()
+            return
+        }
+        val timestamp = location.time / 1_000
+        if (timestamp !in (System.currentTimeMillis() / 1_000 - 5)..(System.currentTimeMillis() / 1_000 + 5)) return
+        if (recentPoints.lastOrNull()?.timestamp?.let { timestamp <= it } == true) return
+        if (recentPoints.lastOrNull()?.timestamp?.let { timestamp - it > 30 } == true) recentPoints.clear()
+        recentPoints.addLast(RoadPoint(location.latitude, location.longitude, timestamp, location.accuracy.toDouble()))
+        while (recentPoints.size > 8) recentPoints.removeFirst()
+        val nowMillis = nowNanos / 1_000_000
+        if (recentPoints.size < 2 || tokenRejected || matchJob?.isActive == true ||
+            (lastMatchAttemptMillis != 0L && nowMillis - lastMatchAttemptMillis < retryDelayMillis)) return
+        lastMatchAttemptMillis = nowMillis
+        val points = recentPoints.toList()
+        matchJob = scope.launch {
+            val result = roadMatcher.match(points)
+            if (result.code == 401) {
+                tokenRejected = true
+                DiagLog.add("도로 매칭 · 인증을 확인해 주세요")
+            }
+            retryDelayMillis = if (result.code in listOf(429, 503, 504)) 30_000L else 10_000L
+            matchedRoad = result.road?.let { points.last().timestamp to it }
+        }
+    }
+
+    /** 주행 구역·동의가 끝나면 이전 결과가 다음 경보에 남지 않게 한다. */
+    private fun clearRoadMatch() {
+        matchJob?.cancel()
+        matchJob = null
+        recentPoints.clear()
+        matchedRoad = null
+        lastMatchAttemptMillis = 0L
+        retryDelayMillis = 10_000L
+    }
+
     /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */
     fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5) {
         this.toleranceKph = toleranceKph.coerceIn(0, 30)
@@ -123,6 +187,7 @@ class SafeDriveGuide(
     fun stop() {
         job?.cancel()
         job = null
+        clearRoadMatch()
         lastFixNanos = null
         lastSoundMillis = null
         soundedCameras.clear()

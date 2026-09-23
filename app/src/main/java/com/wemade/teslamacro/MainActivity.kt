@@ -468,6 +468,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             safeDriveTestMessage = safeDriveTestMessage,
                             onHudOverlayChange = settingsViewModel::setHudOverlay,
                             onSafeDriveChange = settingsViewModel::setSafeDrive,
+                            onRoadMatchChange = settingsViewModel::setRoadMatch,
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
                             onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
                             onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,

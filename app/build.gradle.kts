@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,11 +13,19 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        // 로컬 설정만 읽는다. 공개 저장소에는 토큰을 넣지 않고, 없는 빌드는 도로 매칭을 끈다.
+        val localSettings = Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.exists()) file.inputStream().use(::load)
+        }
+        val mapToken = localSettings.getProperty("roadMatchToken", "")
+        require(mapToken.matches(Regex("[A-Za-z0-9_-]{0,256}"))) { "roadMatchToken 형식을 확인하세요" }
+        buildConfigField("String", "ROAD_MATCH_TOKEN", "\"$mapToken\"")
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 191
-        versionName = "0.9.78"
+        versionCode = 192
+        versionName = "0.9.79"
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.

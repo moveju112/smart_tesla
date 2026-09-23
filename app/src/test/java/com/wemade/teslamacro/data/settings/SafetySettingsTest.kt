@@ -39,6 +39,9 @@ class SafetySettingsTest {
         }
         val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(5, store.settings.first().safeDriveToleranceKph)
+        assertFalse(store.settings.first().roadMatch)
+        store.setRoadMatch(true)
+        assertTrue(store.settings.first().roadMatch)
         store.setSafeDrive(true)
         store.setSafeDriveToleranceKph(7)
         val restored = SettingsStore(ContextWrapper(paparazzi.context), preferences)
@@ -51,6 +54,7 @@ class SafetySettingsTest {
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
         store.restore(BackupSettings(safeDriveToleranceKph = 9))
         assertEquals(9, store.settings.first().safeDriveToleranceKph)
+        assertFalse("복원만으로 위치 전송을 시작하지 않는다", store.settings.first().roadMatch)
         store.restore(BackupSettings(safeDriveToleranceKph = 99))
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
     }

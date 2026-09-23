@@ -40,6 +40,18 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     /** 원본 건수와 별개로 실제 사용할 수 있는 목록이 있는지 확인한다. */
     val isEmpty: Boolean get() = cells.isEmpty()
 
+    /** 원격 요청 전엔 로컬 목록으로 1km 안의 후보부터 확인해 불필요한 GPS 전송을 막는다. */
+    fun hasNearby(latitude: Double, longitude: Double): Boolean {
+        if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return false
+        val (row, column) = cell(latitude, longitude)
+        for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
+            if (cells[x to y].orEmpty().any { camera ->
+                    ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude) <= 1_000
+                }) return true
+        }
+        return false
+    }
+
     /** 저정밀·정지·방향 미확정 시에는 추측하지 않고 전방 600m 안의 후보만 고른다. */
     fun nearest(latitude: Double, longitude: Double, bearing: Double, speedKph: Double,
                 accuracyMeters: Double, today: LocalDate = LocalDate.now()): SafetyAlert? {

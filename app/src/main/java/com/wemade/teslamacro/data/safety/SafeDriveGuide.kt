@@ -37,6 +37,9 @@ class SafeDriveGuide(
     private var matchJob: Job? = null
     private var lastMatchAttemptMillis = 0L
     private var retryDelayMillis = 10_000L
+    private var lastMatchLogMillis = 0L
+    private var requestsSinceLog = 0
+    private var lastMatchOutcome: String? = null
     private var tokenRejected = false
     private var matchedRoad: Pair<Long, MatchedRoad>? = null
     private var lastSoundMillis: Long? = null
@@ -130,7 +133,10 @@ class SafeDriveGuide(
 
     /** 위치 전송은 별도 동의가 있을 때만 켜고, 해제 시 대기 요청도 취소한다. */
     fun setRoadMatchEnabled(enabled: Boolean) {
-        if (enabled && !roadMatchEnabled) tokenRejected = false
+        if (enabled && !roadMatchEnabled) {
+            tokenRejected = false
+            lastMatchOutcome = null
+        }
         roadMatchEnabled = enabled && roadMatcher.available
         if (!roadMatchEnabled) clearRoadMatch()
     }
@@ -138,7 +144,7 @@ class SafeDriveGuide(
     /** 후보·주행·시각을 확인한 뒤 10초마다 최대 한 요청만 보낸다. 실패는 오프라인으로 넘긴다. */
     private fun updateRoadMatch(location: Location, speed: Double, nowNanos: Long) {
         if (!roadMatchEnabled || speed < 5 || !location.hasBearing() ||
-            index?.hasNearby(location.latitude, location.longitude) != true) {
+            index?.hasNearby(location.latitude, location.longitude, location.bearing.toDouble()) != true) {
             clearRoadMatch()
             return
         }
@@ -152,15 +158,33 @@ class SafeDriveGuide(
         if (recentPoints.size < 2 || tokenRejected || matchJob?.isActive == true ||
             (lastMatchAttemptMillis != 0L && nowMillis - lastMatchAttemptMillis < retryDelayMillis)) return
         lastMatchAttemptMillis = nowMillis
+        requestsSinceLog += 1
+        // 진단 파일은 최근 100줄만 남으므로 매 요청 대신 첫 요청과 1분 요약만 남긴다.
+        if (lastMatchLogMillis == 0L || nowMillis - lastMatchLogMillis >= 60_000) {
+            DiagLog.add("도로 매칭 · 전방 후보 요청 (최근 구간 ${requestsSinceLog}회)")
+            requestsSinceLog = 0
+            lastMatchLogMillis = nowMillis
+        }
         val points = recentPoints.toList()
         matchJob = scope.launch {
             val result = roadMatcher.match(points)
-            if (result.code == 401) {
-                tokenRejected = true
-                DiagLog.add("도로 매칭 · 인증을 확인해 주세요")
-            }
+            if (result.code == 401) tokenRejected = true
             retryDelayMillis = if (result.code in listOf(429, 503, 504)) 30_000L else 10_000L
             matchedRoad = result.road?.let { points.last().timestamp to it }
+            // 좌표·토큰·응답 원문 없이 결과 변화와 대기 이유만 기록한다.
+            val outcome = when {
+                result.code == 401 -> "인증 오류(401), 요청 중지"
+                result.code == 429 -> "요청 제한(429), 30초 대기"
+                result.code == 503 -> "서버 혼잡(503), 30초 대기"
+                result.code == 504 -> "응답 지연(504), 30초 대기"
+                result.road != null -> "확정 매칭"
+                result.code == 200 -> "경로 불확실/실패, 오프라인 유지"
+                else -> "통신 오류, 오프라인 유지"
+            }
+            if (outcome != lastMatchOutcome) {
+                DiagLog.add("도로 매칭 · $outcome")
+                lastMatchOutcome = outcome
+            }
         }
     }
 
@@ -170,8 +194,7 @@ class SafeDriveGuide(
         matchJob = null
         recentPoints.clear()
         matchedRoad = null
-        lastMatchAttemptMillis = 0L
-        retryDelayMillis = 10_000L
+        // 후보 경계·권한 변화·설정 토글에도 전역 요청 간격과 서버 재시도 대기를 유지한다.
     }
 
     /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */
@@ -188,6 +211,9 @@ class SafeDriveGuide(
         job?.cancel()
         job = null
         clearRoadMatch()
+        lastMatchLogMillis = 0L
+        requestsSinceLog = 0
+        lastMatchOutcome = null
         lastFixNanos = null
         lastSoundMillis = null
         soundedCameras.clear()

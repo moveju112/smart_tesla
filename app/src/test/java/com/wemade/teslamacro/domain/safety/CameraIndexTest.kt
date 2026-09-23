@@ -25,11 +25,16 @@ class CameraIndexTest {
         assertNull(index.nearest(37.0, 127.0, Double.NaN, 60.0, 10.0))
     }
 
-    /** 경보 600m보다 먼저 탐색하되 주변에 후보가 없으면 요청하지 않는다. */
+    /** 1km 전방은 탐색하지만 지나친 후보는 제외하고, GPS 오차권 안의 후방은 남긴다. */
     @Test fun roadMatchProximity() {
-        assertTrue(index.hasNearby(36.995, 127.0))
-        assertFalse(index.hasNearby(36.98, 127.0))
-        assertFalse(index.hasNearby(Double.NaN, 127.0))
+        assertTrue(index.hasNearby(36.995, 127.0, 0.0))
+        assertTrue(index.hasNearby(37.0036, 127.0, 0.0))
+        assertTrue(index.hasNearby(37.0, 127.0, 90.0))
+        assertFalse(index.hasNearby(37.004, 127.0, 0.0))
+        assertFalse(index.hasNearby(37.0, 127.0, 180.0))
+        assertFalse(index.hasNearby(36.98, 127.0, 0.0))
+        assertFalse(index.hasNearby(Double.NaN, 127.0, 0.0))
+        assertFalse(index.hasNearby(37.0, 127.0, Double.NaN))
     }
 
     /** 비정상 데이터만 든 목록을 정상 로드로 취급하지 않는다. */

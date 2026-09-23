@@ -133,6 +133,40 @@ class SafetySettingsTest {
         }
     }
 
+    /** 후보 밖으로 벗어나거나 안내를 다시 시작해도 매칭 요청·429 대기 시각은 잊지 않는다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun roadMatchCooldownSurvivesExitAndRestart() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val guide = SafeDriveGuide(Application()) { 100_000_000_000L }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50))))
+        val lastAttempt = SafeDriveGuide::class.java.getDeclaredField("lastMatchAttemptMillis")
+            .apply { isAccessible = true }
+        val retryDelay = SafeDriveGuide::class.java.getDeclaredField("retryDelayMillis")
+            .apply { isAccessible = true }
+        try {
+            guide.start()
+            runCurrent()
+            lastAttempt.setLong(guide, 90_000L)
+            retryDelay.setLong(guide, 30_000L)
+            // 네트워크 호출 없이 후보 이탈·옵트아웃·서비스 재시작 경로만 확인한다.
+            guide.onLocation(Location("gps").apply {
+                latitude = 37.02; longitude = 127.0
+                speed = 0f; accuracy = 10f; elapsedRealtimeNanos = 100_000_000_000L
+            })
+            guide.setRoadMatchEnabled(false)
+            guide.stop()
+            guide.start()
+            runCurrent()
+            assertEquals(90_000L, lastAttempt.getLong(guide))
+            assertEquals(30_000L, retryDelay.getLong(guide))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** 첫 후보는 즉시, 동일 지점은 GPS 흔들림에도 10분간 한 번만, 다음 지점은 전역 10초 뒤 알린다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun soundRequestCooldownAndSettings() = runTest {

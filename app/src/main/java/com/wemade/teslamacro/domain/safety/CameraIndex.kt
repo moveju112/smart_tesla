@@ -40,13 +40,14 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     /** 원본 건수와 별개로 실제 사용할 수 있는 목록이 있는지 확인한다. */
     val isEmpty: Boolean get() = cells.isEmpty()
 
-    /** 원격 요청 전엔 로컬 목록으로 1km 안의 후보부터 확인해 불필요한 GPS 전송을 막는다. */
-    fun hasNearby(latitude: Double, longitude: Double): Boolean {
-        if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return false
+    /** 경보보다 넓은 전방 후보를 찾되, GPS 오차로 바로 뒤의 카메라를 놓치지 않게 근거리는 허용한다. */
+    fun hasNearby(latitude: Double, longitude: Double, bearing: Double): Boolean {
+        if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0 || !bearing.isFinite()) return false
         val (row, column) = cell(latitude, longitude)
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             if (cells[x to y].orEmpty().any { camera ->
-                    ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude) <= 1_000
+                    val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
+                    meters <= 1_000 && (meters <= 100 || bearingDifference(latitude, longitude, bearing, camera) <= 120)
                 }) return true
         }
         return false
@@ -64,10 +65,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
             for (camera in cells[x to y].orEmpty()) {
                 val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
                 if (meters < 10 || meters > 600 || meters >= distance) continue
-                val north = camera.latitude - latitude
-                val east = (camera.longitude - longitude) * cos(Math.toRadians(latitude))
-                val angle = Math.toDegrees(atan2(east, north))
-                val difference = abs(((angle - bearing + 540) % 360 + 360) % 360 - 180)
+                val difference = bearingDifference(latitude, longitude, bearing, camera)
                 if (difference > 25 || meters * sin(Math.toRadians(difference)) > 35) continue
                 nearest = camera
                 distance = meters
@@ -82,6 +80,14 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                 cameraKey = "${it.latitude},${it.longitude}", referenceDate = referenceDate,
                 dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"))
         }
+    }
+
+    /** 안내와 요청의 방향 계산을 공유해 경계에서 서로 다른 후보를 고르지 않게 한다. */
+    private fun bearingDifference(latitude: Double, longitude: Double, bearing: Double, camera: OfflineCamera): Double {
+        val north = camera.latitude - latitude
+        val east = (camera.longitude - longitude) * cos(Math.toRadians(latitude))
+        val angle = Math.toDegrees(atan2(east, north))
+        return abs(((angle - bearing + 540) % 360 + 360) % 360 - 180)
     }
 
     /** 약 2km 격자로 전국 목록의 매초 전체 순회를 피한다. */

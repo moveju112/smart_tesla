@@ -271,11 +271,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSafeDrive(enabled) }
     }
 
-    /** 명시적으로 켠 설치본에서만 지도 서버로 주변 GPS를 전송한다. */
-    fun setRoadMatch(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setRoadMatch(enabled) }
-    }
-
     /** 경보를 소리로도 알릴지 */
     fun setSafeDriveSound(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setSafeDriveSound(enabled) }

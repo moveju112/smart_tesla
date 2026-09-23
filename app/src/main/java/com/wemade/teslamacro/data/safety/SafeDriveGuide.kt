@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 
-/** 기본은 오프라인 안내이며, 별도 동의 시 카메라 근처에서만 도로 매칭을 보조로 사용한다. */
+/** 안내를 켜면 기본은 오프라인 판단, 카메라 근처에서는 도로 매칭을 보조로 사용한다. */
 class SafeDriveGuide(
     private val application: Application,
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
@@ -131,7 +131,7 @@ class SafeDriveGuide(
         }
     }
 
-    /** 위치 전송은 별도 동의가 있을 때만 켜고, 해제 시 대기 요청도 취소한다. */
+    /** 안내가 켜져 있고 토큰이 있을 때만 매칭하며, 안내 해제 시 대기 요청도 취소한다. */
     fun setRoadMatchEnabled(enabled: Boolean) {
         if (enabled && !roadMatchEnabled) {
             tokenRejected = false

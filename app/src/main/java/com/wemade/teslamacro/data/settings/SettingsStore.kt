@@ -111,8 +111,6 @@ data class AppSettings(
     val hudOverlay: Boolean = false,
     /** 과속·구간단속·보호구역 안내. 켜면 주행 중 GPS와 망을 계속 쓴다 */
     val safeDrive: Boolean = false,
-    /** 별도 동의가 있어야 근처 카메라에서 GPS를 지도 서버로 전송한다. */
-    val roadMatch: Boolean = false,
     /**
      * 경보를 소리로도 알릴지. 기본 켜짐 —
      * 주행 중엔 화면을 볼 수 없는 순간이 있고, 그때 침묵하면 경보가 없는 것과 같다.
@@ -169,7 +167,6 @@ class SettingsStore(
             hudOverlay = prefs[KeyHudOverlay] ?: false,
             // 무료 오프라인 안내도 사용자가 선택한 경우에만 GPS를 사용한다.
             safeDrive = prefs[KeySafeDrive] ?: false,
-            roadMatch = prefs[KeyRoadMatch] ?: false,
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
             safeDriveToleranceKph = (prefs[KeySafeDriveToleranceKph] ?: 5).coerceIn(0, 30),
@@ -292,8 +289,6 @@ class SettingsStore(
     }
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
     suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
-    /** 오프라인 안내 동의와 위치 전송 동의를 분리한다. */
-    suspend fun setRoadMatch(enabled: Boolean) = edit { it[KeyRoadMatch] = enabled }
     suspend fun setSafeDriveSound(enabled: Boolean) = edit { it[KeySafeDriveSound] = enabled }
     // 범위를 저장 직전에 한 번 가둔다 — 백업 파일이 손으로 고쳐져 들어올 수 있다
     suspend fun setSafeDriveVolume(level: Int) = edit { it[KeySafeDriveVolume] = level.coerceIn(1, 3) }
@@ -341,8 +336,6 @@ class SettingsStore(
         // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
         it[KeyHudOverlay] = backup.hudOverlay
         it[KeySafeDrive] = backup.safeDrive
-        // 복원만으로 외부 위치 전송이 켜지지 않도록 동의는 백업에서 제외한다.
-        it[KeyRoadMatch] = false
         it[KeySafeDriveSound] = backup.safeDriveSound
         it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
         it[KeySafeDriveToleranceKph] = backup.safeDriveToleranceKph.coerceIn(0, 30)
@@ -465,7 +458,6 @@ class SettingsStore(
         val KeyNavigatorSafeDriveDiagnostics = booleanPreferencesKey("navigator_safe_drive_diagnostics")
         val KeyHudOverlay = booleanPreferencesKey("hud_overlay")
         val KeySafeDrive = booleanPreferencesKey("safe_drive")
-        val KeyRoadMatch = booleanPreferencesKey("road_match")
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")
         val KeySafeDriveVolume = intPreferencesKey("safe_drive_volume")
         val KeySafeDriveToleranceKph = intPreferencesKey("safe_drive_tolerance_kph")

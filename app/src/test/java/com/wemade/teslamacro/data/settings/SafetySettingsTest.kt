@@ -39,9 +39,7 @@ class SafetySettingsTest {
         }
         val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(5, store.settings.first().safeDriveToleranceKph)
-        assertFalse(store.settings.first().roadMatch)
-        store.setRoadMatch(true)
-        assertTrue(store.settings.first().roadMatch)
+        assertFalse(store.settings.first().safeDrive)
         store.setSafeDrive(true)
         store.setSafeDriveToleranceKph(7)
         val restored = SettingsStore(ContextWrapper(paparazzi.context), preferences)
@@ -54,7 +52,9 @@ class SafetySettingsTest {
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
         store.restore(BackupSettings(safeDriveToleranceKph = 9))
         assertEquals(9, store.settings.first().safeDriveToleranceKph)
-        assertFalse("복원만으로 위치 전송을 시작하지 않는다", store.settings.first().roadMatch)
+        assertFalse("안내가 꺼져 있으면 위치를 사용하지 않는다", store.settings.first().safeDrive)
+        store.restore(BackupSettings(safeDrive = true, safeDriveToleranceKph = 9))
+        assertTrue("복원된 안내 선택도 유지한다", store.settings.first().safeDrive)
         store.restore(BackupSettings(safeDriveToleranceKph = 99))
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
     }
@@ -149,7 +149,7 @@ class SafetySettingsTest {
             runCurrent()
             lastAttempt.setLong(guide, 90_000L)
             retryDelay.setLong(guide, 30_000L)
-            // 네트워크 호출 없이 후보 이탈·옵트아웃·서비스 재시작 경로만 확인한다.
+            // 네트워크 호출 없이 후보 이탈·안내 해제·서비스 재시작 경로만 확인한다.
             guide.onLocation(Location("gps").apply {
                 latitude = 37.02; longitude = 127.0
                 speed = 0f; accuracy = 10f; elapsedRealtimeNanos = 100_000_000_000L

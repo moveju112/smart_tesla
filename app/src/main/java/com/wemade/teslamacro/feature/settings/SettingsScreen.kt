@@ -768,7 +768,6 @@ data class NavigationControls(
     val safeDriveTestMessage: String? = null,
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
-    val onRoadMatchChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
     val onSafeDriveToleranceChange: (Int) -> Unit = {},
@@ -960,7 +959,11 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
 
         ToggleRow(
             title = "안내 받기",
-            subtitle = "공공데이터·GPS 기반 오프라인 안내",
+            subtitle = if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
+                "공공데이터·GPS 기반 안내 · 주변 카메라 접근 시 경로 전송"
+            } else {
+                "공공데이터·GPS 기반 오프라인 안내"
+            },
             checked = settings.safeDrive,
             onCheckedChange = controls.onSafeDriveChange,
         )
@@ -970,8 +973,14 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             style = MaterialTheme.typography.bodySmall,
             color = T.InkMuted,
         )
+        if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
+            Text(
+                "안내를 켜면 약 1km 안에 카메라 후보가 있을 때 GPS 경로를 gps-map.choondoggy.com으로 전송해 도로를 보정해요. 서버 오류·불확실한 결과에서는 오프라인 안내를 유지해요. 단속 도로·방향이 확정되진 않아요.",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+            )
+        }
         SettingsDetails("데이터 출처·안내 범위") {
-            Text("공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 자료 기준일과 번들 수집일은 서로 달라요. 1년 넘은 카메라 자료·6개월 넘은 목록은 주행 화면에 갱신 확인을 표시해요. 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 단속 방향·모든 도로의 제한속도·구간 평균속도는 알 수 없어요. 도로 매칭을 따로 켜지 않으면 주행 위치를 외부에 보내지 않아요.",
+            Text("공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 자료 기준일과 번들 수집일은 서로 달라요. 1년 넘은 카메라 자료·6개월 넘은 목록은 주행 화면에 갱신 확인을 표시해요. 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 단속 방향·모든 도로의 제한속도·구간 평균속도는 알 수 없어요.",
                 style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         }
         if (settings.safeDrive && !controls.locationPermitted) {
@@ -982,18 +991,6 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         // 흐리게 남겨두는 것보다 접는 게 조용하다
         if (!settings.safeDrive) return@TCard
 
-        Spacer(Modifier.height(Space.md))
-        if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
-            ToggleRow(
-                title = "주변 카메라 도로 매칭",
-                subtitle = "약 1km 안에 후보가 있을 때만 GPS 경로를 gps-map.choondoggy.com으로 전송해요. 서버 오류·불확실한 결과는 오프라인 안내를 유지해요. 단속 도로·방향이 확정되진 않아요.",
-                checked = settings.roadMatch,
-                onCheckedChange = controls.onRoadMatchChange,
-            )
-        } else {
-            Text("도로 매칭 토큰이 없어 오프라인 안내만 사용해요.",
-                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        }
         Spacer(Modifier.height(Space.md))
         Text("경보 초과속도", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         com.wemade.teslamacro.ui.component.NumberStepper(

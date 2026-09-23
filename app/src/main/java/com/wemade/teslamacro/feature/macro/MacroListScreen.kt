@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -247,42 +248,37 @@ private fun MacroCard(
     onDelete: () -> Unit,
     onMove: () -> Unit,
 ) {
-    TCard(onClick = onEdit, outlined = isRunning) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = Space.xxl),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = rule.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = T.Ink,
-                    minLines = 2,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete, onMove = onMove)
-        }
+    // 글자 수와 실행 상태에 상관없이 같은 높이를 유지하되, 큰 글씨는 카드 전체 높이를 늘린다.
+    val cardHeight = (Space.xxl * 3 + Space.xl) * maxOf(1f, LocalDensity.current.fontScale)
+    TCard(modifier = Modifier.height(cardHeight), onClick = onEdit, outlined = isRunning) {
+        Text(
+            text = rule.name,
+            style = MaterialTheme.typography.titleSmall,
+            color = T.Ink,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        )
         if (isRunning) {
             Text(
                 text = "실행 중 · ${runningLabel(progress)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = T.Electric,
-                modifier = Modifier.padding(bottom = Space.sm),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = Space.xs),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             DraftToggle(
                 checked = rule.enabled,
                 onCheckedChange = onToggle,
                 modifier = Modifier.semantics { contentDescription = "${rule.name} 자동 실행" },
             )
+            RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete, onMove = onMove)
         }
     }
 }

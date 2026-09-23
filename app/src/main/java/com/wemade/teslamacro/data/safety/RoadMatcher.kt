@@ -22,7 +22,7 @@ internal data class RoadPoint(val latitude: Double, val longitude: Double, val t
 internal data class MatchedRoad(val latitude: Double, val longitude: Double)
 internal data class RoadMatchResponse(val road: MatchedRoad? = null, val code: Int = 0)
 
-/** 도로 매칭은 선택 기능이다. 응답·오류에 위치 또는 인증 정보가 섞일 수 있어 로그를 남기지 않는다. */
+/** 도로 매칭 응답·오류에 위치 또는 인증 정보가 섞일 수 있어 로그를 남기지 않는다. */
 internal class RoadMatcher(private val token: String = BuildConfig.ROAD_MATCH_TOKEN) {
     val available: Boolean get() = token.isNotBlank()
 

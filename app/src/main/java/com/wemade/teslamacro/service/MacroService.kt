@@ -762,7 +762,7 @@ private const val MOVING_KPH = 5.0
 private fun warningTextOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {
     if (state.stalled) return state.unavailableReason ?: "위치 없음"
     if (!state.ready) return null
-    val alert = state.alert ?: return null
+    val alert = state.alert ?: return state.dataWarning
     val distance = alert.distanceMeters
     val limit = alert.speedLimitKph
     return buildString {
@@ -770,5 +770,6 @@ private fun warningTextOf(state: com.wemade.teslamacro.domain.safety.SafetyState
         if (alert.limitConflict) append(" · 제한 확인 필요")
         else if (limit != null) append(" $limit")
         if (distance != null) append(" · ${distance}m")
+        (alert.dateWarning ?: state.dataWarning)?.let { append(" · $it") }
     }
 }

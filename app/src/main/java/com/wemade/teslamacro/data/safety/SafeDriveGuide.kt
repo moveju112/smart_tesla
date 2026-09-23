@@ -10,14 +10,16 @@ import com.wemade.teslamacro.data.location.isFreshLocation
 import com.wemade.teslamacro.domain.safety.CameraDataset
 import com.wemade.teslamacro.domain.safety.CameraIndex
 import com.wemade.teslamacro.domain.safety.SafetyState
+import com.wemade.teslamacro.domain.safety.sourceDateWarning
 import com.wemade.teslable.DiagLog
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
+import java.time.LocalDate
 
-/** 번들 공공데이터와 기존 HUD GPS만 사용한다. 네트워크·지도 SDK·앱 키는 사용하지 않는다. */
+/** 번들 공공데이터와 기존 HUD GPS만 사용한다. 주행 위치를 외부로 보내지 않는다. */
 class SafeDriveGuide(
     private val application: Application,
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
@@ -29,6 +31,9 @@ class SafeDriveGuide(
     private var index: CameraIndex? = null
     private var lastFixNanos: Long? = null
     private var lastSoundMillis: Long? = null
+    private val soundedCameras = mutableMapOf<String, Long>()
+    private var retrievedAt: String? = null
+    private var dataWarning: String? = null
     private var sound = false
     private var volume = 2
     var toleranceKph: Int = 5
@@ -45,12 +50,20 @@ class SafeDriveGuide(
                     val text = application.assets.open("safety_cameras.json").bufferedReader().use { it.readText() }
                     val dataset = Json { ignoreUnknownKeys = true }.decodeFromString<CameraDataset>(text)
                     require(dataset.schemaVersion == 1)
-                    CameraIndex(dataset.cameras).also { require(!it.isEmpty) }
-                }
-                mutableState.value = SafetyState(ready = true, stalled = true)
+                    CameraIndex(dataset.cameras).also { require(!it.isEmpty) } to dataset.retrievedAt
+                }.also { retrievedAt = it.second }.first
+                dataWarning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
+                mutableState.value = SafetyState(ready = true, stalled = true, dataWarning = dataWarning)
                 while (isActive) {
+                    if (retrievedAt != null) {
+                        val warning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
+                        if (dataWarning != warning) {
+                            dataWarning = warning
+                            mutableState.value = mutableState.value.copy(dataWarning = warning)
+                        }
+                    }
                     if (lastFixNanos?.let { isFreshLocation(it, elapsedRealtimeNanos()) } == false) {
-                        mutableState.value = SafetyState(ready = true, stalled = true)
+                        mutableState.value = SafetyState(ready = true, stalled = true, dataWarning = dataWarning)
                     }
                     delay(1_000)
                 }
@@ -70,22 +83,26 @@ class SafeDriveGuide(
         val speed = freshSpeedKph(location, nowNanos)
         if (speed == null) {
             lastFixNanos = null
-            mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "위치·속도 확인 불가")
+            mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "위치·속도 확인 불가", dataWarning = dataWarning)
             return
         }
         lastFixNanos = location.elapsedRealtimeNanos
         if (speed >= 5 && (!location.hasBearing() || !location.bearing.isFinite())) {
-            mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가")
+            mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
             return
         }
         val alert = if (location.hasBearing()) index?.nearest(
             location.latitude, location.longitude, location.bearing.toDouble(), speed, location.accuracy.toDouble(),
         ) else null
-        mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed)
+        mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         val nowMillis = nowNanos / 1_000_000
-        if (sound && state.value.isOverSpeed(toleranceKph = toleranceKph) &&
-            (lastSoundMillis?.let { nowMillis - it >= 10_000 } != false)) {
+        val cameraKey = alert?.cameraKey
+        // 같은 좌표를 GPS 흔들림·10초 간격마다 재경보하지 않고, 다른 카메라는 기존 간격을 지킨다.
+        if (sound && cameraKey != null && state.value.isOverSpeed(toleranceKph = toleranceKph) &&
+            (lastSoundMillis?.let { nowMillis >= it && nowMillis - it >= 10_000 } != false) &&
+            (soundedCameras[cameraKey]?.let { nowMillis >= it && nowMillis - it >= 600_000 } != false)) {
             lastSoundMillis = nowMillis
+            soundedCameras[cameraKey] = nowMillis
             runCatching {
                 if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
                 tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
@@ -108,6 +125,7 @@ class SafeDriveGuide(
         job = null
         lastFixNanos = null
         lastSoundMillis = null
+        soundedCameras.clear()
         tone?.release()
         tone = null
         mutableState.value = SafetyState()

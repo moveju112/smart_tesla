@@ -129,19 +129,22 @@ class SafetySettingsTest {
         }
     }
 
-    /** 부팅 직후 첫 경보는 막지 않고 같은 후보의 소리 요청은 10초 간격을 지킨다. */
+    /** 첫 후보는 즉시, 동일 지점은 GPS 흔들림에도 10분간 한 번만, 다음 지점은 전역 10초 뒤 알린다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun soundRequestCooldownAndSettings() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var nowNanos = 1_000_000_000L
         val guide = SafeDriveGuide(Application()) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("sound-test", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(
+                OfflineCamera("first", 37.003, 127.0, 50),
+                OfflineCamera("second", 37.004, 127.0, 50),
+            )))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
         // 실제 스피커 출력 대신 요청 시각만 검증하고 JVM의 미구현 ToneGenerator는 비운다.
-        fun approach() {
+        fun approach(latitudeDegrees: Double = 37.0) {
             guide.onLocation(Location("gps").apply {
-                latitude = 37.0; longitude = 127.0
+                latitude = latitudeDegrees; longitude = 127.0
                 speed = 20f; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
@@ -158,13 +161,21 @@ class SafetySettingsTest {
             approach()
             assertEquals(1_000L, lastSound.get(guide))
             nowNanos += 1_000_000L
-            approach()
+            approach(37.00001) // 작은 GPS 흔들림과 10초 경과는 새 지점이 아니다.
+            assertEquals(1_000L, lastSound.get(guide))
+            approach(37.0034) // 다음 카메라는 전역 10초 간격 이후 알린다.
             assertEquals(11_000L, lastSound.get(guide))
+            nowNanos += 10_000_000_000L
+            approach() // 다른 지점 방문으로 기존 카메라의 중복 제한이 풀리지 않는다.
+            assertEquals(11_000L, lastSound.get(guide))
+            nowNanos += 590_000_000_000L
+            approach() // 충분한 시간이 지난 재진입만 다시 알린다.
+            assertEquals(611_000L, lastSound.get(guide))
             guide.setSound(false, -1, 99)
             assertEquals(30, guide.toleranceKph)
             nowNanos += 10_000_000_000L
-            approach()
-            assertEquals(11_000L, lastSound.get(guide))
+            approach(37.0034)
+            assertEquals(611_000L, lastSound.get(guide))
             guide.stop()
             assertNull(lastSound.get(guide))
         } finally {

@@ -1,5 +1,7 @@
 package com.wemade.teslamacro.domain.safety
 
+import java.time.LocalDate
+
 /**
  * 지금 다가오는 안전 지점 하나.
  *
@@ -13,7 +15,23 @@ data class SafetyAlert(
     val speedLimitKph: Int? = null,
     /** 같은 좌표에 서로 다른 제한속도가 있어 도로 표지 확인이 필요한가. */
     val limitConflict: Boolean = false,
+    /** 좌표가 같은 중복·상충 레코드는 한 지점으로 취급한다. */
+    val cameraKey: String? = null,
+    /** 제공기관이 기록한 카메라 자료의 기준일. 수집일과 다르다. */
+    val referenceDate: String? = null,
+    /** 오래되거나 확인 불가능한 자료를 UI에 분명히 표시한다. */
+    val dateWarning: String? = null,
 )
+
+/** 미래·누락·오래된 기준일은 최신 자료로 오인하지 않게 표시한다. */
+fun sourceDateWarning(date: String?, today: LocalDate, maxAgeMonths: Long, label: String): String? {
+    val parsed = date?.takeIf { it.length == 10 || (it.length > 10 && it[10] == 'T') }
+        ?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
+        ?: return "$label 확인 필요"
+    return if (parsed.isAfter(today) || parsed.isBefore(today.minusMonths(maxAgeMonths))) {
+        "$label ${parsed} · 갱신 확인"
+    } else null
+}
 
 /**
  * 안전 지점의 종류.
@@ -63,6 +81,8 @@ data class SafetyState(
     val speedKph: Double? = null,
     /** 목록 오류와 위치·속도·방향 누락을 구분해 알려준다. */
     val unavailableReason: String? = null,
+    /** 다운로드한 목록 자체의 수집일이 오래되거나 알 수 없는가. */
+    val dataWarning: String? = null,
 ) {
     /**
      * 후보 제한속도 + [toleranceKph]에 도달했는가. 경계값부터 경보한다.

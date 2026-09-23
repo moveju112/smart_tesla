@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.domain.safety
 
 import org.junit.Assert.*
+import java.time.LocalDate
+import kotlinx.serialization.json.Json
 import org.junit.Test
 
 class CameraIndexTest {
@@ -92,6 +94,45 @@ class CameraIndexTest {
             .nearest(37.0, 127.0, 0.0, 60.0, 10.0)
         assertEquals(30, duplicates?.speedLimitKph)
         assertFalse(duplicates!!.limitConflict)
+    }
+
+    /** 번들의 수집일과 개별 기관 기준일을 분리해 오래된 자료만 경고한다. */
+    @Test fun sourceDatesAndDatasetCompatibility() {
+        val today = LocalDate.of(2026, 9, 23)
+        val dataset = Json { ignoreUnknownKeys = true }.decodeFromString<CameraDataset>(
+            """{"retrievedAt":"2026-09-22T07:28:01+00:00","cameras":[{"id":"dated","latitude":37.003,"longitude":127.0,"speedLimitKph":50,"referenceDate":"2022-12-15"}]}"""
+        )
+        assertNull(sourceDateWarning(dataset.retrievedAt, today, 6, "목록 수집일"))
+        val alert = CameraIndex(dataset.cameras).nearest(37.0, 127.0, 0.0, 60.0, 10.0, today)
+        assertEquals("자료 기준일 2022-12-15 · 갱신 확인", alert?.dateWarning)
+        assertEquals("37.003,127.0", alert?.cameraKey)
+        assertEquals(alert?.cameraKey, CameraIndex(dataset.cameras.reversed())
+            .nearest(37.0, 127.0, 0.0, 60.0, 10.0, today)?.cameraKey)
+        assertEquals("목록 수집일 2026-03-22 · 갱신 확인",
+            sourceDateWarning("2026-03-22T00:00:00Z", today, 6, "목록 수집일"))
+        assertNull(sourceDateWarning("2026-03-23T00:00:00Z", today, 6, "목록 수집일"))
+        assertNull(sourceDateWarning("2025-09-23", today, 12, "자료 기준일"))
+        assertEquals("자료 기준일 2025-09-22 · 갱신 확인",
+            sourceDateWarning("2025-09-22", today, 12, "자료 기준일"))
+        assertEquals("자료 기준일 2026-09-24 · 갱신 확인",
+            sourceDateWarning("2026-09-24", today, 12, "자료 기준일"))
+        assertEquals("자료 기준일 확인 필요", sourceDateWarning(null, today, 12, "자료 기준일"))
+        assertEquals("자료 기준일 확인 필요", sourceDateWarning("bad-date", today, 12, "자료 기준일"))
+        assertEquals("자료 기준일 확인 필요", sourceDateWarning("2026-09-23x", today, 12, "자료 기준일"))
+        assertNull(Json.decodeFromString<CameraDataset>("""{"cameras":[]}""").retrievedAt)
+    }
+
+    /** 한 좌표에 다른 기준일이 있으면 목록 순서와 무관하게 가장 오래된 값을 경고한다. */
+    @Test fun duplicateCoordinateKeepsOldestReferenceDate() {
+        val cameras = listOf(
+            OfflineCamera("new", 37.003, 127.0, 50, referenceDate = "2026-08-11"),
+            OfflineCamera("old", 37.003, 127.0, 50, referenceDate = "2022-12-15"),
+        )
+        val today = LocalDate.of(2026, 9, 23)
+        val first = CameraIndex(cameras).nearest(37.0, 127.0, 0.0, 60.0, 10.0, today)
+        val second = CameraIndex(cameras.reversed()).nearest(37.0, 127.0, 0.0, 60.0, 10.0, today)
+        assertEquals("2022-12-15", first?.referenceDate)
+        assertEquals(first, second)
     }
 
     /** GPS 단절이나 미준비 상태에 남은 카메라로 경보를 만들지 않는다. */

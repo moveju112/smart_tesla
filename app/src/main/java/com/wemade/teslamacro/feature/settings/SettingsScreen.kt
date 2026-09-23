@@ -970,7 +970,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             color = T.InkMuted,
         )
         SettingsDetails("데이터 출처·안내 범위") {
-            Text("공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 모든 도로의 제한속도·구간 평균속도는 알 수 없어요.",
+            Text("공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 자료 기준일과 번들 수집일은 서로 달라요. 1년 넘은 카메라 자료·6개월 넘은 목록은 주행 화면에 갱신 확인을 표시해요. 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 도로 매칭·단속 방향·모든 도로의 제한속도·구간 평균속도는 알 수 없어요. 이 단속 안내는 주행 위치를 외부에 보내지 않아요.",
                 style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         }
         if (settings.safeDrive && !controls.locationPermitted) {

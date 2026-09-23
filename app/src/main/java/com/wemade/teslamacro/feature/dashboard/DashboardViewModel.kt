@@ -476,15 +476,17 @@ internal fun parkSummaryOf(
 private fun safetyLabelOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? = when {
     // 못 하는 걸 침묵으로 감추면 사용자가 안내를 믿어버린다
     state.stalled -> "안전 안내"
+    state.alert == null && state.dataWarning != null -> "안전 안내"
     else -> state.alert?.kind?.label
 }
 
 private fun safetyValueOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {
     if (state.stalled) return state.unavailableReason ?: "위치 없음"
-    val alert = state.alert ?: return null
+    val alert = state.alert ?: return state.dataWarning
     val parts = listOfNotNull(
         if (alert.limitConflict) "제한 확인 필요" else alert.speedLimitKph?.let { "$it" },
         alert.distanceMeters?.let { "${it}m" },
+        alert.dateWarning ?: state.dataWarning,
     )
     return if (parts.isEmpty()) "안내 중" else parts.joinToString(" · ")
 }

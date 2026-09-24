@@ -198,13 +198,15 @@ class MacroService : LifecycleService() {
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.settingsStore.settings
-                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) to it.safeDriveToleranceKph }
+                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) to
+                    (it.safeDriveToleranceKph to it.safeDriveProgressiveSound) }
                 .distinctUntilChanged()
-                .collect { (options, toleranceKph) ->
+                .collect { (options, alertOptions) ->
                     val (enabled, sound, volume) = options
+                    val (toleranceKph, progressiveSound) = alertOptions
                     // 소리 설정을 먼저 밀어 넣는다 — start() 직후 첫 경보가
                     // 옛 설정으로 재생되면 껐는데 소리가 나는 것으로 보인다
-                    app.container.safeDrive.setSound(sound, volume, toleranceKph)
+                    app.container.safeDrive.setSound(sound, volume, toleranceKph, progressiveSound)
                     // 안내를 켠 경우에만 근처 후보의 경로를 매칭하고, 끄면 요청 상태도 비운다.
                     app.container.safeDrive.setRoadMatchEnabled(enabled)
                     if (enabled) app.container.safeDrive.start()

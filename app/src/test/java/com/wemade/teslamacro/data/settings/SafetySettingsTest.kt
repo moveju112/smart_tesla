@@ -5,6 +5,7 @@ import android.app.Application
 import android.location.Location
 import com.wemade.teslamacro.data.location.freshSpeedKph
 import com.wemade.teslamacro.data.safety.SafeDriveGuide
+import com.wemade.teslamacro.data.safety.warningIntervalMillis
 import com.wemade.teslamacro.domain.safety.CameraIndex
 import com.wemade.teslamacro.domain.safety.OfflineCamera
 import com.wemade.teslamacro.domain.safety.SafetyState
@@ -40,19 +41,26 @@ class SafetySettingsTest {
         }
         val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(5, store.settings.first().safeDriveToleranceKph)
+        assertTrue(store.settings.first().safeDriveProgressiveSound)
         assertFalse(store.settings.first().safeDrive)
         store.setSafeDrive(true)
         store.setSafeDriveToleranceKph(7)
+        store.setSafeDriveProgressiveSound(false)
         val restored = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(7, restored.settings.first().safeDriveToleranceKph)
+        assertFalse(restored.settings.first().safeDriveProgressiveSound)
         assertTrue(restored.settings.first().safeDrive)
         assertEquals(7, restored.settings.first().toBackup().safeDriveToleranceKph)
+        assertFalse(restored.settings.first().toBackup().safeDriveProgressiveSound)
         store.setSafeDriveToleranceKph(-1)
         assertEquals(0, store.settings.first().safeDriveToleranceKph)
         store.setSafeDriveToleranceKph(31)
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
         store.restore(BackupSettings(safeDriveToleranceKph = 9))
         assertEquals(9, store.settings.first().safeDriveToleranceKph)
+        assertTrue(store.settings.first().safeDriveProgressiveSound)
+        store.restore(BackupSettings(safeDriveProgressiveSound = false))
+        assertFalse(store.settings.first().safeDriveProgressiveSound)
         assertFalse("안내가 꺼져 있으면 위치를 사용하지 않는다", store.settings.first().safeDrive)
         store.restore(BackupSettings(safeDrive = true, safeDriveToleranceKph = 9))
         assertTrue("복원된 안내 선택도 유지한다", store.settings.first().safeDrive)
@@ -190,7 +198,7 @@ class SafetySettingsTest {
             SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
         }
         try {
-            guide.setSound(true, 99, -1)
+            guide.setSound(true, 99, -1, progressive = false)
             assertEquals(0, guide.toleranceKph)
             guide.start()
             runCurrent()
@@ -225,6 +233,79 @@ class SafetySettingsTest {
             assertEquals(30, guide.toleranceKph)
             guide.stop()
             assertNull(lastSound.get(guide))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 제한 대비 105→110→115에서 간격이 3→2→1초로 줄고 고정 모드는 2초를 유지한다. */
+    @Test fun warningIntervalByOverspeed() {
+        assertEquals(3_000L, warningIntervalMillis(5.0, true))
+        assertEquals(3_000L, warningIntervalMillis(9.99, true))
+        assertEquals(2_000L, warningIntervalMillis(10.0, true))
+        assertEquals(2_000L, warningIntervalMillis(14.99, true))
+        assertEquals(1_000L, warningIntervalMillis(15.0, true))
+        assertEquals(2_000L, warningIntervalMillis(15.0, false))
+    }
+
+    /** GPS가 1초마다 올 때 느린 간격·단계 상승 즉시 경보·빠른 간격을 실제 요청 시각으로 확인한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun progressiveWarningRequests() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val guide = SafeDriveGuide(Application()) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 100))))
+        val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
+        // JVM에서 ToneGenerator는 실제로 소리를 못 내므로 요청 시각만 검사한다.
+        fun approach(speedKph: Int) {
+            guide.onLocation(Location("gps").apply {
+                latitude = 37.0; longitude = 127.0
+                speed = (speedKph / 3.6).toFloat(); bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+        }
+        try {
+            guide.setSound(true, 2, 5, progressive = true)
+            guide.start()
+            runCurrent()
+            approach(106)
+            assertEquals(1_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(106)
+            assertEquals(1_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(111) // 3초 간격이 남았어도 더 빠른 단계에서는 즉시 알린다.
+            assertEquals(3_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(111)
+            assertEquals(3_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(111)
+            assertEquals(5_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(116)
+            assertEquals(6_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(116)
+            assertEquals(7_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(106)
+            assertEquals(7_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(101) // 과속 해제 뒤 다시 초과하면 느린 단계도 즉시 울린다.
+            assertNull(lastSound.get(guide))
+            approach(106)
+            assertEquals(9_000L, lastSound.get(guide))
+            nowNanos += 2_000_000_000L
+            approach(106)
+            assertEquals(9_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(106)
+            assertEquals(12_000L, lastSound.get(guide))
         } finally {
             guide.stop()
             runCurrent()
@@ -279,7 +360,8 @@ class SafetySettingsTest {
     @Test fun backupCompatibility() {
         val old = BackupFile.json.decodeFromString<BackupFile>("""{"version":3,"settings":{}}""")
         assertEquals(5, old.settings.safeDriveToleranceKph)
-        val backup = BackupFile(settings = BackupSettings(safeDriveToleranceKph = 8))
+        assertTrue(old.settings.safeDriveProgressiveSound)
+        val backup = BackupFile(settings = BackupSettings(safeDriveToleranceKph = 8, safeDriveProgressiveSound = false))
         val text = BackupFile.json.encodeToString(BackupFile.serializer(), backup)
         assertEquals(backup, BackupFile.json.decodeFromString<BackupFile>(text))
     }

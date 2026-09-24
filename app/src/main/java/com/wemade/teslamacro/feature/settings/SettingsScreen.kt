@@ -769,6 +769,7 @@ data class NavigationControls(
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
+    val onSafeDriveProgressiveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
     val onSafeDriveToleranceChange: (Int) -> Unit = {},
     /** 앱 키가 있어야 켤 수 있다. 없으면 토글을 잠그고 이유를 적는다 */
@@ -1007,13 +1008,20 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "소리로도 알림",
-            subtitle = "카메라 앞에서 과속이 계속되면 2초마다 경고음을 내요. 기기 미디어 음량도 적용돼요",
+            subtitle = "카메라 앞 과속 시 단발 경고음 · 기기 미디어 음량 적용",
             checked = settings.safeDriveSound,
             onCheckedChange = controls.onSafeDriveSoundChange,
         )
 
         if (!settings.safeDriveSound) return@TCard
 
+        Spacer(Modifier.height(Space.md))
+        ToggleRow(
+            title = "과속할수록 빠르게 울리기",
+            subtitle = "제한 대비 +10 미만 3초 · +10부터 2초 · +15부터 1초 (끄면 2초 고정)",
+            checked = settings.safeDriveProgressiveSound,
+            onCheckedChange = controls.onSafeDriveProgressiveSoundChange,
+        )
         Spacer(Modifier.height(Space.md))
         ChoiceRow(
             options = listOf("1" to "작게", "2" to "보통", "3" to "크게"),
@@ -1187,7 +1195,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
             " · 과속안내=${settings.safeDrive}" +
-            " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume})" +
+            " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume}, 속도별 ${settings.safeDriveProgressiveSound})" +
             " · 경보초과속도=${settings.safeDriveToleranceKph}km/h",
     )
 }

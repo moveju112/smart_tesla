@@ -118,6 +118,8 @@ data class AppSettings(
     val safeDriveSound: Boolean = true,
     /** 경보 음량 1~3. 내비 음성과 겹쳐 들리므로 사람이 균형을 맞출 수 있어야 한다 */
     val safeDriveVolume: Int = 2,
+    /** 후보 제한속도 대비 초과분에 따라 경고음 간격을 줄일지. */
+    val safeDriveProgressiveSound: Boolean = true,
     val safeDriveToleranceKph: Int = 5,
 ) {
     /** 차량을 특정할 수 있는가 (연결 시도 가능) */
@@ -169,6 +171,7 @@ class SettingsStore(
             safeDrive = prefs[KeySafeDrive] ?: false,
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
+            safeDriveProgressiveSound = prefs[KeySafeDriveProgressiveSound] ?: true,
             safeDriveToleranceKph = (prefs[KeySafeDriveToleranceKph] ?: 5).coerceIn(0, 30),
         )
     }
@@ -290,6 +293,10 @@ class SettingsStore(
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
     suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
     suspend fun setSafeDriveSound(enabled: Boolean) = edit { it[KeySafeDriveSound] = enabled }
+    /** 속도가 높아질수록 간격을 줄일지 저장한다. */
+    suspend fun setSafeDriveProgressiveSound(enabled: Boolean) = edit {
+        it[KeySafeDriveProgressiveSound] = enabled
+    }
     // 범위를 저장 직전에 한 번 가둔다 — 백업 파일이 손으로 고쳐져 들어올 수 있다
     suspend fun setSafeDriveVolume(level: Int) = edit { it[KeySafeDriveVolume] = level.coerceIn(1, 3) }
 
@@ -338,6 +345,7 @@ class SettingsStore(
         it[KeySafeDrive] = backup.safeDrive
         it[KeySafeDriveSound] = backup.safeDriveSound
         it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
+        it[KeySafeDriveProgressiveSound] = backup.safeDriveProgressiveSound
         it[KeySafeDriveToleranceKph] = backup.safeDriveToleranceKph.coerceIn(0, 30)
     }
 
@@ -460,6 +468,7 @@ class SettingsStore(
         val KeySafeDrive = booleanPreferencesKey("safe_drive")
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")
         val KeySafeDriveVolume = intPreferencesKey("safe_drive_volume")
+        val KeySafeDriveProgressiveSound = booleanPreferencesKey("safe_drive_progressive_sound")
         val KeySafeDriveToleranceKph = intPreferencesKey("safe_drive_tolerance_kph")
         val KeyParkedAt = longPreferencesKey("parked_at")
         val KeyParkedBattery = intPreferencesKey("parked_battery")

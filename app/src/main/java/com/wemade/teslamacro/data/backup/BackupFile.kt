@@ -56,6 +56,7 @@ data class BackupSettings(
     val safeDrive: Boolean = false,
     val safeDriveSound: Boolean = true,
     val safeDriveVolume: Int = 2,
+    val safeDriveProgressiveSound: Boolean = true,
     val safeDriveToleranceKph: Int = 5,
 )
 
@@ -69,5 +70,6 @@ fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     safeDrive = safeDrive,
     safeDriveSound = safeDriveSound,
     safeDriveVolume = safeDriveVolume,
+    safeDriveProgressiveSound = safeDriveProgressiveSound,
     safeDriveToleranceKph = safeDriveToleranceKph,
 )

@@ -20,6 +20,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 
+/** 경보 기준은 그대로 두고 후보 제한속도 대비 초과분으로 단발음 간격만 고른다. */
+internal fun warningIntervalMillis(excessKph: Double, progressive: Boolean): Long = when {
+    !progressive -> 2_000L
+    excessKph >= 15 -> 1_000L
+    excessKph >= 10 -> 2_000L
+    else -> 3_000L
+}
+
 /** 안내를 켜면 기본은 오프라인 판단, 카메라 근처에서는 도로 매칭을 보조로 사용한다. */
 class SafeDriveGuide(
     private val application: Application,
@@ -43,12 +51,14 @@ class SafeDriveGuide(
     private var tokenRejected = false
     private var matchedRoad: Pair<Long, MatchedRoad>? = null
     private var lastSoundMillis: Long? = null
+    private var lastSoundIntervalMillis: Long? = null
     private var lastAlertStatus: String? = null
     private var lastAlertLogMillis: Long? = null
     private var retrievedAt: String? = null
     private var dataWarning: String? = null
     private var sound = false
     private var volume = 2
+    private var progressiveSound = true
     var toleranceKph: Int = 5
         private set
     private var tone: ToneGenerator? = null
@@ -107,6 +117,7 @@ class SafeDriveGuide(
             lastFixNanos = null
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = reason, dataWarning = dataWarning)
             lastSoundMillis = null
+            lastSoundIntervalMillis = null
             logAlertStatus(reason, "오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m", nowNanos / 1_000_000)
             return
         }
@@ -115,6 +126,7 @@ class SafeDriveGuide(
             clearRoadMatch()
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
             lastSoundMillis = null
+            lastSoundIntervalMillis = null
             logAlertStatus("방향 확인 불가", "GPS ${speed.toInt()}km/h, 방향 없음", nowNanos / 1_000_000)
             return
         }
@@ -146,10 +158,13 @@ class SafeDriveGuide(
             !sound -> "경고음 꺼짐"
             else -> "경고음 반복"
         }
-        // 과속이 이어지면 같은 카메라라도 다시 울리고, 해제 후 재진입하면 즉시 알린다.
+        // 과속이 커지면 이전 느린 간격을 기다리지 않고 즉시 새 단계로 올린다.
         if (status == "경고음 반복") {
-            if (lastSoundMillis?.let { nowMillis >= it && nowMillis - it < 2_000 } != true) {
+            val interval = warningIntervalMillis(speed - alert!!.speedLimitKph!!, progressiveSound)
+            val elapsed = lastSoundMillis?.let { nowMillis - it }
+            if (elapsed == null || elapsed < 0 || interval < (lastSoundIntervalMillis ?: interval) || elapsed >= interval) {
                 lastSoundMillis = nowMillis
+                lastSoundIntervalMillis = interval
                 // 앱 음량과 별개로 기기 미디어 음량 0이면 들리지 않으므로 요청 수락과 구별한다.
                 val mediaVolume = runCatching {
                     application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -159,18 +174,20 @@ class SafeDriveGuide(
                 } else {
                     val attempt = runCatching {
                         if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
-                        tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 300) == true
+                        // 이중 삑 소리 대신 단발음을 써 반복 간격으로 긴박감을 전한다.
+                        tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 300) == true
                     }
                     val result = when {
                         attempt.getOrNull() == true -> "경고음 요청 수락 · 미디어 음량 ${mediaVolume ?: "확인 불가"}"
                         attempt.exceptionOrNull() != null -> "경고음 재생 오류 · ${attempt.exceptionOrNull()!!.javaClass.simpleName}"
                         else -> "경고음 재생 실패"
                     }
-                    logAlertStatus(result, detail, nowMillis)
+                    logAlertStatus("$result · ${interval / 1_000}초 간격", detail, nowMillis)
                 }
             }
         } else {
             lastSoundMillis = null
+            lastSoundIntervalMillis = null
             logAlertStatus(status, detail, nowMillis)
         }
     }
@@ -253,17 +270,23 @@ class SafeDriveGuide(
     }
 
     /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */
-    fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5) {
+    fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5, progressive: Boolean = true) {
         val adjustedTolerance = toleranceKph.coerceIn(0, 30)
         val adjustedVolume = volume.coerceIn(1, 3)
-        val changed = this.sound != sound || this.volume != adjustedVolume || this.toleranceKph != adjustedTolerance
+        val changed = this.sound != sound || this.volume != adjustedVolume ||
+            this.toleranceKph != adjustedTolerance || progressiveSound != progressive
         this.toleranceKph = adjustedTolerance
         this.sound = sound
         this.volume = adjustedVolume
+        progressiveSound = progressive
+        if (changed) {
+            lastSoundMillis = null
+            lastSoundIntervalMillis = null
+        }
         tone?.release()
         tone = null
         if (changed && job?.isActive == true) {
-            DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h)")
+            DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h, 속도별 ${if (progressive) "켬" else "끔"})")
         }
     }
 
@@ -277,6 +300,7 @@ class SafeDriveGuide(
         lastMatchOutcome = null
         lastFixNanos = null
         lastSoundMillis = null
+        lastSoundIntervalMillis = null
         lastAlertStatus = null
         lastAlertLogMillis = null
         tone?.release()

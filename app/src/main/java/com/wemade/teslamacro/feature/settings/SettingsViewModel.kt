@@ -276,6 +276,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSafeDriveSound(enabled) }
     }
 
+    /** 후보 제한속도 대비 과속 정도에 맞춰 경고음 간격을 바꾼다. */
+    fun setSafeDriveProgressiveSound(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSafeDriveProgressiveSound(enabled) }
+    }
+
     /** 경보 음량 1~3 */
     fun setSafeDriveVolume(level: Int) {
         viewModelScope.launch { container.settingsStore.setSafeDriveVolume(level) }

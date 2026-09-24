@@ -120,6 +120,10 @@ data class AppSettings(
     val safeDriveVolume: Int = 2,
     /** 후보 제한속도 대비 초과분에 따라 경고음 간격을 줄일지. */
     val safeDriveProgressiveSound: Boolean = true,
+    /** 카메라 경보 시작 거리. GPS 직선거리이며 300·500·700m 중 선택한다. */
+    val safeDriveAlertDistanceMeters: Int = 500,
+    /** 과속 여부와 무관하게 카메라 접근 시 거리 안내를 들을지 선택한다. */
+    val safeDriveVoice: Boolean = true,
     val safeDriveToleranceKph: Int = 5,
 ) {
     /** 차량을 특정할 수 있는가 (연결 시도 가능) */
@@ -172,6 +176,8 @@ class SettingsStore(
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
             safeDriveProgressiveSound = prefs[KeySafeDriveProgressiveSound] ?: true,
+            safeDriveAlertDistanceMeters = (prefs[KeySafeDriveAlertDistanceMeters] ?: 500).takeIf { it in listOf(300, 500, 700) } ?: 500,
+            safeDriveVoice = prefs[KeySafeDriveVoice] ?: true,
             safeDriveToleranceKph = (prefs[KeySafeDriveToleranceKph] ?: 5).coerceIn(0, 30),
         )
     }
@@ -293,6 +299,12 @@ class SettingsStore(
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
     suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
     suspend fun setSafeDriveSound(enabled: Boolean) = edit { it[KeySafeDriveSound] = enabled }
+    /** 허용된 거리만 저장해 백업·이전 설정값이 후보 범위를 넓히지 않게 한다. */
+    suspend fun setSafeDriveAlertDistanceMeters(meters: Int) = edit {
+        it[KeySafeDriveAlertDistanceMeters] = meters.takeIf { value -> value in listOf(300, 500, 700) } ?: 500
+    }
+    /** 음성은 과속 단발음과 별개로 끌 수 있다. */
+    suspend fun setSafeDriveVoice(enabled: Boolean) = edit { it[KeySafeDriveVoice] = enabled }
     /** 속도가 높아질수록 간격을 줄일지 저장한다. */
     suspend fun setSafeDriveProgressiveSound(enabled: Boolean) = edit {
         it[KeySafeDriveProgressiveSound] = enabled
@@ -346,6 +358,8 @@ class SettingsStore(
         it[KeySafeDriveSound] = backup.safeDriveSound
         it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
         it[KeySafeDriveProgressiveSound] = backup.safeDriveProgressiveSound
+        it[KeySafeDriveAlertDistanceMeters] = backup.safeDriveAlertDistanceMeters.takeIf { value -> value in listOf(300, 500, 700) } ?: 500
+        it[KeySafeDriveVoice] = backup.safeDriveVoice
         it[KeySafeDriveToleranceKph] = backup.safeDriveToleranceKph.coerceIn(0, 30)
     }
 
@@ -469,6 +483,8 @@ class SettingsStore(
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")
         val KeySafeDriveVolume = intPreferencesKey("safe_drive_volume")
         val KeySafeDriveProgressiveSound = booleanPreferencesKey("safe_drive_progressive_sound")
+        val KeySafeDriveAlertDistanceMeters = intPreferencesKey("safe_drive_alert_distance_meters")
+        val KeySafeDriveVoice = booleanPreferencesKey("safe_drive_voice")
         val KeySafeDriveToleranceKph = intPreferencesKey("safe_drive_tolerance_kph")
         val KeyParkedAt = longPreferencesKey("parked_at")
         val KeyParkedBattery = intPreferencesKey("parked_battery")

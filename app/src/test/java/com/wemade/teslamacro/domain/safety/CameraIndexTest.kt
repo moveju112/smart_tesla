@@ -38,6 +38,15 @@ class CameraIndexTest {
         assertNotNull(farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
     }
 
+    /** 선택한 시작 거리 바깥은 화면·과속음 후보에서 빼되 기본 최대 거리는 유지한다. */
+    @Test fun configuredAlertDistance() {
+        val farther = CameraIndex(listOf(OfflineCamera("farther", 37.006, 127.0, 50)))
+        assertNull(farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0, maxDistanceMeters = 500))
+        assertNotNull(farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0, maxDistanceMeters = 700))
+        assertNull(index.nearest(37.0, 127.0, 0.0, 60.0, 10.0, maxDistanceMeters = 300))
+        assertNotNull(index.nearest(37.001, 127.0, 0.0, 60.0, 10.0, maxDistanceMeters = 300))
+    }
+
     /** 도로 매칭용 1km 탐색은 경보 후보의 700m 범위와 분리해 유지한다. */
     @Test fun roadMatchProximity() {
         assertTrue(index.hasNearby(36.995, 127.0, 0.0))

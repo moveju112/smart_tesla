@@ -27,8 +27,8 @@ data class BackupFile(
     val settings: BackupSettings = BackupSettings(),
 ) {
     companion object {
-        /** 4 — 단속 후보 경보의 초과속도 설정이 늘었다. */
-        const val CURRENT_VERSION = 4
+        /** 5 — 카메라 접근 거리와 음성 안내 설정이 늘었다. */
+        const val CURRENT_VERSION = 5
 
         /** 파일 이름. 날짜를 붙이는 건 저장 다이얼로그에서 사람이 한다 */
         const val DEFAULT_FILE_NAME = "smart-tesla-backup.json"
@@ -57,6 +57,8 @@ data class BackupSettings(
     val safeDriveSound: Boolean = true,
     val safeDriveVolume: Int = 2,
     val safeDriveProgressiveSound: Boolean = true,
+    val safeDriveAlertDistanceMeters: Int = 500,
+    val safeDriveVoice: Boolean = true,
     val safeDriveToleranceKph: Int = 5,
 )
 
@@ -71,5 +73,7 @@ fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     safeDriveSound = safeDriveSound,
     safeDriveVolume = safeDriveVolume,
     safeDriveProgressiveSound = safeDriveProgressiveSound,
+    safeDriveAlertDistanceMeters = safeDriveAlertDistanceMeters,
+    safeDriveVoice = safeDriveVoice,
     safeDriveToleranceKph = safeDriveToleranceKph,
 )

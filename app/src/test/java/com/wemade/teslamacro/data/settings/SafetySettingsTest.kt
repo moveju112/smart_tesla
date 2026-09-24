@@ -42,16 +42,26 @@ class SafetySettingsTest {
         val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(5, store.settings.first().safeDriveToleranceKph)
         assertTrue(store.settings.first().safeDriveProgressiveSound)
+        assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
+        assertTrue(store.settings.first().safeDriveVoice)
         assertFalse(store.settings.first().safeDrive)
         store.setSafeDrive(true)
         store.setSafeDriveToleranceKph(7)
         store.setSafeDriveProgressiveSound(false)
+        store.setSafeDriveAlertDistanceMeters(300)
+        store.setSafeDriveVoice(false)
         val restored = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(7, restored.settings.first().safeDriveToleranceKph)
         assertFalse(restored.settings.first().safeDriveProgressiveSound)
+        assertEquals(300, restored.settings.first().safeDriveAlertDistanceMeters)
+        assertFalse(restored.settings.first().safeDriveVoice)
         assertTrue(restored.settings.first().safeDrive)
         assertEquals(7, restored.settings.first().toBackup().safeDriveToleranceKph)
         assertFalse(restored.settings.first().toBackup().safeDriveProgressiveSound)
+        assertEquals(300, restored.settings.first().toBackup().safeDriveAlertDistanceMeters)
+        assertFalse(restored.settings.first().toBackup().safeDriveVoice)
+        store.setSafeDriveAlertDistanceMeters(550)
+        assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
         store.setSafeDriveToleranceKph(-1)
         assertEquals(0, store.settings.first().safeDriveToleranceKph)
         store.setSafeDriveToleranceKph(31)
@@ -59,8 +69,14 @@ class SafetySettingsTest {
         store.restore(BackupSettings(safeDriveToleranceKph = 9))
         assertEquals(9, store.settings.first().safeDriveToleranceKph)
         assertTrue(store.settings.first().safeDriveProgressiveSound)
-        store.restore(BackupSettings(safeDriveProgressiveSound = false))
-        assertFalse(store.settings.first().safeDriveProgressiveSound)
+        assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
+        assertTrue(store.settings.first().safeDriveVoice)
+        store.restore(BackupSettings(safeDriveProgressiveSound = false, safeDriveAlertDistanceMeters = 700, safeDriveVoice = false))
+        assertEquals(700, store.settings.first().safeDriveAlertDistanceMeters)
+        assertFalse(store.settings.first().safeDriveVoice)
+        store.restore(BackupSettings(safeDriveAlertDistanceMeters = 900))
+        assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
+        assertTrue(store.settings.first().safeDriveProgressiveSound)
         assertFalse("안내가 꺼져 있으면 위치를 사용하지 않는다", store.settings.first().safeDrive)
         store.restore(BackupSettings(safeDrive = true, safeDriveToleranceKph = 9))
         assertTrue("복원된 안내 선택도 유지한다", store.settings.first().safeDrive)
@@ -313,6 +329,79 @@ class SafetySettingsTest {
         }
     }
 
+    /** 선택 거리 안에서만 안내·과속음이 시작되고 진입·200m 음성은 카메라별 한 번만 나온다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun spokenCameraDistanceAndSoundGate() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
+        fun approach(latitudeDegrees: Double) {
+            guide.onLocation(Location("gps").apply {
+                latitude = latitudeDegrees; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            // JVM ToneGenerator는 실제 오디오가 없으므로 재생 요청 시각만 검사한다.
+            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+        }
+        try {
+            guide.setAlertOptions(500, voice = true)
+            guide.setSound(true, 2, 5)
+            guide.start()
+            runCurrent()
+            approach(36.997) // 약 667m: 매칭 후보지만 화면·음성·과속음 모두 범위 밖.
+            assertNull(guide.state.value.alert)
+            assertNull(lastSound.get(guide))
+            assertTrue(spoken.isEmpty())
+            nowNanos += 1_000_000_000L
+            approach(36.9986) // 약 489m: 첫 진입.
+            assertNotNull(guide.state.value.alert)
+            assertEquals(2_000L, lastSound.get(guide))
+            assertEquals(listOf("전방 약 500미터에 단속 카메라가 있습니다."), spoken)
+            nowNanos += 1_000_000_000L
+            approach(36.9988)
+            assertEquals(1, spoken.size)
+            nowNanos += 1_000_000_000L
+            approach(37.0013) // 약 189m: 첫 문장을 자르지 않게 기다린다.
+            assertEquals(1, spoken.size)
+            nowNanos += 5_000_000_000L
+            approach(37.0013) // 5초 뒤 두 번째 안내.
+            assertEquals(2, spoken.size)
+            assertEquals("전방 약 200미터에 단속 카메라가 있습니다.", spoken.last())
+            nowNanos += 1_000_000_000L
+            approach(37.0012)
+            assertEquals(2, spoken.size)
+            guide.stop()
+            runCurrent()
+            guide.setSound(false, 2, 5)
+            guide.start()
+            runCurrent()
+            nowNanos += 1_000_000_000L
+            approach(36.9986)
+            assertNotNull(guide.state.value.alert)
+            assertNull(lastSound.get(guide))
+            assertEquals(2, spoken.size)
+            guide.setSound(true, 2, 5)
+            guide.setAlertOptions(300, voice = false)
+            nowNanos += 1_000_000_000L
+            approach(37.001)
+            assertNotNull(lastSound.get(guide))
+            assertEquals(2, spoken.size)
+            guide.setAlertOptions(300, voice = true)
+            nowNanos += 1_000_000_000L
+            approach(37.001)
+            assertEquals(3, spoken.size)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** 도로 매칭 후보와 경보 후보를 혼동하거나 GPS 저정밀을 후보 누락으로 기록하지 않는다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun alertSilenceReasons() = runTest {
@@ -333,11 +422,11 @@ class SafetySettingsTest {
                     elapsedRealtimeNanos = nowNanos
                 })
             }
-            approach(36.995, 10f) // 1km 매칭 범위지만 700m 경보 범위 밖.
+            approach(36.995, 10f) // 1km 매칭 범위지만 기본 500m 경보 범위 밖.
             assertNull(guide.state.value.alert)
             assertTrue(DiagLog.lines.value.last().contains("근접 후보는 있지만 경보 거리·방향 미충족"))
             nowNanos += 1_000_000_000L
-            approach(36.997, 10f) // 축소한 경보 범위 진입 시 과속 경고음을 요청한다.
+            approach(36.9986, 10f) // 설정한 500m 안으로 들어오면 과속 경고음을 요청한다.
             assertTrue(guide.state.value.isOverSpeed(toleranceKph = guide.toleranceKph))
             assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
             nowNanos += 10_000_000_000L
@@ -361,7 +450,10 @@ class SafetySettingsTest {
         val old = BackupFile.json.decodeFromString<BackupFile>("""{"version":3,"settings":{}}""")
         assertEquals(5, old.settings.safeDriveToleranceKph)
         assertTrue(old.settings.safeDriveProgressiveSound)
-        val backup = BackupFile(settings = BackupSettings(safeDriveToleranceKph = 8, safeDriveProgressiveSound = false))
+        assertEquals(500, old.settings.safeDriveAlertDistanceMeters)
+        assertTrue(old.settings.safeDriveVoice)
+        val backup = BackupFile(settings = BackupSettings(safeDriveToleranceKph = 8, safeDriveProgressiveSound = false,
+            safeDriveAlertDistanceMeters = 300, safeDriveVoice = false))
         val text = BackupFile.json.encodeToString(BackupFile.serializer(), backup)
         assertEquals(backup, BackupFile.json.decodeFromString<BackupFile>(text))
     }

@@ -43,6 +43,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 
+/** 주행 안내만 다시 적용해 무관한 설정 변경으로 GPS 감시를 흔들지 않는다. */
+private data class SafeDriveOptions(
+    val enabled: Boolean,
+    val sound: Boolean,
+    val volume: Int,
+    val toleranceKph: Int,
+    val progressiveSound: Boolean,
+    val distanceMeters: Int,
+    val voice: Boolean,
+)
+
 /**
  * 매크로 감시를 화면 밖에서도 계속 돌리는 포그라운드 서비스.
  *
@@ -198,18 +209,18 @@ class MacroService : LifecycleService() {
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.settingsStore.settings
-                .map { Triple(it.safeDrive, it.safeDriveSound, it.safeDriveVolume) to
-                    (it.safeDriveToleranceKph to it.safeDriveProgressiveSound) }
+                .map { SafeDriveOptions(it.safeDrive, it.safeDriveSound, it.safeDriveVolume,
+                    it.safeDriveToleranceKph, it.safeDriveProgressiveSound,
+                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice) }
                 .distinctUntilChanged()
-                .collect { (options, alertOptions) ->
-                    val (enabled, sound, volume) = options
-                    val (toleranceKph, progressiveSound) = alertOptions
-                    // 소리 설정을 먼저 밀어 넣는다 — start() 직후 첫 경보가
-                    // 옛 설정으로 재생되면 껐는데 소리가 나는 것으로 보인다
-                    app.container.safeDrive.setSound(sound, volume, toleranceKph, progressiveSound)
+                .collect { options ->
+                    // 새 설정을 먼저 적용해 GPS 첫 갱신이 이전 거리·음성을 사용하지 않게 한다.
+                    app.container.safeDrive.setAlertOptions(options.distanceMeters, options.voice)
+                    app.container.safeDrive.setSound(options.sound, options.volume,
+                        options.toleranceKph, options.progressiveSound)
                     // 안내를 켠 경우에만 근처 후보의 경로를 매칭하고, 끄면 요청 상태도 비운다.
-                    app.container.safeDrive.setRoadMatchEnabled(enabled)
-                    if (enabled) app.container.safeDrive.start()
+                    app.container.safeDrive.setRoadMatchEnabled(options.enabled)
+                    if (options.enabled) app.container.safeDrive.start()
                     else app.container.safeDrive.stop()
                 }
         }

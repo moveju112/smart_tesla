@@ -53,18 +53,20 @@ class CameraIndex(cameras: List<OfflineCamera>) {
         return false
     }
 
-    /** 먼 거리 오경보를 줄이되 굽은 도로를 놓치지 않도록 전방 700m까지 후보를 찾는다. */
+    /** 설정 거리 안의 전방 후보만 찾되 굽은 도로 허용 범위와 최대 700m 상한은 유지한다. */
     fun nearest(latitude: Double, longitude: Double, bearing: Double, speedKph: Double,
-                accuracyMeters: Double, today: LocalDate = LocalDate.now()): SafetyAlert? {
+                accuracyMeters: Double, today: LocalDate = LocalDate.now(),
+                maxDistanceMeters: Int = 700): SafetyAlert? {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite() ||
             !speedKph.isFinite() || speedKph < 5 || accuracyMeters !in 0.0..30.0) return null
         val (row, column) = cell(latitude, longitude)
         var nearest: OfflineCamera? = null
-        var distance = 701.0
+        val maxDistance = maxDistanceMeters.coerceIn(10, 700)
+        var distance = maxDistance + 1.0
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             for (camera in cells[x to y].orEmpty()) {
                 val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
-                if (meters < 10 || meters > 700 || meters >= distance) continue
+                if (meters < 10 || meters > maxDistance || meters >= distance) continue
                 val difference = bearingDifference(latitude, longitude, bearing, camera)
                 // 굽은 도로는 허용하면서 옆 도로 카메라는 각도와 횡방향 거리로 걸러낸다.
                 if (difference > 40 || meters * sin(Math.toRadians(difference)) > 200) continue

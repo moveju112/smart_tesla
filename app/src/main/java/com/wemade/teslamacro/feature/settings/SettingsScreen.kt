@@ -769,6 +769,8 @@ data class NavigationControls(
     val onHudOverlayChange: (Boolean) -> Unit,
     val onSafeDriveChange: (Boolean) -> Unit = {},
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
+    val onSafeDriveAlertDistanceChange: (Int) -> Unit = {},
+    val onSafeDriveVoiceChange: (Boolean) -> Unit = {},
     val onSafeDriveProgressiveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
     val onSafeDriveToleranceChange: (Int) -> Unit = {},
@@ -993,6 +995,17 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         if (!settings.safeDrive) return@TCard
 
         Spacer(Modifier.height(Space.md))
+        Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+        ChoiceRow(
+            options = listOf("300" to "300m", "500" to "500m", "700" to "700m"),
+            selected = settings.safeDriveAlertDistanceMeters.toString(),
+            onSelect = { controls.onSafeDriveAlertDistanceChange(it.toInt()) },
+        )
+        Text(
+            text = "GPS 직선거리예요. 이 거리 안에서 화면 안내와 과속 경고음이 시작돼요.",
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+        )
+        Spacer(Modifier.height(Space.md))
         Text("경보 초과속도", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         com.wemade.teslamacro.ui.component.NumberStepper(
             value = settings.safeDriveToleranceKph.toDouble(),
@@ -1008,13 +1021,20 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "소리로도 알림",
-            subtitle = "카메라 앞 과속 시 단발 경고음 · 기기 미디어 음량 적용",
+            subtitle = "과속 경고음·선택적 음성 안내 · 기기 미디어 음량 적용",
             checked = settings.safeDriveSound,
             onCheckedChange = controls.onSafeDriveSoundChange,
         )
 
         if (!settings.safeDriveSound) return@TCard
 
+        Spacer(Modifier.height(Space.md))
+        ToggleRow(
+            title = "카메라 거리 음성 안내",
+            subtitle = "진입할 때와 약 200m 앞에서 한 번씩 · 한국어 음성 엔진 필요",
+            checked = settings.safeDriveVoice,
+            onCheckedChange = controls.onSafeDriveVoiceChange,
+        )
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "과속할수록 빠르게 울리기",
@@ -1195,8 +1215,8 @@ private fun settingsDump(settings: AppSettings): String = buildString {
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
             " · 과속안내=${settings.safeDrive}" +
-            " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume}, 속도별 ${settings.safeDriveProgressiveSound})" +
-            " · 경보초과속도=${settings.safeDriveToleranceKph}km/h",
+            " · 경보소리=${settings.safeDriveSound}(음량 ${settings.safeDriveVolume}, 속도별 ${settings.safeDriveProgressiveSound}, 음성 ${settings.safeDriveVoice})" +
+            " · 경보거리=${settings.safeDriveAlertDistanceMeters}m · 경보초과속도=${settings.safeDriveToleranceKph}km/h",
     )
 }
 

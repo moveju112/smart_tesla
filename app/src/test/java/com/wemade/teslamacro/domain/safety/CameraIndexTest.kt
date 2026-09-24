@@ -25,18 +25,20 @@ class CameraIndexTest {
         assertNull(index.nearest(37.0, 127.0, Double.NaN, 60.0, 10.0))
     }
 
-    /** 곡선 도로와 600m 밖 후보도 수용하되, 45도 바깥 후보는 경보하지 않는다. */
-    @Test fun widenedForwardCandidates() {
+    /** 굽은 도로와 600m 밖 후보는 수용하되, 전방 40도 밖은 경보하지 않는다. */
+    @Test fun forwardCandidatesWithinNarrowedBounds() {
         val curved = CameraIndex(listOf(OfflineCamera("curve", 37.003, 127.002, 50)))
         assertNotNull(curved.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
         assertNotNull(index.nearest(37.0, 127.001, 0.0, 60.0, 10.0))
         assertNotNull(index.nearest(37.0, 127.0, 35.0, 60.0, 10.0))
-        assertNull(index.nearest(37.0, 127.0, 46.0, 60.0, 10.0))
+        val close = CameraIndex(listOf(OfflineCamera("close", 37.001, 127.0, 50)))
+        assertNotNull(close.nearest(37.0, 127.0, 39.0, 60.0, 10.0))
+        assertNull(close.nearest(37.0, 127.0, 41.0, 60.0, 10.0))
         val farther = CameraIndex(listOf(OfflineCamera("farther", 37.006, 127.0, 50)))
         assertNotNull(farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
     }
 
-    /** 1km 전방은 탐색하지만 지나친 후보는 제외하고, GPS 오차권 안의 후방은 남긴다. */
+    /** 도로 매칭용 1km 탐색은 경보 후보의 700m 범위와 분리해 유지한다. */
     @Test fun roadMatchProximity() {
         assertTrue(index.hasNearby(36.995, 127.0, 0.0))
         assertTrue(index.hasNearby(37.0036, 127.0, 0.0))
@@ -71,21 +73,29 @@ class CameraIndexTest {
             index.nearest(37.0, 127.0, 360.0, 60.0, 10.0))
     }
 
-    /** 이웃 격자 경계에서도 795m 후보를 놓치지 않고 805m는 제외한다. */
+    /** 이웃 격자 경계에서도 695m 후보를 놓치지 않고 705m는 제외한다. */
     @Test fun allHeadingsAcrossCells() {
         for (latitude in listOf(33.0199, 37.0199, 38.9799)) {
             for (bearing in 0 until 360 step 15) {
-                for (distance in listOf(9, 11, 795, 805)) {
+                for (distance in listOf(9, 11, 695, 705)) {
                     val angle = Math.toRadians(bearing.toDouble())
                     val north = distance * kotlin.math.cos(angle) / 111_195.0
                     val east = distance * kotlin.math.sin(angle) /
                         (111_195.0 * kotlin.math.cos(Math.toRadians(latitude)))
                     val local = CameraIndex(listOf(OfflineCamera("edge", latitude + north, 127.0199 + east, 50)))
                     val alert = local.nearest(latitude, 127.0199, bearing.toDouble(), 60.0, 10.0)
-                    assertEquals("$latitude / $bearing / $distance", distance in 10..800, alert != null)
+                    assertEquals("$latitude / $bearing / $distance", distance in 10..700, alert != null)
                 }
             }
         }
+    }
+
+    /** 방향 안쪽이어도 횡방향 200m를 넘는 옆 도로 카메라는 제외한다. */
+    @Test fun lateralDistanceBoundary() {
+        val inside = CameraIndex(listOf(OfflineCamera("inside", 37.003, 127.0022, 50)))
+        val outside = CameraIndex(listOf(OfflineCamera("outside", 37.003, 127.00235, 50)))
+        assertNotNull(inside.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
+        assertNull(outside.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
     }
 
     /** 가장 가까운 유효 후보와 구간 카메라 표기를 확인한다. */

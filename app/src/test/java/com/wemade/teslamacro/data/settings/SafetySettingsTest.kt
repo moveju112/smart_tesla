@@ -333,11 +333,11 @@ class SafetySettingsTest {
                     elapsedRealtimeNanos = nowNanos
                 })
             }
-            approach(36.995, 10f) // 1km 매칭 범위지만 800m 경보 범위 밖.
+            approach(36.995, 10f) // 1km 매칭 범위지만 700m 경보 범위 밖.
             assertNull(guide.state.value.alert)
             assertTrue(DiagLog.lines.value.last().contains("근접 후보는 있지만 경보 거리·방향 미충족"))
             nowNanos += 1_000_000_000L
-            approach(36.996, 10f) // 넓힌 경보 범위 진입 시 과속 경고음을 요청한다.
+            approach(36.997, 10f) // 축소한 경보 범위 진입 시 과속 경고음을 요청한다.
             assertTrue(guide.state.value.isOverSpeed(toleranceKph = guide.toleranceKph))
             assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
             nowNanos += 10_000_000_000L

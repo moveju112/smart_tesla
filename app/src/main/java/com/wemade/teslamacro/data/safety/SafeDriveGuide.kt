@@ -1,11 +1,15 @@
 package com.wemade.teslamacro.data.safety
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.os.SystemClock
 import com.wemade.teslamacro.data.location.freshSpeedKph
 import com.wemade.teslamacro.data.location.isFreshLocation
@@ -37,8 +41,13 @@ class SafeDriveGuide(
     private val voiceOutput: ((String) -> Unit)? = null,
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
 ) {
+    // 준비 중인 문장에 카메라를 묶어 엔진 초기화 뒤 지난 후보를 읽거나 단계를 소모하지 않는다.
+    private data class SpeechRequest(val text: String, val cameraKey: String? = null, val stage: Int = 0)
+
     private val mutableState = MutableStateFlow(SafetyState())
     val state: StateFlow<SafetyState> = mutableState.asStateFlow()
+    private val mutableSpeechStatus = MutableStateFlow<String?>(null)
+    val speechStatus: StateFlow<String?> = mutableSpeechStatus.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
     private var index: CameraIndex? = null
@@ -71,7 +80,8 @@ class SafeDriveGuide(
     private var speechReady = false
     private var speechUnavailable = false
     private var speechGeneration = 0
-    private var pendingSpeech: String? = null
+    private var speechUtterance = 0L
+    private var pendingSpeech: SpeechRequest? = null
     var toleranceKph: Int = 5
         private set
     private var tone: ToneGenerator? = null
@@ -89,8 +99,9 @@ class SafeDriveGuide(
                     CameraIndex(dataset.cameras).also { require(!it.isEmpty) } to dataset.retrievedAt
                 }.also { retrievedAt = it.second }.first
                 dataWarning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
-                mutableState.value = SafetyState(ready = true, stalled = true, dataWarning = dataWarning)
-                DiagLog.add("안전 안내 · 시작 (소리 ${if (sound) "켬" else "끔"}, 초과 +${toleranceKph}km/h, GPS 대기)")
+                mutableState.value = SafetyState(ready = true, stalled = true,
+                    unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
+                DiagLog.add("안전 안내 · 시작 (소리 ${if (sound) "켬" else "끔"}, 초과 +${toleranceKph}km/h, ${mutableState.value.unavailableReason})")
                 while (isActive) {
                     if (retrievedAt != null) {
                         val warning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
@@ -101,7 +112,9 @@ class SafeDriveGuide(
                     }
                     if (lastFixNanos?.let { isFreshLocation(it, elapsedRealtimeNanos()) } == false) {
                         pendingSpeech = null
-                        mutableState.value = SafetyState(ready = true, stalled = true, dataWarning = dataWarning)
+                        val waiting = SafetyState(ready = true, stalled = true,
+                            unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
+                        if (mutableState.value != waiting) mutableState.value = waiting
                     }
                     delay(1_000)
                 }
@@ -112,6 +125,15 @@ class SafeDriveGuide(
                 DiagLog.add("안전 안내 · 오프라인 목록을 읽지 못했어요 (${error.javaClass.simpleName})")
             }
         }
+    }
+
+    /** GPS가 끊겼을 때 권한·기기 위치 서비스 문제를 단순한 후보 부재와 구분한다. */
+    private fun gpsWaitingReason(): String = when {
+        runCatching { application.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) }.getOrNull() ==
+            PackageManager.PERMISSION_DENIED -> "정확한 위치 권한 없음"
+        runCatching { application.getSystemService(LocationManager::class.java)
+            ?.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrNull() == false -> "GPS 위치 서비스 꺼짐"
+        else -> "GPS 대기"
     }
 
     /** 서비스가 받는 GPS를 공유해 별도 위치 구독과 배터리 소모를 만들지 않는다. */
@@ -222,24 +244,33 @@ class SafeDriveGuide(
         if (stage == 2 && previous == 1 && lastVoiceMillis?.let { nowMillis - it in 0..4_999 } == true) return
         val roundedDistance = if (distance >= 100) ((distance + 50) / 100) * 100
             else ((distance + 5) / 10) * 10
-        requestSpeech("전방 약 ${roundedDistance.coerceAtLeast(10)}미터에 단속 카메라가 있습니다.")
-        spokenStages[key] = stage
-        lastVoiceMillis = nowMillis
+        requestSpeech(SpeechRequest("전방 약 ${roundedDistance.coerceAtLeast(10)}미터에 단속 카메라가 있습니다.", key, stage))
+    }
+
+    /** 음성 점검을 누르면 설치·언어 변경 뒤 잠긴 엔진도 다시 초기화한다. */
+    fun testSpeech() {
+        speechGeneration++
+        runCatching { speechEngine?.shutdown() }
+        speechEngine = null
+        speechReady = false
+        speechUnavailable = false
+        pendingSpeech = null
+        mutableSpeechStatus.value = "한국어 음성 확인 중"
+        requestSpeech(SpeechRequest("한국어 단속 안내 음성 점검입니다."))
     }
 
     /** 음성 엔진이 준비되기 전에는 최신 안내만 보관해 지나간 카메라를 늦게 읽지 않는다. */
-    private fun requestSpeech(text: String) {
-        if (voiceOutput != null) { voiceOutput.invoke(text); return }
-        if (speechUnavailable || job?.isActive != true) return
-        pendingSpeech = text
-        if (speechReady) { speakPendingSpeech(); return }
+    private fun requestSpeech(request: SpeechRequest) {
+        if (speechUnavailable || (request.cameraKey != null && job?.isActive != true)) return
+        pendingSpeech = request
+        if (voiceOutput != null || speechReady) { speakPendingSpeech(); return }
         if (speechEngine != null) return
         val generation = speechGeneration
         runCatching {
             speechEngine = TextToSpeech(application) { status ->
                 // 음성 엔진 콜백은 위치 콜백과 다른 스레드에서도 오므로 안내 상태를 한곳에서 다룬다.
                 scope.launch {
-                    if (job?.isActive != true || generation != speechGeneration || speechUnavailable) return@launch
+                    if (generation != speechGeneration || speechUnavailable) return@launch
                     if (status != TextToSpeech.SUCCESS) {
                         disableSpeech("엔진 초기화 실패")
                     } else {
@@ -253,34 +284,76 @@ class SafeDriveGuide(
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             if (speechUnavailable) { runCatching { speechEngine?.shutdown() }; speechEngine = null }
             else if (speechReady) prepareSpeech()
-        }.onFailure { disableSpeech(it.javaClass.simpleName) }
+        }.onFailure { disableSpeech("엔진 시작 실패 · ${it.javaClass.simpleName}") }
     }
 
-    /** 한국어 음성이 없는 기기는 조용히 반복 시도하지 않고 진단만 남긴다. */
+    /** 한국어 데이터가 없으면 다른 언어로 읽지 않고 기기 설정에서 설치할 수 있게 알린다. */
     private fun prepareSpeech() {
         val engine = speechEngine ?: return
         val language = runCatching { engine.setLanguage(Locale.KOREAN) }.getOrNull()
         if (language == null || language < 0) { disableSpeech("한국어 음성 없음"); return }
+        val selectedVoice = runCatching { engine.voice }.getOrNull()
+        if (selectedVoice?.isNetworkConnectionRequired == true) {
+            disableSpeech("오프라인 한국어 음성 없음")
+            return
+        }
         speakPendingSpeech()
     }
 
-    /** 안내 발화는 한 번만 요청하고 실패는 과속 경고음과 분리해 기록한다. */
+    /** 실제 발화 요청이 수락됐을 때만 해당 거리 단계를 소모한다. */
     private fun speakPendingSpeech() {
-        val text = pendingSpeech ?: return
+        val request = pendingSpeech ?: return
+        if (request.cameraKey != null && (!voiceEnabled || !sound || state.value.stalled ||
+                state.value.alert?.cameraKey != request.cameraKey)) {
+            pendingSpeech = null
+            return
+        }
         pendingSpeech = null
-        val result = runCatching { speechEngine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "safe-drive-camera") }
-        if (result.getOrNull() != TextToSpeech.SUCCESS) {
-            DiagLog.add("안전 안내 · 음성 재생 실패 (${result.exceptionOrNull()?.javaClass?.simpleName ?: "엔진 응답"})")
+        val result = runCatching {
+            if (voiceOutput != null) {
+                voiceOutput.invoke(request.text)
+                TextToSpeech.SUCCESS
+            } else {
+                val generation = speechGeneration
+                val utteranceId = (++speechUtterance).toString()
+                speechEngine?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    // 실제 재생 오류는 speak()가 성공을 반환한 뒤에도 올 수 있어 단계 기록을 되돌린다.
+                    override fun onStart(id: String) = Unit
+                    // 완료 신호만으로 기기에서 소리가 들렸다고 단정할 수는 없다.
+                    override fun onDone(id: String) = Unit
+                    // 콜백은 다른 스레드에서 오므로 최신 발화일 때만 상태를 갱신한다.
+                    override fun onError(id: String) {
+                        scope.launch {
+                            if (generation != speechGeneration || id != speechUtterance.toString() || speechUnavailable) return@launch
+                            request.cameraKey?.let { key ->
+                                if (spokenStages[key] == request.stage) spokenStages.remove(key)
+                            }
+                            disableSpeech("음성 출력 오류")
+                        }
+                    }
+                })
+                speechEngine?.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+            }
+        }
+        if (result.getOrNull() == TextToSpeech.SUCCESS && !speechUnavailable) {
+            request.cameraKey?.let { key ->
+                spokenStages[key] = maxOf(spokenStages[key] ?: 0, request.stage)
+                lastVoiceMillis = elapsedRealtimeNanos() / 1_000_000
+            }
+            mutableSpeechStatus.value = "음성 재생 요청됨 · 들리지 않으면 미디어 음량을 확인하세요."
+        } else if (!speechUnavailable) {
+            disableSpeech("재생 실패 · ${result.exceptionOrNull()?.javaClass?.simpleName ?: "엔진 응답"}")
         }
     }
 
-    /** 설치되지 않은 음성 엔진 때문에 GPS 감시까지 실패하지 않게 한다. */
+    /** 음성 실패는 설정에 표시하되 GPS·과속 경고음은 계속 동작시킨다. */
     private fun disableSpeech(reason: String) {
         speechUnavailable = true
         speechReady = false
         pendingSpeech = null
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        mutableSpeechStatus.value = "한국어 음성 사용 불가 ($reason) · 음성 설정을 확인하세요."
         DiagLog.add("안전 안내 · 음성 사용할 수 없음 ($reason)")
     }
 
@@ -364,6 +437,11 @@ class SafeDriveGuide(
     /** 설정 거리에 들어온 뒤에만 화면 경보·과속음을 시작하며 도로 매칭 범위는 건드리지 않는다. */
     fun setAlertOptions(distanceMeters: Int, voice: Boolean) {
         alertDistanceMeters = distanceMeters.takeIf { it in listOf(300, 500, 700) } ?: 500
+        if (voice && !voiceEnabled && speechUnavailable) {
+            speechGeneration++
+            speechUnavailable = false
+            mutableSpeechStatus.value = null
+        }
         voiceEnabled = voice
         if (!voice) {
             pendingSpeech = null
@@ -415,6 +493,7 @@ class SafeDriveGuide(
         speechGeneration++
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        mutableSpeechStatus.value = null
         lastAlertStatus = null
         lastAlertLogMillis = null
         tone?.release()

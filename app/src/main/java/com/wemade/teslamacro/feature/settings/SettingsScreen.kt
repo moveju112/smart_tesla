@@ -771,6 +771,9 @@ data class NavigationControls(
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveAlertDistanceChange: (Int) -> Unit = {},
     val onSafeDriveVoiceChange: (Boolean) -> Unit = {},
+    val onTestSafeDriveVoice: () -> Unit = {},
+    val onOpenSpeechSettings: () -> Unit = {},
+    val safeDriveVoiceStatus: String? = null,
     val onSafeDriveProgressiveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
     val onSafeDriveToleranceChange: (Int) -> Unit = {},
@@ -1002,7 +1005,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             onSelect = { controls.onSafeDriveAlertDistanceChange(it.toInt()) },
         )
         Text(
-            text = "GPS 직선거리예요. 이 거리 안에서 화면 안내와 과속 경고음이 시작돼요.",
+            text = "GPS 직선거리예요. 이 거리 안에서 화면 안내와 과속 경고음이 시작돼요. 속도도 같은 GPS를 기준으로 해요(차량 BLE 속도는 갱신 시점이 달라요).",
             style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
         )
         Spacer(Modifier.height(Space.md))
@@ -1031,10 +1034,20 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "카메라 거리 음성 안내",
-            subtitle = "진입할 때와 약 200m 앞에서 한 번씩 · 한국어 음성 엔진 필요",
+            subtitle = "진입할 때와 약 200m 앞에서 한 번씩 · 음성 점검 가능",
             checked = settings.safeDriveVoice,
             onCheckedChange = controls.onSafeDriveVoiceChange,
         )
+        if (settings.safeDriveVoice) {
+            Text(
+                text = controls.safeDriveVoiceStatus ?: "기기 한국어 음성을 점검해 주세요. 설치되지 않았다면 음성 설정에서 받으세요.",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+            )
+            Spacer(Modifier.height(Space.sm))
+            TButton("음성 점검", ButtonTone.Secondary, small = true, onClick = controls.onTestSafeDriveVoice)
+            Spacer(Modifier.height(Space.sm))
+            TButton("음성 설정", ButtonTone.Secondary, small = true, onClick = controls.onOpenSpeechSettings)
+        }
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "과속할수록 빠르게 울리기",

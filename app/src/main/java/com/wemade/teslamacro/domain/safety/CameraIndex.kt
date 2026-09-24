@@ -33,8 +33,12 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     private val conflictingPoints = points
         .filterValues { records -> records.map { it.speedLimitKph }.distinct().size > 1 }.keys
     private val pointDates = points.mapValues { (_, records) ->
-        if (records.any { it.referenceDate == null }) null
-        else records.mapNotNull { it.referenceDate }.minOrNull()
+        // 한 기관의 기준일이라도 잘못되면 문자열 정렬로 다른 기관 날짜를 최신 근거로 삼지 않는다.
+        val dates = records.map { it.referenceDate?.takeIf { date ->
+            (date.length == 10 || (date.length > 10 && date[10] == 'T')) &&
+                runCatching { LocalDate.parse(date.take(10)) }.isSuccess
+        } }
+        if (dates.any { it == null }) null else dates.filterNotNull().minOrNull()
     }
 
     /** 원본 건수와 별개로 실제 사용할 수 있는 목록이 있는지 확인한다. */

@@ -352,6 +352,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                     ) { uri -> uri?.let(settingsViewModel::importBackup) }
                     val backupMessage by settingsViewModel.backupMessage.collectAsState()
                     val safeDriveTestMessage by settingsViewModel.safeDriveTestMessage.collectAsState()
+                    val safeDriveVoiceStatus by settingsViewModel.safeDriveVoiceStatus.collectAsState()
 
                     // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
                     val overlayPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
@@ -471,6 +472,9 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
                             onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
                             onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
+                            onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
+                            onOpenSpeechSettings = { openSpeechSettings(context) },
+                            safeDriveVoiceStatus = safeDriveVoiceStatus,
                             onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
                             onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
                             onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
@@ -494,6 +498,18 @@ private fun AppRoot(factory: ViewModelFactory) {
                 }
             }
         }
+    }
+}
+
+/** 기기별 TTS 설정 화면이 달라도 사용자가 한국어 음성 설치 경로를 찾을 수 있게 한다. */
+private fun openSpeechSettings(context: android.content.Context) {
+    val actions = listOf(
+        "com.android.settings.TTS_SETTINGS",
+        android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA,
+        android.provider.Settings.ACTION_SETTINGS,
+    )
+    if (actions.none { action -> runCatching { context.startActivity(Intent(action)) }.isSuccess }) {
+        com.wemade.teslable.DiagLog.add("안전 안내 · 기기 음성 설정을 열 수 없어요")
     }
 }
 

@@ -402,6 +402,55 @@ class SafetySettingsTest {
         }
     }
 
+    /** 음성 요청 실패·엔진 재점검 뒤에도 같은 카메라의 진입 안내가 사라지지 않는다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun failedVoiceRequestCanBeRetried() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        var unavailable = true
+        var attempts = 0
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = { text ->
+            attempts++
+            if (unavailable) error("engine unavailable")
+            spoken.add(text)
+        }) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        fun approach(latitudeDegrees: Double) {
+            guide.onLocation(Location("gps").apply {
+                latitude = latitudeDegrees; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+        }
+        try {
+            guide.setSound(true, 2)
+            guide.start()
+            runCurrent()
+            approach(36.9986)
+            assertEquals(1, attempts)
+            assertTrue(guide.speechStatus.value!!.contains("사용 불가"))
+            nowNanos += 1_000_000_000L
+            approach(36.9986)
+            assertEquals("실패 뒤 GPS마다 재시도하면 엔진이 로그·음성을 반복한다", 1, attempts)
+            unavailable = false
+            guide.testSpeech()
+            assertEquals("한국어 단속 안내 음성 점검입니다.", spoken.single())
+            nowNanos += 1_000_000_000L
+            approach(36.9986)
+            assertEquals("전방 약 500미터에 단속 카메라가 있습니다.", spoken.last())
+            nowNanos += 5_000_000_000L
+            approach(37.0013)
+            assertEquals("전방 약 200미터에 단속 카메라가 있습니다.", spoken.last())
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** 도로 매칭 후보와 경보 후보를 혼동하거나 GPS 저정밀을 후보 누락으로 기록하지 않는다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun alertSilenceReasons() = runTest {

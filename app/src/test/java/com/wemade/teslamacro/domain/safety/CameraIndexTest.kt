@@ -177,6 +177,20 @@ class CameraIndexTest {
         assertEquals(first, second)
     }
 
+    /** 좌표 중복에서 한 기관의 날짜가 잘못되면 다른 기관의 정상 날짜로 문제를 감추지 않는다. */
+    @Test fun invalidDuplicateReferenceDateNeedsConfirmation() {
+        val today = LocalDate.of(2026, 9, 23)
+        val cameras = listOf(
+            OfflineCamera("dated", 37.003, 127.0, 50, referenceDate = "2026-09-22"),
+            OfflineCamera("invalid", 37.003, 127.0, 50, referenceDate = "not-a-date"),
+        )
+        for (records in listOf(cameras, cameras.reversed())) {
+            val alert = CameraIndex(records).nearest(37.0, 127.0, 0.0, 60.0, 10.0, today)
+            assertEquals("자료 기준일 확인 필요", alert?.dateWarning)
+        }
+        assertNull(CameraIndex(cameras.take(1)).nearest(37.0, 127.0, 0.0, 60.0, 10.0, today)?.dateWarning)
+    }
+
     /** GPS 단절이나 미준비 상태에 남은 카메라로 경보를 만들지 않는다. */
     @Test fun unavailableState() {
         val alert = SafetyAlert(SafetyKind.SPEED_CAMERA, 300, 50)

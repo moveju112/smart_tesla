@@ -286,6 +286,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSafeDriveVoice(enabled) }
     }
 
+    val safeDriveVoiceStatus = container.safeDrive.speechStatus
+
+    /** 앱과 동일한 한국어 음성 경로로 엔진·미디어 음량을 직접 점검한다. */
+    fun testSafeDriveVoice() {
+        container.safeDrive.testSpeech()
+    }
+
     /** 후보 제한속도 대비 과속 정도에 맞춰 경고음 간격을 바꾼다. */
     fun setSafeDriveProgressiveSound(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setSafeDriveProgressiveSound(enabled) }

@@ -252,9 +252,13 @@ class SafetySettingsTest {
                     elapsedRealtimeNanos = nowNanos
                 })
             }
-            approach(36.996, 10f) // 1km 매칭 범위지만 600m 경보 범위 밖.
+            approach(36.995, 10f) // 1km 매칭 범위지만 800m 경보 범위 밖.
             assertNull(guide.state.value.alert)
             assertTrue(DiagLog.lines.value.last().contains("근접 후보는 있지만 경보 거리·방향 미충족"))
+            nowNanos += 1_000_000_000L
+            approach(36.996, 10f) // 넓힌 경보 범위 진입 시 과속 경고음을 요청한다.
+            assertTrue(guide.state.value.isOverSpeed(toleranceKph = guide.toleranceKph))
+            assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
             nowNanos += 10_000_000_000L
             approach(37.0, 31f)
             assertNull(guide.state.value.alert)
@@ -263,6 +267,8 @@ class SafetySettingsTest {
             approach(36.98, 10f)
             assertTrue(DiagLog.lines.value.last().contains("전방 1km 내 후보 없음"))
         } finally {
+            // JVM에는 ToneGenerator.release()가 없어 재생 요청 객체만 비운다.
+            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()

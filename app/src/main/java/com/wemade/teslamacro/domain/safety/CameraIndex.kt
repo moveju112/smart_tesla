@@ -53,20 +53,21 @@ class CameraIndex(cameras: List<OfflineCamera>) {
         return false
     }
 
-    /** 저정밀·정지·방향 미확정 시에는 추측하지 않고 전방 600m 안의 후보만 고른다. */
+    /** 후보 누락을 줄이기 위해 전방 800m까지 넓게 보되, 저정밀·정지·반대방향은 거른다. */
     fun nearest(latitude: Double, longitude: Double, bearing: Double, speedKph: Double,
                 accuracyMeters: Double, today: LocalDate = LocalDate.now()): SafetyAlert? {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite() ||
             !speedKph.isFinite() || speedKph < 5 || accuracyMeters !in 0.0..30.0) return null
         val (row, column) = cell(latitude, longitude)
         var nearest: OfflineCamera? = null
-        var distance = 601.0
+        var distance = 801.0
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             for (camera in cells[x to y].orEmpty()) {
                 val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
-                if (meters < 10 || meters > 600 || meters >= distance) continue
+                if (meters < 10 || meters > 800 || meters >= distance) continue
                 val difference = bearingDifference(latitude, longitude, bearing, camera)
-                if (difference > 25 || meters * sin(Math.toRadians(difference)) > 35) continue
+                // 굽은 도로의 전방 카메라를 놓치지 않도록 실차 테스트 전에는 넓게 허용한다.
+                if (difference > 45 || meters * sin(Math.toRadians(difference)) > 250) continue
                 nearest = camera
                 distance = meters
             }

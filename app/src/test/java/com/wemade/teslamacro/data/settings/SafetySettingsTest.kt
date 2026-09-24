@@ -8,6 +8,7 @@ import com.wemade.teslamacro.data.safety.SafeDriveGuide
 import com.wemade.teslamacro.domain.safety.CameraIndex
 import com.wemade.teslamacro.domain.safety.OfflineCamera
 import com.wemade.teslamacro.domain.safety.SafetyState
+import com.wemade.teslable.DiagLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -167,7 +168,7 @@ class SafetySettingsTest {
         }
     }
 
-    /** 첫 후보는 즉시, 동일 지점은 GPS 흔들림에도 10분간 한 번만, 다음 지점은 전역 10초 뒤 알린다. */
+    /** 같은 카메라 앞에서 과속이 이어지면 2초마다 울리고, 속도를 낮췄다가 올리면 즉시 재경보한다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun soundRequestCooldownAndSettings() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -180,10 +181,10 @@ class SafetySettingsTest {
             )))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
         // 실제 스피커 출력 대신 요청 시각만 검증하고 JVM의 미구현 ToneGenerator는 비운다.
-        fun approach(latitudeDegrees: Double = 37.0) {
+        fun approach(latitudeDegrees: Double = 37.0, speedMetersPerSecond: Float = 20f) {
             guide.onLocation(Location("gps").apply {
                 latitude = latitudeDegrees; longitude = 127.0
-                speed = 20f; bearing = 0f; accuracy = 10f
+                speed = speedMetersPerSecond; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
             SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
@@ -195,27 +196,72 @@ class SafetySettingsTest {
             runCurrent()
             approach()
             assertEquals(1_000L, lastSound.get(guide))
-            nowNanos += 9_999_000_000L
-            approach()
+            assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
+            assertTrue(DiagLog.lines.value.last().contains("GPS 72km/h"))
+            nowNanos += 1_999_000_000L
+            approach(37.00001)
             assertEquals(1_000L, lastSound.get(guide))
             nowNanos += 1_000_000L
-            approach(37.00001) // 작은 GPS 흔들림과 10초 경과는 새 지점이 아니다.
-            assertEquals(1_000L, lastSound.get(guide))
-            approach(37.0034) // 다음 카메라는 전역 10초 간격 이후 알린다.
-            assertEquals(11_000L, lastSound.get(guide))
+            approach() // 같은 카메라에서도 2초 간격으로 다시 요청한다.
+            assertEquals(3_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(37.0034) // 카메라가 바뀌어도 전역 간격은 지킨다.
+            assertEquals(3_000L, lastSound.get(guide))
+            nowNanos += 1_000_000_000L
+            approach(37.0034)
+            assertEquals(5_000L, lastSound.get(guide))
             nowNanos += 10_000_000_000L
-            approach() // 다른 지점 방문으로 기존 카메라의 중복 제한이 풀리지 않는다.
-            assertEquals(11_000L, lastSound.get(guide))
-            nowNanos += 590_000_000_000L
-            approach() // 충분한 시간이 지난 재진입만 다시 알린다.
-            assertEquals(611_000L, lastSound.get(guide))
+            approach(speedMetersPerSecond = 10f) // 과속 해제 직후 재진입은 바로 울린다.
+            assertNull(lastSound.get(guide))
+            assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경보 속도 미달"))
+            approach()
+            assertEquals(15_000L, lastSound.get(guide))
+            guide.setSound(false, -1, 0)
+            nowNanos += 2_000_000_000L
+            approach(37.0034)
+            assertNull(lastSound.get(guide))
+            assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음 꺼짐"))
             guide.setSound(false, -1, 99)
             assertEquals(30, guide.toleranceKph)
-            nowNanos += 10_000_000_000L
-            approach(37.0034)
-            assertEquals(611_000L, lastSound.get(guide))
             guide.stop()
             assertNull(lastSound.get(guide))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 도로 매칭 후보와 경보 후보를 혼동하거나 GPS 저정밀을 후보 누락으로 기록하지 않는다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun alertSilenceReasons() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val guide = SafeDriveGuide(Application()) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setSound(true, 2, 5)
+            guide.start()
+            runCurrent()
+            // 위치·정확도만 바꿔 무음 진단 상태를 비교한다.
+            fun approach(latitudeDegrees: Double, accuracyMeters: Float) {
+                guide.onLocation(Location("gps").apply {
+                    latitude = latitudeDegrees; longitude = 127.0
+                    speed = 20f; bearing = 0f; accuracy = accuracyMeters
+                    elapsedRealtimeNanos = nowNanos
+                })
+            }
+            approach(36.996, 10f) // 1km 매칭 범위지만 600m 경보 범위 밖.
+            assertNull(guide.state.value.alert)
+            assertTrue(DiagLog.lines.value.last().contains("근접 후보는 있지만 경보 거리·방향 미충족"))
+            nowNanos += 10_000_000_000L
+            approach(37.0, 31f)
+            assertNull(guide.state.value.alert)
+            assertTrue(DiagLog.lines.value.last().contains("GPS 정확도 부족"))
+            nowNanos += 10_000_000_000L
+            approach(36.98, 10f)
+            assertTrue(DiagLog.lines.value.last().contains("전방 1km 내 후보 없음"))
         } finally {
             guide.stop()
             runCurrent()

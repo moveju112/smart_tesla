@@ -71,7 +71,7 @@ object DiagLog {
     fun addAt(message: String, timestampMillis: Long) {
         val time = SimpleDateFormat(TIME_FORMAT, Locale.US).format(Date(timestampMillis))
         val line = "$time $message"
-        // 파일 줄 수도 확정한 뒤 화면에 알려 100줄 이후에도 보관 개수가 갱신되게 한다.
+        // 파일 줄 수도 확정한 뒤 화면에 알려 상한 이후에도 보관 개수가 갱신되게 한다.
         appendToFile(line, timestampMillis)
         // 줄 수와 시간을 함께 제한한다. 낮은 빈도로 오래 켜 둔 기기도 묵은 로그를 품지 않는다.
         _lines.update { retainedLines(it + line, timestampMillis, MAX_LINES, DEFAULT_MAX_AGE_MILLIS) }
@@ -154,9 +154,9 @@ object DiagLog {
     }
 
     /** 화면에 들고 있는 줄 수 */
-    const val MAX_LINES = 100
+    const val MAX_LINES = 300
 
-    /** 문제 직후 공유할 로그 양을 줄이기 위해 파일도 화면과 같은 100줄로 제한한다. */
+    /** 주행 경보 원인을 공유할 시간을 확보하되 파일도 화면과 같은 상한으로 제한한다. */
     const val MAX_FILE_LINES = MAX_LINES
 
     /** 로그 한 줄의 최대 보관 시간 */

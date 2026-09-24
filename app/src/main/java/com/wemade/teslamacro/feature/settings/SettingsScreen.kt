@@ -1007,7 +1007,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "소리로도 알림",
-            subtitle = "설정한 초과속도에 도달하면 짧은 경고음을 내요. 기기 미디어 음량도 적용돼요",
+            subtitle = "카메라 앞에서 과속이 계속되면 2초마다 경고음을 내요. 기기 미디어 음량도 적용돼요",
             checked = settings.safeDriveSound,
             onCheckedChange = controls.onSafeDriveSoundChange,
         )

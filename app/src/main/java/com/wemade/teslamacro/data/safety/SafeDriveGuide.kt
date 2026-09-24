@@ -43,7 +43,8 @@ class SafeDriveGuide(
     private var tokenRejected = false
     private var matchedRoad: Pair<Long, MatchedRoad>? = null
     private var lastSoundMillis: Long? = null
-    private val soundedCameras = mutableMapOf<String, Long>()
+    private var lastAlertStatus: String? = null
+    private var lastAlertLogMillis: Long? = null
     private var retrievedAt: String? = null
     private var dataWarning: String? = null
     private var sound = false
@@ -66,6 +67,7 @@ class SafeDriveGuide(
                 }.also { retrievedAt = it.second }.first
                 dataWarning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
                 mutableState.value = SafetyState(ready = true, stalled = true, dataWarning = dataWarning)
+                DiagLog.add("안전 안내 · 시작 (소리 ${if (sound) "켬" else "끔"}, 초과 +${toleranceKph}km/h, GPS 대기)")
                 while (isActive) {
                     if (retrievedAt != null) {
                         val warning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
@@ -94,15 +96,26 @@ class SafeDriveGuide(
         val nowNanos = elapsedRealtimeNanos()
         val speed = freshSpeedKph(location, nowNanos)
         if (speed == null) {
+            // GPS 품질 때문에 경보가 막혔는지 구분해야 후보 부재로 오해하지 않는다.
+            val reason = when {
+                !isFreshLocation(location.elapsedRealtimeNanos, nowNanos) -> "GPS 측정 오래됨"
+                !location.hasAccuracy() || location.accuracy !in 0f..30f -> "GPS 정확도 부족"
+                location.latitude !in -90.0..90.0 || location.longitude !in -180.0..180.0 -> "GPS 좌표 확인 불가"
+                else -> "GPS 속도 확인 불가"
+            }
             clearRoadMatch()
             lastFixNanos = null
-            mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "위치·속도 확인 불가", dataWarning = dataWarning)
+            mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = reason, dataWarning = dataWarning)
+            lastSoundMillis = null
+            logAlertStatus(reason, "오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m", nowNanos / 1_000_000)
             return
         }
         lastFixNanos = location.elapsedRealtimeNanos
         if (speed >= 5 && (!location.hasBearing() || !location.bearing.isFinite())) {
             clearRoadMatch()
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
+            lastSoundMillis = null
+            logAlertStatus("방향 확인 불가", "GPS ${speed.toInt()}km/h, 방향 없음", nowNanos / 1_000_000)
             return
         }
         updateRoadMatch(location, speed, nowNanos)
@@ -117,17 +130,59 @@ class SafeDriveGuide(
         ) else null
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         val nowMillis = nowNanos / 1_000_000
-        val cameraKey = alert?.cameraKey
-        // 같은 좌표를 GPS 흔들림·10초 간격마다 재경보하지 않고, 다른 카메라는 기존 간격을 지킨다.
-        if (sound && cameraKey != null && state.value.isOverSpeed(toleranceKph = toleranceKph) &&
-            (lastSoundMillis?.let { nowMillis >= it && nowMillis - it >= 10_000 } != false) &&
-            (soundedCameras[cameraKey]?.let { nowMillis >= it && nowMillis - it >= 600_000 } != false)) {
-            lastSoundMillis = nowMillis
-            soundedCameras[cameraKey] = nowMillis
-            runCatching {
-                if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
-                tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 300)
+        val overSpeed = state.value.isOverSpeed(toleranceKph = toleranceKph)
+        val detail = "GPS ${speed.toInt()}km/h, 오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m, " +
+            "후보 ${alert?.speedLimitKph?.let { "제한 ${it}km/h" } ?: "없음"}, 거리 ${alert?.distanceMeters ?: "-"}m, " +
+            "초과 설정 +${toleranceKph}km/h, 소리 ${if (sound) "켬" else "끔"}"
+        val status = when {
+            speed < 5 -> "GPS 속도 5km/h 미만"
+            !location.hasBearing() -> "GPS 방향 없음"
+            alert == null && index?.hasNearby(location.latitude, location.longitude, location.bearing.toDouble()) == true ->
+                "근접 후보는 있지만 경보 거리·방향 미충족"
+            alert == null -> "전방 1km 내 후보 없음"
+            alert.limitConflict -> "후보 제한속도 상충"
+            alert.speedLimitKph == null -> "후보 제한속도 없음"
+            !overSpeed -> "경보 속도 미달"
+            !sound -> "경고음 꺼짐"
+            else -> "경고음 반복"
+        }
+        // 과속이 이어지면 같은 카메라라도 다시 울리고, 해제 후 재진입하면 즉시 알린다.
+        if (status == "경고음 반복") {
+            if (lastSoundMillis?.let { nowMillis >= it && nowMillis - it < 2_000 } != true) {
+                lastSoundMillis = nowMillis
+                // 앱 음량과 별개로 기기 미디어 음량 0이면 들리지 않으므로 요청 수락과 구별한다.
+                val mediaVolume = runCatching {
+                    application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
+                }.getOrNull()
+                if (mediaVolume == 0) {
+                    logAlertStatus("경고음 무음 · 미디어 음량 0", detail, nowMillis)
+                } else {
+                    val attempt = runCatching {
+                        if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
+                        tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 300) == true
+                    }
+                    val result = when {
+                        attempt.getOrNull() == true -> "경고음 요청 수락 · 미디어 음량 ${mediaVolume ?: "확인 불가"}"
+                        attempt.exceptionOrNull() != null -> "경고음 재생 오류 · ${attempt.exceptionOrNull()!!.javaClass.simpleName}"
+                        else -> "경고음 재생 실패"
+                    }
+                    logAlertStatus(result, detail, nowMillis)
+                }
             }
+        } else {
+            lastSoundMillis = null
+            logAlertStatus(status, detail, nowMillis)
+        }
+    }
+
+    /** 경고음 변화는 즉시, 일반 상태는 최대 10초 전환·1분 요약으로 남겨 진단 기록을 지킨다. */
+    private fun logAlertStatus(status: String, detail: String, nowMillis: Long) {
+        val elapsed = lastAlertLogMillis?.let { nowMillis - it }
+        if ((status != lastAlertStatus && (status.startsWith("경고음") || elapsed == null || elapsed < 0 || elapsed >= 10_000)) ||
+            elapsed == null || elapsed < 0 || elapsed >= 60_000) {
+            DiagLog.add("안전 안내 · $status ($detail)")
+            lastAlertStatus = status
+            lastAlertLogMillis = nowMillis
         }
     }
 
@@ -159,7 +214,7 @@ class SafeDriveGuide(
             (lastMatchAttemptMillis != 0L && nowMillis - lastMatchAttemptMillis < retryDelayMillis)) return
         lastMatchAttemptMillis = nowMillis
         requestsSinceLog += 1
-        // 진단 파일은 최근 100줄만 남으므로 매 요청 대신 첫 요청과 1분 요약만 남긴다.
+        // 진단 파일은 줄 수 상한이 있으므로 매 요청 대신 첫 요청과 1분 요약만 남긴다.
         if (lastMatchLogMillis == 0L || nowMillis - lastMatchLogMillis >= 60_000) {
             DiagLog.add("도로 매칭 · 전방 후보 요청 (최근 구간 ${requestsSinceLog}회)")
             requestsSinceLog = 0
@@ -199,11 +254,17 @@ class SafeDriveGuide(
 
     /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */
     fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5) {
-        this.toleranceKph = toleranceKph.coerceIn(0, 30)
+        val adjustedTolerance = toleranceKph.coerceIn(0, 30)
+        val adjustedVolume = volume.coerceIn(1, 3)
+        val changed = this.sound != sound || this.volume != adjustedVolume || this.toleranceKph != adjustedTolerance
+        this.toleranceKph = adjustedTolerance
         this.sound = sound
-        this.volume = volume.coerceIn(1, 3)
+        this.volume = adjustedVolume
         tone?.release()
         tone = null
+        if (changed && job?.isActive == true) {
+            DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h)")
+        }
     }
 
     /** 감시 종료 시 이전 카메라와 경보를 남기지 않는다. */
@@ -216,7 +277,8 @@ class SafeDriveGuide(
         lastMatchOutcome = null
         lastFixNanos = null
         lastSoundMillis = null
-        soundedCameras.clear()
+        lastAlertStatus = null
+        lastAlertLogMillis = null
         tone?.release()
         tone = null
         mutableState.value = SafetyState()

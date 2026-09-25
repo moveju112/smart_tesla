@@ -63,7 +63,7 @@ android {
     }
 }
 
-// CLI 기본 검증은 이미지를 만들지 않고, 명시 요청이 있을 때만 렌더링 테스트를 실행한다.
+// 기본 테스트는 렌더링을 제외하고, UI 시각 검증이 필요할 때만 플래그로 관련 스냅샷을 실행한다.
 val allowSnapshots = providers.gradleProperty("allowSnapshots").map { it.toBoolean() }.getOrElse(false)
 tasks.withType<Test>().configureEach {
     if (!allowSnapshots) {

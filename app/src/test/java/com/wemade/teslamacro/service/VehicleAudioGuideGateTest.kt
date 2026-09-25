@@ -74,6 +74,18 @@ class VehicleAudioGuideGateTest {
             vehicleAudioStatus("Tesla One", bonded, "D4", setOf("D4"), true, true, true))
     }
 
+    // 페어링된 기기를 미리 선택해도 그 기기의 음악용 연결 전까지 GPS 안내를 열지 않는다.
+    @Test fun preselectedPairingWaitsForItsOwnA2dpConnection() {
+        val bonded = listOf(BondedDevice("Tesla One", "B2", emptyList()),
+            BondedDevice("Tesla Two", "C3", emptyList()))
+        assertEquals(VehicleAudioStatus.DISCONNECTED,
+            vehicleAudioStatus("Tesla One", bonded, "C3", emptySet(), true, true, true))
+        assertEquals(VehicleAudioStatus.DISCONNECTED,
+            vehicleAudioStatus("Tesla One", bonded, "C3", setOf("B2"), true, true, true))
+        assertEquals(VehicleAudioStatus.CONNECTED,
+            vehicleAudioStatus("Tesla One", bonded, "C3", setOf("C3"), true, true, true))
+    }
+
     // 사용자에게 보이는 연결 실패 사유를 권한·프로필·별칭·연결 순서대로 구분한다.
     @Test fun connectionReasonsDoNotOpenGuidanceWithoutMatchingProfile() {
         val bonded = listOf(BondedDevice("Tesla One", "B2", emptyList()))

@@ -363,7 +363,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val safeDriveVoiceStatus by settingsViewModel.safeDriveVoiceStatus.collectAsState()
                     val automaticSoundStatus by settingsViewModel.safeDriveAutomaticSoundStatus.collectAsState()
                     val vehicleAudioStatus by settingsViewModel.vehicleAudioStatus.collectAsState()
-                    val connectedAudioDevices by settingsViewModel.connectedAudioDevices.collectAsState()
+                    val pairedAudioDevices by settingsViewModel.pairedAudioDevices.collectAsState()
                     val manualGuideActive by settingsViewModel.manualGuideActive.collectAsState()
 
                     // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
@@ -506,7 +506,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             safeDriveVoiceStatus = safeDriveVoiceStatus,
                             automaticSoundStatus = automaticSoundStatus,
                             vehicleAudioStatus = vehicleAudioStatus,
-                            connectedAudioDevices = connectedAudioDevices,
+                            pairedAudioDevices = pairedAudioDevices,
                             manualGuideActive = manualGuideActive,
                             onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
                             onStartManualGuide = settingsViewModel::startManualGuide,

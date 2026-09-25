@@ -37,14 +37,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val stealthChargeRuntime = container.stealthCharge.runtime
 
-    /** 오디오 프로필이 확인한 연결 기기·식별 사유·이번 주행 세션을 화면에 전달한다. */
-    val connectedAudioDevices = container.connectedAudioDevices
+    /** 페어링된 기기·실제 오디오 연결 상태·이번 주행 세션을 화면에 전달한다. */
+    val pairedAudioDevices = container.pairedAudioDevices
     val vehicleAudioStatus = container.vehicleAudioStatus
     val manualGuideActive = container.manualGuideActive
 
-    /** 현재 연결된 A2DP 기기만 고를 수 있어 이어폰이나 옛 차량의 저장 주소를 추정하지 않는다. */
+    /** 페어링된 기기만 저장하되 안내 활성화는 별도의 A2DP 연결 판정에 맡긴다. */
     fun selectVehicleAudioDevice(address: String) {
-        if (address.isNotBlank() && connectedAudioDevices.value.none { it.address == address }) return
+        if (address.isNotBlank() && pairedAudioDevices.value.none {
+                it.address.equals(address, ignoreCase = true)
+            }) return
         viewModelScope.launch { container.settingsStore.setVehicleAudioAddress(address) }
     }
 

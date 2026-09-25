@@ -233,7 +233,7 @@ class MacroService : LifecycleService() {
         }
     }
 
-    // 1. 실제 연결된 A2DP와 페어링 주소를 대조하고 실패 사유만 화면·진단에 전달한다.
+    // 1. 페어링 목록은 선택 후보로, 실제 A2DP 연결은 안내 활성화 조건으로 따로 전달한다.
     @android.annotation.SuppressLint("MissingPermission")
     private fun refreshCarAudioConnection() {
         if (!carAudioWatcherActive) return
@@ -244,13 +244,11 @@ class MacroService : LifecycleService() {
             val bonded = if (enabled) container.scanner.bondedDevices() else emptyList()
             val addresses = if (enabled) carAudioProfile?.connectedDevices
                 ?.map { it.address }?.toSet().orEmpty() else emptySet()
-            container.connectedAudioDevices.value = bonded.filter { device ->
-                addresses.any { it.equals(device.address, ignoreCase = true) }
-            }
+            container.pairedAudioDevices.value = bonded
             vehicleAudioStatus(carAudioName, bonded, carAudioSelectedAddress, addresses,
                 permitted, enabled, carAudioProfile != null)
         }.getOrElse {
-            container.connectedAudioDevices.value = emptyList()
+            container.pairedAudioDevices.value = emptyList()
             com.wemade.teslable.DiagLog.add("차량 오디오 상태 조회 실패 (${it.javaClass.simpleName})")
             VehicleAudioStatus.READ_FAILED
         }
@@ -1080,7 +1078,7 @@ class MacroService : LifecycleService() {
         manualGuideActive = false
         (application as TeslaMacroApplication).container.let {
             it.manualGuideActive.value = false
-            it.connectedAudioDevices.value = emptyList()
+            it.pairedAudioDevices.value = emptyList()
             it.vehicleAudioStatus.value = VehicleAudioStatus.CHECKING
         }
         stopActivityUpdates()

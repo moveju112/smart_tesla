@@ -213,13 +213,13 @@ fun SettingsScreen(
                             if (navigation != null) {
                                 SectionHeader("속도 표시", topPadding = Space.md)
                                 SpeedPanel(settings, navigation)
+                                SectionHeader("단속 안내")
+                                SafeDrivePanel(settings, navigation)
                                 if (settings.deviceMode == DeviceMode.PORTABLE &&
                                     (settings.hudOverlay || settings.safeDrive)) {
                                     SectionHeader("차량 오디오")
                                     VehicleAudioPanel(settings, navigation)
                                 }
-                                SectionHeader("단속 안내")
-                                SafeDrivePanel(settings, navigation)
                             }
                         }
 
@@ -782,7 +782,7 @@ data class NavigationControls(
     val automaticSoundStatus: String? = null,
     val vehicleAudioStatus: com.wemade.teslamacro.service.VehicleAudioStatus =
         com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING,
-    val connectedAudioDevices: List<com.wemade.teslable.BondedDevice> = emptyList(),
+    val pairedAudioDevices: List<com.wemade.teslable.BondedDevice> = emptyList(),
     val manualGuideActive: Boolean = false,
     val onSelectVehicleAudioDevice: (String) -> Unit = {},
     val onStartManualGuide: () -> Unit = {},
@@ -943,7 +943,7 @@ private fun OverlayPermissionNotice(controls: NavigationControls) {
     }
 }
 
-// 1. 연결 확인 실패 때만 기기 선택·이번 주행 수동 복구를 펼쳐 평소 설정 부담을 줄인다.
+// 1. 페어링된 기기를 미리 선택하고 실제 오디오 연결 여부와 수동 안내를 구분해 보여준다.
 @Composable
 private fun VehicleAudioPanel(settings: AppSettings, controls: NavigationControls) {
     TCard {
@@ -951,17 +951,17 @@ private fun VehicleAudioPanel(settings: AppSettings, controls: NavigationControl
             style = MaterialTheme.typography.bodyMedium,
             color = if (controls.vehicleAudioStatus == com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED)
                 T.Ink else T.InkMuted)
-        SettingsDetails("연결 복구 · 기기 선택 / 수동 안내") {
-            Text("차량 음악 Bluetooth가 연결된 상태에서 차량 오디오만 골라 주세요. 이어폰을 고르면 이어폰 연결에도 GPS가 켜질 수 있어요.",
+        SettingsDetails("블루투스 선택 · 수동 안내") {
+            Text("선택한 블루투스가 음악용으로 연결되면 GPS 기반 안내가 시작돼요.",
                 style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            if (controls.connectedAudioDevices.isEmpty()) {
-                Text("현재 연결된 음악용 Bluetooth 기기가 없어요. 연결한 뒤 이 화면에서 선택하세요.",
+            if (controls.pairedAudioDevices.isEmpty()) {
+                Text("페어링된 블루투스 기기가 없어요.",
                     style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
             } else {
-                controls.connectedAudioDevices.forEach { device ->
+                controls.pairedAudioDevices.forEach { device ->
                     TButton(
                         text = "${device.name} · ${device.address.takeLast(5)}" +
-                            if (settings.vehicleAudioAddress == device.address) " (선택됨)" else "",
+                            if (settings.vehicleAudioAddress.equals(device.address, ignoreCase = true)) " (선택됨)" else "",
                         tone = ButtonTone.Secondary,
                         onClick = { controls.onSelectVehicleAudioDevice(device.address) },
                     )
@@ -969,17 +969,17 @@ private fun VehicleAudioPanel(settings: AppSettings, controls: NavigationControl
                 }
             }
             if (settings.vehicleAudioAddress.isNotBlank()) {
-                TButton("자동 식별로 되돌리기", ButtonTone.Ghost) {
+                TButton("자동 선택", ButtonTone.Ghost) {
                     controls.onSelectVehicleAudioDevice("")
                 }
             }
             if (controls.manualGuideActive) {
-                Text("이번 주행 수동 GPS·카메라 안내 사용 중. 직접 종료하거나 약 6시간 뒤 종료돼요(절전 중 지연 가능).",
+                Text("수동 안내 중 · 약 6시간 뒤 종료돼요.",
                     style = MaterialTheme.typography.bodySmall, color = T.Danger)
                 TButton("수동 안내 종료", ButtonTone.Danger, onClick = controls.onStopManualGuide)
             } else if (controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED &&
                 controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING) {
-                Text("연결을 식별할 수 없는 날에만 직접 시작하세요. 하차는 감지하지 않으니 직접 끄거나 약 6시간 뒤 종료돼요(절전 중 지연 가능). 네이버 지도에는 영향 없어요.",
+                Text("블루투스 연결 없이 이번 주행만 안내해요. 하차 후 직접 종료해 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                 TButton("이번 주행 수동 안내 시작", ButtonTone.Secondary,
                     enabled = controls.locationPermitted, onClick = controls.onStartManualGuide)

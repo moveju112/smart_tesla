@@ -9,7 +9,7 @@ internal fun matchingVehicleAudioAddress(
     bondedDevices: List<BondedDevice>,
     selectedAddress: String = "",
 ): String? {
-    // 사용자가 연결된 오디오에서 고른 주소는 이름·다중 차량 추측보다 우선한다.
+    // 사용자가 페어링 목록에서 미리 고른 주소는 이름·다중 차량 추측보다 우선한다.
     if (selectedAddress.isNotBlank()) return bondedDevices.singleOrNull {
         it.address.equals(selectedAddress, ignoreCase = true)
     }?.address
@@ -55,7 +55,7 @@ enum class VehicleAudioStatus(val label: String) {
     PROFILE_WAITING("음악용 Bluetooth 연결 상태 확인 중"),
     SELECTED_UNPAIRED("선택한 차량 오디오가 페어링 목록에서 사라졌어요"),
     MULTIPLE_VEHICLES("테슬라 여러 대가 페어링됨 · 오디오 기기 선택 필요"),
-    NO_MATCH("등록 차량 오디오를 찾지 못했어요 · 연결 후 기기를 선택하세요"),
+    NO_MATCH("등록 차량 오디오를 찾지 못했어요 · 블루투스를 선택하세요"),
     DISCONNECTED("차량 오디오 연결 대기 · GPS 안내 중지"),
     CONNECTED("차량 오디오 연결됨 · 내부 GPS 안내 사용"),
     READ_FAILED("Bluetooth 상태 확인 실패 · 내부 안내 대기"),

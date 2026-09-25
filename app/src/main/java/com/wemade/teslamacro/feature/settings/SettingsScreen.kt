@@ -774,6 +774,7 @@ data class NavigationControls(
     val onTestSafeDriveVoice: () -> Unit = {},
     val onOpenSpeechSettings: () -> Unit = {},
     val safeDriveVoiceStatus: String? = null,
+    val automaticSoundStatus: String? = null,
     val onSafeDriveProgressiveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
     val onSafeDriveToleranceChange: (Int) -> Unit = {},
@@ -798,6 +799,8 @@ data class NavigationControls(
      */
     val locationPermitted: Boolean = true,
     val onRequestLocationPermission: () -> Unit = {},
+    val activityPermitted: Boolean = true,
+    val onRequestActivityPermission: () -> Unit = {},
 )
 
 /**
@@ -992,11 +995,23 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)
         }
+        if (settings.safeDrive && settings.safeDriveSound && !controls.activityPermitted) {
+            Spacer(Modifier.height(Space.md))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("활동 인식 권한이 없어 자동 카메라 소리가 보류돼요.",
+                    style = MaterialTheme.typography.bodySmall, color = T.Danger, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(Space.md))
+                TButton("권한 허용", fillWidth = false, onClick = controls.onRequestActivityPermission)
+            }
+        }
 
         // 안내가 꺼져 있으면 소리 설정은 의미가 없다 — 조작할 수 없는 칸을
         // 흐리게 남겨두는 것보다 접는 게 조용하다
         if (!settings.safeDrive) return@TCard
 
+        Spacer(Modifier.height(Space.md))
+        Text("자동 음성·경고음은 차량 탑승 또는 기기의 차량 이동 판정 중에만 울려요. 보행·권한 거부·판정 지연 시에는 조용해요. 휴대폰 판정은 다른 차량 탑승과 테슬라를 구별하지 못해요.",
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         Spacer(Modifier.height(Space.md))
         Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         ChoiceRow(
@@ -1031,6 +1046,9 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
 
         if (!settings.safeDriveSound) return@TCard
 
+        controls.automaticSoundStatus?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        }
         Spacer(Modifier.height(Space.md))
         ToggleRow(
             title = "카메라 거리 음성 안내",

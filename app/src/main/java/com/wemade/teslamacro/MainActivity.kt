@@ -63,6 +63,8 @@ import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+// Play 서비스의 전이 Fragment 1.0은 쓰지 않는다. 이 화면은 FragmentActivity가 아닌 ComponentActivity라 해당 요청 코드 버그가 없다.
+@android.annotation.SuppressLint("InvalidFragmentVersionForActivityResult")
 class MainActivity : ComponentActivity() {
 
     @Volatile
@@ -114,6 +116,10 @@ class MainActivity : ComponentActivity() {
                 if (app.container.safeDrive.state.value.stalled) {
                     com.wemade.teslable.DiagLog.add("앱이 앞으로 나와 안전운전 안내를 다시 세웁니다")
                     app.container.notifyLocationPermissionChanged()
+                }
+                // 시스템 설정에서 활동 권한을 바꿔 돌아온 경우에도 감시 구독을 동기화한다.
+                if (hasBlePermission() && app.container.settingsStore.settings.first().safeDrive) {
+                    runCatching { MacroService.refreshActivityPermission(this@MainActivity) }
                 }
             }
         }
@@ -353,6 +359,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val backupMessage by settingsViewModel.backupMessage.collectAsState()
                     val safeDriveTestMessage by settingsViewModel.safeDriveTestMessage.collectAsState()
                     val safeDriveVoiceStatus by settingsViewModel.safeDriveVoiceStatus.collectAsState()
+                    val automaticSoundStatus by settingsViewModel.safeDriveAutomaticSoundStatus.collectAsState()
 
                     // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
                     val overlayPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
@@ -389,6 +396,18 @@ private fun AppRoot(factory: ViewModelFactory) {
                             // 실패해도 위치 신호는 이미 갔으니 감시는 계속된다
                             runCatching { MacroService.start(context) }
                         }
+                    }
+
+                    // 안내를 켜는 시점에만 활동 권한을 요청한다. 거부되면 자동 소리만 무음이다.
+                    val activityPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
+                        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q ||
+                            context.checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) ==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                    }
+                    val askActivity = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { _ ->
+                        runCatching { MacroService.refreshActivityPermission(context) }
                     }
 
                     // 알림 접근은 일반 런타임 권한이 아니라 시스템 설정에서 바뀐다.
@@ -468,13 +487,18 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
                             safeDriveTestMessage = safeDriveTestMessage,
                             onHudOverlayChange = settingsViewModel::setHudOverlay,
-                            onSafeDriveChange = settingsViewModel::setSafeDrive,
+                            onSafeDriveChange = { enabled ->
+                                settingsViewModel.setSafeDrive(enabled)
+                                if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+                                    !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                            },
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
                             onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
                             onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
                             onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
                             onOpenSpeechSettings = { openSpeechSettings(context) },
                             safeDriveVoiceStatus = safeDriveVoiceStatus,
+                            automaticSoundStatus = automaticSoundStatus,
                             onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
                             onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
                             onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
@@ -484,6 +508,11 @@ private fun AppRoot(factory: ViewModelFactory) {
                             // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
                             overlayPermitted = overlayPermitted,
                             locationPermitted = locationPermitted,
+                            activityPermitted = activityPermitted,
+                            onRequestActivityPermission = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
+                                    askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                            },
                             onRequestLocationPermission = {
                                 askLocation.launch(arrayOf(
                                     Manifest.permission.ACCESS_FINE_LOCATION,

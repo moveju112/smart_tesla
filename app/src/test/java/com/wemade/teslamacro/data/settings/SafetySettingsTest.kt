@@ -243,6 +243,7 @@ class SafetySettingsTest {
         }
         try {
             guide.setSound(true, 99, -1, progressive = false)
+            guide.setAutomaticAlertsAllowed(true)
             assertEquals(0, guide.toleranceKph)
             guide.start()
             runCurrent()
@@ -294,6 +295,50 @@ class SafetySettingsTest {
         assertEquals(2_000L, warningIntervalMillis(15.0, false))
     }
 
+    /** 보행·미판정 때는 같은 카메라의 화면 경보를 남기되 자동 음성과 경고음 요청은 취소한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun automaticSoundsNeedConfirmedDriving() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
+        // 출력 권한 변경 직후 같은 위치를 재수신해 예전 대기 음성이 새로 시작되지 않는지 본다.
+        fun approach() {
+            guide.onLocation(Location("gps").apply {
+                latitude = 36.9986; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+        }
+        try {
+            guide.setSound(true, 2, 5)
+            guide.start()
+            runCurrent()
+            approach()
+            assertNotNull(guide.state.value.alert)
+            assertTrue(spoken.isEmpty())
+            assertNull(lastSound.get(guide))
+            guide.setAutomaticAlertsAllowed(true)
+            nowNanos += 1_000_000_000L
+            approach()
+            assertEquals(1, spoken.size)
+            assertNotNull(lastSound.get(guide))
+            guide.setAutomaticAlertsAllowed(false)
+            nowNanos += 1_000_000_000L
+            approach()
+            assertEquals(1, spoken.size)
+            assertNull(lastSound.get(guide))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** GPS가 1초마다 올 때 느린 간격·단계 상승 즉시 경보·빠른 간격을 실제 요청 시각으로 확인한다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun progressiveWarningRequests() = runTest {
@@ -314,6 +359,7 @@ class SafetySettingsTest {
         }
         try {
             guide.setSound(true, 2, 5, progressive = true)
+            guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
             approach(106)
@@ -379,6 +425,7 @@ class SafetySettingsTest {
         try {
             guide.setAlertOptions(500, voice = true)
             guide.setSound(true, 2, 5)
+            guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
             approach(36.997) // 약 667m: 매칭 후보지만 화면·음성·과속음 모두 범위 밖.
@@ -414,6 +461,7 @@ class SafetySettingsTest {
             assertNull(lastSound.get(guide))
             assertEquals(2, spoken.size)
             guide.setSound(true, 2, 5)
+            guide.setAutomaticAlertsAllowed(true)
             guide.setAlertOptions(300, voice = false)
             nowNanos += 1_000_000_000L
             approach(37.001)
@@ -455,6 +503,7 @@ class SafetySettingsTest {
         }
         try {
             guide.setSound(true, 2)
+            guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
             approach(36.9986)
@@ -489,6 +538,7 @@ class SafetySettingsTest {
             .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
         try {
             guide.setSound(true, 2, 5)
+            guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
             // 위치·정확도만 바꿔 무음 진단 상태를 비교한다.

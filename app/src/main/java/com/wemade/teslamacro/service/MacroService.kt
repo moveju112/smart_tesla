@@ -5,6 +5,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.os.SystemClock
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
@@ -23,6 +24,10 @@ import com.wemade.teslamacro.MainActivity
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
+import com.wemade.teslamacro.data.safety.DriveAlertGate
+import com.google.android.gms.location.ActivityRecognition
+import com.google.android.gms.location.ActivityRecognitionResult
+import com.google.android.gms.location.DetectedActivity
 import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
 import com.wemade.teslamacro.data.nav.forAutomaticStart
@@ -64,6 +69,10 @@ class MacroService : LifecycleService() {
 
     private var safeDriveTestJob: Job? = null
     private var stealthChargeWakeLock: PowerManager.WakeLock? = null
+    private val driveAlertGate = DriveAlertGate()
+    private var activityUpdates: PendingIntent? = null
+    private var activityUpdatesReady = false
+    private var activityFailure: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -87,6 +96,7 @@ class MacroService : LifecycleService() {
         watchVehiclePower()
         watchSpeedOverlay()
         watchSafeDrive()
+        watchConfirmedPresence()
         watchNavigatorSafeDrive()
     }
 
@@ -159,6 +169,7 @@ class MacroService : LifecycleService() {
                         val locations = MutableStateFlow<android.location.Location?>(null)
                         launch {
                             container.speedMeter.locations().collect { location ->
+                                refreshAutomaticAlerts()
                                 container.safeDrive.onLocation(location)
                                 locations.value = location
                             }
@@ -170,6 +181,7 @@ class MacroService : LifecycleService() {
                                 delay(1_000)
                             }
                         }) { location, safety, _ -> location to safety }.collect { (location, safety) ->
+                            refreshAutomaticAlerts()
                             val kph = location?.let { com.wemade.teslamacro.data.location.freshSpeedKph(it) }
                             if (kph == null || kph < MOVING_KPH) {
                                 overlay.hide()
@@ -218,6 +230,9 @@ class MacroService : LifecycleService() {
                     app.container.safeDrive.setAlertOptions(options.distanceMeters, options.voice)
                     app.container.safeDrive.setSound(options.sound, options.volume,
                         options.toleranceKph, options.progressiveSound)
+                    // 권한·활동 결과가 없으면 자동 소리만 보류하고 화면·GPS 안내는 유지한다.
+                    if (options.enabled && options.sound) startActivityUpdates() else stopActivityUpdates()
+                    refreshAutomaticAlerts()
                     // 안내를 켠 경우에만 근처 후보의 경로를 매칭하고, 끄면 요청 상태도 비운다.
                     app.container.safeDrive.setRoadMatchEnabled(options.enabled)
                     if (options.enabled) app.container.safeDrive.start()
@@ -236,6 +251,100 @@ class MacroService : LifecycleService() {
                 app.container.safeDrive.start()
             }
         }
+    }
+
+    /** 폴러의 이번 VCSEC 응답만 수신한다. 휴대 모드의 의도적 BLE 해제는 하차로 보지 않는다. */
+    private fun watchConfirmedPresence() {
+        val app = application as TeslaMacroApplication
+        lifecycleScope.launch {
+            app.ready.first { it }
+            app.container.poller.freshPresence.collect { present ->
+                driveAlertGate.observePresence(present, SystemClock.elapsedRealtime())
+                refreshAutomaticAlerts()
+            }
+        }
+    }
+
+    /** 차량 이동 판정은 기본 자동 탑승 감시가 꺼진 휴대폰에서도 출발 근거가 된다. */
+    private fun onActivityUpdate(intent: Intent) {
+        if (!activityUpdatesReady) return
+        val result = ActivityRecognitionResult.extractResult(intent) ?: return
+        val activity = when (result.mostProbableActivity.type) {
+            DetectedActivity.IN_VEHICLE -> DriveAlertGate.Activity.IN_VEHICLE
+            DetectedActivity.ON_FOOT, DetectedActivity.WALKING, DetectedActivity.RUNNING -> DriveAlertGate.Activity.ON_FOOT
+            else -> DriveAlertGate.Activity.OTHER
+        }
+        driveAlertGate.observeActivity(activity, result.mostProbableActivity.confidence,
+            result.elapsedRealtimeMillis, SystemClock.elapsedRealtime())
+        refreshAutomaticAlerts()
+    }
+
+    /** 권한·Play 서비스 미지원 시 무음으로 닫고, 필요할 때만 활동 갱신을 구독한다. */
+    private fun startActivityUpdates() {
+        if (activityUpdates != null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED)) return
+        val pending = activityPendingIntent(PendingIntent.FLAG_UPDATE_CURRENT) ?: return
+        activityFailure = null
+        activityUpdates = pending
+        runCatching { ActivityRecognition.getClient(this).requestActivityUpdates(10_000L, pending) }
+            .onSuccess { task ->
+                task.addOnSuccessListener {
+                    if (activityUpdates === pending) {
+                        activityUpdatesReady = true
+                        activityFailure = null
+                        refreshAutomaticAlerts()
+                    } else runCatching { ActivityRecognition.getClient(this).removeActivityUpdates(pending) }
+                }.addOnFailureListener { error ->
+                    if (activityUpdates === pending) onActivityRegistrationFailed(error)
+                }
+            }
+            .onFailure(::onActivityRegistrationFailed)
+    }
+
+    /** Google Play 서비스가 없거나 등록에 실패해도 자동 소리만 안전하게 멈춘다. */
+    private fun onActivityRegistrationFailed(error: Throwable) {
+        activityFailure = "활동 인식 사용 불가 (${error.javaClass.simpleName})"
+        com.wemade.teslable.DiagLog.add("안전 안내 · $activityFailure")
+        stopActivityUpdates()
+        refreshAutomaticAlerts()
+    }
+
+    /** 설정 해제·권한 상실·서비스 종료 시 등록을 해제하고 저장된 주행 증거를 버린다. */
+    private fun stopActivityUpdates() {
+        activityUpdatesReady = false
+        // 프로세스 강제 종료 뒤에도 Play 서비스에 남을 수 있는 등록을 같은 토큰으로 해제한다.
+        val pending = activityUpdates ?: activityPendingIntent(PendingIntent.FLAG_NO_CREATE)
+        activityUpdates = null
+        pending?.let {
+            runCatching {
+                ActivityRecognition.getClient(this).removeActivityUpdates(it)
+                    .addOnCompleteListener { _ -> if (activityUpdates == null) it.cancel() }
+            }.onFailure { _ -> if (activityUpdates == null) it.cancel() }
+        }
+        driveAlertGate.clear()
+        (application as TeslaMacroApplication).container.safeDrive.setAutomaticAlertsAllowed(false)
+    }
+
+    /** 프로세스 재생성 후에도 이전 등록을 찾아 해제할 수 있도록 수신 토큰을 고정한다. */
+    private fun activityPendingIntent(flags: Int): PendingIntent? {
+        val mutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+        return PendingIntent.getForegroundService(this, ACTIVITY_REQUEST_CODE,
+            Intent(this, MacroService::class.java).setAction(ACTION_ACTIVITY_UPDATE), flags or mutable)
+    }
+
+    /** GPS 갱신마다 유효기간을 다시 보며 활동 이벤트 때는 대기 음성도 즉시 취소한다. */
+    private fun refreshAutomaticAlerts() {
+        val guide = (application as TeslaMacroApplication).container.safeDrive
+        val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        val reason = when {
+            !permitted -> "활동 인식 권한 필요 · 자동 소리 보류"
+            activityFailure != null -> "$activityFailure · 자동 소리 보류"
+            !activityUpdatesReady -> "활동 인식 준비 중 · 자동 소리 보류"
+            else -> "보행/주행 미확인 · 자동 소리 보류"
+        }
+        guide.setAutomaticAlertsAllowed(permitted && activityUpdatesReady &&
+            driveAlertGate.mayAlert(SystemClock.elapsedRealtime()), reason)
     }
 
     /** 신선한 탑승 엣지마다 사용자가 고른 내비의 목적지 없는 안심운전을 한 번 연다 */
@@ -355,6 +464,11 @@ class MacroService : LifecycleService() {
 
     /** 위치 권한을 나중에 받아도 start()를 다시 부르면 여기서 타입이 갱신된다 */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Play 서비스의 빈번한 활동 결과로 알림 승격·차량 연결을 다시 실행하지 않는다.
+        if (intent?.action == ACTION_ACTIVITY_UPDATE) {
+            onActivityUpdate(intent)
+            return super.onStartCommand(intent, flags, startId)
+        }
         promote()
         when (intent?.action) {
             ACTION_RUN_QUICK_ACTION -> {
@@ -374,6 +488,16 @@ class MacroService : LifecycleService() {
 
             ACTION_DISCONNECT_VEHICLE -> disconnectVehicleNow()
             ACTION_TEST_SAFE_DRIVE -> beginSafeDriveTest()
+            ACTION_ACTIVITY_PERMISSION_CHANGED -> lifecycleScope.launch {
+                val app = application as TeslaMacroApplication
+                app.ready.first { it }
+                val settings = app.container.settingsStore.settings.first()
+                val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                    checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+                if (!permitted) stopActivityUpdates()
+                else if (settings.safeDrive && settings.safeDriveSound) startActivityUpdates()
+                refreshAutomaticAlerts()
+            }
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -673,6 +797,7 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        stopActivityUpdates()
         safeDriveTestJob?.cancel()
         stealthChargeWakeLock?.let { if (it.isHeld) it.release() }
         overlay.hide()
@@ -737,6 +862,11 @@ class MacroService : LifecycleService() {
             "com.wemade.teslamacro.action.DISCONNECT_VEHICLE"
         private const val ACTION_TEST_SAFE_DRIVE =
             "com.wemade.teslamacro.action.TEST_SAFE_DRIVE"
+        private const val ACTION_ACTIVITY_UPDATE =
+            "com.wemade.teslamacro.action.DRIVE_ACTIVITY_UPDATE"
+        private const val ACTION_ACTIVITY_PERMISSION_CHANGED =
+            "com.wemade.teslamacro.action.ACTIVITY_PERMISSION_CHANGED"
+        private const val ACTIVITY_REQUEST_CODE = 81
         private const val SAFE_DRIVE_TEST_DELAY_MILLIS = 10_000L
         // 10초 예약 뒤 시스템 인증을 최대 60초 기다리고 전달할 시간을 남긴다.
         private const val SAFE_DRIVE_TEST_TIMEOUT_MILLIS = 90_000L
@@ -749,6 +879,13 @@ class MacroService : LifecycleService() {
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, MacroService::class.java))
+        }
+
+        /** 설정 화면의 승인 뒤 서비스가 활동 결과 구독을 다시 열도록 알린다. */
+        fun refreshActivityPermission(context: Context) {
+            context.startForegroundService(
+                Intent(context, MacroService::class.java).setAction(ACTION_ACTIVITY_PERMISSION_CHANGED),
+            )
         }
 
         /** 사용자 테스트 요청을 화면 수명과 독립적인 기존 포그라운드 서비스로 넘긴다. */

@@ -48,6 +48,8 @@ class SafeDriveGuide(
     val state: StateFlow<SafetyState> = mutableState.asStateFlow()
     private val mutableSpeechStatus = MutableStateFlow<String?>(null)
     val speechStatus: StateFlow<String?> = mutableSpeechStatus.asStateFlow()
+    private val mutableAutomaticSoundStatus = MutableStateFlow("주행 판정 대기")
+    val automaticSoundStatus: StateFlow<String> = mutableAutomaticSoundStatus.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var job: Job? = null
     private var index: CameraIndex? = null
@@ -70,6 +72,7 @@ class SafeDriveGuide(
     private var retrievedAt: String? = null
     private var dataWarning: String? = null
     private var sound = false
+    private var automaticAlertsAllowed = false
     private var volume = 2
     private var progressiveSound = true
     private var alertDistanceMeters = 500
@@ -181,7 +184,7 @@ class SafeDriveGuide(
         ) else null
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         val nowMillis = nowNanos / 1_000_000
-        if (alert != null && sound && voiceEnabled) announceCamera(alert, nowMillis)
+        if (alert != null && sound && voiceEnabled && automaticAlertsAllowed) announceCamera(alert, nowMillis)
         else pendingSpeech = null
         val overSpeed = state.value.isOverSpeed(toleranceKph = toleranceKph)
         val detail = "GPS ${speed.toInt()}km/h, 오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m, " +
@@ -197,6 +200,7 @@ class SafeDriveGuide(
             alert.speedLimitKph == null -> "후보 제한속도 없음"
             !overSpeed -> "경보 속도 미달"
             !sound -> "경고음 꺼짐"
+            !automaticAlertsAllowed -> "주행 확인 전 · 소리 보류"
             else -> "경고음 반복"
         }
         // 과속이 커지면 이전 느린 간격을 기다리지 않고 즉시 새 단계로 올린다.
@@ -303,7 +307,7 @@ class SafeDriveGuide(
     /** 실제 발화 요청이 수락됐을 때만 해당 거리 단계를 소모한다. */
     private fun speakPendingSpeech() {
         val request = pendingSpeech ?: return
-        if (request.cameraKey != null && (!voiceEnabled || !sound || state.value.stalled ||
+        if (request.cameraKey != null && (!voiceEnabled || !sound || !automaticAlertsAllowed || state.value.stalled ||
                 state.value.alert?.cameraKey != request.cameraKey)) {
             pendingSpeech = null
             return
@@ -452,6 +456,22 @@ class SafeDriveGuide(
         }
     }
 
+    /** 보행·미판정으로 바뀌는 순간 이미 대기하거나 재생 중인 자동 안내도 취소한다. */
+    fun setAutomaticAlertsAllowed(allowed: Boolean, reason: String = "주행 판정 대기") {
+        mutableAutomaticSoundStatus.value = if (allowed) "주행 확인 · 자동 소리 사용" else reason
+        if (automaticAlertsAllowed == allowed) return
+        automaticAlertsAllowed = allowed
+        if (!allowed) {
+            pendingSpeech = null
+            spokenStages.clear()
+            lastSoundMillis = null
+            lastSoundIntervalMillis = null
+            runCatching { speechEngine?.stop() }
+            runCatching { tone?.stopTone() }
+        }
+        if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "주행 확인" else "보행/주행 미확인 · 보류"}")
+    }
+
     /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */
     fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5, progressive: Boolean = true) {
         val adjustedTolerance = toleranceKph.coerceIn(0, 30)
@@ -489,6 +509,7 @@ class SafeDriveGuide(
         lastSoundMillis = null
         lastSoundIntervalMillis = null
         spokenStages.clear()
+        automaticAlertsAllowed = false
         lastVoiceMillis = null
         pendingSpeech = null
         speechReady = false

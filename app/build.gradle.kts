@@ -24,8 +24,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 201
-        versionName = "0.9.88"
+        versionCode = 202
+        versionName = "0.9.89"
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.
@@ -82,6 +82,8 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    // 휴대 모드의 의도적 BLE 해제 뒤에도 보행·차량 이동을 구분한다.
+    implementation("com.google.android.gms:play-services-location:21.0.1")
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

@@ -287,6 +287,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     val safeDriveVoiceStatus = container.safeDrive.speechStatus
+    val safeDriveAutomaticSoundStatus = container.safeDrive.automaticSoundStatus
 
     /** 앱과 동일한 한국어 음성 경로로 엔진·미디어 음량을 직접 점검한다. */
     fun testSafeDriveVoice() {

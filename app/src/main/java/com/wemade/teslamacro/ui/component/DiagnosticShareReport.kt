@@ -1,10 +1,25 @@
 package com.wemade.teslamacro.ui.component
 
 private const val MAX_EVENT_CHARS = 600
-private const val MAX_SAMPLE_CHARS = 300
+private const val MAX_SAMPLE_CHARS = 120
+private const val MAX_SUMMARY_EVENT_CHARS = 160
+private const val MAX_SUMMARY_SETTINGS_CHARS = 800
+internal const val MAX_DIAGNOSTIC_SUMMARY_CHARS = 6_000
 
-/** 주기적 GPS 상태만 묶고 경고음·오류·연결 전환은 원문과 함께 사건별로 나눈다. */
-internal fun diagnosticShareReport(settings: String, rawLog: String): String {
+internal enum class DiagnosticShareScope(val label: String, val section: String) {
+    SUMMARY("요약", ""),
+    CONNECTION("차량 연결", "차량 연결"),
+    SAFETY("안전 안내·도로 매칭", "안전 안내·도로 매칭"),
+    COMMAND("명령·매크로", "명령·매크로"),
+    OTHER("기타", "기타"),
+}
+
+/** AI에는 작은 색인을 먼저 보내고, 필요한 주제의 사건만 따로 내보내 원문 전체 재전송을 피한다. */
+internal fun diagnosticShareReport(
+    settings: String,
+    rawLog: String,
+    scope: DiagnosticShareScope = DiagnosticShareScope.SUMMARY,
+): String {
     val lines = rawLog.lineSequence().filter { it.isNotBlank() }.toList()
     val repeated = linkedMapOf<String, MutableList<String>>()
     val events = mutableListOf<String>()
@@ -17,6 +32,7 @@ internal fun diagnosticShareReport(settings: String, rawLog: String): String {
         if (status in routineStatuses) repeated.getOrPut(status) { mutableListOf() }.add(line)
         else events.add(line)
     }
+    val grouped = events.groupBy(::diagnosticSection)
     val repeatedText = buildString {
         appendLine("## 반복 GPS 상태 (${lines.size - events.size}건 · ${repeated.size}유형)")
         repeated.forEach { (status, samples) ->
@@ -25,9 +41,11 @@ internal fun diagnosticShareReport(settings: String, rawLog: String): String {
         }
         if (repeated.isEmpty()) appendLine("- 없음")
     }
-    val settingsText = settings.trim().take(2_000)
+    val settingsText = settings.trim().take(if (scope == DiagnosticShareScope.SUMMARY) {
+        MAX_SUMMARY_SETTINGS_CHARS
+    } else 2_000)
     val header = buildString {
-        appendLine("# Smart Tesla 진단 요약")
+        appendLine("# Smart Tesla 진단 ${if (scope == DiagnosticShareScope.SUMMARY) "요약" else scope.label}")
         appendLine("- 범위: ${lines.firstOrNull()?.let(::diagnosticTime) ?: "없음"} ~ ${lines.lastOrNull()?.let(::diagnosticTime) ?: "없음"}")
         appendLine("- 전체 ${lines.size}건 · 사건 ${events.size}건 · 반복 상태 ${lines.size - events.size}건")
         appendLine("- 상세 원문은 앱의 진단 로그 '복사'에서 확인")
@@ -36,27 +54,45 @@ internal fun diagnosticShareReport(settings: String, rawLog: String): String {
             appendLine(settingsText)
         }
     }
-    // 사건을 최신순으로 고르되 출력은 시간순으로 돌려, 앞부분 잘림 없이 마지막 전후 맥락을 보존한다.
+    if (scope == DiagnosticShareScope.SUMMARY) {
+        // 실패가 오래된 사건이어도 각 주제의 최근 사례와 함께 색인에 한 번은 보인다.
+        return buildString {
+            append(header)
+            appendLine("\n## 사건 색인 (필요한 주제는 앱의 '상세 공유'로 요청)")
+            DiagnosticShareScope.entries.filter { it != DiagnosticShareScope.SUMMARY }.forEach { category ->
+                val categoryEvents = grouped[category.section].orEmpty()
+                appendLine("- ${category.label}: ${categoryEvents.size}건")
+                val highlight = categoryEvents.lastOrNull {
+                    "실패" in it || "오류" in it || "Timed out" in it || "timeout" in it
+                } ?: categoryEvents.lastOrNull { "요청 수락" in it }
+                (listOfNotNull(highlight) + categoryEvents.takeLast(2)).distinct().forEach { event ->
+                    appendLine("  - ${event.take(MAX_SUMMARY_EVENT_CHARS)}")
+                }
+            }
+            appendLine()
+            append(repeatedText)
+        }
+    }
+    // 선택한 주제만 최신순으로 고르되 시간순으로 내보내, 길이 상한에 밀려 제목이 잘리지 않는다.
     val eventBudget = (FALLBACK_TEXT_CHARS - header.length - repeatedText.length - 400).coerceAtLeast(0)
     val selected = mutableListOf<String>()
     var used = 0
-    for (event in events.asReversed()) {
+    for (event in grouped[scope.section].orEmpty().asReversed()) {
         val line = event.take(MAX_EVENT_CHARS)
         if (used + line.length + 3 > eventBudget) break
         selected.add(line)
         used += line.length + 3
     }
-    val omitted = events.size - selected.size
-    val grouped = selected.asReversed().groupBy(::diagnosticSection)
+    val omitted = grouped[scope.section].orEmpty().size - selected.size
     return buildString {
         append(header)
-        if (omitted > 0) appendLine("\n- 오래된 사건 ${omitted}건은 공유 길이 제한으로 생략 (원문 복사 가능)")
-        listOf("차량 연결", "안전 안내·도로 매칭", "명령·매크로", "기타").forEach { section ->
-            appendLine("\n## $section (${grouped[section]?.size ?: 0}건)")
-            grouped[section].orEmpty().forEach { appendLine("- $it") }
+        appendLine("\n## ${scope.label} (${selected.size}건)")
+        if (omitted > 0) appendLine("- 오래된 사건 ${omitted}건 생략 (원문 복사 가능)")
+        selected.asReversed().forEach { appendLine("- $it") }
+        if (scope == DiagnosticShareScope.SAFETY) {
+            appendLine()
+            append(repeatedText)
         }
-        appendLine()
-        append(repeatedText)
     }
 }
 
@@ -67,6 +103,6 @@ private fun diagnosticTime(line: String): String = line.take(if (line.getOrNull(
 private fun diagnosticSection(line: String): String = when {
     "안전 안내 · " in line || "도로 매칭 · " in line || "속도 감시" in line || "과속 " in line -> "안전 안내·도로 매칭"
     "Fleet" in line || "명령" in line || "매크로" in line || "스마트싱스" in line || "빅스비" in line -> "명령·매크로"
-    "BLE" in line || "GATT" in line || "연결 " in line || "직행 " in line || "스캔" in line || "차량 전원" in line -> "차량 연결"
+    "BLE" in line || "GATT" in line || "연결 " in line || "직행 " in line || "스캔" in line -> "차량 연결"
     else -> "기타"
 }

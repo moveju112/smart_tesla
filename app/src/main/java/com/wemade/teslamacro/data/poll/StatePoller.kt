@@ -31,7 +31,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,6 +104,10 @@ class StatePoller(
     /** 신선한 차량 응답에서 실제 탑승 엣지가 확인될 때 한 번만 흐른다 */
     private val boardingChannel = Channel<Unit>(Channel.CONFLATED)
     val boardingEvents: Flow<Unit> = boardingChannel.receiveAsFlow()
+
+    /** 병합된 옛 스냅샷이 아닌 이번 VCSEC 응답의 탑승값만 주행 음성 게이트에 전달한다. */
+    private val _freshPresence = MutableSharedFlow<Boolean>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val freshPresence: Flow<Boolean> = _freshPresence.asSharedFlow()
 
     /**
      * 주차가 시작된 시각과 그때 배터리. 타고 있는 동안은 null.
@@ -471,6 +478,7 @@ class StatePoller(
             val observedPresence = fresh
                 ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
                 ?.isUserPresent
+            observedPresence?.let { _freshPresence.tryEmit(it) }
             // 문 매크로는 착석 여부와 무관하게 60초 동안 변화를 기다린다.
             // 자동 안심운전만 쓰는 경우에는 기존처럼 착석 확인 즉시 종료한다.
             if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&

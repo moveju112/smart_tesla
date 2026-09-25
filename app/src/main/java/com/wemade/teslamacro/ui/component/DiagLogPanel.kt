@@ -76,9 +76,8 @@ fun DiagLogPanel(
                     // 공유 시트로 바로 보낸다 — 복사→메신저→붙여넣기 삼단을 한 번으로.
                     // 파일에 남은 것까지 전부 싣는다: 화면 버퍼만 보내면
                     // 재시작 전 기록이 빠지는데 원인은 대개 그 앞에 있다
-                    val text = listOf(shareExtra(), DiagLog.dumpAll())
-                        .filter { it.isNotBlank() }
-                        .joinToString("\n\n")
+                    // 공유는 사건별 요약을 보내고 복사는 원문을 남겨 세부 원인도 확인할 수 있게 한다.
+                    val text = diagnosticShareReport(shareExtra(), DiagLog.dumpAll())
                     runCatching {
                         context.startActivity(
                             Intent.createChooser(shareIntentFor(text), "진단 로그 보내기")
@@ -117,7 +116,7 @@ fun DiagLogPanel(
                 text = when {
                     storedLines <= 0 -> "아직 기록이 없어요."
                     else -> "기록 ${storedLines}줄 · 최근 ${DiagLog.MAX_AGE_HOURS}시간, " +
-                        "최대 ${DiagLog.MAX_FILE_LINES}줄. 문제가 생기면 공유를 눌러 보내주세요."
+                        "최대 ${DiagLog.MAX_FILE_LINES}줄. 공유는 요약, 복사는 원문이에요."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
@@ -144,7 +143,7 @@ fun DiagLogPanel(
             }
             Spacer(Modifier.height(Space.xs))
             Text(
-                text = "복사를 눌러 전체 로그를 붙여넣어 주세요 (${lines.size}줄)",
+                text = "공유는 요약, 복사는 전체 원문이에요 (${lines.size}줄)",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
@@ -167,7 +166,7 @@ private fun shareIntentFor(text: String): Intent =
         .putExtra(Intent.EXTRA_TEXT, fallbackShareText(text))
 
 /** Intent가 커지지 않도록 본문으로 보내는 최근 로그 상한 */
-private const val FALLBACK_TEXT_CHARS = 32_000
+internal const val FALLBACK_TEXT_CHARS = 32_000
 
 /** Binder 한도를 넘지 않는 최근 로그만 남긴다 */
 internal fun fallbackShareText(text: String): String = text.takeLast(FALLBACK_TEXT_CHARS)

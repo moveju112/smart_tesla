@@ -339,6 +339,8 @@ class SafeDriveGuide(
             request.cameraKey?.let { key ->
                 spokenStages[key] = maxOf(spokenStages[key] ?: 0, request.stage)
                 lastVoiceMillis = elapsedRealtimeNanos() / 1_000_000
+                // 경고음이 없어도 음성으로 카메라 안내가 나갈 수 있어 요청 수락 시각을 남긴다.
+                DiagLog.add("안전 안내 · 단속카메라 음성 요청 수락 (거리 ${state.value.alert?.distanceMeters ?: "-"}m, 단계 ${request.stage})")
             }
             mutableSpeechStatus.value = "음성 재생 요청됨 · 들리지 않으면 미디어 음량을 확인하세요."
         } else if (!speechUnavailable) {

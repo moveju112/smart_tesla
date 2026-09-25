@@ -1,0 +1,72 @@
+package com.wemade.teslamacro.ui.component
+
+private const val MAX_EVENT_CHARS = 600
+private const val MAX_SAMPLE_CHARS = 300
+
+/** 주기적 GPS 상태만 묶고 경고음·오류·연결 전환은 원문과 함께 사건별로 나눈다. */
+internal fun diagnosticShareReport(settings: String, rawLog: String): String {
+    val lines = rawLog.lineSequence().filter { it.isNotBlank() }.toList()
+    val repeated = linkedMapOf<String, MutableList<String>>()
+    val events = mutableListOf<String>()
+    // 후보가 있는 '경보 속도 미달'은 음성 안내가 가능하므로 반복 상태로 접지 않는다.
+    val routineStatuses = setOf("GPS 속도 5km/h 미만", "GPS 정확도 부족", "GPS 측정 오래됨",
+        "GPS 좌표 확인 불가", "GPS 속도 확인 불가", "GPS 방향 없음",
+        "근접 후보는 있지만 경보 거리·방향 미충족", "전방 1km 내 후보 없음")
+    lines.forEach { line ->
+        val status = line.substringAfter("안전 안내 · ", "").substringBefore(" (")
+        if (status in routineStatuses) repeated.getOrPut(status) { mutableListOf() }.add(line)
+        else events.add(line)
+    }
+    val repeatedText = buildString {
+        appendLine("## 반복 GPS 상태 (${lines.size - events.size}건 · ${repeated.size}유형)")
+        repeated.forEach { (status, samples) ->
+            appendLine("- $status: ${samples.size}회 · ${diagnosticTime(samples.first())}~${diagnosticTime(samples.last())}")
+            appendLine("  - 마지막: ${samples.last().take(MAX_SAMPLE_CHARS)}")
+        }
+        if (repeated.isEmpty()) appendLine("- 없음")
+    }
+    val settingsText = settings.trim().take(2_000)
+    val header = buildString {
+        appendLine("# Smart Tesla 진단 요약")
+        appendLine("- 범위: ${lines.firstOrNull()?.let(::diagnosticTime) ?: "없음"} ~ ${lines.lastOrNull()?.let(::diagnosticTime) ?: "없음"}")
+        appendLine("- 전체 ${lines.size}건 · 사건 ${events.size}건 · 반복 상태 ${lines.size - events.size}건")
+        appendLine("- 상세 원문은 앱의 진단 로그 '복사'에서 확인")
+        if (settingsText.isNotBlank()) {
+            appendLine("\n## 설정")
+            appendLine(settingsText)
+        }
+    }
+    // 사건을 최신순으로 고르되 출력은 시간순으로 돌려, 앞부분 잘림 없이 마지막 전후 맥락을 보존한다.
+    val eventBudget = (FALLBACK_TEXT_CHARS - header.length - repeatedText.length - 400).coerceAtLeast(0)
+    val selected = mutableListOf<String>()
+    var used = 0
+    for (event in events.asReversed()) {
+        val line = event.take(MAX_EVENT_CHARS)
+        if (used + line.length + 3 > eventBudget) break
+        selected.add(line)
+        used += line.length + 3
+    }
+    val omitted = events.size - selected.size
+    val grouped = selected.asReversed().groupBy(::diagnosticSection)
+    return buildString {
+        append(header)
+        if (omitted > 0) appendLine("\n- 오래된 사건 ${omitted}건은 공유 길이 제한으로 생략 (원문 복사 가능)")
+        listOf("차량 연결", "안전 안내·도로 매칭", "명령·매크로", "기타").forEach { section ->
+            appendLine("\n## $section (${grouped[section]?.size ?: 0}건)")
+            grouped[section].orEmpty().forEach { appendLine("- $it") }
+        }
+        appendLine()
+        append(repeatedText)
+    }
+}
+
+/** 원문 날짜를 살리되 연도가 없던 구버전 시각도 반복 상태의 범위에 표시한다. */
+private fun diagnosticTime(line: String): String = line.take(if (line.getOrNull(4) == '-') 23 else 18)
+
+/** 분류에 실패한 기록도 '기타'에 남겨 드문 오류를 실수로 버리지 않는다. */
+private fun diagnosticSection(line: String): String = when {
+    "안전 안내 · " in line || "도로 매칭 · " in line || "속도 감시" in line || "과속 " in line -> "안전 안내·도로 매칭"
+    "Fleet" in line || "명령" in line || "매크로" in line || "스마트싱스" in line || "빅스비" in line -> "명령·매크로"
+    "BLE" in line || "GATT" in line || "연결 " in line || "직행 " in line || "스캔" in line || "차량 전원" in line -> "차량 연결"
+    else -> "기타"
+}

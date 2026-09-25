@@ -943,47 +943,71 @@ private fun OverlayPermissionNotice(controls: NavigationControls) {
     }
 }
 
-// 1. 페어링된 기기를 미리 선택하고 실제 오디오 연결 여부와 수동 안내를 구분해 보여준다.
+// 1. 페어링 기기 선택은 모달로 분리하고 실제 연결 상태와 수동 안내만 카드에 남긴다.
 @Composable
 private fun VehicleAudioPanel(settings: AppSettings, controls: NavigationControls) {
+    var showAudioPicker by rememberSaveable { mutableStateOf(false) }
+    val selectedAudioName = if (settings.vehicleAudioAddress.isBlank()) "자동 선택" else {
+        controls.pairedAudioDevices.firstOrNull {
+            it.address.equals(settings.vehicleAudioAddress, ignoreCase = true)
+        }?.name ?: "선택 기기 없음"
+    }
     TCard {
         Text(controls.vehicleAudioStatus.label,
             style = MaterialTheme.typography.bodyMedium,
             color = if (controls.vehicleAudioStatus == com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED)
                 T.Ink else T.InkMuted)
-        SettingsDetails("블루투스 선택 · 수동 안내") {
-            Text("선택한 블루투스가 음악용으로 연결되면 GPS 기반 안내가 시작돼요.",
+        Spacer(Modifier.height(Space.sm))
+        TButton("블루투스 선택 · $selectedAudioName", ButtonTone.Secondary) { showAudioPicker = true }
+        Text("선택한 블루투스가 음악용으로 연결되면 GPS 기반 안내가 시작돼요.",
+            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        if (controls.manualGuideActive) {
+            Text("수동 안내 중 · 약 6시간 뒤 종료돼요.",
+                style = MaterialTheme.typography.bodySmall, color = T.Danger)
+            TButton("수동 안내 종료", ButtonTone.Danger, onClick = controls.onStopManualGuide)
+        } else if (controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED &&
+            controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING) {
+            Text("블루투스 연결 없이 이번 주행만 안내해요. 하차 후 직접 종료해 주세요.",
                 style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            if (controls.pairedAudioDevices.isEmpty()) {
-                Text("페어링된 블루투스 기기가 없어요.",
-                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            } else {
-                controls.pairedAudioDevices.forEach { device ->
-                    TButton(
-                        text = "${device.name} · ${device.address.takeLast(5)}" +
-                            if (settings.vehicleAudioAddress.equals(device.address, ignoreCase = true)) " (선택됨)" else "",
-                        tone = ButtonTone.Secondary,
-                        onClick = { controls.onSelectVehicleAudioDevice(device.address) },
-                    )
-                    Spacer(Modifier.height(Space.sm))
+            TButton("이번 주행 수동 안내 시작", ButtonTone.Secondary,
+                enabled = controls.locationPermitted, onClick = controls.onStartManualGuide)
+            if (!controls.locationPermitted) LocationPermissionNotice(controls)
+        }
+    }
+    if (showAudioPicker) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showAudioPicker = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            com.wemade.teslamacro.ui.component.PickerSheet(
+                title = "차량 블루투스 선택",
+                onDismiss = { showAudioPicker = false },
+            ) {
+                com.wemade.teslamacro.ui.component.PickerRow(
+                    label = "자동 선택",
+                    detail = if (settings.vehicleAudioAddress.isBlank()) "선택됨" else null,
+                    onClick = {
+                        controls.onSelectVehicleAudioDevice("")
+                        showAudioPicker = false
+                    },
+                )
+                if (controls.pairedAudioDevices.isEmpty()) {
+                    Text("페어링된 블루투스 기기가 없어요.",
+                        style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                } else {
+                    Hairline()
+                    com.wemade.teslamacro.ui.component.PickerList(controls.pairedAudioDevices) { device ->
+                        com.wemade.teslamacro.ui.component.PickerRow(
+                            label = "${device.name} · ${device.address.takeLast(5)}",
+                            detail = if (settings.vehicleAudioAddress.equals(device.address, ignoreCase = true))
+                                "선택됨" else null,
+                            onClick = {
+                                controls.onSelectVehicleAudioDevice(device.address)
+                                showAudioPicker = false
+                            },
+                        )
+                    }
                 }
-            }
-            if (settings.vehicleAudioAddress.isNotBlank()) {
-                TButton("자동 선택", ButtonTone.Ghost) {
-                    controls.onSelectVehicleAudioDevice("")
-                }
-            }
-            if (controls.manualGuideActive) {
-                Text("수동 안내 중 · 약 6시간 뒤 종료돼요.",
-                    style = MaterialTheme.typography.bodySmall, color = T.Danger)
-                TButton("수동 안내 종료", ButtonTone.Danger, onClick = controls.onStopManualGuide)
-            } else if (controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED &&
-                controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING) {
-                Text("블루투스 연결 없이 이번 주행만 안내해요. 하차 후 직접 종료해 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                TButton("이번 주행 수동 안내 시작", ButtonTone.Secondary,
-                    enabled = controls.locationPermitted, onClick = controls.onStartManualGuide)
-                if (!controls.locationPermitted) LocationPermissionNotice(controls)
             }
         }
     }
@@ -1027,29 +1051,14 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         ToggleRow(
             title = "안내 받기",
             subtitle = if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
-                "공공데이터·GPS 기반 안내 · 주변 카메라 접근 시 경로 전송"
+                "카메라 근처 GPS 경로 전송 · gps-map.choondoggy.com"
             } else {
-                "공공데이터·GPS 기반 오프라인 안내"
+                "GPS 기반 오프라인 안내"
             },
             checked = settings.safeDrive,
             onCheckedChange = controls.onSafeDriveChange,
         )
 
-        Text(
-            text = "오인·누락이 있을 수 있어요. 도로 표지를 우선하세요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkMuted,
-        )
-        if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
-            Text(
-                "안내를 켜면 기기별 인증서를 자동 등록·갱신하고, 약 1km 안에 카메라 후보가 있을 때 GPS 경로를 gps-map.choondoggy.com으로 전송해 도로를 보정해요. 로그인이나 키 입력은 필요 없어요. 서버 오류·불확실한 결과에서는 오프라인 안내를 유지해요. 단속 도로·방향이 확정되진 않아요.",
-                style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-            )
-        }
-        SettingsDetails("데이터 출처·안내 범위") {
-            Text("공공데이터포털 전국무인교통단속카메라표준데이터(data.go.kr/data/15028200/standard.do). 자료 기준일과 번들 수집일은 서로 달라요. 1년 넘은 카메라 자료·6개월 넘은 목록은 주행 화면에 갱신 확인을 표시해요. 반대편·나란한 도로를 오인하거나 새 카메라가 누락될 수 있어요. 단속 방향·모든 도로의 제한속도·구간 평균속도는 알 수 없어요.",
-                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        }
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)
         }
@@ -1069,22 +1078,11 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         if (!settings.safeDrive) return@TCard
 
         Spacer(Modifier.height(Space.md))
-        Text(
-            if (settings.deviceMode == DeviceMode.PORTABLE)
-                "휴대 모드는 등록 차량의 음악용 Bluetooth 연결에만 내부 GPS·자동 소리를 묶어요. 식별할 수 없으면 위에서 현재 연결된 차량 오디오를 선택하거나 이번 주행만 수동으로 시작할 수 있어요. 차량 제어용 BLE와는 별개예요."
-            else
-                "거치 모드 자동 음성·경고음은 차량 탑승 또는 기기의 차량 이동 판정 중에만 울려요. 보행·활동 인식 미판정 시에는 조용해요.",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        Spacer(Modifier.height(Space.md))
         Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         ChoiceRow(
             options = listOf("300" to "300m", "500" to "500m", "700" to "700m"),
             selected = settings.safeDriveAlertDistanceMeters.toString(),
             onSelect = { controls.onSafeDriveAlertDistanceChange(it.toInt()) },
-        )
-        Text(
-            text = "GPS 직선거리예요. 이 거리 안에서 화면 안내와 과속 경고음이 시작돼요. 속도도 같은 GPS를 기준으로 해요(차량 BLE 속도는 갱신 시점이 달라요).",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
         )
         Spacer(Modifier.height(Space.md))
         Text("경보 초과속도", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
@@ -1092,10 +1090,6 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             value = settings.safeDriveToleranceKph.toDouble(),
             min = 0.0, max = 30.0, step = 1.0, unit = "km/h",
             onChange = { controls.onSafeDriveToleranceChange(it.toInt()) },
-        )
-        Text(
-            text = "제한속도 100km/h인 후보는 ${100 + settings.safeDriveToleranceKph}km/h부터 경보해요. 실제 도로 표지를 우선하세요.",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
         )
         Spacer(Modifier.height(Space.md))
         Hairline()

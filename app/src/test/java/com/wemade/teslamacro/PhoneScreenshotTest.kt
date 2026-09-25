@@ -179,15 +179,40 @@ class PhoneScreenshotTest {
         settingsAutomationSnapshot("P6N-settings-night", dark = true)
     }
 
+    /** 네 탭을 같은 휴대 화면 조건에서 찍어 설정의 묶음과 간격을 대조한다. */
+    @Test
+    fun `P19 설정 - 주행`() = settingsAutomationSnapshot("P19-settings-driving", dark = false,
+        group = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING)
+
+    @Test
+    fun `P20 설정 - 차량`() = settingsAutomationSnapshot("P20-settings-vehicle", dark = false,
+        group = com.wemade.teslamacro.feature.settings.SettingsGroup.VEHICLE)
+
+    @Test
+    fun `P21 설정 - 기기`() = settingsAutomationSnapshot("P21-settings-device", dark = false,
+        group = com.wemade.teslamacro.feature.settings.SettingsGroup.DEVICE)
+
+    /** 등록 전에도 시뮬레이터 온도와 재현 버튼을 같은 흐름에서 조작할 수 있어야 한다. */
+    @Test
+    fun `P22 설정 - 시뮬레이터`() = settingsAutomationSnapshot("P22-settings-simulator", dark = false,
+        group = com.wemade.teslamacro.feature.settings.SettingsGroup.VEHICLE, simulatorVisible = true)
+
     /** 스텔스 전류 설정과 남은 시간이 휴대 화면의 낮·밤 팔레트에서 읽히는지 렌더링한다. */
-    private fun settingsAutomationSnapshot(name: String, dark: Boolean) {
+    private fun settingsAutomationSnapshot(name: String, dark: Boolean,
+        group: com.wemade.teslamacro.feature.settings.SettingsGroup =
+            com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
+        simulatorVisible: Boolean = false) {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings, dark = dark) {
                 SettingsScreen(
                     chargeHistory = sampleChargeHistory(),
                     chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = AppSettings(
-                        vin = "5YJS0000000000000",
+                        vin = if (simulatorVisible) "" else "5YJS0000000000000",
+                        vehicleName = if (group == com.wemade.teslamacro.feature.settings.SettingsGroup.VEHICLE && !simulatorVisible) "내 테슬라" else "",
+                        hudOverlay = group == com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                        safeDrive = group == com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                        autoStartNavigatorSafeDrive = group == com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
                         smartThingsEnabled = true,
                         stealthCharging = true,
                         stealthMaxAmps = 13,
@@ -207,7 +232,19 @@ class PhoneScreenshotTest {
                         onCommandTextChange = { _, _ -> },
                         onRequestNotificationAccess = {},
                     ),
-                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {}, onHudOverlayChange = {},
+                        installed = setOf("NAVER", "KAKAO", "TMAP"),
+                    ),
+                    backup = com.wemade.teslamacro.feature.settings.BackupControls(
+                        onExport = {}, onImport = {},
+                    ),
+                    simulator = if (simulatorVisible) com.wemade.teslamacro.feature.settings.SimulatorControls(
+                        insideTemp = 31.0, outsideTemp = 29.0,
+                        onInsideTempChange = {}, onOutsideTempChange = {},
+                        onBoard = {}, onLeave = {},
+                    ) else null,
+                    initialGroup = group,
                 )
             }
         }

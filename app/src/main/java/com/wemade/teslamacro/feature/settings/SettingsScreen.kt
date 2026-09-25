@@ -269,70 +269,72 @@ private fun StealthChargePanel(
     onStartMinutesChange: (Int) -> Unit,
     onEndMinutesChange: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        TCard {
-            ToggleRow(
-                title = "스텔스 충전 1회 · 전류 자동 조절",
-                checked = settings.stealthCharging,
-                onCheckedChange = onEnabledChange,
+    TCard {
+        ToggleRow(
+            title = "스텔스 충전 1회 · 전류 자동 조절",
+            checked = settings.stealthCharging,
+            onCheckedChange = onEnabledChange,
+        )
+        if (settings.stealthCharging && secondsUntilNextChange != null) {
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                text = "다음 전류 변경 · ${formatStealthCountdown(secondsUntilNextChange)} 뒤",
+                style = MaterialTheme.typography.labelMedium,
+                color = T.Electric,
             )
-            if (settings.stealthCharging && secondsUntilNextChange != null) {
-                Text(
-                    text = "다음 전류 변경 · ${formatStealthCountdown(secondsUntilNextChange)} 뒤",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = T.Electric,
-                )
-            }
         }
-        // 이전 충전 기록은 설정을 켜기 전에도 판단 근거로 볼 수 있게 남기되 빈 카드는 만들지 않는다.
+        // 이전 충전 기록은 설정을 켜기 전에도 판단 근거로 볼 수 있게 같은 카드에 남긴다.
         if (recentChargeBuckets(chargeHistory, chargeHistoryNowMillis).isNotEmpty()) {
-            TCard { ChargeChart(buckets = chargeHistory, nowMillis = chargeHistoryNowMillis) }
+            Spacer(Modifier.height(Space.md))
+            ChargeChart(buckets = chargeHistory, nowMillis = chargeHistoryNowMillis)
         }
         if (settings.stealthCharging) {
-            TCard {
-                SettingsDetails("전류 설정", stealthSettingsSummary(settings)) {
-                    Text("최대 전류", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            SettingsDetails("전류 설정", stealthSettingsSummary(settings)) {
+                Text("최대 전류", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                com.wemade.teslamacro.ui.component.NumberStepper(
+                    value = settings.stealthMaxAmps.toDouble(),
+                    min = 5.0, max = 48.0, step = 1.0, unit = "A",
+                    onChange = { onMaxAmpsChange(it.toInt()) },
+                )
+                Spacer(Modifier.height(Space.lg))
+                ToggleRow(
+                    title = "최소 전류 직접 지정",
+                    checked = settings.stealthMinAmps != null,
+                    onCheckedChange = { on ->
+                        // 직접 지정도 현재 자동 하한에서 시작해 충전 속도의 급변을 막는다.
+                        onMinAmpsChange(if (on) StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps) else null)
+                    },
+                )
+                settings.stealthMinAmps?.let { minAmps ->
                     Spacer(Modifier.height(Space.sm))
                     com.wemade.teslamacro.ui.component.NumberStepper(
-                        value = settings.stealthMaxAmps.toDouble(),
-                        min = 5.0, max = 48.0, step = 1.0, unit = "A",
-                        onChange = { onMaxAmpsChange(it.toInt()) },
+                        value = minAmps.toDouble(),
+                        min = 5.0, max = settings.stealthMaxAmps.toDouble(), step = 1.0, unit = "A",
+                        onChange = { onMinAmpsChange(it.toInt()) },
                     )
-                    Spacer(Modifier.height(Space.lg))
-                    ToggleRow(
-                        title = "최소 전류 직접 지정",
-                        checked = settings.stealthMinAmps != null,
-                        onCheckedChange = { on ->
-                            // 직접 지정도 현재 자동 하한에서 시작해 충전 속도의 급변을 막는다.
-                            onMinAmpsChange(if (on) StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps) else null)
-                        },
-                    )
-                    settings.stealthMinAmps?.let { minAmps ->
-                        Spacer(Modifier.height(Space.sm))
-                        com.wemade.teslamacro.ui.component.NumberStepper(
-                            value = minAmps.toDouble(),
-                            min = 5.0, max = settings.stealthMaxAmps.toDouble(), step = 1.0, unit = "A",
-                            onChange = { onMinAmpsChange(it.toInt()) },
-                        )
-                    }
                 }
             }
-            TCard {
-                ToggleRow(
-                    title = "시간대 제한",
-                    checked = settings.stealthScheduleEnabled,
-                    onCheckedChange = onScheduleEnabledChange,
-                )
-                if (settings.stealthScheduleEnabled) {
-                    Spacer(Modifier.height(Space.md))
-                    Text("시작", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
-                    Spacer(Modifier.height(Space.sm))
-                    HourMinuteStepper(settings.stealthStartMinutes, onStartMinutesChange)
-                    Spacer(Modifier.height(Space.md))
-                    Text("종료", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
-                    Spacer(Modifier.height(Space.sm))
-                    HourMinuteStepper(settings.stealthEndMinutes, onEndMinutesChange)
-                }
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            ToggleRow(
+                title = "시간대 제한",
+                checked = settings.stealthScheduleEnabled,
+                onCheckedChange = onScheduleEnabledChange,
+            )
+            if (settings.stealthScheduleEnabled) {
+                Spacer(Modifier.height(Space.md))
+                Text("시작", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                HourMinuteStepper(settings.stealthStartMinutes, onStartMinutesChange)
+                Spacer(Modifier.height(Space.md))
+                Text("종료", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
+                Spacer(Modifier.height(Space.sm))
+                HourMinuteStepper(settings.stealthEndMinutes, onEndMinutesChange)
             }
         }
     }
@@ -368,28 +370,28 @@ private fun PhoneKeyProtectionPanel(
     onDeviceModeChange: (DeviceMode) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        TCard {
-            ChoiceRow(
-                options = DeviceMode.entries.map { it.name to it.label },
-                selected = settings.deviceMode.name,
-                onSelect = { onDeviceModeChange(DeviceMode.of(it)) },
-            )
-        }
+    TCard {
+        ChoiceRow(
+            options = DeviceMode.entries.map { it.name to it.label },
+            selected = settings.deviceMode.name,
+            onSelect = { onDeviceModeChange(DeviceMode.of(it)) },
+        )
         if (settings.deviceMode == DeviceMode.MOUNTED && settings.isPaired) {
-            TCard {
-                ToggleRow(
-                    title = "빈 차에서 휴대폰 키 간섭 방지",
-                    checked = settings.protectPhoneKey,
-                    onCheckedChange = onProtectPhoneKeyChange,
-                )
-            }
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            ToggleRow(
+                title = "빈 차에서 휴대폰 키 간섭 방지",
+                checked = settings.protectPhoneKey,
+                onCheckedChange = onProtectPhoneKeyChange,
+            )
         } else if (settings.deviceMode == DeviceMode.PORTABLE && navigation != null) {
-            TCard {
-                Text("탑승 감지 블루투스", style = MaterialTheme.typography.titleMedium, color = T.Ink)
-                Spacer(Modifier.height(Space.sm))
-                VehicleAudioPicker(settings, navigation)
-            }
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            Text("탑승 감지 블루투스", style = MaterialTheme.typography.titleMedium, color = T.Ink)
+            Spacer(Modifier.height(Space.sm))
+            VehicleAudioPicker(settings, navigation)
         }
     }
 }
@@ -471,69 +473,68 @@ private fun UpdatePanel(
     onInstall: () -> Unit,
     onRequestPermission: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        TCard {
-            LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
-        }
-        TCard {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (update != null) {
-                    Text(
-                        text = when (update) {
-                            is UpdateState.Checking -> "확인 중…"
-                            is UpdateState.UpToDate -> "최신 버전"
-                            is UpdateState.Failed -> update.message
-                            is UpdateState.NeedsInstallPermission ->
-                                "앱 설치 권한이 필요해요.\n허용하고 돌아오면 설치를 자동으로 이어가요."
-                            is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
-                            is UpdateState.Downloading -> "내려받는 중… ${update.percent}%"
-                            is UpdateState.Installing -> "설치 중…"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = when (update) {
-                            is UpdateState.Failed, is UpdateState.NeedsInstallPermission -> T.WarnText
-                            is UpdateState.Available, is UpdateState.Downloading,
-                            is UpdateState.Installing -> T.Ink
-                            else -> T.InkFaint
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                    Spacer(Modifier.width(Space.md))
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
-                when (update) {
-                    // 앱이 스스로를 갈아끼운다. 첫 회만 확인 화면이 뜨고 그 뒤로는 조용히 끝난다.
-                    is UpdateState.Available ->
-                        TButton("설치", fillWidth = false, small = true, onClick = onInstall)
-                    // 진행 중에는 눌러도 할 일이 없다.
-                    is UpdateState.Downloading, is UpdateState.Installing ->
-                        TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
-                    // 권한 화면으로 직접 보낸다. 어디서 켜는지 찾게 만들지 않는다.
-                    is UpdateState.NeedsInstallPermission ->
-                        TButton("권한 켜기", fillWidth = false, small = true, onClick = onRequestPermission)
-                    else ->
-                        TButton(
-                            text = "업데이트 확인",
-                            tone = ButtonTone.Secondary,
-                            fillWidth = false,
-                            small = true,
-                            enabled = update !is UpdateState.Checking,
-                            onClick = onCheck,
-                        )
-                }
-            }
-
-            // 뭐가 바뀌는지 모르고 설치를 누르게 두지 않는다. 릴리스 본문은 이미 받아온 값이다.
-            val notes = (update as? UpdateState.Available)?.notes
-            if (notes != null) {
-                Spacer(Modifier.height(Space.sm))
+    TCard {
+        LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (update != null) {
                 Text(
-                    text = notes,
+                    text = when (update) {
+                        is UpdateState.Checking -> "확인 중…"
+                        is UpdateState.UpToDate -> "최신 버전"
+                        is UpdateState.Failed -> update.message
+                        is UpdateState.NeedsInstallPermission ->
+                            "앱 설치 권한이 필요해요.\n허용하고 돌아오면 설치를 자동으로 이어가요."
+                        is UpdateState.Available -> "새 버전 ${update.version}이 있어요!"
+                        is UpdateState.Downloading -> "내려받는 중… ${update.percent}%"
+                        is UpdateState.Installing -> "설치 중…"
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = T.InkFaint,
+                    color = when (update) {
+                        is UpdateState.Failed, is UpdateState.NeedsInstallPermission -> T.WarnText
+                        is UpdateState.Available, is UpdateState.Downloading,
+                        is UpdateState.Installing -> T.Ink
+                        else -> T.InkFaint
+                    },
+                    modifier = Modifier.weight(1f),
                 )
+                Spacer(Modifier.width(Space.md))
+            } else {
+                Spacer(Modifier.weight(1f))
             }
+            when (update) {
+                // 앱이 스스로를 갈아끼운다. 첫 회만 확인 화면이 뜨고 그 뒤로는 조용히 끝난다.
+                is UpdateState.Available ->
+                    TButton("설치", fillWidth = false, small = true, onClick = onInstall)
+                // 진행 중에는 눌러도 할 일이 없다.
+                is UpdateState.Downloading, is UpdateState.Installing ->
+                    TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
+                // 권한 화면으로 직접 보낸다. 어디서 켜는지 찾게 만들지 않는다.
+                is UpdateState.NeedsInstallPermission ->
+                    TButton("권한 켜기", fillWidth = false, small = true, onClick = onRequestPermission)
+                else ->
+                    TButton(
+                        text = "업데이트 확인",
+                        tone = ButtonTone.Secondary,
+                        fillWidth = false,
+                        small = true,
+                        enabled = update !is UpdateState.Checking,
+                        onClick = onCheck,
+                    )
+            }
+        }
+
+        // 뭐가 바뀌는지 모르고 설치를 누르게 두지 않는다. 릴리스 본문은 이미 받아온 값이다.
+        val notes = (update as? UpdateState.Available)?.notes
+        if (notes != null) {
+            Spacer(Modifier.height(Space.sm))
+            Text(
+                text = notes,
+                style = MaterialTheme.typography.bodySmall,
+                color = T.InkFaint,
+            )
         }
     }
 }
@@ -570,16 +571,17 @@ data class BatteryControls(
 /** 사용 여부와 토큰 관리만 남겨 설정 카드를 짧게 유지한다. */
 @Composable
 internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, credentials: FleetCredentialControls? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        TCard {
-            ToggleRow(
-                title = "Fleet API로 명령 전송",
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-            )
-        }
+    TCard {
+        ToggleRow(
+            title = "Fleet API로 명령 전송",
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+        )
         if (credentials != null) {
-            TCard { FleetCredentialPanel(credentials) }
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            FleetCredentialPanel(credentials)
         }
     }
 }
@@ -603,7 +605,7 @@ internal fun SmartThingsPanel(
     var selectedAction by rememberSaveable { mutableStateOf<String?>(null) }
     var draftText by rememberSaveable { mutableStateOf("") }
     val configured = settings.smartThingsCommandTexts.values.count { it.isNotBlank() }
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
+    Column {
         TCard {
             ToggleRow(
                 title = "알림으로 차량 명령 실행",
@@ -626,12 +628,14 @@ internal fun SmartThingsPanel(
                     TButton("권한 허용", fillWidth = false, small = true, onClick = controls.onRequestNotificationAccess)
                 }
             }
-        }
-        if (settings.smartThingsEnabled) {
-            TCard {
+            if (settings.smartThingsEnabled) {
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
                 TButton("명령 관리 · ${configured}개", ButtonTone.Secondary) { manageCommands = true }
-            }
-            TCard {
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
                 SettingsDetails("명령 유효시간 · ${settings.smartThingsValiditySeconds}초") {
                     com.wemade.teslamacro.ui.component.NumberStepper(
                         value = settings.smartThingsValiditySeconds.toDouble(),
@@ -795,7 +799,7 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
 @Composable
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
     var showTrustedDevicePrompt by rememberSaveable { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
+    Column {
         TCard {
             ToggleRow(
                 title = "탑승 시 네이버 지도 안심운전 실행",
@@ -808,12 +812,14 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
             if (settings.autoStartNavigatorSafeDrive && !controls.overlayPermitted) {
                 OverlayPermissionNotice(controls)
             }
-        }
-        if (settings.autoStartNavigatorSafeDrive) {
-            TCard {
+            if (settings.autoStartNavigatorSafeDrive) {
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
                 TButton("신뢰 기기 설정", ButtonTone.Secondary) { showTrustedDevicePrompt = true }
-            }
-            TCard {
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
                 SettingsDetails("실행 점검") {
                     Text("점검 방식", style = MaterialTheme.typography.labelLarge, color = T.InkMuted)
                     Spacer(Modifier.height(Space.sm))
@@ -972,7 +978,7 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
 @Composable
 internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) {
     var showLocationTransferPrompt by rememberSaveable { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
+    Column {
         TCard {
             // 목록이 없는 구성에서는 사용할 수 없는 기능을 노출하지 않는다.
             if (!controls.safeDriveAvailable) {
@@ -1011,10 +1017,11 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                     TButton("권한 허용", fillWidth = false, onClick = controls.onRequestActivityPermission)
                 }
             }
-        }
-        // 꺼진 기능의 하위 선택지는 숨기되, 켜면 독립 카드마다 손댈 수 있게 분리한다.
-        if (controls.safeDriveAvailable && settings.safeDrive) {
-            TCard {
+            // 꺼진 기능의 하위 선택지는 숨기되, 켜면 같은 카드에서 이어서 조정한다.
+            if (controls.safeDriveAvailable && settings.safeDrive) {
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
                 Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                 Spacer(Modifier.height(Space.sm))
                 ChoiceRow(
@@ -1022,8 +1029,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                     selected = settings.safeDriveAlertDistanceMeters.toString(),
                     onSelect = { controls.onSafeDriveAlertDistanceChange(it.toInt()) },
                 )
-            }
-            TCard {
+                Spacer(Modifier.height(Space.lg))
                 Text("경보 초과속도", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                 Spacer(Modifier.height(Space.sm))
                 com.wemade.teslamacro.ui.component.NumberStepper(
@@ -1031,8 +1037,9 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                     min = 0.0, max = 30.0, step = 1.0, unit = "km/h",
                     onChange = { controls.onSafeDriveToleranceChange(it.toInt()) },
                 )
-            }
-            TCard {
+                Spacer(Modifier.height(Space.md))
+                Hairline()
+                Spacer(Modifier.height(Space.md))
                 ToggleRow(
                     title = "과속 경고음·음성 안내",
                     checked = settings.safeDriveSound,
@@ -1043,9 +1050,8 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                         Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
                 }
-            }
-            if (settings.safeDriveSound) {
-                TCard {
+                if (settings.safeDriveSound) {
+                    Spacer(Modifier.height(Space.md))
                     ToggleRow(
                         title = "카메라 접근 음성 안내",
                         checked = settings.safeDriveVoice,
@@ -1060,15 +1066,13 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                         Spacer(Modifier.height(Space.sm))
                         TButton("음성 설정", ButtonTone.Secondary, small = true, onClick = controls.onOpenSpeechSettings)
                     }
-                }
-                TCard {
+                    Spacer(Modifier.height(Space.md))
                     ToggleRow(
                         title = "과속 정도에 따라 경고음 간격 조절",
                         checked = settings.safeDriveProgressiveSound,
                         onCheckedChange = controls.onSafeDriveProgressiveSoundChange,
                     )
-                }
-                TCard {
+                    Spacer(Modifier.height(Space.md))
                     Text("경고음 크기", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                     Spacer(Modifier.height(Space.sm))
                     ChoiceRow(

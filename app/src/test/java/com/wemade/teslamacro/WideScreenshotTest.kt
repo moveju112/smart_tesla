@@ -227,6 +227,12 @@ class WideScreenshotTest {
         com.wemade.teslamacro.data.settings.DeviceMode.PORTABLE,
     )
 
+    /** 등록 전 시뮬레이션의 선택·실행을 태블릿에서도 한 카드로 확인한다. */
+    @Test
+    fun `W5c3 설정 - 시뮬레이터`() = settingsSnapshot(
+        "W5c3-settings-simulator", SettingsGroup.VEHICLE, simulatorVisible = true,
+    )
+
     @Test
     fun `W5d 설정 - 기기`() = settingsSnapshot("W5d-settings-device", SettingsGroup.DEVICE)
 
@@ -256,6 +262,7 @@ class WideScreenshotTest {
         batteryUnrestricted: Boolean = false,
         overlayPermitted: Boolean = false,
         safeDriveTestMessage: String? = null,
+        simulatorVisible: Boolean = false,
     ) {
         // 다른 테스트의 진단 기록 수가 기기 설정 스냅샷에 섞이지 않게 한다.
         if (group == SettingsGroup.DEVICE) com.wemade.teslable.DiagLog.clear()
@@ -265,8 +272,8 @@ class WideScreenshotTest {
                     chargeHistory = sampleChargeHistory(),
                     chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     settings = com.wemade.teslamacro.data.settings.AppSettings(
-                        vin = "5YJS0000000000000",
-                        vehicleName = "내 테슬라",
+                        vin = if (simulatorVisible) "" else "5YJS0000000000000",
+                        vehicleName = if (simulatorVisible) "" else "내 테슬라",
                         vehicleAddress = "AA:BB:CC:DD:EE:FF",
                         deviceMode = deviceMode,
                         hudOverlay = true,
@@ -307,6 +314,11 @@ class WideScreenshotTest {
                         safeDriveTestMessage = safeDriveTestMessage,
                         locationPermitted = false,
                     ),
+                    simulator = if (simulatorVisible) com.wemade.teslamacro.feature.settings.SimulatorControls(
+                        insideTemp = 31.0, outsideTemp = 29.0,
+                        onInsideTempChange = {}, onOutsideTempChange = {},
+                        onBoard = {}, onLeave = {},
+                    ) else null,
                     initialGroup = group,
                 )
             }
@@ -403,7 +415,7 @@ class WideScreenshotTest {
                         vin = "5YJS0000000000000",
                     ),
                     update = com.wemade.teslamacro.data.update.UpdateState.Available(
-                        version = "0.9.1",
+                        version = "0.9.98",
                         apkUrl = "https://example.invalid/app.apk",
                         notes = "잠든 차를 게이트웨이가 깨워서 다시 보낸다\n" +
                             "차가 거부하면 사유를 그대로 보여준다\n" +
@@ -421,6 +433,7 @@ class WideScreenshotTest {
                         onImport = {},
                         message = "매크로 6개를 내보냈어요",
                     ),
+                    initialGroup = SettingsGroup.DEVICE,
                     navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                         onAppChange = {},
                         onHudOverlayChange = {},

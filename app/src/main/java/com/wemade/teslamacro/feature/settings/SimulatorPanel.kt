@@ -3,6 +3,8 @@ package com.wemade.teslamacro.feature.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -11,6 +13,7 @@ import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
+import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
@@ -30,20 +33,19 @@ fun SimulatorPanel(
     onLeave: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(Space.md)) {
-        // 화면 상단의 시뮬레이터 섹션 제목으로 실제 차량과 구분한다.
-        TCard {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-                LabeledStepper("실내 온도", insideTemp, onInsideTempChange)
-                LabeledStepper("외부 온도", outsideTemp, onOutsideTempChange)
-            }
+    // 온도와 탑승 사건은 한 번의 시뮬레이션이므로 카드 사이가 아닌 내부에서 구분한다.
+    TCard(modifier = modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.lg)) {
+            LabeledStepper("실내 온도", insideTemp, onInsideTempChange)
+            LabeledStepper("외부 온도", outsideTemp, onOutsideTempChange)
         }
-        TCard {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                // 문 열림 + 탑승을 한 번에 만든다 (엣지 조건이 걸리는 순간)
-                TButton("탑승 재현", modifier = Modifier.weight(1f), onClick = onBoard)
-                TButton("하차 재현", ButtonTone.Secondary, modifier = Modifier.weight(1f), onClick = onLeave)
-            }
+        Spacer(Modifier.height(Space.md))
+        Hairline()
+        Spacer(Modifier.height(Space.md))
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            // 문 열림 + 탑승을 한 번에 만든다 (엣지 조건이 걸리는 순간)
+            TButton("탑승 재현", modifier = Modifier.weight(1f), onClick = onBoard)
+            TButton("하차 재현", ButtonTone.Secondary, modifier = Modifier.weight(1f), onClick = onLeave)
         }
     }
 }

@@ -18,25 +18,6 @@ class VehicleAudioGuideGateTest {
         assertFalse(shouldMonitorGuidance(DeviceMode.MOUNTED, false, true))
     }
 
-    // 수동 세션도 같은 허용 상태로 GPS·음성을 열지만 기능을 끄면 둘 다 닫는다.
-    @Test fun manualSessionUsesTheSamePortableGate() {
-        val audioConnected = false
-        val manualActive = true
-        val active = audioConnected || manualActive
-        assertTrue(shouldMonitorGuidance(DeviceMode.PORTABLE, true, active))
-        assertFalse(shouldMonitorGuidance(DeviceMode.PORTABLE, false, active))
-        assertFalse(shouldMonitorGuidance(DeviceMode.PORTABLE, true, false))
-    }
-
-    // 위치 콜백이 절전 이후 재개되면 벽시계 대신 절전 시간을 포함한 경과 시각으로 닫는다.
-    @Test fun manualGuideExpiresAtSixHoursOfElapsedTime() {
-        val startedAt = 5_000L
-        assertFalse(manualGuideExpired(null, startedAt + MANUAL_GUIDE_TIMEOUT_MILLIS))
-        assertFalse(manualGuideExpired(startedAt, startedAt + MANUAL_GUIDE_TIMEOUT_MILLIS - 1))
-        assertTrue(manualGuideExpired(startedAt, startedAt + MANUAL_GUIDE_TIMEOUT_MILLIS))
-        assertFalse(manualGuideExpired(startedAt, startedAt - 1))
-    }
-
     // 권한 변경 이벤트에도 거치 모드에만 활동 인식을 재등록한다.
     @Test fun permissionRefreshNeverSubscribesActivityInPortableMode() {
         assertFalse(shouldSubscribeDrivingActivity(DeviceMode.PORTABLE, true, true))

@@ -37,10 +37,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     val stealthChargeRuntime = container.stealthCharge.runtime
 
-    /** 페어링된 기기·실제 오디오 연결 상태·이번 주행 세션을 화면에 전달한다. */
+    /** 페어링된 기기와 실제 오디오 연결 상태를 화면에 전달한다. */
     val pairedAudioDevices = container.pairedAudioDevices
     val vehicleAudioStatus = container.vehicleAudioStatus
-    val manualGuideActive = container.manualGuideActive
 
     /** 페어링된 기기만 저장하되 안내 활성화는 별도의 A2DP 연결 판정에 맡긴다. */
     fun selectVehicleAudioDevice(address: String) {
@@ -49,12 +48,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             }) return
         viewModelScope.launch { container.settingsStore.setVehicleAudioAddress(address) }
     }
-
-    /** GPS·소리는 예외적으로 이번 서비스 수명 동안만 열고 설정값은 바꾸지 않는다. */
-    fun startManualGuide() = com.wemade.teslamacro.service.MacroService.startManualGuide(container.appContext)
-
-    /** 알림의 종료 버튼과 동일한 서비스 경로로 수동 안내를 닫는다. */
-    fun stopManualGuide() = com.wemade.teslamacro.service.MacroService.stopManualGuide(container.appContext)
 
     /** 15분 단위 충전 전류 그래프의 원본 */
     val chargeHistory = container.chargeHistory.buckets

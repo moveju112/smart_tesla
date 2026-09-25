@@ -215,11 +215,6 @@ fun SettingsScreen(
                                 SpeedPanel(settings, navigation)
                                 SectionHeader("단속 안내")
                                 SafeDrivePanel(settings, navigation)
-                                if (settings.deviceMode == DeviceMode.PORTABLE &&
-                                    (settings.hudOverlay || settings.safeDrive)) {
-                                    SectionHeader("차량 오디오")
-                                    VehicleAudioPanel(settings, navigation)
-                                }
                             }
                         }
 
@@ -783,10 +778,7 @@ data class NavigationControls(
     val vehicleAudioStatus: com.wemade.teslamacro.service.VehicleAudioStatus =
         com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING,
     val pairedAudioDevices: List<com.wemade.teslable.BondedDevice> = emptyList(),
-    val manualGuideActive: Boolean = false,
     val onSelectVehicleAudioDevice: (String) -> Unit = {},
-    val onStartManualGuide: () -> Unit = {},
-    val onStopManualGuide: () -> Unit = {},
     val onSafeDriveProgressiveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveVolumeChange: (Int) -> Unit = {},
     val onSafeDriveToleranceChange: (Int) -> Unit = {},
@@ -943,37 +935,21 @@ private fun OverlayPermissionNotice(controls: NavigationControls) {
     }
 }
 
-// 1. 페어링 기기 선택은 모달로 분리하고 실제 연결 상태와 수동 안내만 카드에 남긴다.
+// 1. 휴대 모드 안내 설정 안에서 페어링 기기를 선택하고 실제 오디오 연결 상태를 확인한다.
 @Composable
-private fun VehicleAudioPanel(settings: AppSettings, controls: NavigationControls) {
+private fun VehicleAudioPicker(settings: AppSettings, controls: NavigationControls) {
     var showAudioPicker by rememberSaveable { mutableStateOf(false) }
     val selectedAudioName = if (settings.vehicleAudioAddress.isBlank()) "자동 선택" else {
         controls.pairedAudioDevices.firstOrNull {
             it.address.equals(settings.vehicleAudioAddress, ignoreCase = true)
         }?.name ?: "선택 기기 없음"
     }
-    TCard {
-        Text(controls.vehicleAudioStatus.label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (controls.vehicleAudioStatus == com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED)
-                T.Ink else T.InkMuted)
-        Spacer(Modifier.height(Space.sm))
-        TButton("블루투스 선택 · $selectedAudioName", ButtonTone.Secondary) { showAudioPicker = true }
-        Text("선택한 블루투스가 음악용으로 연결되면 GPS 기반 안내가 시작돼요.",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        if (controls.manualGuideActive) {
-            Text("수동 안내 중 · 약 6시간 뒤 종료돼요.",
-                style = MaterialTheme.typography.bodySmall, color = T.Danger)
-            TButton("수동 안내 종료", ButtonTone.Danger, onClick = controls.onStopManualGuide)
-        } else if (controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED &&
-            controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING) {
-            Text("블루투스 연결 없이 이번 주행만 안내해요. 하차 후 직접 종료해 주세요.",
-                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            TButton("이번 주행 수동 안내 시작", ButtonTone.Secondary,
-                enabled = controls.locationPermitted, onClick = controls.onStartManualGuide)
-            if (!controls.locationPermitted) LocationPermissionNotice(controls)
-        }
-    }
+    TButton("블루투스 선택 · $selectedAudioName", ButtonTone.Secondary) { showAudioPicker = true }
+    Spacer(Modifier.height(Space.sm))
+    Text(controls.vehicleAudioStatus.label,
+        style = MaterialTheme.typography.bodySmall,
+        color = if (controls.vehicleAudioStatus == com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED)
+            T.Ink else T.InkMuted)
     if (showAudioPicker) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showAudioPicker = false },
@@ -1045,6 +1021,11 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
+            // 단속 목록이 없어도 HUD를 쓰는 휴대 기기는 오디오 연결 대상을 고를 수 있어야 한다.
+            if (settings.deviceMode == DeviceMode.PORTABLE && settings.hudOverlay) {
+                Spacer(Modifier.height(Space.md))
+                VehicleAudioPicker(settings, controls)
+            }
             return@TCard
         }
 
@@ -1058,6 +1039,10 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             checked = settings.safeDrive,
             onCheckedChange = controls.onSafeDriveChange,
         )
+        if (settings.deviceMode == DeviceMode.PORTABLE) {
+            Spacer(Modifier.height(Space.md))
+            VehicleAudioPicker(settings, controls)
+        }
 
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)

@@ -83,6 +83,8 @@ data class AppSettings(
     val vehicleAddress: String = "",
     /** 차에 지은 별칭. 페어링 목록에서 그대로 읽어 온다 (예 "Tesla Model Y Why") */
     val vehicleName: String = "",
+    /** 현재 연결된 차량 오디오를 사용자가 직접 확인해 고른 주소. BLE 제어 주소와 다르다. */
+    val vehicleAudioAddress: String = "",
     /** 다음 충전 1회 동안만 전류를 조절한다. 완료하면 컨트롤러가 자동으로 끈다. */
     val stealthCharging: Boolean = false,
     /** 실제 조절을 시작했는지. 대기만 하다 끝난 충전을 1회 사용으로 세지 않는다. */
@@ -155,6 +157,7 @@ class SettingsStore(
             isEnrolled = prefs[KeyEnrolled] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
+            vehicleAudioAddress = prefs[KeyVehicleAudioAddress] ?: "",
             stealthCharging = prefs[KeyStealthCharging] ?: false,
             stealthChargeStarted = prefs[KeyStealthChargeStarted] ?: false,
             stealthChargeOriginalAmps = prefs[KeyStealthChargeOriginalAmps],
@@ -185,7 +188,14 @@ class SettingsStore(
     /** 화면 모드를 저장해 앱을 다시 열어도 사용자의 선택을 유지한다. */
     suspend fun setThemeMode(mode: ThemeMode) = edit { it[KeyThemeMode] = mode.name }
 
-    suspend fun setVin(vin: String) = edit { it[KeyVin] = vin }
+    /** 다른 차량으로 바뀌면 이전 차량의 오디오 선택·별칭을 같은 트랜잭션에서 버린다. */
+    suspend fun setVin(vin: String) = edit {
+        if (it[KeyVin] != vin) {
+            it.remove(KeyVehicleAudioAddress)
+            it.remove(KeyVehicleName)
+        }
+        it[KeyVin] = vin
+    }
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     /** 알림 접근 권한과 별개로 차량 명령 수신 여부를 저장한다. */
@@ -214,6 +224,8 @@ class SettingsStore(
     suspend fun setDeviceMode(mode: DeviceMode) = edit { it[KeyDeviceMode] = mode.name }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
+    /** 기기 선택 해제는 빈 값으로 저장해 기본 자동 식별로 되돌린다. */
+    suspend fun setVehicleAudioAddress(address: String) = edit { it[KeyVehicleAudioAddress] = address }
     /** 새 1회 세션은 이전 실행 흔적을 지우고, 수동 해제는 원복이 끝날 때까지 흔적을 남긴다. */
     suspend fun setStealthCharging(enabled: Boolean) = edit {
         // 이미 켜져 진행 중인 세션에 매크로가 "켜기"를 또 넣어도 원래 전류를 잊으면 안 된다.
@@ -458,6 +470,7 @@ class SettingsStore(
         val KeyEnrolled = booleanPreferencesKey("enrolled")
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")
+        val KeyVehicleAudioAddress = stringPreferencesKey("vehicle_audio_address")
         val KeyStealthCharging = booleanPreferencesKey("stealth_charging")
         val KeyStealthChargeStarted = booleanPreferencesKey("stealth_charge_started")
         val KeyStealthChargeOriginalAmps = intPreferencesKey("stealth_charge_original_amps")

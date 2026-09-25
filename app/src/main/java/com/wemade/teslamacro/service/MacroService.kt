@@ -1,12 +1,14 @@
 package com.wemade.teslamacro.service
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.os.SystemClock
@@ -81,9 +83,14 @@ class MacroService : LifecycleService() {
     private var activityFailure: String? = null
     private var activityCleanupCompleted = false
     private val carAudioConnected = MutableStateFlow(false)
+    private val portableGuidanceActive = MutableStateFlow(false)
+    private var manualGuideTimeout: Job? = null
+    private var manualGuideActive = false
+    private var manualGuideStartedAt: Long? = null
     private var carAudioProfile: BluetoothProfile? = null
     private var carAudioAdapter: BluetoothAdapter? = null
     private var carAudioName: String = ""
+    private var carAudioSelectedAddress: String = ""
     private var carAudioWatcherActive = false
     private var carAudioProxyRequested = false
     private var currentDeviceMode = DeviceMode.PORTABLE
@@ -92,7 +99,16 @@ class MacroService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        // 프로세스가 예고 없이 재시작되면 수동 세션은 복구하지 않고 종료 사실만 알린다.
+        val unfinished = getSharedPreferences(MANUAL_SESSION_PREFERENCES, MODE_PRIVATE)
+            .getBoolean(MANUAL_SESSION_ACTIVE, false)
+        if (unfinished) {
+            getSystemService(AlarmManager::class.java).cancel(manualGuideAlarmIntent())
+            getSharedPreferences(MANUAL_SESSION_PREFERENCES, MODE_PRIVATE).edit()
+                .putBoolean(MANUAL_SESSION_ACTIVE, false).apply()
+        }
         promote()
+        if (unfinished) showManualGuideEnded("앱이 다시 시작돼 수동 GPS·카메라 안내가 종료됐어요.")
 
         val app = application as TeslaMacroApplication
         lifecycleScope.launch {
@@ -153,11 +169,14 @@ class MacroService : LifecycleService() {
                 IntentFilter().apply {
                     addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
                     addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+                    addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
                 }, ContextCompat.RECEIVER_EXPORTED)
             // 연결 방송을 놓친 서비스 재시작·재부팅에도 현재 A2DP 상태를 다시 읽는다.
             requestCarAudioProfile()
-            app.container.settingsStore.settings.map { it.vehicleName }.distinctUntilChanged().collect { name ->
+            app.container.settingsStore.settings
+                .map { it.vehicleName to it.vehicleAudioAddress }.distinctUntilChanged().collect { (name, selected) ->
                 carAudioName = name
+                carAudioSelectedAddress = selected
                 requestCarAudioProfile()
                 refreshCarAudioConnection()
             }
@@ -214,23 +233,128 @@ class MacroService : LifecycleService() {
         }
     }
 
-    // 1. 저장된 차량 별칭과 일치하는 페어링 기기의 A2DP 연결만 안내에 사용한다.
+    // 1. 실제 연결된 A2DP와 페어링 주소를 대조하고 실패 사유만 화면·진단에 전달한다.
     @android.annotation.SuppressLint("MissingPermission")
     private fun refreshCarAudioConnection() {
         if (!carAudioWatcherActive) return
-        val connected = runCatching {
-            if (!hasCarAudioPermission()) return@runCatching false
-            val bonded = (application as TeslaMacroApplication).container.scanner.bondedDevices()
-            val address = matchingVehicleAudioAddress(carAudioName, bonded) ?: return@runCatching false
-            carAudioProfile?.connectedDevices?.any { it.address == address } == true
+        val container = (application as TeslaMacroApplication).container
+        val status = runCatching {
+            val permitted = hasCarAudioPermission()
+            val enabled = permitted && carAudioAdapter?.isEnabled == true
+            val bonded = if (enabled) container.scanner.bondedDevices() else emptyList()
+            val addresses = if (enabled) carAudioProfile?.connectedDevices
+                ?.map { it.address }?.toSet().orEmpty() else emptySet()
+            container.connectedAudioDevices.value = bonded.filter { device ->
+                addresses.any { it.equals(device.address, ignoreCase = true) }
+            }
+            vehicleAudioStatus(carAudioName, bonded, carAudioSelectedAddress, addresses,
+                permitted, enabled, carAudioProfile != null)
         }.getOrElse {
+            container.connectedAudioDevices.value = emptyList()
             com.wemade.teslable.DiagLog.add("차량 오디오 상태 조회 실패 (${it.javaClass.simpleName})")
-            false
+            VehicleAudioStatus.READ_FAILED
         }
-        if (carAudioConnected.value == connected) return
-        carAudioConnected.value = connected
-        com.wemade.teslable.DiagLog.add("차량 오디오 Bluetooth ${if (connected) "연결" else "해제"} · 휴대 안내 ${if (connected) "시작" else "중지"}")
+        if (container.vehicleAudioStatus.value != status) {
+            container.vehicleAudioStatus.value = status
+            com.wemade.teslable.DiagLog.add("차량 오디오 상태 ${status.name}")
+        }
+        val connected = status == VehicleAudioStatus.CONNECTED
+        if (carAudioConnected.value != connected) {
+            carAudioConnected.value = connected
+            com.wemade.teslable.DiagLog.add("차량 오디오 Bluetooth ${if (connected) "연결" else "해제"}")
+        }
+        if (connected && container.manualGuideActive.value) finishManualGuide("오디오 연결로 자동 안내 전환")
+        syncPortableGuidance()
+    }
+
+    // 1. 수동·오디오 어느 쪽이든 같은 상태로 GPS·오프라인 안내·소리를 전환한다.
+    private fun syncPortableGuidance() {
+        val container = (application as TeslaMacroApplication).container
+        portableGuidanceActive.value = carAudioConnected.value || container.manualGuideActive.value
         refreshAutomaticAlerts()
+    }
+
+    // 1. 확인되지 않는 날에만 이번 주행을 수동으로 열고, 잊어도 6시간 뒤 닫는다.
+    private fun beginManualGuide() {
+        lifecycleScope.launch {
+            val app = application as TeslaMacroApplication
+            app.ready.first { it }
+            val settings = app.container.settingsStore.settings.first()
+            if (settings.deviceMode != DeviceMode.PORTABLE ||
+                (!settings.safeDrive && !settings.hudOverlay) || carAudioConnected.value ||
+                !app.container.speedMeter.hasPermission()) return@launch
+            if (app.container.manualGuideActive.value) return@launch
+            manualGuideStartedAt = SystemClock.elapsedRealtime()
+            manualGuideActive = true
+            app.container.manualGuideActive.value = true
+            getSharedPreferences(MANUAL_SESSION_PREFERENCES, MODE_PRIVATE).edit()
+                .putBoolean(MANUAL_SESSION_ACTIVE, true).apply()
+            com.wemade.teslable.DiagLog.add("이번 주행 수동 안내 시작 · 최대 6시간")
+            syncPortableGuidance()
+            promote()
+            scheduleManualGuideTimeout()
+            manualGuideTimeout = lifecycleScope.launch {
+                delay(MANUAL_GUIDE_TIMEOUT_MILLIS)
+                expireManualGuideIfNeeded()
+            }
+        }
+    }
+
+    // 1. 수동 중단·자동 복구·설정 해제 시 같은 경로로 GPS와 소리를 즉시 닫는다.
+    private fun finishManualGuide(reason: String) {
+        val container = (application as TeslaMacroApplication).container
+        if (!container.manualGuideActive.value) return
+        manualGuideActive = false
+        container.manualGuideActive.value = false
+        getSharedPreferences(MANUAL_SESSION_PREFERENCES, MODE_PRIVATE).edit()
+            .putBoolean(MANUAL_SESSION_ACTIVE, false).apply()
+        manualGuideTimeout?.cancel()
+        manualGuideTimeout = null
+        manualGuideStartedAt = null
+        getSystemService(AlarmManager::class.java).cancel(manualGuideAlarmIntent())
+        com.wemade.teslable.DiagLog.add(reason)
+        syncPortableGuidance()
+        promote()
+    }
+
+    // 1. 잠든 동안에도 만료를 요청하고, 정확한 알람 권한이 없으면 절전 허용 알람으로 대체한다.
+    private fun scheduleManualGuideTimeout() {
+        val alarm = getSystemService(AlarmManager::class.java)
+        val deadline = (manualGuideStartedAt ?: return) + MANUAL_GUIDE_TIMEOUT_MILLIS
+        val intent = manualGuideAlarmIntent()
+        val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarm.canScheduleExactAlarms()
+        val scheduled = if (exactAllowed) runCatching {
+            alarm.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, deadline, intent)
+        }.isSuccess else false
+        if (!scheduled) alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, deadline, intent)
+    }
+
+    // 1. 알람과 위치 콜백 모두 같은 시각 판정으로 안내를 중지해 절전 지연을 보완한다.
+    private fun expireManualGuideIfNeeded() {
+        if (!manualGuideActive || !manualGuideExpired(manualGuideStartedAt, SystemClock.elapsedRealtime())) return
+        finishManualGuide("6시간 경과 · 수동 안내 종료")
+        showManualGuideEnded("6시간이 지나 GPS·카메라 안내를 멈췄어요. 계속 필요하면 다시 시작하세요.")
+    }
+
+    // 1. 서비스가 재시작해도 알람이 새 GPS 세션을 열지 않도록 고정 요청 코드를 사용한다.
+    private fun manualGuideAlarmIntent(): PendingIntent = PendingIntent.getService(this, 4,
+        Intent(this, MacroService::class.java).setAction(ACTION_MANUAL_GUIDE_TIMEOUT),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    // 1. 시간 만료는 주행 중 소리가 꺼진 사실을 알리되 다시 GPS를 켜지 않는다.
+    private fun showManualGuideEnded(reason: String) {
+        val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE)
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(MANUAL_END_NOTIFICATION_ID,
+                Notification.Builder(this, MANUAL_END_CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.stat_notify_sync)
+                    .setContentTitle("수동 내부 안내 종료")
+                    .setContentText(reason)
+                    .setContentIntent(openApp)
+                    .setAutoCancel(true)
+                    .build())
+        }
     }
 
     // 1. Android 12+에서 연결 권한이 없으면 프로필을 열지 않고 안내를 보류한다.
@@ -262,13 +386,17 @@ class MacroService : LifecycleService() {
             combine(
                 container.settingsStore.settings.map { Triple(it.hudOverlay, it.safeDrive, it.deviceMode) },
                 container.locationPermissionRevision,
-                carAudioConnected,
+                portableGuidanceActive,
             ) { toggles, revision, connected ->
-                Triple(toggles.first, toggles.second, revision) to
+                (toggles to revision) to
                     shouldMonitorGuidance(toggles.third, toggles.first || toggles.second, connected)
             }.distinctUntilChanged()
                 .collectLatest { (toggles, active) ->
-                    val (showOverlay, safeDrive, _) = toggles
+                    val (showOverlay, safeDrive, mode) = toggles.first
+                    if (container.manualGuideActive.value && ((!showOverlay && !safeDrive) ||
+                            mode != DeviceMode.PORTABLE)) {
+                        finishManualGuide("설정 변경 · 수동 안내 종료")
+                    }
                     overlay.hide()
                     overSpeedLogged = false
                     if (!active) return@collectLatest
@@ -285,6 +413,7 @@ class MacroService : LifecycleService() {
                         launch {
                             container.speedMeter.locations().collect { location ->
                                 refreshAutomaticAlerts()
+                                if (mode == DeviceMode.PORTABLE && !portableGuidanceActive.value) return@collect
                                 container.safeDrive.onLocation(location)
                                 locations.value = location
                             }
@@ -339,7 +468,7 @@ class MacroService : LifecycleService() {
                 .map { SafeDriveOptions(it.safeDrive, it.safeDriveSound, it.safeDriveVolume,
                     it.safeDriveToleranceKph, it.safeDriveProgressiveSound,
                     it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.deviceMode) }
-                .combine(carAudioConnected) { options, connected ->
+                .combine(portableGuidanceActive) { options, connected ->
                     options to shouldMonitorGuidance(options.deviceMode, options.enabled, connected)
                 }.distinctUntilChanged()
                 .collect { (options, active) ->
@@ -350,7 +479,7 @@ class MacroService : LifecycleService() {
                     app.container.safeDrive.setSound(options.sound, options.volume,
                         options.toleranceKph, options.progressiveSound)
                     // 거치 기기의 기존 활동 인식은 유지하되 휴대폰에선 구독하지 않는다.
-                    if (active && options.sound && options.deviceMode == DeviceMode.MOUNTED) startActivityUpdates()
+                    if (shouldSubscribeDrivingActivity(options.deviceMode, active, options.sound)) startActivityUpdates()
                     else if (activityUpdates != null || !activityCleanupCompleted) stopActivityUpdates()
                     app.container.safeDrive.setRoadMatchEnabled(active)
                     if (active) app.container.safeDrive.start()
@@ -365,7 +494,7 @@ class MacroService : LifecycleService() {
             app.ready.first { it }
             app.container.locationPermissionRevision.drop(1).collect {
                 val settings = app.container.settingsStore.settings.first()
-                if (!shouldMonitorGuidance(settings.deviceMode, settings.safeDrive, carAudioConnected.value)) return@collect
+                if (!shouldMonitorGuidance(settings.deviceMode, settings.safeDrive, portableGuidanceActive.value)) return@collect
                 com.wemade.teslable.DiagLog.add("위치 권한이 바뀌어 안전운전 안내를 다시 세웁니다")
                 app.container.safeDrive.stop()
                 app.container.safeDrive.start()
@@ -455,11 +584,13 @@ class MacroService : LifecycleService() {
 
     /** 휴대폰은 차량 오디오 연결만, 거치 기기는 기존 탑승·활동 근거로 자동 소리를 연다. */
     private fun refreshAutomaticAlerts() {
+        if (manualGuideActive) expireManualGuideIfNeeded()
         val guide = (application as TeslaMacroApplication).container.safeDrive
         if (currentDeviceMode == DeviceMode.PORTABLE) {
-            guide.setAutomaticAlertsAllowed(currentSafeDriveEnabled && carAudioConnected.value,
+            val manual = (application as TeslaMacroApplication).container.manualGuideActive.value
+            guide.setAutomaticAlertsAllowed(currentSafeDriveEnabled && portableGuidanceActive.value,
                 "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류",
-                "차량 오디오 Bluetooth 연결 · 자동 소리 사용")
+                if (manual) "이번 주행 수동 안내 · 자동 소리 사용" else "차량 오디오 Bluetooth 연결 · 자동 소리 사용")
             return
         }
         val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
@@ -616,6 +747,9 @@ class MacroService : LifecycleService() {
             }
 
             ACTION_DISCONNECT_VEHICLE -> disconnectVehicleNow()
+            ACTION_MANUAL_GUIDE_START -> beginManualGuide()
+            ACTION_MANUAL_GUIDE_STOP -> finishManualGuide("사용자가 수동 안내 종료")
+            ACTION_MANUAL_GUIDE_TIMEOUT -> expireManualGuideIfNeeded()
             ACTION_TEST_SAFE_DRIVE -> beginSafeDriveTest()
             ACTION_ACTIVITY_PERMISSION_CHANGED -> lifecycleScope.launch {
                 val app = application as TeslaMacroApplication
@@ -625,7 +759,8 @@ class MacroService : LifecycleService() {
                     checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
                 if ((!permitted || settings.deviceMode != DeviceMode.MOUNTED) &&
                     (activityUpdates != null || !activityCleanupCompleted)) stopActivityUpdates()
-                else if (settings.safeDrive && settings.safeDriveSound) startActivityUpdates()
+                else if (shouldSubscribeDrivingActivity(settings.deviceMode,
+                        settings.safeDrive, settings.safeDriveSound)) startActivityUpdates()
                 refreshAutomaticAlerts()
             }
         }
@@ -927,6 +1062,11 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        if (manualGuideActive) {
+            showManualGuideEnded("앱 감시가 중단돼 수동 GPS·카메라 안내가 종료됐어요.")
+            getSharedPreferences(MANUAL_SESSION_PREFERENCES, MODE_PRIVATE).edit()
+                .putBoolean(MANUAL_SESSION_ACTIVE, false).apply()
+        }
         carAudioWatcherActive = false
         carAudioProxyRequested = false
         runCatching { unregisterReceiver(carAudioReceiver) }
@@ -934,6 +1074,15 @@ class MacroService : LifecycleService() {
             runCatching { carAudioAdapter?.closeProfileProxy(BluetoothProfile.A2DP, profile) }
         }
         carAudioProfile = null
+        manualGuideTimeout?.cancel()
+        if (manualGuideActive) getSystemService(AlarmManager::class.java).cancel(manualGuideAlarmIntent())
+        manualGuideStartedAt = null
+        manualGuideActive = false
+        (application as TeslaMacroApplication).container.let {
+            it.manualGuideActive.value = false
+            it.connectedAudioDevices.value = emptyList()
+            it.vehicleAudioStatus.value = VehicleAudioStatus.CHECKING
+        }
         stopActivityUpdates()
         safeDriveTestJob?.cancel()
         stealthChargeWakeLock?.let { if (it.isHeld) it.release() }
@@ -958,6 +1107,11 @@ class MacroService : LifecycleService() {
             NotificationManager.IMPORTANCE_MIN,   // 상태바 아이콘 없이 목록 맨 아래로
         )
         manager.createNotificationChannel(channel)
+        // 수동 GPS는 기본 감시와 달리 사용자가 종료 버튼을 찾을 수 있어야 한다.
+        manager.createNotificationChannel(NotificationChannel(MANUAL_CHANNEL_ID,
+            "이번 주행 수동 안내", NotificationManager.IMPORTANCE_LOW))
+        manager.createNotificationChannel(NotificationChannel(MANUAL_END_CHANNEL_ID,
+            "수동 안내 종료", NotificationManager.IMPORTANCE_DEFAULT))
     }
 
     private fun buildNotification(): Notification {
@@ -973,8 +1127,10 @@ class MacroService : LifecycleService() {
             Intent(this, MacroService::class.java).setAction(ACTION_DISCONNECT_VEHICLE),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.service_title))
+        val manual = manualGuideActive
+        val builder = Notification.Builder(this, if (manual) MANUAL_CHANNEL_ID else CHANNEL_ID)
+            .setContentTitle(if (manual) "이번 주행 수동 GPS 안내 중" else getString(R.string.service_title))
+            .setContentText(if (manual) "약 6시간 뒤 종료(절전 중 지연 가능) · 차량 오디오 연결 시 자동 전환" else null)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(openApp)
             .addAction(
@@ -987,12 +1143,24 @@ class MacroService : LifecycleService() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .build()
+        if (manual) builder.addAction(Notification.Action.Builder(null, "수동 안내 종료",
+            PendingIntent.getService(this, 3,
+                Intent(this, MacroService::class.java).setAction(ACTION_MANUAL_GUIDE_STOP),
+                PendingIntent.FLAG_IMMUTABLE)).build())
+        return builder.build()
     }
 
     companion object {
         private const val CHANNEL_ID = "macro_watch_min"
         private const val NOTIFICATION_ID = 1001
+        private const val MANUAL_CHANNEL_ID = "manual_guide_low"
+        private const val MANUAL_END_CHANNEL_ID = "manual_guide_ended"
+        private const val MANUAL_SESSION_PREFERENCES = "manual_guide_session"
+        private const val MANUAL_SESSION_ACTIVE = "active"
+        private const val MANUAL_END_NOTIFICATION_ID = 1003
+        private const val ACTION_MANUAL_GUIDE_START = "com.wemade.teslamacro.action.MANUAL_GUIDE_START"
+        private const val ACTION_MANUAL_GUIDE_STOP = "com.wemade.teslamacro.action.MANUAL_GUIDE_STOP"
+        private const val ACTION_MANUAL_GUIDE_TIMEOUT = "com.wemade.teslamacro.action.MANUAL_GUIDE_TIMEOUT"
         private const val ACTION_RUN_QUICK_ACTION =
             "com.wemade.teslamacro.action.RUN_QUICK_ACTION"
         private const val ACTION_DISCONNECT_VEHICLE =
@@ -1051,6 +1219,16 @@ class MacroService : LifecycleService() {
             context.startForegroundService(
                 Intent(context, MacroService::class.java).setAction(ACTION_DISCONNECT_VEHICLE),
             )
+        }
+
+        /** 화면에서만 이번 주행의 GPS·안내음 예외 세션을 요청한다. */
+        fun startManualGuide(context: Context) {
+            context.startForegroundService(Intent(context, MacroService::class.java).setAction(ACTION_MANUAL_GUIDE_START))
+        }
+
+        /** 설정 화면의 버튼도 알림의 종료 액션과 같은 경로를 사용한다. */
+        fun stopManualGuide(context: Context) {
+            context.startForegroundService(Intent(context, MacroService::class.java).setAction(ACTION_MANUAL_GUIDE_STOP))
         }
 
         fun stop(context: Context) {

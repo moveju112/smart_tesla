@@ -362,6 +362,9 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val safeDriveTestMessage by settingsViewModel.safeDriveTestMessage.collectAsState()
                     val safeDriveVoiceStatus by settingsViewModel.safeDriveVoiceStatus.collectAsState()
                     val automaticSoundStatus by settingsViewModel.safeDriveAutomaticSoundStatus.collectAsState()
+                    val vehicleAudioStatus by settingsViewModel.vehicleAudioStatus.collectAsState()
+                    val connectedAudioDevices by settingsViewModel.connectedAudioDevices.collectAsState()
+                    val manualGuideActive by settingsViewModel.manualGuideActive.collectAsState()
 
                     // 시스템 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
                     val overlayPermitted = com.wemade.teslamacro.ui.component.rememberOnResume {
@@ -502,6 +505,12 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onOpenSpeechSettings = { openSpeechSettings(context) },
                             safeDriveVoiceStatus = safeDriveVoiceStatus,
                             automaticSoundStatus = automaticSoundStatus,
+                            vehicleAudioStatus = vehicleAudioStatus,
+                            connectedAudioDevices = connectedAudioDevices,
+                            manualGuideActive = manualGuideActive,
+                            onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
+                            onStartManualGuide = settingsViewModel::startManualGuide,
+                            onStopManualGuide = settingsViewModel::stopManualGuide,
                             onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
                             onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
                             onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,

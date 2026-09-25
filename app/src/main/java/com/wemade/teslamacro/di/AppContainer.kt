@@ -105,6 +105,12 @@ class AppContainer(private val context: Context) {
     /** 등록 화면 진단용 스캐너. 게이트웨이와 별개로 주변을 그냥 훑는다 */
     val scanner = com.wemade.teslable.TeslaBleScanner(context)
 
+    /** 서비스의 실제 A2DP 조회 결과만 화면에 전달한다. 페어링만으로 연결을 추정하지 않는다. */
+    val connectedAudioDevices = kotlinx.coroutines.flow.MutableStateFlow<List<com.wemade.teslable.BondedDevice>>(emptyList())
+    val vehicleAudioStatus = kotlinx.coroutines.flow.MutableStateFlow(com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING)
+    /** 수동 GPS 세션은 재시작 뒤 남으면 안 되므로 설정에 저장하지 않는다. */
+    val manualGuideActive = kotlinx.coroutines.flow.MutableStateFlow(false)
+
     val ruleStore = RuleStore(context)
 
     /** 설정 화면의 15분 단위 충전 전류 그래프가 읽는 기록 */

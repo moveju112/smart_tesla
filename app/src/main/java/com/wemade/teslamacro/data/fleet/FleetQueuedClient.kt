@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.data.fleet
 
+import com.wemade.teslamacro.data.gateway.ExternalQuickActionSound
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslable.CommandDeadline
 import com.wemade.teslable.ensureCommandActive
@@ -141,7 +142,10 @@ class FleetQueuedClient(
                         onUpdate: (FleetReceipt) -> Unit = {}): FleetReceipt {
         val result = awaitResult(submit(vin, command, beforeSubmit), onUpdate)
         coroutineContext.ensureActive()
-        if (result.status == FleetQueueStatus.Succeeded) runCatching { onConfirmed(command) }
+        // 외부 빠른 명령은 서비스의 최종 성공 분기가 두 번 울리므로 공유 단발음을 생략한다.
+        if (result.status == FleetQueueStatus.Succeeded && coroutineContext[ExternalQuickActionSound.Key] == null) {
+            runCatching { onConfirmed(command) }
+        }
         return result
     }
 

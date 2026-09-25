@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /** 실행 이력 한 줄. 화면 하단 로그와 디버깅에 쓴다 */
 data class MacroLogEntry(
@@ -84,6 +86,8 @@ class MacroRunner(
         nowMillis: Long,
         restartIfRunning: Boolean = false,
         onAccepted: suspend () -> Unit = {},
+        onCompleted: () -> Unit = {},
+        executionContext: CoroutineContext = EmptyCoroutineContext,
     ) {
         scope.launch {
             lock.withLock {
@@ -100,7 +104,8 @@ class MacroRunner(
                     _progress.update { it - id }
                 }
                 jobs.remove(rule.id)?.cancel()
-                jobs[rule.id] = scope.launch { execute(rule, nowMillis, onAccepted) }
+                // 외부 호출의 효과음 문맥은 실제 단계 실행 잡에만 전달해 중간 단발음을 막는다.
+                jobs[rule.id] = scope.launch(executionContext) { execute(rule, nowMillis, onAccepted, onCompleted) }
             }
         }
     }
@@ -129,7 +134,8 @@ class MacroRunner(
     }
 
     // 저장 대기부터 취소 가능한 실행 잡에 포함해 수동 중단 뒤 명령이 새로 나가지 않게 한다.
-    private suspend fun execute(rule: MacroRule, startedAt: Long, onAccepted: suspend () -> Unit) {
+    private suspend fun execute(rule: MacroRule, startedAt: Long, onAccepted: suspend () -> Unit,
+                                onCompleted: () -> Unit) {
         val myJob = kotlin.coroutines.coroutineContext[Job]
         _running.update { it + rule.id }
         try {
@@ -159,6 +165,11 @@ class MacroRunner(
                 if (failedSteps == 0) "완료" else "종료 — 실패·시간 초과 ${failedSteps}단계",
                 isError = failedSteps > 0,
             )
+            // 모든 단계를 끝낸 성공만 알린다. 오디오 실패로 매크로 성공 결과를 바꾸지 않는다.
+            if (failedSteps == 0) {
+                myJob?.ensureActive()
+                runCatching(onCompleted)
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             // 취소도 흔적을 남긴다 — "시작만 있고 끝이 없는" 제3의 상태를 로그에서 없앤다.
             // 안 남기면 하차 정리의 잠금 걸음이 왜 안 됐는지 추적할 수 없다

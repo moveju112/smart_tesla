@@ -4,6 +4,7 @@ import android.content.ContextWrapper
 import android.app.Application
 import android.location.Location
 import com.wemade.teslamacro.data.location.freshSpeedKph
+import com.wemade.teslamacro.data.safety.RoadPoint
 import com.wemade.teslamacro.data.safety.SafeDriveGuide
 import com.wemade.teslamacro.data.safety.warningIntervalMillis
 import com.wemade.teslamacro.domain.safety.CameraIndex
@@ -190,6 +191,33 @@ class SafetySettingsTest {
             runCurrent()
             Dispatchers.resetMain()
         }
+    }
+
+    /** 서버의 120초 창 경계는 보존하고 오래된 표본·0m 오차는 전송 전에 정리한다. */
+    @Test fun roadMatchSamplesStayWithinServerWindow() {
+        val guide = SafeDriveGuide(Application())
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50))))
+        SafeDriveGuide::class.java.getDeclaredField("roadMatchEnabled").apply { isAccessible = true }.setBoolean(guide, true)
+        // 실제 네트워크 요청 없이 위치 표본 수집만 확인한다.
+        SafeDriveGuide::class.java.getDeclaredField("tokenRejected").apply { isAccessible = true }.setBoolean(guide, true)
+        @Suppress("UNCHECKED_CAST")
+        val points = SafeDriveGuide::class.java.getDeclaredField("recentPoints").apply { isAccessible = true }
+            .get(guide) as ArrayDeque<RoadPoint>
+        val timestamp = System.currentTimeMillis() / 1_000
+        listOf(121L, 120L, 90L, 60L, 30L, 5L).forEach { age ->
+            points.addLast(RoadPoint(37.0, 127.0, timestamp - age, 10.0))
+        }
+        val location = Location("gps").apply {
+            latitude = 37.0; longitude = 127.0
+            bearing = 0f; accuracy = 0f; time = timestamp * 1_000
+        }
+        SafeDriveGuide::class.java.getDeclaredMethod(
+            "updateRoadMatch", Location::class.java, java.lang.Double.TYPE, java.lang.Long.TYPE,
+        ).apply { isAccessible = true }.invoke(guide, location, 20.0, 100_000_000_000L)
+        assertEquals(timestamp - 120, points.first().timestamp)
+        assertEquals(6, points.size)
+        assertEquals(1.0, points.last().accuracyMeters, 0.0)
     }
 
     /** 같은 카메라 앞에서 과속이 이어지면 2초마다 울리고, 속도를 낮췄다가 올리면 즉시 재경보한다. */

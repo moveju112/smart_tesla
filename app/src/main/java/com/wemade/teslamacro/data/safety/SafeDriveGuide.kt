@@ -52,7 +52,7 @@ class SafeDriveGuide(
     private var job: Job? = null
     private var index: CameraIndex? = null
     private var lastFixNanos: Long? = null
-    private val roadMatcher = RoadMatcher()
+    private val roadMatcher = RoadMatcher(application)
     private var roadMatchEnabled = false
     private val recentPoints = ArrayDeque<RoadPoint>()
     private var matchJob: Job? = null
@@ -389,8 +389,9 @@ class SafeDriveGuide(
         if (timestamp !in (System.currentTimeMillis() / 1_000 - 5)..(System.currentTimeMillis() / 1_000 + 5)) return
         if (recentPoints.lastOrNull()?.timestamp?.let { timestamp <= it } == true) return
         if (recentPoints.lastOrNull()?.timestamp?.let { timestamp - it > 30 } == true) recentPoints.clear()
-        recentPoints.addLast(RoadPoint(location.latitude, location.longitude, timestamp, location.accuracy.toDouble()))
-        while (recentPoints.size > 8) recentPoints.removeFirst()
+        // 서버의 120초 창과 최소 1m 오차 범위를 지켜 장시간 주행에서도 요청이 거절되지 않게 한다.
+        recentPoints.addLast(RoadPoint(location.latitude, location.longitude, timestamp, location.accuracy.toDouble().coerceAtLeast(1.0)))
+        while (recentPoints.size > 8 || timestamp - recentPoints.first().timestamp > 120) recentPoints.removeFirst()
         val nowMillis = nowNanos / 1_000_000
         if (recentPoints.size < 2 || tokenRejected || matchJob?.isActive == true ||
             (lastMatchAttemptMillis != 0L && nowMillis - lastMatchAttemptMillis < retryDelayMillis)) return

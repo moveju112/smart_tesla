@@ -7,6 +7,7 @@ import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import com.wemade.teslamacro.domain.model.Signal
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,6 +28,53 @@ import org.junit.Test
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class MacroRunnerTest {
+
+    /** 외부 호출의 오디오 문맥은 비동기 단계까지 유지하고 마지막 성공 뒤에만 완료를 알린다. */
+    @Test
+    fun `external macro notifies only after all steps succeed`() = runTest {
+        var completed = 0
+        var origin = ""
+        val observedGateway = object : VehicleGateway by gateway {
+            /** 단계 명령의 실제 실행 잡에 출처 문맥이 전달되는지 확인한다. */
+            override suspend fun send(command: VehicleCommand): Result<Unit> {
+                origin = kotlin.coroutines.coroutineContext[CoroutineName]?.name ?: ""
+                return gateway.send(command)
+            }
+        }
+        val runner = MacroRunner(observedGateway, this, MutableStateFlow(readingWith(30.0)),
+            now = { currentTimeMs() }, diagnosticLogger = {})
+        runner.launch(rule(ActionStep.Run(VehicleCommand.ClimateOn), ActionStep.Wait(3),
+            ActionStep.Run(VehicleCommand.ClimateOff)), 0L,
+            onCompleted = { completed++ }, executionContext = CoroutineName("external"))
+        runCurrent()
+        assertEquals("external", origin)
+        assertEquals(0, completed)
+        advanceUntilIdle()
+        assertEquals(1, completed)
+    }
+
+    /** 단일 단계가 거부되거나 매크로가 취소되면 완료음을 예약하지 않는다. */
+    @Test
+    fun `failed or cancelled macro never notifies completion`() = runTest {
+        var completed = 0
+        val rejectedGateway = object : VehicleGateway by gateway {
+            /** 거부 응답으로 매크로의 실패 경로를 재현한다. */
+            override suspend fun send(command: VehicleCommand): Result<Unit> =
+                Result.failure(IllegalStateException("rejected"))
+        }
+        val rejected = MacroRunner(rejectedGateway, this, MutableStateFlow(readingWith(30.0)),
+            now = { currentTimeMs() }, diagnosticLogger = {})
+        rejected.launch(rule(ActionStep.Run(VehicleCommand.Lock)), 0L, onCompleted = { completed++ })
+        advanceUntilIdle()
+        assertEquals(0, completed)
+        val waiting = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)),
+            now = { currentTimeMs() }, diagnosticLogger = {})
+        waiting.launch(rule(ActionStep.Wait(120)), 0L, onCompleted = { completed++ })
+        runCurrent()
+        waiting.cancel("r")
+        advanceUntilIdle()
+        assertEquals(0, completed)
+    }
 
     /** 하차 종료가 이전 열선 타이머를 취소해 재탑승 통풍을 뒤늦게 끄지 않는다. */
     @Test

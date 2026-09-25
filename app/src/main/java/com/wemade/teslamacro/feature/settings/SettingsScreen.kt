@@ -981,7 +981,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         )
         if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
             Text(
-                "안내를 켜면 약 1km 안에 카메라 후보가 있을 때 GPS 경로를 gps-map.choondoggy.com으로 전송해 도로를 보정해요. 서버 오류·불확실한 결과에서는 오프라인 안내를 유지해요. 단속 도로·방향이 확정되진 않아요.",
+                "안내를 켜면 기기별 인증서를 자동 등록·갱신하고, 약 1km 안에 카메라 후보가 있을 때 GPS 경로를 gps-map.choondoggy.com으로 전송해 도로를 보정해요. 로그인이나 키 입력은 필요 없어요. 서버 오류·불확실한 결과에서는 오프라인 안내를 유지해요. 단속 도로·방향이 확정되진 않아요.",
                 style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
             )
         }

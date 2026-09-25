@@ -3,6 +3,7 @@ package com.wemade.teslamacro.data.gateway
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -59,6 +60,35 @@ class CommandFeedbackTest {
         assertTrue(gateway.send(VehicleCommand.OpenFrunk).isFailure)
         assertEquals(1, confirmed)
         assertEquals(2, sends)
+    }
+
+    /** 외부 음성 요청은 서비스가 2회 완료음을 낼 때 게이트웨이의 기존 1회 확인음을 중복하지 않는다. */
+    @Test
+    fun `external quick action leaves completion sound to service`() = runTest {
+        var legacyTone = 0
+        var sends = 0
+        var succeeds = true
+        val target = object : VehicleGateway by SimulatedVehicleGateway() {
+            /** 차량 결과만 주입해 출처별 피드백을 나눠 검증한다. */
+            override suspend fun send(command: VehicleCommand): Result<Unit> {
+                sends++
+                return if (succeeds) Result.success(Unit) else Result.failure(IllegalStateException("rejected"))
+            }
+        }
+        val gateway = SwitchingVehicleGateway(target, backgroundScope) { legacyTone++ }
+        withContext(ExternalQuickActionSound) {
+            assertTrue(gateway.send(VehicleCommand.OpenFrunk).isSuccess)
+        }
+        assertEquals(0, legacyTone)
+        succeeds = false
+        withContext(ExternalQuickActionSound) {
+            assertTrue(gateway.send(VehicleCommand.OpenFrunk).isFailure)
+        }
+        assertEquals(0, legacyTone)
+        succeeds = true
+        assertTrue(gateway.send(VehicleCommand.OpenFrunk).isSuccess)
+        assertEquals(1, legacyTone)
+        assertEquals(3, sends)
     }
 
     /** 오디오 오류가 차량 성공을 실패로 바꾸거나 재전송을 유발하지 않는다. */

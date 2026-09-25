@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.service
 
 import com.wemade.teslamacro.data.fleet.*
+import com.wemade.teslamacro.data.gateway.ExternalQuickActionSound
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslable.CommandDeadline
 import kotlinx.coroutines.CompletableDeferred
@@ -14,6 +15,26 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FleetQuickActionFlowTest {
     private val vin = "5YJS0000000000000"
+
+    /** 외부 음성은 최종 성공에도 기존 Fleet 단발음을 생략하고 실패·접수에는 완료음을 내지 않는다. */
+    @Test
+    fun `external quick action defers fleet confirmation to service`() = runTest {
+        var defaultTones = 0
+        val transport = FleetHttpTransport { method, _, _, _, _ ->
+            val status = if (method == "POST") "queued" else "succeeded"
+            FleetHttpResponse(if (method == "POST") 202 else 200,
+                """{"id":"dummy-id","vin":"$vin","name":"door_lock","status":"$status","result":null}""")
+        }
+        val client = FleetQueuedClient(transport, { "dummy-token" }) { defaultTones++ }
+        withContext(CommandDeadline(120_000) { testScheduler.currentTime } + ExternalQuickActionSound) {
+            assertEquals(FleetQueueStatus.Succeeded, client.execute(vin, VehicleCommand.Lock, {}).status)
+        }
+        assertEquals(0, defaultTones)
+        withContext(CommandDeadline(120_000) { testScheduler.currentTime }) {
+            assertEquals(FleetQueueStatus.Succeeded, client.execute(vin, VehicleCommand.Lock, {}).status)
+        }
+        assertEquals(1, defaultTones)
+    }
 
     /** 서버 접수 뒤에는 취소 대신 조회만 중단하고 늦은 성공 응답의 효과음을 막는다. */
     @Test

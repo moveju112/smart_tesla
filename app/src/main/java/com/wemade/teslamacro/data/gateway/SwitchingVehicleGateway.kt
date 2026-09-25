@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlin.coroutines.coroutineContext
 
 /**
  * 실제 구현을 도중에 갈아끼울 수 있는 게이트웨이.
@@ -62,7 +63,11 @@ class SwitchingVehicleGateway(
     override suspend fun send(command: VehicleCommand): Result<Unit> {
         val target = delegate.value
         val result = target.send(command)
-        if (result.isSuccess && target !is SimulatedVehicleGateway) runCatching { onCommandConfirmed(command) }
+        // 외부 빠른 명령은 서비스가 성공 응답 뒤 두 번 울리므로 여기서는 기존 단발음을 생략한다.
+        if (result.isSuccess && target !is SimulatedVehicleGateway &&
+            coroutineContext[ExternalQuickActionSound.Key] == null) {
+            runCatching { onCommandConfirmed(command) }
+        }
         return result
     }
     override suspend fun read(category: StateCategory): Result<VehicleSnapshot> =

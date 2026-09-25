@@ -448,7 +448,9 @@ class MacroService : LifecycleService() {
             wakeLock.acquire(deadline.remainingMillis())
             com.wemade.teslable.DiagLog.add("$label 요청 대기 — 수신부터 최대 ${validitySeconds}초 · 만료 후 전송 취소")
             val completed = kotlinx.coroutines.withTimeoutOrNull(deadline.remainingMillis()) {
-                kotlinx.coroutines.withContext(deadline) { handleQuickAction(action, macroId, beforeDispatch, onSubmitted) }
+                kotlinx.coroutines.withContext(deadline + com.wemade.teslamacro.data.gateway.ExternalQuickActionSound) {
+                    handleQuickAction(action, macroId, beforeDispatch, onSubmitted)
+                }
                 true
             }
             if (completed == null) throw com.wemade.teslable.CommandExpiredException()
@@ -475,6 +477,8 @@ class MacroService : LifecycleService() {
             return
         }
 
+        // 확인음은 출처가 실제로 받아들인 요청에만 내고 실패를 완료음으로 오인시키지 않는다.
+        app.container.commandFeedback.received(requestLabel)
         com.wemade.teslable.DiagLog.add("빅스비 요청 처리 시작 — $requestLabel")
         val settings = app.container.settingsStore.settings.first()
         val bleConnected = (app.container.gateway.current as?
@@ -498,6 +502,7 @@ class MacroService : LifecycleService() {
             when (result.status) {
                 com.wemade.teslamacro.data.fleet.FleetQueueStatus.Succeeded -> {
                     com.wemade.teslable.DiagLog.add("Fleet [$fleetLabel] 차량 성공 응답 확인 · 물리 상태 확인 아님")
+                    app.container.commandFeedback.quickActionConfirmed(command)
                     showQuickActionToast("$fleetLabel · 차량 성공 응답")
                 }
                 com.wemade.teslamacro.data.fleet.FleetQueueStatus.Failed ->
@@ -544,6 +549,12 @@ class MacroService : LifecycleService() {
                     System.currentTimeMillis(),
                     restartIfRunning = true,
                     onAccepted = { app.container.poller.recordFired(rule.id) },
+                    onCompleted = {
+                        if (app.container.gateway.current !is com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway) {
+                            app.container.commandFeedback.quickActionCompleted(rule.name)
+                        }
+                    },
+                    executionContext = com.wemade.teslamacro.data.gateway.ExternalQuickActionSound,
                 )
                 // launch는 비동기다. 러너가 연결 사용권을 이어받은 뒤에 단발 사용권을 놓는다
                 kotlinx.coroutines.withTimeoutOrNull(2_000L) {
@@ -556,6 +567,10 @@ class MacroService : LifecycleService() {
 
             val result = app.container.gateway.send(checkNotNull(command))
             if (result.isSuccess) {
+                // 차량 성공 응답을 받은 뒤에만 공유 게이트웨이의 단발음 대신 두 번 알린다.
+                if (app.container.gateway.current !is com.wemade.teslamacro.data.gateway.SimulatedVehicleGateway) {
+                    app.container.commandFeedback.quickActionConfirmed(command)
+                }
                 // 결과를 즉시 다시 읽어, 이어서 앱을 열었을 때 실제 값이 바로 보이게 한다.
                 app.container.poller.focusOn(command.confirmCategory())
                 com.wemade.teslable.DiagLog.add("빅스비 명령 [${command.label}] 완료")

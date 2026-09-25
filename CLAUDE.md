@@ -17,8 +17,8 @@
 - **터치 타깃은 48dp**가 하한이다(안드로이드 최소치, 장갑 낀 손·흔들리는 차). 44dp는 한 곳도 없다
 - **글자 크기는 재서 맞춘다.** 배율 상한이나 서체 advance를 추정하면 안 된다 — 네 번 틀렸다(DESIGN.md 글자 배율 절). 기입 치수는 `WideFontScaleTest`(배율 1.3, 값 있는 상태)와 `InscribedSizeTest`(순수 함수)가 함께 지킨다
 - 보조 검증용 거치 실기기는 **ALLDOCUBE iPlay 60 mini Pro** (8.4" 1920×1200 ≈ 960×600dp) — 세로가 짧다. UI는 폭에 따라 칸이 바뀌는 반응형이어야 한다
-- **CLI image policy:** NEVER generate/open images, recommend screenshots or visual verification, ask permission for them, or gate release on them unless the user explicitly requests images. UI edits and release requests do not count. Use source inspection, non-image tests, and builds by default.
-- `./gradlew test` excludes image-rendering tests by default. Enable `-PallowSnapshots=true` only for an explicit image request; new rendering tests MUST follow `*ScreenshotTest` naming or join the exclusions in `app/build.gradle.kts`. When requested, cover phone day/night, `WideFontScaleTest`, and `WideScreenshotTest`; `ScreenshotTest` alone uses oversized PIXEL_C dimensions.
+- **CLI snapshot policy:** UI/디자인 또는 시각적 정확성에 영향 있는 코드 변경은 별도 승인 없이 관련 Paparazzi 스냅샷을 촬영·열람·비교하고 실패를 수정한 뒤 릴리즈한다. 시각적 영향 없는 작업은 스냅샷을 생략한다. CLI 사용자에게 이미지를 반환하거나 스크린샷 확인을 요구하지 않고 결과만 텍스트로 알린다.
+- `./gradlew test` excludes image-rendering tests by default. For visual changes, run focused `recordPaparazziDebug` / `verifyPaparazziDebug` with `-PallowSnapshots=true` and inspect phone/tablet output plus day/night and `WideFontScaleTest` when relevant; new rendering tests MUST follow `*ScreenshotTest` naming or join the exclusions in `app/build.gradle.kts`. `ScreenshotTest` alone uses oversized PIXEL_C dimensions.
 - **사용자가 승인한 코드 변경은 검증 통과 후 자동 릴리즈한다.** 별도 확인 없이 다음 패치 버전 선택 → versionCode +1 → 비이미지 테스트·arm64 빌드 → 관련 파일만 커밋 → 현재 추적 브랜치 푸시 → annotated 태그 → GitHub Release·APK 첨부 → 원격 HEAD·태그·APK SHA-256 검증까지 [RELEASE_BUILD.md](docs/tasks/RELEASE_BUILD.md)대로 완료한다. 사용자가 릴리즈 제외를 명시했거나 검증 실패·실 VIN/비밀값·무관한 변경 혼입이 있으면 중단한다
 - 자동 릴리즈 상시 권한은 `moveju112/smart_tesla`의 현재 추적 브랜치·일치 태그·GitHub Release에만 적용한다. force-push·merge/rebase·브랜치 삭제·의존성 업그레이드·기기 설치·스토어 배포·DB/데이터/서비스·이슈/PR 변경은 포함하지 않으며, BLE는 사용자 실차 로그 전까지 미확인이다
 - 배포마다 versionCode +1, 실기기는 arm64 split APK (universal 없음). 배포용은 R8을 태운 **release 빌드**이며, 자가 업데이트가 끊기지 않게 debug 키로 서명한다 — 키를 바꾸면 사용자가 앱을 지우고 다시 깔아야 한다
@@ -30,8 +30,8 @@
 
 ```bash
 ./gradlew test                      # 비이미지 테스트 (렌더링 테스트 기본 제외)
-./gradlew recordPaparazziDebug -PallowSnapshots=true # 사용자가 이미지를 명시 요청했을 때만
-./gradlew verifyPaparazziDebug -PallowSnapshots=true # 사용자가 이미지를 명시 요청했을 때만
+./gradlew recordPaparazziDebug -PallowSnapshots=true # UI 시각 검증에 필요할 때 관련 테스트만
+./gradlew verifyPaparazziDebug -PallowSnapshots=true # UI 시각 검증에 필요할 때 관련 테스트만
 ./gradlew :app:assembleRelease      # 배포 APK → app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ./gradlew :app:assembleDebug        # 개발용 APK → app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```

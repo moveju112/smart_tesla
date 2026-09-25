@@ -42,7 +42,7 @@
 
 - **Symptom:** `./gradlew test` success does not prove visual correctness; ordinary tests previously also generated unwanted images.
   - Cause: Paparazzi test bodies can render reports without record/verify tasks, but do not compare baselines. Rendering tests are now excluded by default in `app/build.gradle.kts`.
-  - Fix: Use non-image tests, source inspection, and builds for CLI work. NEVER generate/open snapshots, recommend visual checks, ask image permission, or gate release on snapshots unless the user explicitly requests images. Only then use `recordPaparazziDebug` / `verifyPaparazziDebug` with `-PallowSnapshots=true` — [tasks/RELEASE_BUILD.md](tasks/RELEASE_BUILD.md).
+  - Fix: Keep `./gradlew test` non-rendering by default. For visually affected UI/design changes, autonomously run focused `recordPaparazziDebug` / `verifyPaparazziDebug` with `-PallowSnapshots=true`, open and compare the actual images, and resolve failures before release. Skip for unrelated changes; give the CLI user text findings, not images or screenshot requests — [tasks/RELEASE_BUILD.md](tasks/RELEASE_BUILD.md).
 
 - **Symptom:** combine에 flow를 하나 더 넣었더니 컴파일 에러
   - Cause: Kotlin combine 타입 안전 오버로드는 5-arg까지

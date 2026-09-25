@@ -11,8 +11,8 @@
    ./gradlew test :app:assembleRelease
    ```
    - `test` excludes rendering tests by default via `app/build.gradle.kts`; ordinary tests can otherwise render Paparazzi reports even without record/verify tasks ([PITFALLS.md](../PITFALLS.md)).
-   - CLI default: NEVER generate/open snapshots, recommend visual checks, ask permission for them, or block release on missing snapshots. UI edits and release requests are NOT explicit image requests.
-   - Only if the user explicitly requests images, enable `-PallowSnapshots=true` for `recordPaparazziDebug` / `verifyPaparazziDebug`; review relevant phone day/night, `WideFontScaleTest`, and `WideScreenshotTest` cases. Otherwise skip image verification without asking again.
+   - UI/디자인 또는 시각적 정확성에 영향 있는 코드 변경은 별도 승인 없이 `-PallowSnapshots=true`로 관련 Paparazzi 테스트만 `recordPaparazziDebug` / `verifyPaparazziDebug` 실행하고 생성된 폰·태블릿 화면을 직접 열어 비교한다. 필요하면 낮/밤, `WideFontScaleTest`, `WideScreenshotTest`까지 확인한다.
+   - 관련 이미지 검증 실패는 수정 후 재검증하고, 실패한 채로 UI 변경을 릴리스하지 않는다. 시각적 영향 없는 작업은 스냅샷을 생략한다. CLI 사용자에게 이미지를 반환하거나 직접 확인을 요구하지 않고 결과만 텍스트로 보고한다.
 3. **산출물 확인** — `app/build/outputs/apk/release/app-arm64-v8a-release.apk`
    - universal APK는 없다 (ABI split, `app/build.gradle.kts:24`). 실기기는 arm64
    - 배포는 **release 빌드**다 (R8 축소, 39.9MB → 17.6MB). 자가 업데이트가 끊기지 않게

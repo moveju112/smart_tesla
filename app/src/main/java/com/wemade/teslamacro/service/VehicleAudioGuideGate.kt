@@ -49,16 +49,16 @@ internal fun vehicleAudioStatus(
 
 /** MAC·차량 이름을 로그에 남기지 않고 설정 화면에 연결 근거를 보여준다. */
 enum class VehicleAudioStatus(val label: String) {
-    CHECKING("차량 오디오 확인 중"),
-    PERMISSION_REQUIRED("Bluetooth 연결 권한 필요 · 내부 안내 대기"),
-    BLUETOOTH_OFF("Bluetooth 꺼짐 · 내부 안내 대기"),
-    PROFILE_WAITING("음악용 Bluetooth 연결 상태 확인 중"),
-    SELECTED_UNPAIRED("선택한 차량 오디오가 페어링 목록에서 사라졌어요"),
-    MULTIPLE_VEHICLES("테슬라 여러 대가 페어링됨 · 오디오 기기 선택 필요"),
-    NO_MATCH("등록 차량 오디오를 찾지 못했어요 · 블루투스를 선택하세요"),
-    DISCONNECTED("차량 오디오 연결 대기 · GPS 안내 중지"),
-    CONNECTED("차량 오디오 연결됨 · 내부 GPS 안내 사용"),
-    READ_FAILED("Bluetooth 상태 확인 실패 · 내부 안내 대기"),
+    CHECKING("탑승 감지용 Bluetooth 확인 중"),
+    PERMISSION_REQUIRED("Bluetooth 연결 권한 필요 · 탑승 감지 대기"),
+    BLUETOOTH_OFF("Bluetooth 꺼짐 · 탑승 감지 대기"),
+    PROFILE_WAITING("차량 음악용 Bluetooth 연결 확인 중"),
+    SELECTED_UNPAIRED("선택한 차량이 페어링 목록에서 사라졌어요"),
+    MULTIPLE_VEHICLES("테슬라 여러 대가 페어링됨 · 감지할 차량 선택 필요"),
+    NO_MATCH("등록 차량을 찾지 못했어요 · 감지할 차량을 선택하세요"),
+    DISCONNECTED("감지용 Bluetooth 연결 대기 · 속도·단속 안내 중지"),
+    CONNECTED("감지용 Bluetooth 연결됨 · 속도·단속 안내 가능"),
+    READ_FAILED("Bluetooth 상태 확인 실패 · 탑승 감지 대기"),
 }
 
 // 1. 권한 변경과 설정 변경이 동일한 구독 조건을 사용해 휴대 모드의 재등록을 막는다.

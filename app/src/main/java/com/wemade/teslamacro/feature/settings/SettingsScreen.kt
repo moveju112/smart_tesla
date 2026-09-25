@@ -122,7 +122,7 @@ fun SettingsScreen(
                     when (group) {
                         SettingsGroup.DRIVING -> {
                             if (navigation != null) {
-                                SectionHeader("길안내", topPadding = Space.md)
+                                SectionHeader("자동 길안내", topPadding = Space.sm)
                                 NavigatorPanel(settings, navigation)
                             } else {
                                 EmptyGroupNote("길안내를 넘길 내비 앱이 이 기기에 없어요.")
@@ -155,9 +155,16 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.VEHICLE -> {
-                            // 연결 설정을 먼저 읽고 등록·해제 카드는 맨 아래에서 찾는다.
+                            // 차량 등록 전에도 휴대 모드의 탑승 감지 기기를 고를 수 있어야 한다.
+                            SectionHeader("이 기기 사용 방식", topPadding = Space.sm)
+                            PhoneKeyProtectionPanel(
+                                settings = settings,
+                                navigation = navigation,
+                                onDeviceModeChange = onDeviceModeChange,
+                                onProtectPhoneKeyChange = onProtectPhoneKeyChange,
+                            )
                             if (simulator != null) {
-                                SectionHeader("시뮬레이터", topPadding = Space.md)
+                                SectionHeader("시뮬레이터")
                                 SimulatorPanel(
                                     insideTemp = simulator.insideTemp,
                                     outsideTemp = simulator.outsideTemp,
@@ -166,21 +173,12 @@ fun SettingsScreen(
                                     onBoard = simulator.onBoard,
                                     onLeave = simulator.onLeave,
                                 )
-                            } else if (settings.isPaired) {
-                                SectionHeader("연결 안전", topPadding = Space.md)
-                                PhoneKeyProtectionPanel(
-                                    settings = settings,
-                                    onDeviceModeChange = onDeviceModeChange,
-                                    onProtectPhoneKeyChange = onProtectPhoneKeyChange,
-                                )
                             }
                         }
 
                         SettingsGroup.DEVICE -> {
-                            SectionHeader("화면", topPadding = Space.md)
+                            SectionHeader("화면 모드", topPadding = Space.sm)
                             TCard {
-                                Text("화면 모드", style = MaterialTheme.typography.titleMedium, color = T.Ink)
-                                Spacer(Modifier.height(Space.sm))
                                 ChoiceRow(
                                     options = ThemeMode.entries.map { it.name to it.label },
                                     selected = settings.themeMode.name,
@@ -211,7 +209,18 @@ fun SettingsScreen(
                     when (group) {
                         SettingsGroup.DRIVING -> {
                             if (navigation != null) {
-                                SectionHeader("속도 표시", topPadding = Space.md)
+                                SectionHeader("실시간 속도", topPadding = if (compact) Space.lg else Space.sm)
+                                // 휴대 모드에서 연결 대기 중인 이유와 설정 위치를 주행 탭에서도 알린다.
+                                if (settings.deviceMode == DeviceMode.PORTABLE &&
+                                    (settings.hudOverlay || settings.safeDrive) &&
+                                    navigation.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED) {
+                                    Text(
+                                        "속도·단속 안내는 감지용 Bluetooth 연결 후 시작 · 차량 탭에서 설정",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = T.InkMuted,
+                                        modifier = Modifier.padding(bottom = Space.sm),
+                                    )
+                                }
                                 SpeedPanel(settings, navigation)
                                 SectionHeader("단속 안내")
                                 SafeDrivePanel(settings, navigation)
@@ -220,11 +229,11 @@ fun SettingsScreen(
 
                         SettingsGroup.AUTOMATION -> {
                             if (smartThings != null) {
-                                SectionHeader("음성 명령", topPadding = if (compact) Space.lg else Space.sm)
+                                SectionHeader("스마트싱스 음성 명령", topPadding = if (compact) Space.lg else Space.sm)
                                 SmartThingsPanel(settings, smartThings)
                             }
                             if (onFleetApiEnabledChange != null) {
-                                SectionHeader("음성 명령 전송", topPadding = if (compact || smartThings != null) Space.lg else Space.sm)
+                                SectionHeader("명령 전송 경로", topPadding = if (compact || smartThings != null) Space.lg else Space.sm)
                                 FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
                             }
                         }
@@ -240,14 +249,14 @@ fun SettingsScreen(
 
                         SettingsGroup.DEVICE -> {
                             if (backup != null) {
-                                SectionHeader("백업", topPadding = Space.md)
+                                SectionHeader("백업", topPadding = if (compact) Space.lg else Space.sm)
                                 BackupPanel(backup)
                             }
 
                             // 실차 문제를 원격으로 전달받는 통로. 공유 버튼은 항상 남긴다.
                             // 줄 목록은 끈다 — 사용자가 읽을 내용이 아니고 여기가 화면을 제일 많이 먹었다.
                             // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 토글 상태를 알 수 없다
-                            SectionHeader("진단 로그", topPadding = if (backup == null) Space.md else Space.lg)
+                            SectionHeader("진단 로그", topPadding = if (compact || backup != null) Space.lg else Space.sm)
                             DiagLogPanel(
                                 title = null,
                                 showLines = false,
@@ -279,8 +288,7 @@ private fun StealthChargePanel(
 ) {
     TCard {
         ToggleRow(
-            title = "스텔스 충전 1회",
-            subtitle = "다음 충전 1회만 실행하고 완료되면 자동으로 꺼져요",
+            title = "스텔스 충전 1회 · 전류 자동 조절",
             checked = settings.stealthCharging,
             onCheckedChange = onEnabledChange,
         )
@@ -291,7 +299,7 @@ private fun StealthChargePanel(
 
         Spacer(Modifier.height(Space.sm))
         Text(
-            text = "충전 중에는 BLE 연결 유지 · 대기 중에는 10분마다 확인",
+            text = "충전 중 연결 유지 · 대기 중 10분마다 확인",
             style = MaterialTheme.typography.bodySmall,
             color = T.InkFaint,
         )
@@ -384,54 +392,51 @@ internal fun formatStealthCountdown(seconds: Int): String {
 @Composable
 private fun PhoneKeyProtectionPanel(
     settings: AppSettings,
+    navigation: NavigationControls?,
     onDeviceModeChange: (DeviceMode) -> Unit,
     onProtectPhoneKeyChange: (Boolean) -> Unit,
 ) {
     TCard {
-        Text(
-            text = "이 기기 사용 방식",
-            style = MaterialTheme.typography.titleMedium,
-            color = T.Ink,
-        )
-        Text(
-            text = "차에 두면 거치 · 들고 다니면 휴대",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-            modifier = Modifier.padding(top = Space.xs),
-        )
-        Spacer(Modifier.height(Space.sm))
         ChoiceRow(
             options = DeviceMode.entries.map { it.name to it.label },
             selected = settings.deviceMode.name,
             onSelect = { onDeviceModeChange(DeviceMode.of(it)) },
         )
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
-
-        if (settings.deviceMode == DeviceMode.MOUNTED) {
+        if (settings.deviceMode == DeviceMode.MOUNTED && settings.isPaired) {
+            Spacer(Modifier.height(Space.md))
             ToggleRow(
-                title = "휴대폰 키 간섭 방지",
-                subtitle = "전원이 있어도 빈 차가 확인되면 BLE 연결을 끊어요",
+                title = "빈 차에서 휴대폰 키 간섭 방지",
+                subtitle = "켜면 빈 차에서 BLE 연결·상시 감시·예약 매크로 중지",
                 checked = settings.protectPhoneKey,
                 onCheckedChange = onProtectPhoneKeyChange,
             )
-        } else {
+            if (settings.protectPhoneKey) {
+                Text(
+                    text = "스텔스 충전은 실행 시간대에 연결을 유지해요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkFaint,
+                    modifier = Modifier.padding(top = Space.sm),
+                )
+            }
+        } else if (settings.deviceMode == DeviceMode.PORTABLE) {
             Text(
-                text = "앱 사용·직접 명령 때만 연결해요. 자동 매크로는 거치 모드 전용이며, 안심운전 자동 시작은 별도 설정을 따라요.",
+                text = "휴대 모드에서는 자동 매크로를 실행하지 않아요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
+                modifier = Modifier.padding(top = Space.sm),
             )
-        }
-        if (settings.deviceMode == DeviceMode.MOUNTED && settings.protectPhoneKey) {
-            Spacer(Modifier.height(Space.md))
-            Hairline()
-            Spacer(Modifier.height(Space.md))
-            Text(
-                text = "빈 차에서는 상시 감시·예약 매크로가 멈춰요. 스텔스 충전은 실행 시간대에 연결을 유지해요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-            )
+            if (navigation != null) {
+                Spacer(Modifier.height(Space.lg))
+                Text("탑승 감지 블루투스", style = MaterialTheme.typography.titleMedium, color = T.Ink)
+                Text(
+                    text = "차량의 음악용 블루투스 연결로 속도·단속 안내를 시작해요. 소리 출력 기기는 바꾸지 않아요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkFaint,
+                    modifier = Modifier.padding(top = Space.xs),
+                )
+                Spacer(Modifier.height(Space.md))
+                VehicleAudioPicker(settings, navigation)
+            }
         }
     }
 }
@@ -489,7 +494,7 @@ private fun BatteryPanel(battery: BatteryControls) {
     TCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "절전이 걸려 있어요.\n매크로 대기가 늘어지고 위치·업데이트 확인이 밀릴 수 있어요.",
+                text = "절전 제한 중 · 매크로·위치·업데이트가 지연될 수 있어요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.WarnText,
                 modifier = Modifier.weight(1f),
@@ -521,7 +526,7 @@ private fun UpdatePanel(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = when (update) {
-                    null -> "새 버전이 나왔는지 확인해 보세요."
+                    null -> "새 버전 확인 전"
                     is UpdateState.Checking -> "확인 중…"
                     is UpdateState.UpToDate -> "최신 버전이에요."
                     is UpdateState.Failed -> update.message
@@ -615,7 +620,7 @@ data class BatteryControls(
 internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, credentials: FleetCredentialControls? = null) {
     TCard {
         ToggleRow(
-            title = "Fleet API 사용",
+            title = "Fleet API로 명령 전송",
             checked = enabled,
             onCheckedChange = onEnabledChange,
         )
@@ -647,8 +652,7 @@ internal fun SmartThingsPanel(
     val configured = settings.smartThingsCommandTexts.values.count { it.isNotBlank() }
     TCard {
         ToggleRow(
-            title = "스마트싱스 음성 명령",
-            subtitle = "알림 문구로 차량 동작 실행",
+            title = "알림으로 차량 명령 실행",
             checked = settings.smartThingsEnabled,
             onCheckedChange = controls.onEnabledChange,
         )
@@ -669,16 +673,12 @@ internal fun SmartThingsPanel(
             style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
             modifier = Modifier.padding(top = Space.sm))
         Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.sm))
         SettingsDetails("명령 유효시간", "${settings.smartThingsValiditySeconds}초") {
             com.wemade.teslamacro.ui.component.NumberStepper(
                 value = settings.smartThingsValiditySeconds.toDouble(),
                 min = 10.0, max = 600.0, step = 10.0, unit = "초",
                 onChange = { controls.onValiditySecondsChange(it.toInt()) },
             )
-            Text("수신 후 유효시간이 지나면 보내지 않은 명령을 취소해요.",
-                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         }
     }
     if (manageCommands) {
@@ -838,8 +838,7 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
     var showTrustedDevicePrompt by rememberSaveable { mutableStateOf(false) }
     TCard {
         ToggleRow(
-            title = "탑승 시 안심운전 실행",
-            subtitle = "네이버 지도",
+            title = "탑승 시 네이버 지도 안심운전 실행",
             checked = settings.autoStartNavigatorSafeDrive,
             onCheckedChange = { enabled ->
                 controls.onAutoStartSafeDriveChange(enabled)
@@ -944,7 +943,7 @@ private fun VehicleAudioPicker(settings: AppSettings, controls: NavigationContro
             it.address.equals(settings.vehicleAudioAddress, ignoreCase = true)
         }?.name ?: "선택 기기 없음"
     }
-    TButton("블루투스 선택 · $selectedAudioName", ButtonTone.Secondary) { showAudioPicker = true }
+    TButton("감지할 차량 · $selectedAudioName", ButtonTone.Secondary) { showAudioPicker = true }
     Spacer(Modifier.height(Space.sm))
     Text(controls.vehicleAudioStatus.label,
         style = MaterialTheme.typography.bodySmall,
@@ -956,7 +955,7 @@ private fun VehicleAudioPicker(settings: AppSettings, controls: NavigationContro
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         ) {
             com.wemade.teslamacro.ui.component.PickerSheet(
-                title = "차량 블루투스 선택",
+                title = "탑승 감지에 사용할 차량",
                 onDismiss = { showAudioPicker = false },
             ) {
                 com.wemade.teslamacro.ui.component.PickerRow(
@@ -994,8 +993,7 @@ private fun VehicleAudioPicker(settings: AppSettings, controls: NavigationContro
 private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
     TCard {
         ToggleRow(
-            title = "속도를 다른 앱 위에 표시",
-            subtitle = "내비를 띄워도 속도가 보여요. 세우면 사라집니다",
+            title = "다른 앱 위에 실시간 속도 표시",
             checked = settings.hudOverlay,
             onCheckedChange = controls.onHudOverlayChange,
         )
@@ -1021,16 +1019,11 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )
-            // 단속 목록이 없어도 HUD를 쓰는 휴대 기기는 오디오 연결 대상을 고를 수 있어야 한다.
-            if (settings.deviceMode == DeviceMode.PORTABLE && settings.hudOverlay) {
-                Spacer(Modifier.height(Space.md))
-                VehicleAudioPicker(settings, controls)
-            }
             return@TCard
         }
 
         ToggleRow(
-            title = "안내 받기",
+            title = "단속 카메라 안내",
             subtitle = if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
                 "카메라 근처 GPS 경로 전송 · gps-map.choondoggy.com"
             } else {
@@ -1039,11 +1032,6 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             checked = settings.safeDrive,
             onCheckedChange = controls.onSafeDriveChange,
         )
-        if (settings.deviceMode == DeviceMode.PORTABLE) {
-            Spacer(Modifier.height(Space.md))
-            VehicleAudioPicker(settings, controls)
-        }
-
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)
         }
@@ -1077,11 +1065,9 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             onChange = { controls.onSafeDriveToleranceChange(it.toInt()) },
         )
         Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
         ToggleRow(
-            title = "소리로도 알림",
-            subtitle = "과속 경고음·선택적 음성 안내 · 기기 미디어 음량 적용",
+            title = "과속 경고음·음성 안내",
+            subtitle = "기기 미디어 음량 적용",
             checked = settings.safeDriveSound,
             onCheckedChange = controls.onSafeDriveSoundChange,
         )
@@ -1093,8 +1079,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         }
         Spacer(Modifier.height(Space.md))
         ToggleRow(
-            title = "카메라 거리 음성 안내",
-            subtitle = "진입할 때와 약 200m 앞에서 한 번씩 · 음성 점검 가능",
+            title = "카메라 접근 음성 안내",
             checked = settings.safeDriveVoice,
             onCheckedChange = controls.onSafeDriveVoiceChange,
         )
@@ -1110,12 +1095,12 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         }
         Spacer(Modifier.height(Space.md))
         ToggleRow(
-            title = "과속할수록 빠르게 울리기",
-            subtitle = "제한 대비 +10 미만 3초 · +10부터 2초 · +15부터 1초 (끄면 2초 고정)",
+            title = "과속 정도에 따라 경고음 간격 조절",
             checked = settings.safeDriveProgressiveSound,
             onCheckedChange = controls.onSafeDriveProgressiveSoundChange,
         )
         Spacer(Modifier.height(Space.md))
+        Text("경고음 크기", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         ChoiceRow(
             options = listOf("1" to "작게", "2" to "보통", "3" to "크게"),
             selected = settings.safeDriveVolume.coerceIn(1, 3).toString(),
@@ -1140,9 +1125,7 @@ private fun VehiclePanel(
             label = "VIN",
             value = if (settings.isPaired) settings.vin else "등록된 차량 없음",
         )
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
+        Spacer(Modifier.height(Space.lg))
 
         // 등록 해제하면 다시 들어갈 길이 필요하다. 버튼이 상황에 따라 바뀐다
         Row(
@@ -1184,23 +1167,23 @@ data class BackupControls(
 @Composable
 private fun BackupPanel(backup: BackupControls) {
     TCard {
-        Text(
-            text = "매크로·설정 백업. 차량 등록과 키는 제외되므로 새 기기에서는 다시 등록해야 해요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.md))
         Row {
-            TButton("내보내기", fillWidth = false, small = true, onClick = backup.onExport)
+            TButton("백업 내보내기", fillWidth = false, small = true, onClick = backup.onExport)
             Spacer(Modifier.width(Space.sm))
             TButton(
-                text = "되돌리기",
+                text = "백업 가져오기",
                 tone = ButtonTone.Secondary,
                 fillWidth = false,
                 small = true,
                 onClick = backup.onImport,
             )
         }
+        Text(
+            text = "차량 등록·키는 제외돼요. 새 기기에서는 다시 등록해야 해요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.InkFaint,
+            modifier = Modifier.padding(top = Space.sm),
+        )
         // 결과는 성공이든 실패든 남긴다 — 조용히 끝나면 됐는지 안 됐는지 알 길이 없다
         backup.message?.let { message ->
             Spacer(Modifier.height(Space.sm))

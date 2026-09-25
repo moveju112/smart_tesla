@@ -46,6 +46,7 @@ import com.wemade.teslamacro.feature.pairing.PairingStep
 import com.wemade.teslamacro.feature.pairing.PairingViewModel
 import com.wemade.teslamacro.feature.settings.SettingsScreen
 import com.wemade.teslamacro.feature.settings.SettingsViewModel
+import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.service.MacroService
@@ -117,8 +118,9 @@ class MainActivity : ComponentActivity() {
                     com.wemade.teslable.DiagLog.add("앱이 앞으로 나와 안전운전 안내를 다시 세웁니다")
                     app.container.notifyLocationPermissionChanged()
                 }
-                // 시스템 설정에서 활동 권한을 바꿔 돌아온 경우에도 감시 구독을 동기화한다.
-                if (hasBlePermission() && app.container.settingsStore.settings.first().safeDrive) {
+                // 거치 기기만 활동 인식을 사용한다. 휴대폰은 오디오 연결로 안내를 제어한다.
+                val settings = app.container.settingsStore.settings.first()
+                if (hasBlePermission() && settings.safeDrive && settings.deviceMode == DeviceMode.MOUNTED) {
                     runCatching { MacroService.refreshActivityPermission(this@MainActivity) }
                 }
             }
@@ -489,7 +491,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onHudOverlayChange = settingsViewModel::setHudOverlay,
                             onSafeDriveChange = { enabled ->
                                 settingsViewModel.setSafeDrive(enabled)
-                                if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+                                if (enabled && settings.deviceMode == DeviceMode.MOUNTED &&
+                                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
                                     !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
                             },
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,

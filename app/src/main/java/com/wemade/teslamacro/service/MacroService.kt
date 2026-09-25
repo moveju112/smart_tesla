@@ -5,6 +5,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.os.SystemClock
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -33,6 +37,7 @@ import com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
 import com.wemade.teslamacro.data.nav.forAutomaticStart
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.domain.command.confirmCategory
+import com.wemade.teslable.BondedDevice
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -57,6 +62,7 @@ private data class SafeDriveOptions(
     val progressiveSound: Boolean,
     val distanceMeters: Int,
     val voice: Boolean,
+    val deviceMode: DeviceMode,
 )
 
 /**
@@ -73,6 +79,15 @@ class MacroService : LifecycleService() {
     private var activityUpdates: PendingIntent? = null
     private var activityUpdatesReady = false
     private var activityFailure: String? = null
+    private var activityCleanupCompleted = false
+    private val carAudioConnected = MutableStateFlow(false)
+    private var carAudioProfile: BluetoothProfile? = null
+    private var carAudioAdapter: BluetoothAdapter? = null
+    private var carAudioName: String = ""
+    private var carAudioWatcherActive = false
+    private var carAudioProxyRequested = false
+    private var currentDeviceMode = DeviceMode.PORTABLE
+    private var currentSafeDriveEnabled = false
 
     override fun onCreate() {
         super.onCreate()
@@ -94,6 +109,7 @@ class MacroService : LifecycleService() {
         // 새 버전 확인은 컨테이너·차량과 무관하니 따로 돈다
         checkForUpdate()
         watchVehiclePower()
+        watchCarAudio()
         watchSpeedOverlay()
         watchSafeDrive()
         watchConfirmedPresence()
@@ -126,6 +142,101 @@ class MacroService : LifecycleService() {
         )
     }
 
+    // 1. 음악용 Bluetooth 프로필만 감시한다. 인증 GATT를 붙들거나 차량을 스캔하지 않는다.
+    private fun watchCarAudio() {
+        val app = application as TeslaMacroApplication
+        lifecycleScope.launch {
+            app.ready.first { it }
+            carAudioWatcherActive = true
+            carAudioAdapter = getSystemService(BluetoothManager::class.java)?.adapter
+            ContextCompat.registerReceiver(this@MacroService, carAudioReceiver,
+                IntentFilter().apply {
+                    addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+                    addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+                }, ContextCompat.RECEIVER_EXPORTED)
+            // 연결 방송을 놓친 서비스 재시작·재부팅에도 현재 A2DP 상태를 다시 읽는다.
+            requestCarAudioProfile()
+            app.container.settingsStore.settings.map { it.vehicleName }.distinctUntilChanged().collect { name ->
+                carAudioName = name
+                requestCarAudioProfile()
+                refreshCarAudioConnection()
+            }
+        }
+    }
+
+    private val carAudioReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // Bluetooth를 나중에 켠 경우에도 현재 연결 상태를 복구한다.
+            if (intent.action == BluetoothAdapter.ACTION_STATE_CHANGED &&
+                intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_OFF) {
+                carAudioProfile?.let { runCatching { carAudioAdapter?.closeProfileProxy(BluetoothProfile.A2DP, it) } }
+                carAudioProfile = null
+                carAudioProxyRequested = false
+            }
+            requestCarAudioProfile()
+            // 방송 내용은 연결 증거로 믿지 않고 실제 프로필을 다시 조회한다.
+            refreshCarAudioConnection()
+        }
+    }
+
+    private val carAudioListener = object : BluetoothProfile.ServiceListener {
+        override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+            if (!carAudioWatcherActive) {
+                runCatching { carAudioAdapter?.closeProfileProxy(BluetoothProfile.A2DP, proxy) }
+                return
+            }
+            carAudioProfile = proxy
+            lifecycleScope.launch { refreshCarAudioConnection() }
+        }
+
+        override fun onServiceDisconnected(profile: Int) {
+            carAudioProfile = null
+            carAudioProxyRequested = false
+            lifecycleScope.launch {
+                refreshCarAudioConnection()
+                // 시스템 프로필 프로세스가 재시작됐어도 방송을 기다리지 않고 한 번 복구한다.
+                delay(1_000)
+                requestCarAudioProfile()
+            }
+        }
+    }
+
+    // 1. Bluetooth가 꺼졌다 다시 켜져도 중복 요청 없이 프로필을 복원한다.
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun requestCarAudioProfile() {
+        if (!carAudioWatcherActive || carAudioProxyRequested || !hasCarAudioPermission() ||
+            carAudioAdapter?.isEnabled != true) return
+        carAudioProxyRequested = runCatching {
+            carAudioAdapter?.getProfileProxy(this, carAudioListener, BluetoothProfile.A2DP) == true
+        }.getOrElse {
+            com.wemade.teslable.DiagLog.add("차량 오디오 프로필 준비 실패 (${it.javaClass.simpleName})")
+            false
+        }
+    }
+
+    // 1. 저장된 차량 별칭과 일치하는 페어링 기기의 A2DP 연결만 안내에 사용한다.
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun refreshCarAudioConnection() {
+        if (!carAudioWatcherActive) return
+        val connected = runCatching {
+            if (!hasCarAudioPermission()) return@runCatching false
+            val bonded = (application as TeslaMacroApplication).container.scanner.bondedDevices()
+            val address = matchingVehicleAudioAddress(carAudioName, bonded) ?: return@runCatching false
+            carAudioProfile?.connectedDevices?.any { it.address == address } == true
+        }.getOrElse {
+            com.wemade.teslable.DiagLog.add("차량 오디오 상태 조회 실패 (${it.javaClass.simpleName})")
+            false
+        }
+        if (carAudioConnected.value == connected) return
+        carAudioConnected.value = connected
+        com.wemade.teslable.DiagLog.add("차량 오디오 Bluetooth ${if (connected) "연결" else "해제"} · 휴대 안내 ${if (connected) "시작" else "중지"}")
+        refreshAutomaticAlerts()
+    }
+
+    // 1. Android 12+에서 연결 권한이 없으면 프로필을 열지 않고 안내를 보류한다.
+    private fun hasCarAudioPermission(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+        checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
     private val overlay by lazy { SpeedOverlay(this) }
 
     /** 직전에 로그로 남긴 과속 여부. 상태가 바뀔 때만 한 줄 찍기 위한 기준 */
@@ -147,16 +258,20 @@ class MacroService : LifecycleService() {
             app.ready.first { it }
             val container = app.container
             // 권한 신호를 함께 묶는다 — 허용하고 돌아온 순간 스트림을 다시 연다.
-            // 세 값을 함께 distinct 하므로 무관한 설정 변경으로는 GPS를 다시 열지 않는다
-            kotlinx.coroutines.flow.combine(
-                container.settingsStore.settings.map { it.hudOverlay to it.safeDrive },
+            // 휴대 모드는 오디오 연결이 끊기면 위치 구독 자체를 취소한다.
+            combine(
+                container.settingsStore.settings.map { Triple(it.hudOverlay, it.safeDrive, it.deviceMode) },
                 container.locationPermissionRevision,
-            ) { toggles, revision -> Triple(toggles.first, toggles.second, revision) }
-                .distinctUntilChanged()
-                .collectLatest { (showOverlay, safeDrive, _) ->
+                carAudioConnected,
+            ) { toggles, revision, connected ->
+                Triple(toggles.first, toggles.second, revision) to
+                    shouldMonitorGuidance(toggles.third, toggles.first || toggles.second, connected)
+            }.distinctUntilChanged()
+                .collectLatest { (toggles, active) ->
+                    val (showOverlay, safeDrive, _) = toggles
                     overlay.hide()
                     overSpeedLogged = false
-                    if (!showOverlay && !safeDrive) return@collectLatest
+                    if (!active) return@collectLatest
 
                     // 위성을 못 잡거나 권한이 없으면 스트림이 곧바로 닫힌다 —
                     // 그때 화면에 아무것도 안 뜨는 이유를 여기서 알 수 있어야 한다
@@ -223,20 +338,24 @@ class MacroService : LifecycleService() {
             app.container.settingsStore.settings
                 .map { SafeDriveOptions(it.safeDrive, it.safeDriveSound, it.safeDriveVolume,
                     it.safeDriveToleranceKph, it.safeDriveProgressiveSound,
-                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice) }
-                .distinctUntilChanged()
-                .collect { options ->
+                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.deviceMode) }
+                .combine(carAudioConnected) { options, connected ->
+                    options to shouldMonitorGuidance(options.deviceMode, options.enabled, connected)
+                }.distinctUntilChanged()
+                .collect { (options, active) ->
+                    currentDeviceMode = options.deviceMode
+                    currentSafeDriveEnabled = options.enabled
                     // 새 설정을 먼저 적용해 GPS 첫 갱신이 이전 거리·음성을 사용하지 않게 한다.
                     app.container.safeDrive.setAlertOptions(options.distanceMeters, options.voice)
                     app.container.safeDrive.setSound(options.sound, options.volume,
                         options.toleranceKph, options.progressiveSound)
-                    // 권한·활동 결과가 없으면 자동 소리만 보류하고 화면·GPS 안내는 유지한다.
-                    if (options.enabled && options.sound) startActivityUpdates() else stopActivityUpdates()
-                    refreshAutomaticAlerts()
-                    // 안내를 켠 경우에만 근처 후보의 경로를 매칭하고, 끄면 요청 상태도 비운다.
-                    app.container.safeDrive.setRoadMatchEnabled(options.enabled)
-                    if (options.enabled) app.container.safeDrive.start()
+                    // 거치 기기의 기존 활동 인식은 유지하되 휴대폰에선 구독하지 않는다.
+                    if (active && options.sound && options.deviceMode == DeviceMode.MOUNTED) startActivityUpdates()
+                    else if (activityUpdates != null || !activityCleanupCompleted) stopActivityUpdates()
+                    app.container.safeDrive.setRoadMatchEnabled(active)
+                    if (active) app.container.safeDrive.start()
                     else app.container.safeDrive.stop()
+                    refreshAutomaticAlerts()
                 }
         }
 
@@ -245,7 +364,8 @@ class MacroService : LifecycleService() {
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.locationPermissionRevision.drop(1).collect {
-                if (!app.container.settingsStore.settings.first().safeDrive) return@collect
+                val settings = app.container.settingsStore.settings.first()
+                if (!shouldMonitorGuidance(settings.deviceMode, settings.safeDrive, carAudioConnected.value)) return@collect
                 com.wemade.teslable.DiagLog.add("위치 권한이 바뀌어 안전운전 안내를 다시 세웁니다")
                 app.container.safeDrive.stop()
                 app.container.safeDrive.start()
@@ -311,6 +431,7 @@ class MacroService : LifecycleService() {
 
     /** 설정 해제·권한 상실·서비스 종료 시 등록을 해제하고 저장된 주행 증거를 버린다. */
     private fun stopActivityUpdates() {
+        activityCleanupCompleted = true
         activityUpdatesReady = false
         // 프로세스 강제 종료 뒤에도 Play 서비스에 남을 수 있는 등록을 같은 토큰으로 해제한다.
         val pending = activityUpdates ?: activityPendingIntent(PendingIntent.FLAG_NO_CREATE)
@@ -332,9 +453,15 @@ class MacroService : LifecycleService() {
             Intent(this, MacroService::class.java).setAction(ACTION_ACTIVITY_UPDATE), flags or mutable)
     }
 
-    /** GPS 갱신마다 유효기간을 다시 보며 활동 이벤트 때는 대기 음성도 즉시 취소한다. */
+    /** 휴대폰은 차량 오디오 연결만, 거치 기기는 기존 탑승·활동 근거로 자동 소리를 연다. */
     private fun refreshAutomaticAlerts() {
         val guide = (application as TeslaMacroApplication).container.safeDrive
+        if (currentDeviceMode == DeviceMode.PORTABLE) {
+            guide.setAutomaticAlertsAllowed(currentSafeDriveEnabled && carAudioConnected.value,
+                "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류",
+                "차량 오디오 Bluetooth 연결 · 자동 소리 사용")
+            return
+        }
         val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
             checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
         val reason = when {
@@ -470,6 +597,8 @@ class MacroService : LifecycleService() {
             return super.onStartCommand(intent, flags, startId)
         }
         promote()
+        // 이미 실행 중인 서비스에서 BLE 권한을 다시 허용한 경우 A2DP 감시를 복구한다.
+        requestCarAudioProfile()
         when (intent?.action) {
             ACTION_RUN_QUICK_ACTION -> {
                 val action = intent.getStringExtra(QuickActionActivity.EXTRA_ACTION)
@@ -494,7 +623,8 @@ class MacroService : LifecycleService() {
                 val settings = app.container.settingsStore.settings.first()
                 val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
                     checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
-                if (!permitted) stopActivityUpdates()
+                if ((!permitted || settings.deviceMode != DeviceMode.MOUNTED) &&
+                    (activityUpdates != null || !activityCleanupCompleted)) stopActivityUpdates()
                 else if (settings.safeDrive && settings.safeDriveSound) startActivityUpdates()
                 refreshAutomaticAlerts()
             }
@@ -797,6 +927,13 @@ class MacroService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        carAudioWatcherActive = false
+        carAudioProxyRequested = false
+        runCatching { unregisterReceiver(carAudioReceiver) }
+        carAudioProfile?.let { profile ->
+            runCatching { carAudioAdapter?.closeProfileProxy(BluetoothProfile.A2DP, profile) }
+        }
+        carAudioProfile = null
         stopActivityUpdates()
         safeDriveTestJob?.cancel()
         stealthChargeWakeLock?.let { if (it.isHeld) it.release() }

@@ -995,7 +995,8 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         if (settings.safeDrive && !controls.locationPermitted) {
             LocationPermissionNotice(controls)
         }
-        if (settings.safeDrive && settings.safeDriveSound && !controls.activityPermitted) {
+        if (settings.safeDrive && settings.safeDriveSound &&
+            settings.deviceMode == DeviceMode.MOUNTED && !controls.activityPermitted) {
             Spacer(Modifier.height(Space.md))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("활동 인식 권한이 없어 자동 카메라 소리가 보류돼요.",
@@ -1010,7 +1011,11 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
         if (!settings.safeDrive) return@TCard
 
         Spacer(Modifier.height(Space.md))
-        Text("자동 음성·경고음은 차량 탑승 또는 기기의 차량 이동 판정 중에만 울려요. 보행·권한 거부·판정 지연 시에는 조용해요. 휴대폰 판정은 다른 차량 탑승과 테슬라를 구별하지 못해요.",
+        Text(
+            if (settings.deviceMode == DeviceMode.PORTABLE)
+                "휴대 모드는 등록 차량의 음악용 Bluetooth가 연결될 때만 GPS 안내·자동 소리가 켜져요. 연결이 끊기면 안내가 멈춰요. 테슬라 여러 대가 페어링돼 있으면 차량을 특정할 수 없어 안내를 보류해요. 차량 제어용 BLE와는 별개예요."
+            else
+                "거치 모드 자동 음성·경고음은 차량 탑승 또는 기기의 차량 이동 판정 중에만 울려요. 보행·활동 인식 미판정 시에는 조용해요.",
             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         Spacer(Modifier.height(Space.md))
         Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)

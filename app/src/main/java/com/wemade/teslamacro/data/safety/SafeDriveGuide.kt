@@ -456,9 +456,10 @@ class SafeDriveGuide(
         }
     }
 
-    /** 보행·미판정으로 바뀌는 순간 이미 대기하거나 재생 중인 자동 안내도 취소한다. */
-    fun setAutomaticAlertsAllowed(allowed: Boolean, reason: String = "주행 판정 대기") {
-        mutableAutomaticSoundStatus.value = if (allowed) "주행 확인 · 자동 소리 사용" else reason
+    /** 차량 오디오 해제나 탑승 근거 소멸 시 대기·재생 중인 자동 안내도 즉시 취소한다. */
+    fun setAutomaticAlertsAllowed(allowed: Boolean, reason: String = "주행 판정 대기",
+                                  allowedStatus: String = "주행 확인 · 자동 소리 사용") {
+        mutableAutomaticSoundStatus.value = if (allowed) allowedStatus else reason
         if (automaticAlertsAllowed == allowed) return
         automaticAlertsAllowed = allowed
         if (!allowed) {
@@ -469,7 +470,7 @@ class SafeDriveGuide(
             runCatching { speechEngine?.stop() }
             runCatching { tone?.stopTone() }
         }
-        if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "주행 확인" else "보행/주행 미확인 · 보류"}")
+        if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "연결/주행 확인" else reason}")
     }
 
     /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */

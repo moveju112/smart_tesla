@@ -7,6 +7,10 @@ import com.wemade.teslamacro.data.location.freshSpeedKph
 import com.wemade.teslamacro.data.safety.RoadPoint
 import com.wemade.teslamacro.data.safety.SafeDriveGuide
 import com.wemade.teslamacro.data.safety.warningIntervalMillis
+import com.wemade.teslamacro.data.safety.CameraSequence
+import com.wemade.teslamacro.data.safety.cameraAnnouncement
+import com.wemade.teslamacro.data.safety.slowDownAnnouncement
+import com.wemade.teslamacro.domain.safety.SafetyKind
 import com.wemade.teslamacro.domain.safety.CameraIndex
 import com.wemade.teslamacro.domain.safety.OfflineCamera
 import com.wemade.teslamacro.domain.safety.SafetyState
@@ -278,22 +282,18 @@ class SafetySettingsTest {
                 OfflineCamera("second", 37.004, 127.0, 50),
             )))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
-        val tone = SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }
-        // 실제 스피커 출력 대신 요청 시각만 검증하고 JVM의 미구현 ToneGenerator는 비운다.
         fun approach(latitudeDegrees: Double = 37.0, speedMetersPerSecond: Float = 20f) {
             guide.onLocation(Location("gps").apply {
                 latitude = latitudeDegrees; longitude = 127.0
                 speed = speedMetersPerSecond; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            tone.set(guide, null)
         }
         // 반복 타이머와 주입 시계를 같이 움직인다.
         fun wait(millis: Long) {
             nowNanos += millis * 1_000_000L
             advanceTimeBy(millis)
             runCurrent()
-            tone.set(guide, null)
         }
         try {
             guide.setSound(true, 99, -1, progressive = false)
@@ -321,7 +321,7 @@ class SafetySettingsTest {
             wait(1_000)
             assertEquals(4_300L, lastSound.get(guide))
             wait(1_000) // GPS 갱신이 2초 넘게 없으면 지난 속도로 계속 울리지 않는다.
-            assertEquals(4_300L, lastSound.get(guide))
+            assertNull(lastSound.get(guide))
             nowNanos += 10_000_000_000L
             approach(speedMetersPerSecond = 10f)
             assertNull(lastSound.get(guide))
@@ -339,7 +339,6 @@ class SafetySettingsTest {
             guide.stop()
             assertNull(lastSound.get(guide))
         } finally {
-            tone.set(guide, null)
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()
@@ -373,7 +372,6 @@ class SafetySettingsTest {
                 speed = 20f; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
         }
         try {
             guide.setSound(true, 2, 5)
@@ -409,21 +407,17 @@ class SafetySettingsTest {
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
             .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 100))))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
-        val tone = SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }
-        // JVM에서 ToneGenerator는 실제로 소리를 못 내므로 요청 시각만 검사한다.
         fun approach(speedKph: Int) {
             guide.onLocation(Location("gps").apply {
                 latitude = 37.0; longitude = 127.0
                 speed = (speedKph / 3.6).toFloat(); bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            tone.set(guide, null)
         }
         fun wait(millis: Long) {
             nowNanos += millis * 1_000_000L
             advanceTimeBy(millis)
             runCurrent()
-            tone.set(guide, null)
         }
         try {
             guide.setSound(true, 2, 5, progressive = true)
@@ -455,19 +449,20 @@ class SafetySettingsTest {
             assertEquals(4_600L, lastSound.get(guide))
             wait(600)
             assertEquals(5_800L, lastSound.get(guide))
-            approach(101) // 과속 해제 뒤 다시 초과하면 느린 단계도 즉시 울린다.
+            approach(104) // 울리는 중에는 경계 속도 흔들림으로 끊기지 않게 2km/h 여유를 둔다.
+            assertEquals(5_800L, lastSound.get(guide))
+            approach(102) // 과속 해제 뒤 다시 초과하면 느린 단계도 즉시 울린다.
             assertNull(lastSound.get(guide))
             approach(106)
             assertEquals(5_800L, lastSound.get(guide))
         } finally {
-            tone.set(guide, null)
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()
         }
     }
 
-    /** 선택 거리 안에서만 안내·과속음이 시작되고 진입·200m 음성은 카메라별 한 번만 나온다. */
+    /** 선택 거리 안에서만 안내·과속음이 시작되고, 진입 안내는 카메라별 한 번, 200m 감속 요청은 과속일 때만 나온다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun spokenCameraDistanceAndSoundGate() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -483,8 +478,6 @@ class SafetySettingsTest {
                 speed = 20f; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            // JVM ToneGenerator는 실제 오디오가 없으므로 재생 요청 시각만 검사한다.
-            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
         }
         try {
             guide.setAlertOptions(500, voice = true)
@@ -500,17 +493,17 @@ class SafetySettingsTest {
             approach(36.9986) // 약 489m: 첫 진입.
             assertNotNull(guide.state.value.alert)
             assertEquals(2_000L, lastSound.get(guide))
-            assertEquals(listOf("전방 약 500미터에 단속 카메라가 있습니다."), spoken)
+            assertEquals(listOf("500미터 앞, 과속 단속 카메라입니다. 제한속도 50킬로미터입니다."), spoken)
             nowNanos += 1_000_000_000L
             approach(36.9988)
             assertEquals(1, spoken.size)
             nowNanos += 1_000_000_000L
-            approach(37.0013) // 약 189m: 첫 문장을 자르지 않게 기다린다.
+            approach(37.0013) // 약 189m: 진입 안내를 자르지 않게 기다린다.
             assertEquals(1, spoken.size)
             nowNanos += 5_000_000_000L
-            approach(37.0013) // 5초 뒤 두 번째 안내.
+            approach(37.0013) // 5초 뒤에도 과속이면 감속만 요청한다.
             assertEquals(2, spoken.size)
-            assertEquals("전방 약 200미터에 단속 카메라가 있습니다.", spoken.last())
+            assertEquals("속도를 줄이세요. 제한속도 50킬로미터입니다.", spoken.last())
             nowNanos += 1_000_000_000L
             approach(37.0012)
             assertEquals(2, spoken.size)
@@ -535,11 +528,66 @@ class SafetySettingsTest {
             nowNanos += 1_000_000_000L
             approach(37.001)
             assertEquals(3, spoken.size)
+            assertEquals("200미터 앞, 과속 단속 카메라입니다. 제한속도 50킬로미터입니다.", spoken.last())
         } finally {
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()
         }
+    }
+
+    /** 뒤에 카메라가 더 있으면 "연속 단속 구간", 앞 카메라를 지나 바로 다음이 보이면 "이어서"로 안내하고, 정속이면 감속 요청은 없다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun consecutiveCamerasAreAnnouncedLikeNavigation() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50), OfflineCamera("second", 37.0055, 127.0, 50))))
+        // 제한 50에 초과 설정 +5라 47km/h 정속 주행은 경고음·감속 요청 대상이 아니다.
+        fun approach(latitudeDegrees: Double) {
+            guide.onLocation(Location("gps").apply {
+                latitude = latitudeDegrees; longitude = 127.0
+                speed = 13f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+        }
+        try {
+            guide.setAlertOptions(500, voice = true)
+            guide.setSound(true, 2, 5)
+            guide.setAutomaticAlertsAllowed(true)
+            guide.start()
+            runCurrent()
+            approach(36.9986)
+            assertEquals(listOf("연속 단속 구간입니다. 500미터 앞, 과속 단속 카메라입니다. 제한속도 50킬로미터입니다."), spoken)
+            nowNanos += 1_000_000_000L
+            approach(37.0013)
+            nowNanos += 5_000_000_000L
+            approach(37.0013)
+            assertEquals(1, spoken.size)
+            nowNanos += 1_000_000_000L
+            approach(37.0031) // 첫 카메라를 막 지나면 다음 카메라를 바로 이어서 안내한다.
+            assertEquals("이어서 300미터 앞, 과속 단속 카메라입니다. 제한속도 50킬로미터입니다.", spoken.last())
+            assertTrue(DiagLog.lines.value.any { it.contains("카메라 후보 진입") && it.contains("이어서)") })
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 종류·제한속도 상충·가까운 거리 반올림을 상용 내비 문형으로 읽는다. */
+    @Test fun announcementWording() {
+        assertEquals("700미터 앞, 구간 단속 카메라입니다. 제한속도 100킬로미터입니다.",
+            cameraAnnouncement(SafetyKind.SECTION_CAMERA, 651, 100, CameraSequence.SINGLE))
+        assertEquals("150미터 앞, 과속 단속 카메라입니다. 제한속도는 표지판을 확인하세요.",
+            cameraAnnouncement(SafetyKind.SPEED_CAMERA, 149, null, CameraSequence.SINGLE))
+        assertEquals("연속 단속 구간입니다. 90미터 앞, 과속 단속 카메라입니다. 제한속도 30킬로미터입니다.",
+            cameraAnnouncement(SafetyKind.SPEED_CAMERA, 94, 30, CameraSequence.CONTINUOUS))
+        assertEquals("이어서 10미터 앞, 과속 단속 카메라입니다. 제한속도 30킬로미터입니다.",
+            cameraAnnouncement(SafetyKind.SPEED_CAMERA, 4, 30, CameraSequence.FOLLOWING))
+        assertEquals("속도를 줄이세요.", slowDownAnnouncement(null))
     }
 
     /** 음성 요청 실패·엔진 재점검 뒤에도 같은 카메라의 진입 안내가 사라지지 않는다. */
@@ -563,7 +611,6 @@ class SafetySettingsTest {
                 speed = 20f; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
         }
         try {
             guide.setSound(true, 2)
@@ -581,10 +628,10 @@ class SafetySettingsTest {
             assertEquals("한국어 단속 안내 음성 점검입니다.", spoken.single())
             nowNanos += 1_000_000_000L
             approach(36.9986)
-            assertEquals("전방 약 500미터에 단속 카메라가 있습니다.", spoken.last())
+            assertEquals("500미터 앞, 과속 단속 카메라입니다. 제한속도 50킬로미터입니다.", spoken.last())
             nowNanos += 5_000_000_000L
             approach(37.0013)
-            assertEquals("전방 약 200미터에 단속 카메라가 있습니다.", spoken.last())
+            assertEquals("속도를 줄이세요. 제한속도 50킬로미터입니다.", spoken.last())
         } finally {
             guide.stop()
             runCurrent()
@@ -628,8 +675,6 @@ class SafetySettingsTest {
             approach(36.98, 10f)
             assertTrue(DiagLog.lines.value.last().contains("전방 1km 내 후보 없음"))
         } finally {
-            // JVM에는 ToneGenerator.release()가 없어 재생 요청 객체만 비운다.
-            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()

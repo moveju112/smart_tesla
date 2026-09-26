@@ -38,6 +38,17 @@ class CameraIndexTest {
         assertNotNull(farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
     }
 
+    /** 현재 후보 뒤 1km 안의 같은 방향 카메라만 연속 구간으로 본다. 같은 지점 중복·반대편·1km 밖은 제외한다. */
+    @Test fun followingCameraWithinOneKilometer() {
+        val pair = CameraIndex(listOf(OfflineCamera("a", 37.003, 127.0, 50), OfflineCamera("b", 37.006, 127.0, 50)))
+        assertTrue(pair.hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
+        assertFalse(pair.hasFollowing(37.0, 127.0, 180.0, afterMeters = 332))
+        val duplicate = CameraIndex(listOf(OfflineCamera("a", 37.003, 127.0, 50), OfflineCamera("a2", 37.0031, 127.0, 60)))
+        assertFalse(duplicate.hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
+        val far = CameraIndex(listOf(OfflineCamera("a", 37.003, 127.0, 50), OfflineCamera("c", 37.0135, 127.0, 50)))
+        assertFalse(far.hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
+    }
+
     /** 선택한 시작 거리 바깥은 화면·과속음 후보에서 빼되 기본 최대 거리는 유지한다. */
     @Test fun configuredAlertDistance() {
         val farther = CameraIndex(listOf(OfflineCamera("farther", 37.006, 127.0, 50)))

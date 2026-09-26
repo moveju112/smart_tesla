@@ -7,7 +7,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioFocusRequest
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.os.SystemClock
@@ -16,6 +16,7 @@ import com.wemade.teslamacro.data.location.isFreshLocation
 import com.wemade.teslamacro.domain.safety.CameraDataset
 import com.wemade.teslamacro.domain.safety.CameraIndex
 import com.wemade.teslamacro.domain.macro.ConditionEvaluator
+import com.wemade.teslamacro.domain.safety.SafetyKind
 import com.wemade.teslamacro.domain.safety.SafetyState
 import com.wemade.teslamacro.domain.safety.sourceDateWarning
 import com.wemade.teslable.DiagLog
@@ -40,6 +41,34 @@ internal fun warningIntervalMillis(excessKph: Double, progressive: Boolean): Lon
 
 /** GPS 갱신이 이 시간 넘게 끊기면 지난 속도로 경고음을 계속 반복하지 않는다 */
 private const val WARNING_REFRESH_NANOS = 2_000_000_000L
+
+/** 첫 안내 문장이 단독 카메라인지, 뒤에 카메라가 더 있는지, 앞 카메라에 바로 이어지는지 */
+internal enum class CameraSequence { SINGLE, CONTINUOUS, FOLLOWING }
+
+/**
+ * 상용 내비 문형으로 거리·종류·제한속도를 한 문장에 담는다.
+ * 가까울수록 반올림 단위를 줄여 "0미터"나 지나친 과장 없이 실제 거리에 가깝게 읽는다.
+ */
+internal fun cameraAnnouncement(kind: SafetyKind, distanceMeters: Int, limitKph: Int?, sequence: CameraSequence): String {
+    val rounded = when {
+        distanceMeters >= 200 -> ((distanceMeters + 50) / 100) * 100
+        distanceMeters >= 100 -> ((distanceMeters + 25) / 50) * 50
+        else -> (((distanceMeters + 5) / 10) * 10).coerceAtLeast(10)
+    }
+    val camera = if (kind == SafetyKind.SECTION_CAMERA) "구간 단속 카메라" else "과속 단속 카메라"
+    // 같은 좌표에 제한속도가 엇갈리면 임의 숫자를 읽지 않고 표지 확인을 요청한다.
+    val limit = limitKph?.let { "제한속도 ${it}킬로미터입니다." } ?: "제한속도는 표지판을 확인하세요."
+    val body = "${rounded}미터 앞, ${camera}입니다. $limit"
+    return when (sequence) {
+        CameraSequence.SINGLE -> body
+        CameraSequence.CONTINUOUS -> "연속 단속 구간입니다. $body"
+        CameraSequence.FOLLOWING -> "이어서 $body"
+    }
+}
+
+/** 카메라 200m 안에서도 과속이면 감속만 짧게 요청한다. */
+internal fun slowDownAnnouncement(limitKph: Int?): String =
+    limitKph?.let { "속도를 줄이세요. 제한속도 ${it}킬로미터입니다." } ?: "속도를 줄이세요."
 
 /** 첫 공백 기록 기준. GPS 콜백은 1초 주기라 30초 무수신이면 위성·권한·OS 차단 중 하나다 */
 private const val GPS_SILENCE_FIRST_LOG_NANOS = 30_000_000_000L
@@ -97,6 +126,8 @@ class SafeDriveGuide(
     private var warningDetail = ""
     // 연속 카메라에서 경고음이 끊김 없이 이어지면 두 번째 카메라를 알 수 없어 후보 전환을 따로 기억한다.
     private var lastAlertCameraKey: String? = null
+    // 앞 카메라를 방금 지났는지 판단해 다음 카메라 안내를 "이어서"로 시작한다.
+    private var lastAlertSeenMillis: Long? = null
     private var lastAlertStatus: String? = null
     private var lastAlertLogMillis: Long? = null
     private var retrievedAt: String? = null
@@ -117,7 +148,10 @@ class SafeDriveGuide(
     private var pendingSpeech: SpeechRequest? = null
     var toleranceKph: Int = 5
         private set
-    private var tone: ToneGenerator? = null
+    private val chime = WarningChime()
+    // 안내 음성이 나오는 동안 경고음을 겹치면 둘 다 알아듣기 어려워 음성을 우선한다.
+    private var speaking = false
+    private var audioFocus: AudioFocusRequest? = null
 
     /** 목록 로드는 IO에서 하고, GPS 수신 중단 시 과거 제한속도를 즉시 버린다. */
     fun start() {
@@ -231,16 +265,28 @@ class SafeDriveGuide(
         val nowMillis = nowNanos / 1_000_000
         // 연속 카메라 중 어느 것을 인식했는지 로그로 확인하도록 새 후보를 만날 때만 남긴다.
         // 후보가 잠깐 사라졌다 같은 카메라로 돌아오는 GPS 흔들림은 새 후보로 치지 않는다.
-        val cameraChanged = alert?.cameraKey != null && alert.cameraKey != lastAlertCameraKey
+        val previousCameraKey = lastAlertCameraKey
+        val cameraChanged = alert?.cameraKey != null && alert.cameraKey != previousCameraKey
+        val followsPrevious = cameraChanged && previousCameraKey != null &&
+            lastAlertSeenMillis?.let { nowMillis - it in 0..15_000 } == true
         if (cameraChanged) {
-            DiagLog.add("안전 안내 · 카메라 후보 진입 (제한 ${alert?.speedLimitKph?.let { "${it}km/h" } ?: "확인 필요"}, 거리 ${alert?.distanceMeters ?: "-"}m)")
+            DiagLog.add("안전 안내 · 카메라 후보 진입 (제한 ${alert?.speedLimitKph?.let { "${it}km/h" } ?: "확인 필요"}, " +
+                "거리 ${alert?.distanceMeters ?: "-"}m${if (followsPrevious) ", 이어서" else ""})")
             lastAlertCameraKey = alert?.cameraKey
         }
-        if (alert != null && sound && voiceEnabled && automaticAlertsAllowed) announceCamera(alert, nowMillis)
-        else pendingSpeech = null
-        val overSpeed = state.value.isOverSpeed(toleranceKph = toleranceKph)
+        if (alert != null) lastAlertSeenMillis = nowMillis
+        val limit = alert?.speedLimitKph
+        // 경계 속도에서 1~2km/h 흔들림으로 경고음이 켜졌다 꺼지지 않게, 울리는 중에는 2km/h 더 낮아져야 멈춘다.
+        val overSpeed = state.value.isOverSpeed(toleranceKph = toleranceKph) ||
+            (warningJob?.isActive == true && limit != null && speed >= limit + toleranceKph - 2)
+        if (alert != null && sound && voiceEnabled && automaticAlertsAllowed) {
+            announceCamera(alert, nowMillis, overSpeed, followsPrevious) {
+                index?.hasFollowing(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
+                    location.bearing.toDouble(), alert.distanceMeters ?: 0) == true
+            }
+        } else pendingSpeech = null
         val detail = "GPS ${speed.toInt()}km/h, 오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m, " +
-            "후보 ${alert?.speedLimitKph?.let { "제한 ${it}km/h" } ?: "없음"}, 거리 ${alert?.distanceMeters ?: "-"}m, " +
+            "후보 ${limit?.let { "제한 ${it}km/h" } ?: "없음"}, 거리 ${alert?.distanceMeters ?: "-"}m, " +
             "초과 설정 +${toleranceKph}km/h, 소리 ${if (sound) "켬" else "끔"}"
         val status = when {
             speed < 5 -> "GPS 속도 5km/h 미만"
@@ -249,14 +295,14 @@ class SafeDriveGuide(
                 "근접 후보는 있지만 경보 거리·방향 미충족"
             alert == null -> "전방 1km 내 후보 없음"
             alert.limitConflict -> "후보 제한속도 상충"
-            alert.speedLimitKph == null -> "후보 제한속도 없음"
+            limit == null -> "후보 제한속도 없음"
             !overSpeed -> "경보 속도 미달"
             !sound -> "경고음 꺼짐"
             !automaticAlertsAllowed -> "주행 확인 전 · 소리 보류"
             else -> "경고음 반복"
         }
         if (status == "경고음 반복") {
-            val interval = warningIntervalMillis(speed - alert!!.speedLimitKph!!, progressiveSound)
+            val interval = warningIntervalMillis(speed - limit!!, progressiveSound)
             warningDetail = detail
             warningRefreshedNanos = nowNanos
             // 과속이 커지거나 다음 카메라로 넘어가면 남은 간격을 기다리지 않고 바로 울려 새 경보임을 알린다.
@@ -269,14 +315,18 @@ class SafeDriveGuide(
         }
     }
 
-    /** 첫 이중 삑은 바로 내고, 이후는 GPS 갱신이 이어지는 동안 현재 단계 간격으로 반복한다. */
+    /** 첫 경고음은 바로 내고, 이후는 GPS 갱신이 이어지는 동안 현재 단계 간격으로 반복한다. */
     private fun startWarning() {
         warningJob?.cancel()
+        holdAudioFocus()
         playWarning()
         warningJob = scope.launch {
             while (isActive) {
                 delay(lastSoundIntervalMillis ?: break)
-                if (elapsedRealtimeNanos() - warningRefreshedNanos > WARNING_REFRESH_NANOS) break
+                if (elapsedRealtimeNanos() - warningRefreshedNanos > WARNING_REFRESH_NANOS) {
+                    stopWarning()
+                    break
+                }
                 playWarning()
             }
         }
@@ -288,12 +338,17 @@ class SafeDriveGuide(
         warningJob = null
         lastSoundMillis = null
         lastSoundIntervalMillis = null
+        chime.stop()
+        releaseAudioFocusIfIdle()
     }
 
     /** 기기 미디어 음량 0은 요청 수락과 구별하고, 실제 청취는 확인할 수 없어 요청 결과만 남긴다. */
     private fun playWarning() {
         val interval = lastSoundIntervalMillis ?: return
         val nowMillis = elapsedRealtimeNanos() / 1_000_000
+        // 안내 음성이 나오는 중이면 이번 차례는 건너뛰고 다음 간격에 다시 울린다.
+        // 엔진이 종료 콜백을 빠뜨려도 경고음이 영영 막히지 않게 8초가 지나면 다시 울린다.
+        if (speaking && lastVoiceMillis?.let { nowMillis - it in 0..8_000 } == true) return
         lastSoundMillis = nowMillis
         val mediaVolume = runCatching {
             application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -302,11 +357,7 @@ class SafeDriveGuide(
             logAlertStatus("경고음 무음 · 미디어 음량 0", warningDetail, nowMillis)
             return
         }
-        val attempt = runCatching {
-            if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
-            // 0.1초 단발음은 음악 위에서 묻혀 두 번 연달아 울리는 기본 이중 삑으로 존재감을 높인다.
-            tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 400) == true
-        }
+        val attempt = runCatching { chime.play(volume) }
         val result = when {
             attempt.getOrNull() == true -> "경고음 요청 수락 · 미디어 음량 ${mediaVolume ?: "확인 불가"}"
             attempt.exceptionOrNull() != null -> "경고음 재생 오류 · ${attempt.exceptionOrNull()!!.javaClass.simpleName}"
@@ -315,18 +366,52 @@ class SafeDriveGuide(
         logAlertStatus("$result · ${String.format(Locale.ROOT, "%.1f", interval / 1_000.0)}초 간격", warningDetail, nowMillis)
     }
 
-    /** 진입 시와 200m 안에서만 말하고 GPS 흔들림에 같은 카메라를 반복 안내하지 않는다. */
-    private fun announceCamera(alert: com.wemade.teslamacro.domain.safety.SafetyAlert, nowMillis: Long) {
+    /**
+     * 안내 음성·경고음 동안만 음악을 줄여 달라고 요청한다.
+     * 음악을 멈추는 대신 일시 감쇠라 안내가 끝나면 원래 음량으로 돌아간다.
+     */
+    private fun holdAudioFocus() {
+        if (audioFocus != null) return
+        runCatching {
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                .setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .build()
+            val granted = application.getSystemService(AudioManager::class.java)?.requestAudioFocus(request)
+            if (granted == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) audioFocus = request
+        }
+    }
+
+    /** 말하는 중도, 경고음 반복 중도 아니면 감쇠를 풀어 음악을 원래 음량으로 돌린다. */
+    private fun releaseAudioFocusIfIdle(force: Boolean = false) {
+        if (!force && (speaking || warningJob?.isActive == true)) return
+        val request = audioFocus ?: return
+        runCatching { application.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(request) }
+        audioFocus = null
+    }
+
+    /**
+     * 상용 내비처럼 카메라마다 진입 때 한 번 거리·제한속도를 말하고, 200m 안에서 여전히 과속이면 감속만 한 번 더 요청한다.
+     * 정속 주행 중 같은 카메라를 두 번 읽으면 번잡해 두 번째 안내는 과속일 때만 낸다.
+     */
+    private fun announceCamera(alert: com.wemade.teslamacro.domain.safety.SafetyAlert, nowMillis: Long,
+                               overSpeed: Boolean, followsPrevious: Boolean, continuous: () -> Boolean) {
         val key = alert.cameraKey ?: return
         val distance = alert.distanceMeters ?: return
-        val stage = if (distance <= 200) 2 else 1
         val previous = spokenStages[key] ?: 0
-        if (stage <= previous) return
-        // 두 문장이 겹치면 첫 안내가 잘리므로 가까운 안내를 잠시 늦춘다.
-        if (stage == 2 && previous == 1 && lastVoiceMillis?.let { nowMillis - it in 0..4_999 } == true) return
-        val roundedDistance = if (distance >= 100) ((distance + 50) / 100) * 100
-            else ((distance + 5) / 10) * 10
-        requestSpeech(SpeechRequest("전방 약 ${roundedDistance.coerceAtLeast(10)}미터에 단속 카메라가 있습니다.", key, stage))
+        val text = when {
+            previous == 0 -> cameraAnnouncement(alert.kind, distance, alert.speedLimitKph, when {
+                followsPrevious -> CameraSequence.FOLLOWING
+                continuous() -> CameraSequence.CONTINUOUS
+                else -> CameraSequence.SINGLE
+            })
+            // 진입 안내를 자르지 않도록 4초가 지난 뒤에만 감속을 요청한다.
+            previous == 1 && distance <= 200 && overSpeed &&
+                lastVoiceMillis?.let { nowMillis - it in 0..3_999 } != true -> slowDownAnnouncement(alert.speedLimitKph)
+            else -> return
+        }
+        requestSpeech(SpeechRequest(text, key, previous + 1))
     }
 
     /** 음성 점검을 누르면 설치·언어 변경 뒤 잠긴 엔진도 다시 초기화한다. */
@@ -334,6 +419,7 @@ class SafeDriveGuide(
         speechGeneration++
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        speaking = false
         speechReady = false
         speechUnavailable = false
         pendingSpeech = null
@@ -379,6 +465,8 @@ class SafeDriveGuide(
             disableSpeech("오프라인 한국어 음성 없음")
             return
         }
+        // 내비 안내는 짧은 시간에 알아들어야 해 기본보다 약간 빠르게 읽는다.
+        runCatching { engine.setSpeechRate(1.1f) }
         speakPendingSpeech()
     }
 
@@ -398,11 +486,20 @@ class SafeDriveGuide(
             } else {
                 val generation = speechGeneration
                 val utteranceId = (++speechUtterance).toString()
+                holdAudioFocus()
                 speechEngine?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    // 실제 재생 오류는 speak()가 성공을 반환한 뒤에도 올 수 있어 단계 기록을 되돌린다.
-                    override fun onStart(id: String) = Unit
-                    // 완료 신호만으로 기기에서 소리가 들렸다고 단정할 수는 없다.
-                    override fun onDone(id: String) = Unit
+                    // 발화가 시작되면 울리던 경고음을 끊어 음성만 들리게 한다.
+                    override fun onStart(id: String) {
+                        scope.launch {
+                            if (id != speechUtterance.toString()) return@launch
+                            speaking = true
+                            chime.stop()
+                        }
+                    }
+                    // 완료 신호만으로 청취를 단정할 수는 없지만 경고음 재개·음악 복구는 허용한다.
+                    override fun onDone(id: String) = finishSpeaking(id)
+                    // 새 안내가 끼어들거나 설정 변경으로 끊긴 발화도 같은 정리를 거친다.
+                    override fun onStop(id: String, interrupted: Boolean) = finishSpeaking(id)
                     // 콜백은 다른 스레드에서 오므로 최신 발화일 때만 상태를 갱신한다.
                     override fun onError(id: String) {
                         scope.launch {
@@ -411,6 +508,8 @@ class SafeDriveGuide(
                                 if (spokenStages[key] == request.stage) spokenStages.remove(key)
                             }
                             disableSpeech("음성 출력 오류")
+                            speaking = false
+                            releaseAudioFocusIfIdle()
                         }
                     }
                 })
@@ -421,12 +520,22 @@ class SafeDriveGuide(
             request.cameraKey?.let { key ->
                 spokenStages[key] = maxOf(spokenStages[key] ?: 0, request.stage)
                 lastVoiceMillis = elapsedRealtimeNanos() / 1_000_000
-                // 경고음이 없어도 음성으로 카메라 안내가 나갈 수 있어 요청 수락 시각을 남긴다.
-                DiagLog.add("안전 안내 · 단속카메라 음성 요청 수락 (거리 ${state.value.alert?.distanceMeters ?: "-"}m, 단계 ${request.stage})")
+                // 경고음이 없어도 음성으로 카메라 안내가 나갈 수 있어 요청 수락 시각과 실제 문구를 남긴다.
+                DiagLog.add("안전 안내 · 단속카메라 음성 요청 수락 (거리 ${state.value.alert?.distanceMeters ?: "-"}m, 단계 ${request.stage}) \"${request.text}\"")
             }
             mutableSpeechStatus.value = "음성 재생 요청됨 · 들리지 않으면 미디어 음량을 확인하세요."
         } else if (!speechUnavailable) {
             disableSpeech("재생 실패 · ${result.exceptionOrNull()?.javaClass?.simpleName ?: "엔진 응답"}")
+            releaseAudioFocusIfIdle()
+        }
+    }
+
+    /** 최신 발화가 끝났을 때만 경고음 재개·음악 복구를 허용한다. */
+    private fun finishSpeaking(id: String) {
+        scope.launch {
+            if (id != speechUtterance.toString()) return@launch
+            speaking = false
+            releaseAudioFocusIfIdle()
         }
     }
 
@@ -437,6 +546,7 @@ class SafeDriveGuide(
         pendingSpeech = null
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        speaking = false
         mutableSpeechStatus.value = "한국어 음성 사용 불가 ($reason) · 음성 설정을 확인하세요."
         DiagLog.add("안전 안내 · 음성 사용할 수 없음 ($reason)")
     }
@@ -545,7 +655,7 @@ class SafeDriveGuide(
             spokenStages.clear()
             stopWarning()
             runCatching { speechEngine?.stop() }
-            runCatching { tone?.stopTone() }
+            chime.stop()
         }
         if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "연결/주행 확인" else reason}")
     }
@@ -563,8 +673,7 @@ class SafeDriveGuide(
         if (changed) {
             stopWarning()
         }
-        tone?.release()
-        tone = null
+        chime.release()
         if (!sound) {
             pendingSpeech = null
             runCatching { speechEngine?.stop() }
@@ -588,6 +697,7 @@ class SafeDriveGuide(
         lastSilenceLogNanos = null
         stopWarning()
         lastAlertCameraKey = null
+        lastAlertSeenMillis = null
         spokenStages.clear()
         automaticAlertsAllowed = false
         lastVoiceMillis = null
@@ -600,8 +710,9 @@ class SafeDriveGuide(
         mutableSpeechStatus.value = null
         lastAlertStatus = null
         lastAlertLogMillis = null
-        tone?.release()
-        tone = null
+        speaking = false
+        chime.release()
+        releaseAudioFocusIfIdle(force = true)
         mutableState.value = SafetyState()
     }
 }

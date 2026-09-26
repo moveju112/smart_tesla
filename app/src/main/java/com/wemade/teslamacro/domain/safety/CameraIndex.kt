@@ -89,6 +89,26 @@ class CameraIndex(cameras: List<OfflineCamera>) {
         }
     }
 
+    /**
+     * 지금 후보 바로 뒤(1km 안)에 같은 방향 카메라가 또 있는지 본다.
+     * 첫 안내에서 "연속 단속 구간"을 알려 두 번째 카메라 앞에서 방심해 속도를 올리지 않게 한다.
+     */
+    fun hasFollowing(latitude: Double, longitude: Double, bearing: Double, afterMeters: Int,
+                     withinMeters: Int = 1_000): Boolean {
+        if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite()) return false
+        val (row, column) = cell(latitude, longitude)
+        for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
+            if (cells[x to y].orEmpty().any { camera ->
+                    val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
+                    val difference = bearingDifference(latitude, longitude, bearing, camera)
+                    // 같은 지점의 중복 레코드(30m 이내)는 다음 카메라로 치지 않는다.
+                    meters > afterMeters + 30 && meters <= afterMeters + withinMeters &&
+                        difference <= 40 && meters * sin(Math.toRadians(difference)) <= 200
+                }) return true
+        }
+        return false
+    }
+
     /** 안내와 요청의 방향 계산을 공유해 경계에서 서로 다른 후보를 고르지 않게 한다. */
     private fun bearingDifference(latitude: Double, longitude: Double, bearing: Double, camera: OfflineCamera): Double {
         val north = camera.latitude - latitude

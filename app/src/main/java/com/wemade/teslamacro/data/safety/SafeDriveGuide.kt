@@ -508,11 +508,20 @@ class SafeDriveGuide(
         }.onFailure { disableSpeech("엔진 시작 실패 · ${it.javaClass.simpleName}") }
     }
 
-    /** 한국어 데이터가 없으면 다른 언어로 읽지 않고 기기 설정에서 설치할 수 있게 알린다. */
+    /**
+     * 기기 음성 설정에서 고른 한국어 목소리를 그대로 쓴다. setLanguage는 엔진의 언어 기본 목소리로 바꿔
+     * 음성 설정 미리 듣기와 목소리가 달라질 수 있어, 기본 목소리가 한국어가 아닐 때만 한국어로 바꾼다.
+     * 한국어 데이터가 없으면 다른 언어로 읽지 않고 기기 설정에서 설치할 수 있게 알린다.
+     */
     private fun prepareSpeech() {
         val engine = speechEngine ?: return
-        val language = runCatching { engine.setLanguage(Locale.KOREAN) }.getOrNull()
-        if (language == null || language < 0) { disableSpeech("한국어 음성 없음"); return }
+        val defaultVoice = runCatching { engine.defaultVoice }.getOrNull()
+        val keptDefault = defaultVoice?.locale?.language == Locale.KOREAN.language &&
+            runCatching { engine.setVoice(defaultVoice) }.getOrNull() == TextToSpeech.SUCCESS
+        if (!keptDefault) {
+            val language = runCatching { engine.setLanguage(Locale.KOREAN) }.getOrNull()
+            if (language == null || language < 0) { disableSpeech("한국어 음성 없음"); return }
+        }
         val selectedVoice = runCatching { engine.voice }.getOrNull()
         if (selectedVoice?.isNetworkConnectionRequired == true) {
             disableSpeech("오프라인 한국어 음성 없음")
@@ -636,11 +645,27 @@ class SafeDriveGuide(
                 return@launch
             }
             speechPlayer = player
+            // 음성 설정 미리 듣기와 음이 다르다는 제보를 진단 로그로 가리도록 음성 점검 때만 목소리·합성 형식을 남긴다.
+            if (request.cameraKey == null) {
+                DiagLog.add("안전 안내 · 음성 점검 재생 (엔진 ${runCatching { speechEngine?.defaultEngine }.getOrNull() ?: "미확인"}, " +
+                    "목소리 ${runCatching { speechEngine?.voice?.name }.getOrNull() ?: "미확인"}, " +
+                    "합성 ${wavSampleRate(file)?.let { "${it}Hz" } ?: "형식 미확인"})")
+            }
             // 음성이 시작되면 울리던 경고음을 끊어 음성만 들리게 한다.
             chime.stop()
             player.start()
         }
     }
+
+    /** WAV 머리글(24~27바이트, 리틀 엔디언)에서 합성 샘플레이트를 읽는다. 형식이 다르면 null. */
+    private fun wavSampleRate(file: File): Int? = runCatching {
+        file.inputStream().use { input ->
+            val header = ByteArray(28)
+            if (input.read(header) < 28 || String(header, 0, 4, Charsets.US_ASCII) != "RIFF") return@use null
+            (header[24].toInt() and 0xff) or ((header[25].toInt() and 0xff) shl 8) or
+                ((header[26].toInt() and 0xff) shl 16) or ((header[27].toInt() and 0xff) shl 24)
+        }
+    }.getOrNull()
 
     /** 합성·재생 실패는 이번 단계를 되돌리고 음성을 끄되 GPS·과속 경고음은 계속 동작시킨다. */
     private fun failSpeech(request: SpeechRequest) {

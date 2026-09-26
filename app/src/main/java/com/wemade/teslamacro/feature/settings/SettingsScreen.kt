@@ -1086,7 +1086,6 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 return@TCard
             }
             val soundLabel = com.wemade.teslamacro.data.safety.WarningSound.of(settings.safeDriveWarningSound).label
-            val volumeLabel = when (settings.safeDriveVolume.coerceIn(1, 3)) { 1 -> "작게"; 3 -> "크게"; else -> "보통" }
             ExpandableToggle(
                 title = "단속 카메라 안내",
                 checked = settings.safeDrive,
@@ -1118,6 +1117,8 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                     }
                 },
             ) {
+                // 펼친 안에서 또 접히면 원하는 설정을 찾기 어려워 한 단계만 펼친다.
+                // 순서: 언제 알릴지(거리·초과속도) → 경고음 → 음성. 상위 스위치가 꺼지면 딸린 설정만 숨긴다.
                 Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                 Spacer(Modifier.height(Space.sm))
                 ChoiceRow(
@@ -1136,46 +1137,16 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 Spacer(Modifier.height(Space.md))
                 Hairline()
                 Spacer(Modifier.height(Space.md))
-                ExpandableToggle(
+                ToggleRow(
                     title = "과속 경고음·음성 안내",
                     checked = settings.safeDriveSound,
                     onCheckedChange = controls.onSafeDriveSoundChange,
-                    summary = "$soundLabel · 크기 $volumeLabel · 음성 ${if (settings.safeDriveVoice) "켬" else "끔"}",
-                    notices = {
-                        if (settings.safeDriveSound) {
-                            controls.automaticSoundStatus?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                            }
-                        }
-                    },
-                ) {
-                    ExpandableToggle(
-                        title = "카메라 접근 음성 안내",
-                        checked = settings.safeDriveVoice,
-                        onCheckedChange = controls.onSafeDriveVoiceChange,
-                        notices = {
-                            // 음성 엔진 문제는 접어 둬도 안 들리는 이유라 항상 보인다.
-                            if (settings.safeDriveVoice) {
-                                controls.safeDriveVoiceStatus?.let {
-                                    Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                                }
-                            }
-                        },
-                    ) {
-                        // 짝을 이루는 두 보조 동작이라 세로로 쌓지 않고 한 줄에 나란히 둔다.
-                        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            TButton("음성 점검", ButtonTone.Secondary, modifier = Modifier.weight(1f),
-                                onClick = controls.onTestSafeDriveVoice)
-                            TButton("음성 설정", ButtonTone.Secondary, modifier = Modifier.weight(1f),
-                                onClick = controls.onOpenSpeechSettings)
-                        }
+                )
+                if (settings.safeDriveSound) {
+                    controls.automaticSoundStatus?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                            modifier = Modifier.padding(top = Space.xs))
                     }
-                    Spacer(Modifier.height(Space.md))
-                    ToggleRow(
-                        title = "과속 정도에 따라 경고음 간격 조절",
-                        checked = settings.safeDriveProgressiveSound,
-                        onCheckedChange = controls.onSafeDriveProgressiveSoundChange,
-                    )
                     Spacer(Modifier.height(Space.md))
                     WarningSoundPicker(settings, controls)
                     Spacer(Modifier.height(Space.md))
@@ -1186,6 +1157,35 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                         selected = settings.safeDriveVolume.coerceIn(1, 3).toString(),
                         onSelect = { controls.onSafeDriveVolumeChange(it.toInt()) },
                     )
+                    Spacer(Modifier.height(Space.md))
+                    ToggleRow(
+                        title = "과속 정도에 따라 경고음 간격 조절",
+                        checked = settings.safeDriveProgressiveSound,
+                        onCheckedChange = controls.onSafeDriveProgressiveSoundChange,
+                    )
+                    Spacer(Modifier.height(Space.md))
+                    Hairline()
+                    Spacer(Modifier.height(Space.md))
+                    ToggleRow(
+                        title = "카메라 접근 음성 안내",
+                        checked = settings.safeDriveVoice,
+                        onCheckedChange = controls.onSafeDriveVoiceChange,
+                    )
+                    if (settings.safeDriveVoice) {
+                        // 음성 엔진 문제는 안 들리는 이유라 음성 점검 버튼 바로 위에 둔다.
+                        controls.safeDriveVoiceStatus?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                                modifier = Modifier.padding(top = Space.xs))
+                        }
+                        Spacer(Modifier.height(Space.md))
+                        // 짝을 이루는 두 보조 동작이라 세로로 쌓지 않고 한 줄에 나란히 둔다.
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                            TButton("음성 점검", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                                onClick = controls.onTestSafeDriveVoice)
+                            TButton("음성 설정", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                                onClick = controls.onOpenSpeechSettings)
+                        }
+                    }
                 }
             }
         }

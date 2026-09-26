@@ -38,7 +38,9 @@ class SafetySettingsScreenshotTest(private val dark: Boolean, private val wide: 
                         SafeDrivePanel(
                             AppSettings(safeDrive = true, safeDriveToleranceKph = 5),
                             NavigationControls(onAppChange = {}, onHudOverlayChange = {},
-                                safeDriveAvailable = true, locationPermitted = true),
+                                safeDriveAvailable = true, locationPermitted = true,
+                                automaticSoundStatus = "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류",
+                                safeDriveVoiceStatus = "음성 재생 요청됨 · 들리지 않으면 미디어 음량을 확인하세요."),
                         )
                     }
                 }

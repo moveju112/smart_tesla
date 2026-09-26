@@ -27,13 +27,19 @@ import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.util.Locale
 
-/** 경보 기준은 그대로 두고 후보 제한속도 대비 초과분으로 단발음 간격만 고른다. */
+/**
+ * 경보 기준은 그대로 두고 후보 제한속도 대비 초과분으로 이중 삑 반복 간격만 고른다.
+ * 이중 삑 한 번이 약 0.3초라 0.6초보다 좁히면 끊김 없는 소리로 들려 단계 구분이 사라진다.
+ */
 internal fun warningIntervalMillis(excessKph: Double, progressive: Boolean): Long = when {
-    !progressive -> 2_000L
-    excessKph >= 15 -> 1_000L
-    excessKph >= 10 -> 2_000L
-    else -> 3_000L
+    !progressive -> 1_000L
+    excessKph >= 15 -> 600L
+    excessKph >= 10 -> 800L
+    else -> 1_200L
 }
+
+/** GPS 갱신이 이 시간 넘게 끊기면 지난 속도로 경고음을 계속 반복하지 않는다 */
+private const val WARNING_REFRESH_NANOS = 2_000_000_000L
 
 /** 첫 공백 기록 기준. GPS 콜백은 1초 주기라 30초 무수신이면 위성·권한·OS 차단 중 하나다 */
 private const val GPS_SILENCE_FIRST_LOG_NANOS = 30_000_000_000L
@@ -85,6 +91,12 @@ class SafeDriveGuide(
     private var matchedRoad: Pair<Long, MatchedRoad>? = null
     private var lastSoundMillis: Long? = null
     private var lastSoundIntervalMillis: Long? = null
+    // GPS는 1초마다 와서 위치 콜백만으로는 1초보다 좁은 간격을 낼 수 없어 반복은 별도 타이머가 맡는다.
+    private var warningJob: Job? = null
+    private var warningRefreshedNanos = 0L
+    private var warningDetail = ""
+    // 연속 카메라에서 경고음이 끊김 없이 이어지면 두 번째 카메라를 알 수 없어 후보 전환을 따로 기억한다.
+    private var lastAlertCameraKey: String? = null
     private var lastAlertStatus: String? = null
     private var lastAlertLogMillis: Long? = null
     private var retrievedAt: String? = null
@@ -134,6 +146,7 @@ class SafeDriveGuide(
                     }
                     if (lastFixNanos?.let { isFreshLocation(it, elapsedRealtimeNanos()) } == false) {
                         pendingSpeech = null
+                        stopWarning()
                         val waiting = SafetyState(ready = true, stalled = true,
                             unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
                         if (mutableState.value != waiting) mutableState.value = waiting
@@ -189,8 +202,7 @@ class SafeDriveGuide(
             clearRoadMatch()
             lastFixNanos = null
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = reason, dataWarning = dataWarning)
-            lastSoundMillis = null
-            lastSoundIntervalMillis = null
+            stopWarning()
             pendingSpeech = null
             logAlertStatus(reason, "오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m", nowNanos / 1_000_000)
             return
@@ -199,8 +211,7 @@ class SafeDriveGuide(
         if (speed >= 5 && (!location.hasBearing() || !location.bearing.isFinite())) {
             clearRoadMatch()
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
-            lastSoundMillis = null
-            lastSoundIntervalMillis = null
+            stopWarning()
             pendingSpeech = null
             logAlertStatus("방향 확인 불가", "GPS ${speed.toInt()}km/h, 방향 없음", nowNanos / 1_000_000)
             return
@@ -218,6 +229,13 @@ class SafeDriveGuide(
         ) else null
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         val nowMillis = nowNanos / 1_000_000
+        // 연속 카메라 중 어느 것을 인식했는지 로그로 확인하도록 새 후보를 만날 때만 남긴다.
+        // 후보가 잠깐 사라졌다 같은 카메라로 돌아오는 GPS 흔들림은 새 후보로 치지 않는다.
+        val cameraChanged = alert?.cameraKey != null && alert.cameraKey != lastAlertCameraKey
+        if (cameraChanged) {
+            DiagLog.add("안전 안내 · 카메라 후보 진입 (제한 ${alert?.speedLimitKph?.let { "${it}km/h" } ?: "확인 필요"}, 거리 ${alert?.distanceMeters ?: "-"}m)")
+            lastAlertCameraKey = alert?.cameraKey
+        }
         if (alert != null && sound && voiceEnabled && automaticAlertsAllowed) announceCamera(alert, nowMillis)
         else pendingSpeech = null
         val overSpeed = state.value.isOverSpeed(toleranceKph = toleranceKph)
@@ -237,38 +255,64 @@ class SafeDriveGuide(
             !automaticAlertsAllowed -> "주행 확인 전 · 소리 보류"
             else -> "경고음 반복"
         }
-        // 과속이 커지면 이전 느린 간격을 기다리지 않고 즉시 새 단계로 올린다.
         if (status == "경고음 반복") {
             val interval = warningIntervalMillis(speed - alert!!.speedLimitKph!!, progressiveSound)
-            val elapsed = lastSoundMillis?.let { nowMillis - it }
-            if (elapsed == null || elapsed < 0 || interval < (lastSoundIntervalMillis ?: interval) || elapsed >= interval) {
-                lastSoundMillis = nowMillis
-                lastSoundIntervalMillis = interval
-                // 앱 음량과 별개로 기기 미디어 음량 0이면 들리지 않으므로 요청 수락과 구별한다.
-                val mediaVolume = runCatching {
-                    application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
-                }.getOrNull()
-                if (mediaVolume == 0) {
-                    logAlertStatus("경고음 무음 · 미디어 음량 0", detail, nowMillis)
-                } else {
-                    val attempt = runCatching {
-                        if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
-                        // 이중 삑 소리 대신 단발음을 써 반복 간격으로 긴박감을 전한다.
-                        tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 300) == true
-                    }
-                    val result = when {
-                        attempt.getOrNull() == true -> "경고음 요청 수락 · 미디어 음량 ${mediaVolume ?: "확인 불가"}"
-                        attempt.exceptionOrNull() != null -> "경고음 재생 오류 · ${attempt.exceptionOrNull()!!.javaClass.simpleName}"
-                        else -> "경고음 재생 실패"
-                    }
-                    logAlertStatus("$result · ${interval / 1_000}초 간격", detail, nowMillis)
-                }
-            }
+            warningDetail = detail
+            warningRefreshedNanos = nowNanos
+            // 과속이 커지거나 다음 카메라로 넘어가면 남은 간격을 기다리지 않고 바로 울려 새 경보임을 알린다.
+            val restart = warningJob?.isActive != true || cameraChanged || interval < (lastSoundIntervalMillis ?: interval)
+            lastSoundIntervalMillis = interval
+            if (restart) startWarning()
         } else {
-            lastSoundMillis = null
-            lastSoundIntervalMillis = null
+            stopWarning()
             logAlertStatus(status, detail, nowMillis)
         }
+    }
+
+    /** 첫 이중 삑은 바로 내고, 이후는 GPS 갱신이 이어지는 동안 현재 단계 간격으로 반복한다. */
+    private fun startWarning() {
+        warningJob?.cancel()
+        playWarning()
+        warningJob = scope.launch {
+            while (isActive) {
+                delay(lastSoundIntervalMillis ?: break)
+                if (elapsedRealtimeNanos() - warningRefreshedNanos > WARNING_REFRESH_NANOS) break
+                playWarning()
+            }
+        }
+    }
+
+    /** 과속 해제·GPS 끊김·설정 변경 시 예약된 반복을 멈추고 다음 과속은 즉시 울리게 한다. */
+    private fun stopWarning() {
+        warningJob?.cancel()
+        warningJob = null
+        lastSoundMillis = null
+        lastSoundIntervalMillis = null
+    }
+
+    /** 기기 미디어 음량 0은 요청 수락과 구별하고, 실제 청취는 확인할 수 없어 요청 결과만 남긴다. */
+    private fun playWarning() {
+        val interval = lastSoundIntervalMillis ?: return
+        val nowMillis = elapsedRealtimeNanos() / 1_000_000
+        lastSoundMillis = nowMillis
+        val mediaVolume = runCatching {
+            application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }.getOrNull()
+        if (mediaVolume == 0) {
+            logAlertStatus("경고음 무음 · 미디어 음량 0", warningDetail, nowMillis)
+            return
+        }
+        val attempt = runCatching {
+            if (tone == null) tone = ToneGenerator(AudioManager.STREAM_MUSIC, volume * 25)
+            // 0.1초 단발음은 음악 위에서 묻혀 두 번 연달아 울리는 기본 이중 삑으로 존재감을 높인다.
+            tone?.startTone(ToneGenerator.TONE_PROP_BEEP2, 400) == true
+        }
+        val result = when {
+            attempt.getOrNull() == true -> "경고음 요청 수락 · 미디어 음량 ${mediaVolume ?: "확인 불가"}"
+            attempt.exceptionOrNull() != null -> "경고음 재생 오류 · ${attempt.exceptionOrNull()!!.javaClass.simpleName}"
+            else -> "경고음 재생 실패"
+        }
+        logAlertStatus("$result · ${String.format(Locale.ROOT, "%.1f", interval / 1_000.0)}초 간격", warningDetail, nowMillis)
     }
 
     /** 진입 시와 200m 안에서만 말하고 GPS 흔들림에 같은 카메라를 반복 안내하지 않는다. */
@@ -499,8 +543,7 @@ class SafeDriveGuide(
         if (!allowed) {
             pendingSpeech = null
             spokenStages.clear()
-            lastSoundMillis = null
-            lastSoundIntervalMillis = null
+            stopWarning()
             runCatching { speechEngine?.stop() }
             runCatching { tone?.stopTone() }
         }
@@ -518,8 +561,7 @@ class SafeDriveGuide(
         this.volume = adjustedVolume
         progressiveSound = progressive
         if (changed) {
-            lastSoundMillis = null
-            lastSoundIntervalMillis = null
+            stopWarning()
         }
         tone?.release()
         tone = null
@@ -544,8 +586,8 @@ class SafeDriveGuide(
         guideReadyNanos = null
         lastLocationNanos = null
         lastSilenceLogNanos = null
-        lastSoundMillis = null
-        lastSoundIntervalMillis = null
+        stopWarning()
+        lastAlertCameraKey = null
         spokenStages.clear()
         automaticAlertsAllowed = false
         lastVoiceMillis = null

@@ -266,7 +266,7 @@ class SafetySettingsTest {
         assertEquals(1.0, points.last().accuracyMeters, 0.0)
     }
 
-    /** 같은 카메라 앞에서 과속이 이어지면 2초마다 울리고, 속도를 낮췄다가 올리면 즉시 재경보한다. */
+    /** 고정 간격은 타이머로 1초마다 반복하고, 다음 카메라는 즉시 다시 울리며, GPS가 끊기거나 속도를 낮추면 멈춘다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun soundRequestCooldownAndSettings() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -278,6 +278,7 @@ class SafetySettingsTest {
                 OfflineCamera("second", 37.004, 127.0, 50),
             )))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
+        val tone = SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }
         // 실제 스피커 출력 대신 요청 시각만 검증하고 JVM의 미구현 ToneGenerator는 비운다.
         fun approach(latitudeDegrees: Double = 37.0, speedMetersPerSecond: Float = 20f) {
             guide.onLocation(Location("gps").apply {
@@ -285,7 +286,14 @@ class SafetySettingsTest {
                 speed = speedMetersPerSecond; bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+            tone.set(guide, null)
+        }
+        // 반복 타이머와 주입 시계를 같이 움직인다.
+        fun wait(millis: Long) {
+            nowNanos += millis * 1_000_000L
+            advanceTimeBy(millis)
+            runCurrent()
+            tone.set(guide, null)
         }
         try {
             guide.setSound(true, 99, -1, progressive = false)
@@ -296,26 +304,32 @@ class SafetySettingsTest {
             approach()
             assertEquals(1_000L, lastSound.get(guide))
             assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
+            assertTrue(DiagLog.lines.value.last().contains("1.0초 간격"))
             assertTrue(DiagLog.lines.value.last().contains("GPS 72km/h"))
-            nowNanos += 1_999_000_000L
-            approach(37.00001)
+            wait(500)
+            approach(37.00001) // 같은 카메라의 GPS 갱신은 반복 간격을 앞당기지 않는다.
             assertEquals(1_000L, lastSound.get(guide))
-            nowNanos += 1_000_000L
-            approach() // 같은 카메라에서도 2초 간격으로 다시 요청한다.
-            assertEquals(3_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(37.0034) // 카메라가 바뀌어도 전역 간격은 지킨다.
-            assertEquals(3_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(37.0034)
-            assertEquals(5_000L, lastSound.get(guide))
+            wait(500)
+            assertEquals(2_000L, lastSound.get(guide))
+            wait(300)
+            val entries = DiagLog.lines.value.count { it.contains("카메라 후보 진입") }
+            approach(37.0034) // 다음 카메라로 넘어가면 남은 간격을 기다리지 않고 바로 울린다.
+            assertEquals(2_300L, lastSound.get(guide))
+            assertEquals(entries + 1, DiagLog.lines.value.count { it.contains("카메라 후보 진입") })
+            wait(1_000)
+            assertEquals(3_300L, lastSound.get(guide))
+            wait(1_000)
+            assertEquals(4_300L, lastSound.get(guide))
+            wait(1_000) // GPS 갱신이 2초 넘게 없으면 지난 속도로 계속 울리지 않는다.
+            assertEquals(4_300L, lastSound.get(guide))
             nowNanos += 10_000_000_000L
-            approach(speedMetersPerSecond = 10f) // 과속 해제 직후 재진입은 바로 울린다.
+            approach(speedMetersPerSecond = 10f)
             assertNull(lastSound.get(guide))
             assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경보 속도 미달"))
-            approach()
-            assertEquals(15_000L, lastSound.get(guide))
+            approach() // 과속 해제 직후 재진입은 바로 울린다.
+            assertEquals(15_300L, lastSound.get(guide))
             guide.setSound(false, -1, 0)
+            assertNull(lastSound.get(guide))
             nowNanos += 2_000_000_000L
             approach(37.0034)
             assertNull(lastSound.get(guide))
@@ -325,20 +339,21 @@ class SafetySettingsTest {
             guide.stop()
             assertNull(lastSound.get(guide))
         } finally {
+            tone.set(guide, null)
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()
         }
     }
 
-    /** 제한 대비 105→110→115에서 간격이 3→2→1초로 줄고 고정 모드는 2초를 유지한다. */
+    /** 제한 대비 105→110→115에서 이중 삑 간격이 1.2→0.8→0.6초로 줄고 고정 모드는 1초를 유지한다. */
     @Test fun warningIntervalByOverspeed() {
-        assertEquals(3_000L, warningIntervalMillis(5.0, true))
-        assertEquals(3_000L, warningIntervalMillis(9.99, true))
-        assertEquals(2_000L, warningIntervalMillis(10.0, true))
-        assertEquals(2_000L, warningIntervalMillis(14.99, true))
-        assertEquals(1_000L, warningIntervalMillis(15.0, true))
-        assertEquals(2_000L, warningIntervalMillis(15.0, false))
+        assertEquals(1_200L, warningIntervalMillis(5.0, true))
+        assertEquals(1_200L, warningIntervalMillis(9.99, true))
+        assertEquals(800L, warningIntervalMillis(10.0, true))
+        assertEquals(800L, warningIntervalMillis(14.99, true))
+        assertEquals(600L, warningIntervalMillis(15.0, true))
+        assertEquals(1_000L, warningIntervalMillis(15.0, false))
     }
 
     /** 보행·미판정 때는 같은 카메라의 화면 경보를 남기되 자동 음성과 경고음 요청은 취소한다. */
@@ -385,7 +400,7 @@ class SafetySettingsTest {
         }
     }
 
-    /** GPS가 1초마다 올 때 느린 간격·단계 상승 즉시 경보·빠른 간격을 실제 요청 시각으로 확인한다. */
+    /** 느린 간격·단계 상승 즉시 경보·단계 하락 뒤 느린 반복을 실제 요청 시각으로 확인한다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun progressiveWarningRequests() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -394,6 +409,7 @@ class SafetySettingsTest {
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
             .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 100))))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
+        val tone = SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }
         // JVM에서 ToneGenerator는 실제로 소리를 못 내므로 요청 시각만 검사한다.
         fun approach(speedKph: Int) {
             guide.onLocation(Location("gps").apply {
@@ -401,7 +417,13 @@ class SafetySettingsTest {
                 speed = (speedKph / 3.6).toFloat(); bearing = 0f; accuracy = 10f
                 elapsedRealtimeNanos = nowNanos
             })
-            SafeDriveGuide::class.java.getDeclaredField("tone").apply { isAccessible = true }.set(guide, null)
+            tone.set(guide, null)
+        }
+        fun wait(millis: Long) {
+            nowNanos += millis * 1_000_000L
+            advanceTimeBy(millis)
+            runCurrent()
+            tone.set(guide, null)
         }
         try {
             guide.setSound(true, 2, 5, progressive = true)
@@ -410,39 +432,35 @@ class SafetySettingsTest {
             runCurrent()
             approach(106)
             assertEquals(1_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
+            assertTrue(DiagLog.lines.value.last().contains("1.2초 간격"))
+            wait(1_000)
             approach(106)
             assertEquals(1_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(111) // 3초 간격이 남았어도 더 빠른 단계에서는 즉시 알린다.
-            assertEquals(3_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(111)
-            assertEquals(3_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(111)
-            assertEquals(5_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
+            wait(200)
+            assertEquals(2_200L, lastSound.get(guide))
+            wait(300)
+            approach(111) // 느린 간격이 남았어도 더 빠른 단계에서는 즉시 알린다.
+            assertEquals(2_500L, lastSound.get(guide))
+            wait(800)
+            assertEquals(3_300L, lastSound.get(guide))
+            wait(100)
             approach(116)
-            assertEquals(6_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(116)
-            assertEquals(7_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(106)
-            assertEquals(7_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
+            assertEquals(3_400L, lastSound.get(guide))
+            wait(600)
+            assertEquals(4_000L, lastSound.get(guide))
+            approach(106) // 단계가 내려가면 이미 예약된 한 번 뒤부터 느린 간격으로 돌아간다.
+            wait(600)
+            assertEquals(4_600L, lastSound.get(guide))
+            wait(600)
+            assertEquals(4_600L, lastSound.get(guide))
+            wait(600)
+            assertEquals(5_800L, lastSound.get(guide))
             approach(101) // 과속 해제 뒤 다시 초과하면 느린 단계도 즉시 울린다.
             assertNull(lastSound.get(guide))
             approach(106)
-            assertEquals(9_000L, lastSound.get(guide))
-            nowNanos += 2_000_000_000L
-            approach(106)
-            assertEquals(9_000L, lastSound.get(guide))
-            nowNanos += 1_000_000_000L
-            approach(106)
-            assertEquals(12_000L, lastSound.get(guide))
+            assertEquals(5_800L, lastSound.get(guide))
         } finally {
+            tone.set(guide, null)
             guide.stop()
             runCurrent()
             Dispatchers.resetMain()

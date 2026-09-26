@@ -315,7 +315,7 @@ class SettingsStore(
     suspend fun setSafeDriveAlertDistanceMeters(meters: Int) = edit {
         it[KeySafeDriveAlertDistanceMeters] = meters.takeIf { value -> value in listOf(300, 500, 700) } ?: 500
     }
-    /** 음성은 과속 단발음과 별개로 끌 수 있다. */
+    /** 음성은 과속 경고음과 별개로 끌 수 있다. */
     suspend fun setSafeDriveVoice(enabled: Boolean) = edit { it[KeySafeDriveVoice] = enabled }
     /** 속도가 높아질수록 간격을 줄일지 저장한다. */
     suspend fun setSafeDriveProgressiveSound(enabled: Boolean) = edit {

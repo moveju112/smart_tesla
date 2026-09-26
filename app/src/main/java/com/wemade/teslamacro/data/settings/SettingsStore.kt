@@ -51,12 +51,23 @@ enum class ThemeMode(val label: String) {
     }
 }
 
+/**
+ * 다시 개발하기 전까지 화면에서 숨긴 기능.
+ * 저장값은 지우지 않고 읽을 때만 끈다 — 화면에서 끌 수 없는 기능이 몰래 계속 돌지 않게 하고,
+ * 다시 열 때는 이 값만 true로 바꾸면 사용자의 예전 선택이 돌아온다.
+ */
+object FeatureAvailability {
+    /** 탑승 시 네이버 지도 안심운전 자동 실행 */
+    const val NAVIGATOR_SAFE_DRIVE = false
+
+    /** 다른 앱 위 실시간 속도 표시 */
+    const val HUD_OVERLAY = false
+}
+
 /** 앱 설정. */
 data class AppSettings(
     val vin: String = "",
     val themeMode: ThemeMode = ThemeMode.AUTO,
-    /** 매크로 자동 실행 on/off — 정비·세차 때 통째로 끄는 스위치 */
-    val automationEnabled: Boolean = true,
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
     val smartThingsEnabled: Boolean = false,
     val fleetApiEnabled: Boolean = false,
@@ -120,6 +131,8 @@ data class AppSettings(
     val safeDriveSound: Boolean = true,
     /** 경보 음량 1~3. 내비 음성과 겹쳐 들리므로 사람이 균형을 맞출 수 있어야 한다 */
     val safeDriveVolume: Int = 2,
+    /** 과속 경고음 종류. [com.wemade.teslamacro.data.safety.WarningSound]의 저장값이다 */
+    val safeDriveWarningSound: String = "chime",
     /** 후보 제한속도 대비 초과분에 따라 경고음 간격을 줄일지. */
     val safeDriveProgressiveSound: Boolean = true,
     /** 카메라 경보 시작 거리. GPS 직선거리이며 300·500·700m 중 선택한다. */
@@ -145,7 +158,6 @@ class SettingsStore(
         AppSettings(
             vin = prefs[KeyVin] ?: "",
             themeMode = ThemeMode.of(prefs[KeyThemeMode]),
-            automationEnabled = prefs[KeyAutomation] ?: true,
             smartThingsEnabled = prefs[KeySmartThingsEnabled]
                 ?: prefs[KeySmartThingsFrunkEnabled]
                 ?: false,
@@ -169,15 +181,17 @@ class SettingsStore(
             stealthEndMinutes = (prefs[KeyStealthEndMinutes] ?: 7 * 60).coerceIn(0, 1439),
             // 공개 버전은 네이버 지도만 사용한다. 저장된 예전 선택값은 나중 확장 때 다시 쓸 수 있게 둔다.
             navigatorApp = "NAVER",
-            autoStartNavigatorSafeDrive = prefs[KeyAutoStartNavigatorSafeDrive] ?: false,
+            autoStartNavigatorSafeDrive = FeatureAvailability.NAVIGATOR_SAFE_DRIVE &&
+                (prefs[KeyAutoStartNavigatorSafeDrive] ?: false),
             // 0.9.20의 켜짐값은 전체 진단으로 이어 받아, 업데이트 뒤 시험 흐름이 끊기지 않게 한다.
             navigatorSafeDriveLaunchMode = prefs[KeyNavigatorSafeDriveLaunchMode]
                 ?: if (prefs[KeyNavigatorSafeDriveDiagnostics] == true) "ALL" else "DEFAULT",
-            hudOverlay = prefs[KeyHudOverlay] ?: false,
+            hudOverlay = FeatureAvailability.HUD_OVERLAY && (prefs[KeyHudOverlay] ?: false),
             // 무료 오프라인 안내도 사용자가 선택한 경우에만 GPS를 사용한다.
             safeDrive = prefs[KeySafeDrive] ?: false,
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
+            safeDriveWarningSound = com.wemade.teslamacro.data.safety.WarningSound.of(prefs[KeySafeDriveWarningSound]).settingValue,
             safeDriveProgressiveSound = prefs[KeySafeDriveProgressiveSound] ?: true,
             safeDriveAlertDistanceMeters = (prefs[KeySafeDriveAlertDistanceMeters] ?: 500).takeIf { it in listOf(300, 500, 700) } ?: 500,
             safeDriveVoice = prefs[KeySafeDriveVoice] ?: true,
@@ -197,7 +211,6 @@ class SettingsStore(
         it[KeyVin] = vin
     }
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
-    suspend fun setAutomationEnabled(enabled: Boolean) = edit { it[KeyAutomation] = enabled }
     /** 알림 접근 권한과 별개로 차량 명령 수신 여부를 저장한다. */
     /** 음성 요청 유효시간은 10초부터 10분까지 저장한다. */
     suspend fun setSmartThingsValiditySeconds(seconds: Int) = edit {
@@ -323,6 +336,10 @@ class SettingsStore(
     }
     // 범위를 저장 직전에 한 번 가둔다 — 백업 파일이 손으로 고쳐져 들어올 수 있다
     suspend fun setSafeDriveVolume(level: Int) = edit { it[KeySafeDriveVolume] = level.coerceIn(1, 3) }
+    /** 알 수 없는 값은 기본 경고음으로 바꿔 저장한다. */
+    suspend fun setSafeDriveWarningSound(value: String) = edit {
+        it[KeySafeDriveWarningSound] = com.wemade.teslamacro.data.safety.WarningSound.of(value).settingValue
+    }
 
     /** 제한속도에 더할 경보 여유를 1km/h 단위로 저장한다. */
     suspend fun setSafeDriveToleranceKph(value: Int) = edit {
@@ -355,7 +372,6 @@ class SettingsStore(
      * 차량 식별·등록 상태는 백업에 없으므로 여기서도 건드리지 않는다.
      */
     suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
-        it[KeyAutomation] = backup.automationEnabled
         it[KeyProtectPhoneKey] = backup.protectPhoneKey
         // 사용 모드는 일부러 복원하지 않는다 — 다른 기기 백업이 이 설치본의 거치 방식을 바꾸면 안 된다.
         // 1회 실행은 다른 기기에 복원하지 않는다. 시간대 취향만 이 설치본에 남는다.
@@ -369,6 +385,7 @@ class SettingsStore(
         it[KeySafeDrive] = backup.safeDrive
         it[KeySafeDriveSound] = backup.safeDriveSound
         it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
+        it[KeySafeDriveWarningSound] = com.wemade.teslamacro.data.safety.WarningSound.of(backup.safeDriveWarningSound).settingValue
         it[KeySafeDriveProgressiveSound] = backup.safeDriveProgressiveSound
         it[KeySafeDriveAlertDistanceMeters] = backup.safeDriveAlertDistanceMeters.takeIf { value -> value in listOf(300, 500, 700) } ?: 500
         it[KeySafeDriveVoice] = backup.safeDriveVoice
@@ -381,6 +398,8 @@ class SettingsStore(
         it.remove(KeyLegacyIdlePoll)
         it.remove(KeyLegacyActivePoll)
         it.remove(KeyLegacyActiveWindow)
+        // 매크로 자동 실행은 항상 켜져 끄는 스위치가 없어졌다.
+        it.remove(KeyLegacyAutomation)
     }
 
     /**
@@ -457,7 +476,7 @@ class SettingsStore(
         val KeyLegacyIdlePoll = intPreferencesKey("idle_poll_seconds")
         val KeyLegacyActivePoll = intPreferencesKey("active_poll_seconds")
         val KeyLegacyActiveWindow = intPreferencesKey("active_window_seconds")
-        val KeyAutomation = booleanPreferencesKey("automation_enabled")
+        val KeyLegacyAutomation = booleanPreferencesKey("automation_enabled")
         val KeySmartThingsValiditySeconds = intPreferencesKey("smartthings_validity_seconds")
         val KeySmartThingsEnabled = booleanPreferencesKey("smartthings_enabled")
         val KeySmartThingsCommandTexts = stringPreferencesKey("smartthings_command_texts")
@@ -495,6 +514,7 @@ class SettingsStore(
         val KeySafeDrive = booleanPreferencesKey("safe_drive")
         val KeySafeDriveSound = booleanPreferencesKey("safe_drive_sound")
         val KeySafeDriveVolume = intPreferencesKey("safe_drive_volume")
+        val KeySafeDriveWarningSound = stringPreferencesKey("safe_drive_warning_sound")
         val KeySafeDriveProgressiveSound = booleanPreferencesKey("safe_drive_progressive_sound")
         val KeySafeDriveAlertDistanceMeters = intPreferencesKey("safe_drive_alert_distance_meters")
         val KeySafeDriveVoice = booleanPreferencesKey("safe_drive_voice")

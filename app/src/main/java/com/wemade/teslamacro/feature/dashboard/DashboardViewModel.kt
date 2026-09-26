@@ -163,7 +163,6 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             stealthScheduleEnabled = settings.stealthScheduleEnabled,
             stealthStartMinutes = settings.stealthStartMinutes,
             stealthEndMinutes = settings.stealthEndMinutes,
-            automationEnabled = settings.automationEnabled,
             runningMacroCount = container.runner.running.value.size,
             rangeKm = effective.rangeKm?.toInt(),
             // 열린 문만 추린다. 다 닫혀 있으면 빈 목록 = 화면은 "모두 닫힘"

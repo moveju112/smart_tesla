@@ -27,8 +27,8 @@ data class BackupFile(
     val settings: BackupSettings = BackupSettings(),
 ) {
     companion object {
-        /** 5 — 카메라 접근 거리와 음성 안내 설정이 늘었다. */
-        const val CURRENT_VERSION = 5
+        /** 6 — 경고음 종류가 늘고, 항상 켜지는 매크로 자동 실행 값은 빠졌다(옛 파일의 값은 무시한다). */
+        const val CURRENT_VERSION = 6
 
         /** 파일 이름. 날짜를 붙이는 건 저장 다이얼로그에서 사람이 한다 */
         const val DEFAULT_FILE_NAME = "smart-tesla-backup.json"
@@ -47,7 +47,6 @@ data class BackupFile(
  */
 @Serializable
 data class BackupSettings(
-    val automationEnabled: Boolean = true,
     val protectPhoneKey: Boolean = true,
     val stealthCharging: Boolean = false,
     // 내비 앱은 담지 않는다 — 새 기기에 그 앱이 없으면 선택값이 화면에서 사라지고
@@ -56,6 +55,7 @@ data class BackupSettings(
     val safeDrive: Boolean = false,
     val safeDriveSound: Boolean = true,
     val safeDriveVolume: Int = 2,
+    val safeDriveWarningSound: String = "chime",
     val safeDriveProgressiveSound: Boolean = true,
     val safeDriveAlertDistanceMeters: Int = 500,
     val safeDriveVoice: Boolean = true,
@@ -64,7 +64,6 @@ data class BackupSettings(
 
 /** 지금 설정에서 백업에 담을 부분만 뽑는다 */
 fun AppSettings.toBackup(): BackupSettings = BackupSettings(
-    automationEnabled = automationEnabled,
     protectPhoneKey = protectPhoneKey,
     // 다음 충전 1회 예약은 취향이 아니라 진행 상태라 새 기기에 옮기지 않는다.
     stealthCharging = false,
@@ -72,6 +71,7 @@ fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     safeDrive = safeDrive,
     safeDriveSound = safeDriveSound,
     safeDriveVolume = safeDriveVolume,
+    safeDriveWarningSound = safeDriveWarningSound,
     safeDriveProgressiveSound = safeDriveProgressiveSound,
     safeDriveAlertDistanceMeters = safeDriveAlertDistanceMeters,
     safeDriveVoice = safeDriveVoice,

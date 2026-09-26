@@ -89,6 +89,25 @@ class SafetySettingsTest {
         assertEquals(30, store.settings.first().safeDriveToleranceKph)
     }
 
+    /** 숨긴 기능은 예전에 켜 둔 값이 있어도 꺼진 것으로 읽고, 경고음 종류는 알 수 없는 값을 기본으로 되돌린다. */
+    @Test fun hiddenFeaturesStayOffAndWarningSoundIsSanitized() = runTest {
+        val preferences = PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            File(temporaryFolder.root, "hidden.preferences_pb")
+        }
+        val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
+        store.setHudOverlay(true)
+        store.setAutoStartNavigatorSafeDrive(true)
+        assertEquals(FeatureAvailability.HUD_OVERLAY, store.settings.first().hudOverlay)
+        assertEquals(FeatureAvailability.NAVIGATOR_SAFE_DRIVE, store.settings.first().autoStartNavigatorSafeDrive)
+        assertEquals("chime", store.settings.first().safeDriveWarningSound)
+        store.setSafeDriveWarningSound("beep")
+        assertEquals("beep", store.settings.first().safeDriveWarningSound)
+        store.setSafeDriveWarningSound("siren")
+        assertEquals("chime", store.settings.first().safeDriveWarningSound)
+        store.restore(BackupSettings(safeDriveWarningSound = "soft"))
+        assertEquals("soft", store.settings.first().safeDriveWarningSound)
+    }
+
     /** 안내 설정이 연결하는 실제 안내기의 GPS 단절·복구·오입력·종료를 이미지 없이 검증한다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun guideLifecycleAndUnknownFixes() = runTest {
@@ -589,7 +608,7 @@ class SafetySettingsTest {
         try {
             DiagLog.clear()
             guide.previewWarning(3)
-            assertTrue(DiagLog.lines.value.last().contains("경고음 미리 듣기 (크기 3"))
+            assertTrue(DiagLog.lines.value.last().contains("경고음 미리 듣기 (띠링, 크기 3"))
             runCurrent()
             advanceTimeBy(2_799)
             runCurrent()

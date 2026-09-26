@@ -502,7 +502,7 @@ class StatePoller(
 
             // 휴대 모드는 백그라운드 자동화 주체가 아니다. 같은 룰을 거치·휴대 기기가
             // 동시에 발동하면 명령이 중복되고, 긴 대기 동안 휴대 기기가 차량 근접 키로 남는다.
-            if (settings.automationEnabled && settings.deviceMode == DeviceMode.MOUNTED) {
+            if (settings.deviceMode == DeviceMode.MOUNTED) {
                 // 문 변화와 위치 판정을 함께 남기되 좌표와 매 폴링 반복 로그는 피한다.
                 if (doorMacroCheck && fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
                     (evaluationPrevious == null || evaluationPrevious.snapshot.doorOpen != current.snapshot.doorOpen)
@@ -980,7 +980,7 @@ internal data class VehicleConnectionDecision(val reason: VehicleConnectionReaso
 
 /** 거치 모드의 켜진 문 열림 매크로만 기존 60초 전원 확인 예산을 함께 쓴다. */
 internal fun needsDoorMacroWakeCheck(settings: AppSettings, rules: List<MacroRule>): Boolean =
-    settings.deviceMode == DeviceMode.MOUNTED && settings.automationEnabled && rules.any { rule ->
+    settings.deviceMode == DeviceMode.MOUNTED && rules.any { rule ->
         rule.enabled && rule.triggers.any { trigger ->
             trigger is Trigger.SignalBecomes && trigger.to &&
                 trigger.signal in setOf(Signal.DOOR_DRIVER_FRONT, Signal.DOOR_PASSENGER_FRONT)

@@ -67,6 +67,21 @@ val TeslaTypography = Typography(
     ),
 )
 
+/**
+ * 설정 화면 전용 한 단계 작은 글자.
+ * 설정은 여러 항목을 훑어보고 가끔 바꾸는 화면이라 사용자 요청으로 본문·라벨을 1~2sp 줄여 한 화면에 더 담는다.
+ * 시스템 글자 배율은 그대로 곱해지고, 주행 중 보는 화면에는 쓰지 않는다.
+ */
+val SettingsTypography = TeslaTypography.copy(
+    titleMedium = TeslaTypography.titleMedium.copy(fontSize = 14.sp, lineHeight = 21.sp),
+    titleSmall = TeslaTypography.titleSmall.copy(fontSize = 13.sp, lineHeight = 19.sp),
+    bodyMedium = TeslaTypography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    bodySmall = TeslaTypography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp),
+    labelLarge = TeslaTypography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp),
+    labelMedium = TeslaTypography.labelMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
+    labelSmall = TeslaTypography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+)
+
 /** 부품번호 — 지시선 끝에 매달리는 두 자리 숫자. 도면과 표를 잇는 유일한 끈 */
 val CalloutNumberStyle = TextStyle(
     fontFamily = Mono, fontFeatureSettings = TABULAR,

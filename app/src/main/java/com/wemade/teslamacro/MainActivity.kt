@@ -428,7 +428,6 @@ private fun AppRoot(factory: ViewModelFactory) {
 
                     SettingsScreen(
                         settings = settings,
-                        onAutomationChange = settingsViewModel::setAutomationEnabled,
                         onThemeModeChange = settingsViewModel::setThemeMode,
                         onStealthChargingChange = settingsViewModel::setStealthCharging,
                         stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
@@ -512,6 +511,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
                             onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
                             onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
+                            onSafeDriveWarningSoundChange = { settingsViewModel.setSafeDriveWarningSound(it, settings.safeDriveVolume) },
                             onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
                             safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
                             installed = remember { settingsViewModel.installedNavigators() },

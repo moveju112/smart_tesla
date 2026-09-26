@@ -205,15 +205,6 @@ class WideScreenshotTest {
     @Test
     fun `W5 설정 - 주행`() = settingsSnapshot("W5-settings-driving", SettingsGroup.DRIVING)
 
-    /** 잠금 점검 버튼과 예약 안내를 실제 거치 화면 높이에서 확인한다. */
-    @Test
-    fun `W5e 설정 - 잠금 실행 점검`() = settingsSnapshot(
-        "W5e-settings-safe-drive-test",
-        SettingsGroup.DRIVING,
-        overlayPermitted = true,
-        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요.",
-    )
-
     @Test
     fun `W5b 설정 - 자동화`() = settingsSnapshot("W5b-settings-automation", SettingsGroup.AUTOMATION)
 
@@ -284,7 +275,6 @@ class WideScreenshotTest {
                         stealthMaxAmps = 13,
                         stealthScheduleEnabled = group == SettingsGroup.AUTOMATION,
                     ),
-                    onAutomationChange = {},
                     stealthSecondsUntilNextChange =
                         if (group == SettingsGroup.AUTOMATION) 134 else null,
                     onUnpair = {},
@@ -421,7 +411,6 @@ class WideScreenshotTest {
                             "차가 거부하면 사유를 그대로 보여준다\n" +
                             "퇴근 전 예열에서 고정 15초 대기를 걷어냈다",
                     ),
-                    onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     battery = com.wemade.teslamacro.feature.settings.BatteryControls(

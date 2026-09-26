@@ -48,6 +48,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `미착석과 UNKNOWN 다음 착석을 추가 조회 없이 한번 전달하고 연결을 놓는다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         fixture.gateway.onRead = { count ->
             fixture.snapshot(when (count) { 1 -> false; 2 -> null; else -> true })
@@ -71,6 +72,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `빈 차는 60초에 연결을 놓고 같은 전원에서 다시 시작하지 않는다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         fixture.start()
         advanceTimeBy(60_000)
@@ -91,6 +93,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `일시 연결 실패와 읽기 실패를 지나 착석을 확인한다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         fixture.gateway.onConnect = { count ->
             if (count == 1) Result.failure(IllegalStateException("일시 연결 실패"))
@@ -112,6 +115,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `취소를 실패 Result로 바꾸는 느린 연결도 총 60초와 두번을 넘지 않는다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         fixture.gateway.onConnect = {
             runCatching { delay(45_000) }
@@ -131,6 +135,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `전원 재연결 뒤 이전 요청의 늦은 착석 응답을 버리고 새 응답을 기다린다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         val newPresence = CompletableDeferred<Unit>()
         fixture.gateway.onRead = { count ->
@@ -158,6 +163,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `수동 해제 중 들어온 착석 응답은 자동 실행하지 않는다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         fixture.gateway.onRead = {
             delay(5_000)
@@ -192,6 +198,7 @@ class PortableBoardingPollTest {
 
     @Test
     fun `전면의 미착석 응답 뒤 잠가도 남은 확인 창으로 착석을 잡는다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture()
         var seated = false
         fixture.gateway.onRead = { fixture.snapshot(seated) }
@@ -213,6 +220,7 @@ class PortableBoardingPollTest {
     /** 거치 전원 상승이 착석보다 빨라도 앱을 열지 않고 탑승을 잡으며 기존 조회를 유지한다. */
     @Test
     fun `거치는 미착석과 UNKNOWN 뒤 착석을 한번 전달하고 연결을 유지한다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture(mode = DeviceMode.MOUNTED)
         fixture.gateway.onRead = { count ->
             fixture.snapshot(when (count) { 1 -> false; 2 -> null; else -> true })
@@ -236,6 +244,7 @@ class PortableBoardingPollTest {
     /** 빈 거치 차량의 인증 연결을 확인 창 안으로 제한하고 같은 전원으로 재시작하지 않는다. */
     @Test
     fun `거치 미탑승은 60초에 종료하고 같은 전원에서 다시 확인하지 않는다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture(mode = DeviceMode.MOUNTED)
         fixture.start()
         advanceTimeBy(60_000)
@@ -256,6 +265,7 @@ class PortableBoardingPollTest {
     /** 전원을 끊기 전에 시작한 조회가 뒤늦게 성공해도 자동 안내를 열지 않는다. */
     @Test
     fun `거치 확인 중 전원이 끊기면 늦은 착석 응답을 버린다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture(mode = DeviceMode.MOUNTED)
         fixture.gateway.onRead = {
             delay(5_000)
@@ -278,6 +288,7 @@ class PortableBoardingPollTest {
     /** 사용자가 연결을 중단한 뒤의 늦은 응답으로 자동 안내가 되살아나지 않게 한다. */
     @Test
     fun `거치 확인 중 수동 해제하면 늦은 착석 응답을 버린다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture(mode = DeviceMode.MOUNTED)
         fixture.gateway.onRead = {
             delay(5_000)
@@ -313,6 +324,7 @@ class PortableBoardingPollTest {
     /** 차량 응답 뒤 위치 조회가 지연돼도 확인 시간 종료 후 탑승으로 처리하지 않는다. */
     @Test
     fun `거치 위치 조회가 60초를 넘으면 안내 없이 연결을 종료한다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture(mode = DeviceMode.MOUNTED, locationDelayMillis = 90_000L)
         fixture.gateway.onRead = { fixture.snapshot(true) }
         fixture.start()
@@ -334,6 +346,7 @@ class PortableBoardingPollTest {
     /** 위치를 기다리는 동안 전원이 끊기면 앞서 읽은 착석값도 자동 실행에 쓰지 않는다. */
     @Test
     fun `거치 위치 조회 중 전원이 끊기면 늦은 안내를 버린다`() = runTest {
+        requireNavigatorSafeDrive()
         val fixture = fixture(mode = DeviceMode.MOUNTED, locationDelayMillis = 5_000L)
         fixture.gateway.onRead = { fixture.snapshot(true) }
         fixture.start()
@@ -436,6 +449,10 @@ class PortableBoardingPollTest {
         assertEquals(null, fixture.reading.value?.weather)
         fixture.poller.stop()
     }
+
+    /** 네이버 지도 안심운전 탑승 확인은 재개발 전까지 숨겨 꺼져 있어, 기능을 다시 열 때만 검증한다. */
+    private fun requireNavigatorSafeDrive() =
+        org.junit.Assume.assumeTrue(com.wemade.teslamacro.data.settings.FeatureAvailability.NAVIGATOR_SAFE_DRIVE)
 
     /** 저장 상태를 초기화하고 휴대 기본값을 유지한 채 거치 모드도 같은 폴러로 검증한다. */
     private suspend fun TestScope.fixture(

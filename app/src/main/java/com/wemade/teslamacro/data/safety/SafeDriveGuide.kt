@@ -135,6 +135,7 @@ class SafeDriveGuide(
     private var sound = false
     private var automaticAlertsAllowed = false
     private var volume = 2
+    private var warningSound = WarningSound.CHIME
     private var progressiveSound = true
     private var alertDistanceMeters = 500
     private var voiceEnabled = true
@@ -360,7 +361,7 @@ class SafeDriveGuide(
             logAlertStatus("경고음 무음 · 미디어 음량 0", warningDetail, nowMillis)
             return
         }
-        val attempt = runCatching { chime.play(volume) }
+        val attempt = runCatching { chime.play(volume, warningSound) }
         val result = when {
             attempt.getOrNull() == true -> "경고음 요청 수락 · 미디어 음량 ${mediaVolume ?: "확인 불가"}"
             attempt.exceptionOrNull() != null -> "경고음 재생 오류 · ${attempt.exceptionOrNull()!!.javaClass.simpleName}"
@@ -395,23 +396,23 @@ class SafeDriveGuide(
     }
 
     /**
-     * 경고음 크기를 고를 때 실제 주행과 같은 소리·간격으로 세 번(약 3초) 들려준다.
+     * 경고음 크기·종류를 고를 때 실제 주행과 같은 소리·간격으로 세 번(약 3초) 들려준다.
      * 주행 중 실제 경보가 울리고 있으면 헷갈리지 않게 미리 듣기를 건너뛴다.
      */
-    fun previewWarning(volumeLevel: Int) {
+    fun previewWarning(volumeLevel: Int, sound: WarningSound = warningSound) {
         if (warningJob?.isActive == true) return
         previewJob?.cancel()
         val mediaVolume = runCatching {
             application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
         }.getOrNull()
         // 미디어 음량 0이면 아무것도 안 들려 고장으로 오해하기 쉬워 원인을 함께 남긴다.
-        DiagLog.add("안전 안내 · 경고음 미리 듣기 (크기 ${volumeLevel.coerceIn(1, 3)}, 미디어 음량 ${mediaVolume ?: "확인 불가"})")
+        DiagLog.add("안전 안내 · 경고음 미리 듣기 (${sound.label}, 크기 ${volumeLevel.coerceIn(1, 3)}, 미디어 음량 ${mediaVolume ?: "확인 불가"})")
         holdAudioFocus()
         previewJob = scope.launch {
             val current = coroutineContext[Job]
             try {
                 repeat(3) { index ->
-                    runCatching { previewChime.play(volumeLevel) }
+                    runCatching { previewChime.play(volumeLevel, sound) }
                     if (index < 2) delay(warningIntervalMillis(0.0, progressiveSound))
                 }
                 // 마지막 소리가 끝날 때까지 음악 감쇠를 유지한다.
@@ -696,16 +697,18 @@ class SafeDriveGuide(
         if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "연결/주행 확인" else reason}")
     }
 
-    /** 설정 변경 시 음량을 다시 적용하고 꺼진 소리는 즉시 해제한다. */
-    fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5, progressive: Boolean = true) {
+    /** 설정 변경 시 음량·경고음 종류를 다시 적용하고 꺼진 소리는 즉시 해제한다. */
+    fun setSound(sound: Boolean, volume: Int, toleranceKph: Int = 5, progressive: Boolean = true,
+                 warningSound: WarningSound = this.warningSound) {
         val adjustedTolerance = toleranceKph.coerceIn(0, 30)
         val adjustedVolume = volume.coerceIn(1, 3)
         val changed = this.sound != sound || this.volume != adjustedVolume ||
-            this.toleranceKph != adjustedTolerance || progressiveSound != progressive
+            this.toleranceKph != adjustedTolerance || progressiveSound != progressive || this.warningSound != warningSound
         this.toleranceKph = adjustedTolerance
         this.sound = sound
         this.volume = adjustedVolume
         progressiveSound = progressive
+        this.warningSound = warningSound
         if (changed) {
             stopWarning()
         }
@@ -715,7 +718,7 @@ class SafeDriveGuide(
             runCatching { speechEngine?.stop() }
         }
         if (changed && job?.isActive == true) {
-            DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h, 속도별 ${if (progressive) "켬" else "끔"})")
+            DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, ${warningSound.label}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h, 속도별 ${if (progressive) "켬" else "끔"})")
         }
     }
 

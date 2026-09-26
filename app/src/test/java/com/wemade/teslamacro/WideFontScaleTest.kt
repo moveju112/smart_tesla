@@ -85,7 +85,6 @@ class WideFontScaleTest {
                         hudOverlay = true,
                         safeDrive = true,
                     ),
-                    onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     battery = com.wemade.teslamacro.feature.settings.BatteryControls(
@@ -121,7 +120,6 @@ class WideFontScaleTest {
                         stealthScheduleEnabled = true,
                     ),
                     stealthSecondsUntilNextChange = 134,
-                    onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,

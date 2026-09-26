@@ -221,7 +221,6 @@ class ScreenshotTest {
                 chargeHistory = sampleChargeHistory(),
                 chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                 settings = AppSettings(vin = ""),
-                onAutomationChange = {},
                 onUnpair = {},
                 onStartPairing = {},
                 battery = com.wemade.teslamacro.feature.settings.BatteryControls(
@@ -291,7 +290,6 @@ class ScreenshotTest {
         errorMessage = error,
         secondsSinceReading = if (hasReading) 3 else null,
         batteryPercent = 72,
-        automationEnabled = true,
         runningMacroCount = 1,
     )
 

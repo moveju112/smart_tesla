@@ -65,6 +65,7 @@ private data class SafeDriveOptions(
     val distanceMeters: Int,
     val voice: Boolean,
     val deviceMode: DeviceMode,
+    val warningSound: String,
 )
 
 /**
@@ -374,7 +375,7 @@ class MacroService : LifecycleService() {
             app.container.settingsStore.settings
                 .map { SafeDriveOptions(it.safeDrive, it.safeDriveSound, it.safeDriveVolume,
                     it.safeDriveToleranceKph, it.safeDriveProgressiveSound,
-                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.deviceMode) }
+                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.deviceMode, it.safeDriveWarningSound) }
                 .combine(portableGuidanceActive) { options, connected ->
                     options to shouldMonitorGuidance(options.deviceMode, options.enabled, connected)
                 }.distinctUntilChanged()
@@ -384,7 +385,8 @@ class MacroService : LifecycleService() {
                     // 새 설정을 먼저 적용해 GPS 첫 갱신이 이전 거리·음성을 사용하지 않게 한다.
                     app.container.safeDrive.setAlertOptions(options.distanceMeters, options.voice)
                     app.container.safeDrive.setSound(options.sound, options.volume,
-                        options.toleranceKph, options.progressiveSound)
+                        options.toleranceKph, options.progressiveSound,
+                        com.wemade.teslamacro.data.safety.WarningSound.of(options.warningSound))
                     // 거치 기기의 기존 활동 인식은 유지하되 휴대폰에선 구독하지 않는다.
                     if (shouldSubscribeDrivingActivity(options.deviceMode, active, options.sound)) startActivityUpdates()
                     else if (activityUpdates != null || !activityCleanupCompleted) stopActivityUpdates()

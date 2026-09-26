@@ -80,7 +80,6 @@ class PortraitTabletTest {
                         hudOverlay = true,
                         safeDrive = true,
                     ),
-                    onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     battery = com.wemade.teslamacro.feature.settings.BatteryControls(

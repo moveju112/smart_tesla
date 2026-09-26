@@ -45,6 +45,12 @@ import com.wemade.teslamacro.ui.theme.T
 enum class ButtonTone { Primary, Secondary, Ghost, Danger }
 
 /**
+ * 설정처럼 버튼이 많은 화면에서 기본 버튼을 소형으로 바꾼다.
+ * 호출마다 small을 넘기면 새 버튼에서 빠뜨리기 쉬워 화면 루트에서 한 번 정한다. 최소 터치 높이 48dp는 그대로다.
+ */
+val LocalCompactButtons = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/**
  * 공용 버튼.
  * - Primary: 파랑 단색 채움, 그림자 없음 (토스식 평면 버튼)
  * - Secondary/Ghost: 카드 위에서 한 겹 밝은 면 + 얇은 테두리
@@ -58,8 +64,8 @@ fun TButton(
     enabled: Boolean = true,
     fillWidth: Boolean = true,
     icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    /** 카드 안 보조 액션용 소형(48dp). 주 동작 버튼은 기본(52dp)을 유지한다 */
-    small: Boolean = false,
+    /** 카드 안 보조 액션용 소형(48dp). 주 동작 버튼은 기본(52dp)이고, [LocalCompactButtons] 화면에선 소형이 기본이다 */
+    small: Boolean = LocalCompactButtons.current,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }

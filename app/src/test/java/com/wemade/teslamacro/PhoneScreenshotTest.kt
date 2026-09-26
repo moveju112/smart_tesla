@@ -219,7 +219,6 @@ class PhoneScreenshotTest {
                         stealthScheduleEnabled = true,
                     ),
                     stealthSecondsUntilNextChange = 134,
-                    onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     battery = com.wemade.teslamacro.feature.settings.BatteryControls(
@@ -250,26 +249,19 @@ class PhoneScreenshotTest {
         }
     }
 
-    /** 휴대 화면에서도 실행 방식과 잠금 점검 안내를 읽고 누를 수 있어야 한다. */
+    /** 경고음 종류 모달이 휴대폰 세로에서 목록·선택 표시·닫기를 한 화면에 담는지 낮·밤으로 확인한다. */
     @Test
-    fun `P7 잠금 실행 점검`() {
-        paparazzi.snapshot("P7-safe-drive-test") {
-            AppFrame(Destination.Settings) {
-                SettingsScreen(
-                    chargeHistory = sampleChargeHistory(),
-                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
-                    settings = AppSettings(autoStartNavigatorSafeDrive = true),
-                    onAutomationChange = {},
-                    onUnpair = {},
-                    onStartPairing = {},
-                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
-                        onAppChange = {},
-                        onHudOverlayChange = {},
-                        installed = setOf("NAVER"),
-                        safeDriveTestMessage = "예약을 요청했어요. 지금 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요.",
-                    ),
-                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
-                )
+    fun `P23 경고음 종류 선택`() {
+        for (dark in listOf(false, true)) {
+            paparazzi.snapshot("P23-warning-sound-${if (dark) "dark" else "light"}") {
+                AppFrame(Destination.Settings, dark = dark) {
+                    androidx.compose.material3.MaterialTheme(typography = com.wemade.teslamacro.ui.theme.SettingsTypography) {
+                        com.wemade.teslamacro.feature.settings.WarningSoundSheet(
+                            selected = com.wemade.teslamacro.data.safety.WarningSound.DING_DONG,
+                            onSelect = {}, onDismiss = {},
+                        )
+                    }
+                }
             }
         }
     }
@@ -320,7 +312,7 @@ class PhoneScreenshotTest {
                         chargeHistory = sampleChargeHistory(),
                         chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                         settings = AppSettings(themeMode = if (dark) com.wemade.teslamacro.data.settings.ThemeMode.DARK else com.wemade.teslamacro.data.settings.ThemeMode.LIGHT),
-                        onAutomationChange = {}, onUnpair = {}, onStartPairing = {},
+                        onUnpair = {}, onStartPairing = {},
                         initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DEVICE,
                     )
                 }

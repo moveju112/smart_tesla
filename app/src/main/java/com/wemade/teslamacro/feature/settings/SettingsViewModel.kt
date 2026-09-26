@@ -65,10 +65,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setThemeMode(mode) }
     }
 
-    fun setAutomationEnabled(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setAutomationEnabled(enabled) }
-    }
-
     /** 스마트싱스 알림 명령 전체의 사용 여부를 저장한다. */
     /** 다음 음성 요청부터 사용할 유효시간을 저장한다. */
     fun setSmartThingsValiditySeconds(seconds: Int) {
@@ -315,6 +311,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun setSafeDriveVolume(level: Int) {
         viewModelScope.launch { container.settingsStore.setSafeDriveVolume(level) }
         container.safeDrive.previewWarning(level)
+    }
+
+    /** 경고음 종류. 고르는 즉시 현재 크기로 들려줘 여러 종류를 바로 비교하게 한다 */
+    fun setSafeDriveWarningSound(value: String, volumeLevel: Int) {
+        val sound = com.wemade.teslamacro.data.safety.WarningSound.of(value)
+        viewModelScope.launch { container.settingsStore.setSafeDriveWarningSound(sound.settingValue) }
+        container.safeDrive.previewWarning(volumeLevel, sound)
     }
 
     /** 화면·경고음의 기준을 같은 저장값으로 갱신한다. */

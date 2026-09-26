@@ -58,7 +58,7 @@ class QuickActionRequestScreenshotTest(private val dark: Boolean, private val wi
                         AppFrame(Destination.Settings, dark = dark) {
                             SettingsScreen(
                                 settings = com.wemade.teslamacro.data.settings.AppSettings(fleetApiEnabled = fleetEnabled),
-                                onAutomationChange = {}, onUnpair = {}, onStartPairing = {},
+                                onUnpair = {}, onStartPairing = {},
                                 onFleetApiEnabledChange = if (fleetEnabled) ({ _: Boolean -> }) else null,
                             )
                         }

@@ -45,7 +45,6 @@ class TabletPortraitScreenshotTest(private val dark: Boolean, private val fontSc
                     chargeHistory = sampleChargeHistory(),
                     chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
                     stealthSecondsUntilNextChange = 134,
-                    onAutomationChange = {},
                     onUnpair = {},
                     onStartPairing = {},
                     initialGroup = SettingsGroup.AUTOMATION,

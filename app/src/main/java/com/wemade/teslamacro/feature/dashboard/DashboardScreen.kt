@@ -1293,7 +1293,6 @@ data class DashboardUiState(
     val safetyValue: String? = null,
     /** 그 경보가 지금 지켜야 할 제한속도를 넘긴 상태인가 — 넘겼을 때만 적색 */
     val safetyAlarming: Boolean = false,
-    val automationEnabled: Boolean = true,
     val runningMacroCount: Int = 0,
     /** 주행 가능 거리(km). 배터리 %만으론 실감이 안 나 함께 보여준다 */
     val rangeKm: Int? = null,
@@ -1317,12 +1316,9 @@ data class DashboardUiState(
 
     val batteryLabel: String get() = batteryPercent?.let { "$it%" } ?: "--"
 
+    /** 매크로 자동 실행은 항상 켜져 있어 실행 중인지 감시 중인지만 구분한다 */
     val automationLabel: String
-        get() = when {
-            !automationEnabled -> "꺼짐"
-            runningMacroCount > 0 -> "실행 중 ${runningMacroCount}개"
-            else -> "감시 중"
-        }
+        get() = if (runningMacroCount > 0) "실행 중 ${runningMacroCount}개" else "감시 중"
 
     /** 연결 중이거나 명령이 오가는 중 */
     val isBusy: Boolean

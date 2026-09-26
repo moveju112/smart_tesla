@@ -35,6 +35,20 @@ internal fun warningIntervalMillis(excessKph: Double, progressive: Boolean): Lon
     else -> 3_000L
 }
 
+/** 첫 공백 기록 기준. GPS 콜백은 1초 주기라 30초 무수신이면 위성·권한·OS 차단 중 하나다 */
+private const val GPS_SILENCE_FIRST_LOG_NANOS = 30_000_000_000L
+
+/** 공백이 이어질 때 반복 기록 간격. 300줄 진단 로그를 공백 기록만으로 채우지 않는다 */
+private const val GPS_SILENCE_REPEAT_NANOS = 60_000_000_000L
+
+/** 마지막 수신(없으면 안내 준비) 뒤 30초부터 1분마다 GPS 공백을 기록할 초를 돌려준다. */
+internal fun gpsSilenceSecondsToLog(nowNanos: Long, readyNanos: Long, lastLocationNanos: Long?, lastLogNanos: Long?): Long? {
+    val silentNanos = nowNanos - maxOf(readyNanos, lastLocationNanos ?: readyNanos)
+    if (silentNanos < GPS_SILENCE_FIRST_LOG_NANOS) return null
+    if (lastLogNanos != null && nowNanos - lastLogNanos < GPS_SILENCE_REPEAT_NANOS) return null
+    return silentNanos / 1_000_000_000L
+}
+
 /** 안내를 켜면 기본은 오프라인 판단, 카메라 근처에서는 도로 매칭을 보조로 사용한다. */
 class SafeDriveGuide(
     private val application: Application,
@@ -54,6 +68,10 @@ class SafeDriveGuide(
     private var job: Job? = null
     private var index: CameraIndex? = null
     private var lastFixNanos: Long? = null
+    // 첫 위치조차 오지 않으면 상태 로그가 멈춰 지하·실내와 OS 위치 차단을 구분할 수 없어 수신 공백을 따로 센다.
+    private var guideReadyNanos: Long? = null
+    private var lastLocationNanos: Long? = null
+    private var lastSilenceLogNanos: Long? = null
     private val roadMatcher = RoadMatcher(application)
     private var roadMatchEnabled = false
     private val recentPoints = ArrayDeque<RoadPoint>()
@@ -105,6 +123,7 @@ class SafeDriveGuide(
                 mutableState.value = SafetyState(ready = true, stalled = true,
                     unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
                 DiagLog.add("안전 안내 · 시작 (소리 ${if (sound) "켬" else "끔"}, 초과 +${toleranceKph}km/h, ${mutableState.value.unavailableReason})")
+                guideReadyNanos = elapsedRealtimeNanos()
                 while (isActive) {
                     if (retrievedAt != null) {
                         val warning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
@@ -118,6 +137,14 @@ class SafeDriveGuide(
                         val waiting = SafetyState(ready = true, stalled = true,
                             unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
                         if (mutableState.value != waiting) mutableState.value = waiting
+                    }
+                    // 위치가 30초 넘게 오지 않으면 1분마다 권한·GPS 설정 판정과 함께 남긴다.
+                    guideReadyNanos?.let { readyNanos ->
+                        val nowNanos = elapsedRealtimeNanos()
+                        gpsSilenceSecondsToLog(nowNanos, readyNanos, lastLocationNanos, lastSilenceLogNanos)?.let { seconds ->
+                            DiagLog.add("안전 안내 · GPS 수신 없음 (${seconds}초, ${gpsWaitingReason()})")
+                            lastSilenceLogNanos = nowNanos
+                        }
                     }
                     delay(1_000)
                 }
@@ -143,6 +170,13 @@ class SafeDriveGuide(
     fun onLocation(location: Location) {
         if (job?.isActive != true || !state.value.ready) return
         val nowNanos = elapsedRealtimeNanos()
+        // 공백을 기록했다면 첫 수신을 남겨 지하 출구·차단 해제 시점을 로그에서 이어 보게 한다.
+        if (lastSilenceLogNanos != null) {
+            val silentSeconds = (nowNanos - (lastLocationNanos ?: guideReadyNanos ?: nowNanos)) / 1_000_000_000L
+            DiagLog.add("안전 안내 · GPS 수신 재개 (${silentSeconds}초 만)")
+            lastSilenceLogNanos = null
+        }
+        lastLocationNanos = nowNanos
         val speed = freshSpeedKph(location, nowNanos)
         if (speed == null) {
             // GPS 품질 때문에 경보가 막혔는지 구분해야 후보 부재로 오해하지 않는다.
@@ -507,6 +541,9 @@ class SafeDriveGuide(
         requestsSinceLog = 0
         lastMatchOutcome = null
         lastFixNanos = null
+        guideReadyNanos = null
+        lastLocationNanos = null
+        lastSilenceLogNanos = null
         lastSoundMillis = null
         lastSoundIntervalMillis = null
         spokenStages.clear()

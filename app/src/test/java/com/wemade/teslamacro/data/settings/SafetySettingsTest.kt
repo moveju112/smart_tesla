@@ -159,6 +159,52 @@ class SafetySettingsTest {
         }
     }
 
+    /** 첫 위치가 없거나 수신이 끊기면 30초부터 1분마다 공백을, 다시 받으면 재개 시점을 남긴다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun gpsSilenceIsLoggedUntilLocationResumes() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 100_000_000_000L
+        val guide = SafeDriveGuide(Application()) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50))))
+        // 다른 테스트 로그가 300줄 상한을 채우면 위치 기준 비교가 흔들려 먼저 비운다.
+        DiagLog.clear()
+        fun logged(text: String) = DiagLog.lines.value.count { it.contains(text) }
+        fun wait(seconds: Int) {
+            nowNanos += seconds * 1_000_000_000L
+            advanceTimeBy(seconds * 1_000L)
+            runCurrent()
+        }
+        try {
+            guide.start()
+            runCurrent()
+            wait(29)
+            assertEquals(0, logged("GPS 수신 없음"))
+            wait(1)
+            assertEquals(1, logged("GPS 수신 없음 (30초"))
+            wait(59)
+            assertEquals(1, logged("GPS 수신 없음"))
+            wait(1)
+            assertEquals(1, logged("GPS 수신 없음 (90초"))
+            guide.onLocation(Location("gps").apply {
+                latitude = 37.0
+                longitude = 127.0
+                speed = 0f
+                accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            assertEquals(1, logged("GPS 수신 재개 (90초 만)"))
+            wait(29)
+            assertEquals(2, logged("GPS 수신 없음"))
+            wait(1)
+            assertEquals(2, logged("GPS 수신 없음 (30초"))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** 후보 밖으로 벗어나거나 안내를 다시 시작해도 매칭 요청·429 대기 시각은 잊지 않는다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun roadMatchCooldownSurvivesExitAndRestart() = runTest {

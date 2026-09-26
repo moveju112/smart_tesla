@@ -93,6 +93,9 @@ class MacroService : LifecycleService() {
     private var currentDeviceMode = DeviceMode.PORTABLE
     private var currentSafeDriveEnabled = false
 
+    /** 시스템이 마지막으로 받아들인 포그라운드 형식. 백그라운드 재승격이 위치 형식을 지우지 않게 기억한다 */
+    private var foregroundType: Int? = null
+
     override fun onCreate() {
         super.onCreate()
         createChannel()
@@ -916,20 +919,31 @@ class MacroService : LifecycleService() {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
         ).any { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+        val wanted = if (hasLocation) base or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else base
+        // 1. 이미 같은 형식이면 다시 올리지 않는다. Android 14+는 호출 시점에 위치 자격을 다시 따져
+        //    스마트싱스·재부팅 같은 백그라운드 시작 요청이 위치 형식을 조용히 지워 버린다.
+        //    이미 포그라운드인 서비스는 startForegroundService 뒤 재호출이 없어도 시간 초과가 나지 않는다.
+        if (foregroundType == wanted) return
         try {
-            startForeground(
-                NOTIFICATION_ID,
-                buildNotification(),
-                if (hasLocation) base or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else base,
-            )
+            startForeground(NOTIFICATION_ID, buildNotification(), wanted)
+            if (hasLocation && foregroundType == base) {
+                com.wemade.teslable.DiagLog.add("감시 서비스 위치 형식 복구 — 백그라운드 GPS 사용 가능")
+            }
+            foregroundType = wanted
         } catch (e: SecurityException) {
-            // 부팅 직후 등 위치 타입이 막히는 상황 — 매크로 감시가 죽는 것보단 위치를 포기한다.
-            // 폴백까지 던질 수 있다(BLE 권한 없이 connectedDevice 타입을 못 붙인다).
-            // 그때 그대로 두면 앱이 죽으므로, 타입 없이라도 살려 둔다
+            // 2. 부팅 직후·백그라운드 시작처럼 위치 타입이 막히면 매크로 감시가 죽는 것보단 위치를 포기한다.
+            //    같은 거부가 알림마다 반복돼도 형식이 바뀔 때만 남긴다.
+            if (hasLocation && foregroundType != base) {
+                com.wemade.teslable.DiagLog.add("감시 서비스 위치 형식 거부 → 연결 형식만 유지 · 앱 화면을 열면 복구")
+            }
+            // 3. 폴백까지 던질 수 있다(BLE 권한 없이 connectedDevice 타입을 못 붙인다).
+            //    그때 그대로 두면 앱이 죽으므로, 타입 없이라도 살려 둔다
             runCatching { startForeground(NOTIFICATION_ID, buildNotification(), base) }
+                .onSuccess { foregroundType = base }
                 .onFailure {
                     com.wemade.teslable.DiagLog.add("감시 알림을 타입 없이 올립니다 (${it.message})")
                     runCatching { startForeground(NOTIFICATION_ID, buildNotification()) }
+                    foregroundType = null
                 }
         }
     }

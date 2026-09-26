@@ -103,6 +103,9 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         activityVisible = true
+        // 백그라운드 시작으로 위치 형식이 빠진 감시 서비스는 화면이 보이는 지금만 다시 올릴 수 있다.
+        // 이미 위치 형식이면 서비스가 재승격을 건너뛰어 부작용이 없다
+        if (hasBlePermission()) runCatching { MacroService.start(this) }
         // 화면에 앱이 나온 순간(대개 탑승 직후)은 사용자가 최신 값을 기대하는 순간이다.
         // 깊은 유휴 120초를 기다리지 않고 폴러를 바로 깨운다
         (application as TeslaMacroApplication).let { app ->

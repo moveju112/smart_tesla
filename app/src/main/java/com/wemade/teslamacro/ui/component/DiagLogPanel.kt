@@ -4,24 +4,19 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -53,10 +48,11 @@ fun DiagLogPanel(
     val lines by DiagLog.lines.collectAsState()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
-    var detailMenuOpen by remember { mutableStateOf(false) }
-    // 같은 공유 경로로 요약·주제별 상세를 내보내되 원문 복사는 바꾸지 않는다.
-    val shareLog: (DiagnosticShareScope) -> Unit = { scope ->
-        val text = diagnosticShareReport(shareExtra(), DiagLog.dumpAll(), scope)
+    // 설정 덤프와 보관 기록을 요약·주제별 나눔 없이 원문 그대로 보낸다. Binder 한도 때문에 본문은 최근 32,000자로 자른다.
+    val shareLog: () -> Unit = {
+        val text = listOf(shareExtra(), DiagLog.dumpAll())
+            .filter { it.isNotBlank() }
+            .joinToString("\n\n")
         runCatching {
             context.startActivity(Intent.createChooser(shareIntentFor(text), "진단 로그 보내기"))
         }.onFailure { failure ->
@@ -83,34 +79,13 @@ fun DiagLogPanel(
             verticalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
             TButton(
-                text = "요약 공유",
+                text = "공유",
                 tone = ButtonTone.Secondary,
                 fillWidth = false,
                 small = true,
                 enabled = lines.isNotEmpty(),
-                onClick = { shareLog(DiagnosticShareScope.SUMMARY) },
+                onClick = shareLog,
             )
-            Box {
-                TButton(
-                    text = "상세 공유",
-                    tone = ButtonTone.Secondary,
-                    fillWidth = false,
-                    small = true,
-                    enabled = lines.isNotEmpty(),
-                    onClick = { detailMenuOpen = true },
-                )
-                DropdownMenu(expanded = detailMenuOpen, onDismissRequest = { detailMenuOpen = false }) {
-                    DiagnosticShareScope.entries.filter { it != DiagnosticShareScope.SUMMARY }.forEach { scope ->
-                        DropdownMenuItem(
-                            text = { Text(scope.label) },
-                            onClick = {
-                                detailMenuOpen = false
-                                shareLog(scope)
-                            },
-                        )
-                    }
-                }
-            }
             TButton(
                 text = "복사",
                 tone = ButtonTone.Secondary,
@@ -139,7 +114,7 @@ fun DiagLogPanel(
                 text = when {
                     storedLines <= 0 -> "아직 기록이 없어요."
                     else -> "기록 ${storedLines}줄 · 최근 ${DiagLog.MAX_AGE_HOURS}시간, " +
-                        "최대 ${DiagLog.MAX_FILE_LINES}줄. 요약 공유 후 필요한 주제만 상세 공유해요."
+                        "최대 ${DiagLog.MAX_FILE_LINES}줄. 문제가 생기면 공유를 눌러 보내주세요."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
@@ -166,7 +141,7 @@ fun DiagLogPanel(
             }
             Spacer(Modifier.height(Space.xs))
             Text(
-                text = "요약 공유 후 필요한 주제만 상세 공유해요. 복사는 원문이에요 (${lines.size}줄)",
+                text = "공유는 최근 기록 원문, 복사는 전체 원문이에요 (${lines.size}줄)",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.InkFaint,
             )

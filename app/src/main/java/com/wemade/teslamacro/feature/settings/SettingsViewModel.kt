@@ -311,9 +311,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSafeDriveProgressiveSound(enabled) }
     }
 
-    /** 경보 음량 1~3 */
+    /** 경보 음량 1~3. 고르는 즉시 실제 경고음을 들려줘 크기를 귀로 맞추게 한다 */
     fun setSafeDriveVolume(level: Int) {
         viewModelScope.launch { container.settingsStore.setSafeDriveVolume(level) }
+        container.safeDrive.previewWarning(level)
     }
 
     /** 화면·경고음의 기준을 같은 저장값으로 갱신한다. */

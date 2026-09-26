@@ -577,6 +577,45 @@ class SafetySettingsTest {
         }
     }
 
+    /** 경고음 크기 미리 듣기는 실제 간격으로 약 3초 뒤 끝나고, 주행 경보가 울리는 중에는 끼어들지 않는다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun volumePreviewDoesNotInterruptDrivingWarning() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val guide = SafeDriveGuide(Application()) { 1_000_000_000L }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        val preview = SafeDriveGuide::class.java.getDeclaredField("previewJob").apply { isAccessible = true }
+        fun previews() = DiagLog.lines.value.count { it.contains("경고음 미리 듣기") }
+        try {
+            DiagLog.clear()
+            guide.previewWarning(3)
+            assertTrue(DiagLog.lines.value.last().contains("경고음 미리 듣기 (크기 3"))
+            runCurrent()
+            advanceTimeBy(2_799)
+            runCurrent()
+            assertNotNull(preview.get(guide))
+            advanceTimeBy(2)
+            runCurrent()
+            assertNull(preview.get(guide))
+            guide.setSound(true, 2, 5)
+            guide.setAutomaticAlertsAllowed(true)
+            guide.start()
+            runCurrent()
+            guide.onLocation(Location("gps").apply {
+                latitude = 37.0; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = 1_000_000_000L
+            })
+            guide.previewWarning(1)
+            assertEquals(1, previews())
+            assertNull(preview.get(guide))
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** 종류·제한속도 상충·가까운 거리 반올림을 상용 내비 문형으로 읽는다. */
     @Test fun announcementWording() {
         assertEquals("700미터 앞, 구간 단속 카메라입니다. 제한속도 100킬로미터입니다.",

@@ -152,6 +152,9 @@ class SafeDriveGuide(
     // 안내 음성이 나오는 동안 경고음을 겹치면 둘 다 알아듣기 어려워 음성을 우선한다.
     private var speaking = false
     private var audioFocus: AudioFocusRequest? = null
+    // 설정 화면 미리 듣기는 주행 경보 음원을 건드리지 않게 따로 둔다. 크기 변경이 주행 음원을 새로 만들기 때문이다.
+    private val previewChime = WarningChime()
+    private var previewJob: Job? = null
 
     /** 목록 로드는 IO에서 하고, GPS 수신 중단 시 과거 제한속도를 즉시 버린다. */
     fun start() {
@@ -383,12 +386,45 @@ class SafeDriveGuide(
         }
     }
 
-    /** 말하는 중도, 경고음 반복 중도 아니면 감쇠를 풀어 음악을 원래 음량으로 돌린다. */
+    /** 말하는 중도, 경고음 반복·미리 듣기 중도 아니면 감쇠를 풀어 음악을 원래 음량으로 돌린다. */
     private fun releaseAudioFocusIfIdle(force: Boolean = false) {
-        if (!force && (speaking || warningJob?.isActive == true)) return
+        if (!force && (speaking || warningJob?.isActive == true || previewJob?.isActive == true)) return
         val request = audioFocus ?: return
         runCatching { application.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(request) }
         audioFocus = null
+    }
+
+    /**
+     * 경고음 크기를 고를 때 실제 주행과 같은 소리·간격으로 세 번(약 3초) 들려준다.
+     * 주행 중 실제 경보가 울리고 있으면 헷갈리지 않게 미리 듣기를 건너뛴다.
+     */
+    fun previewWarning(volumeLevel: Int) {
+        if (warningJob?.isActive == true) return
+        previewJob?.cancel()
+        val mediaVolume = runCatching {
+            application.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
+        }.getOrNull()
+        // 미디어 음량 0이면 아무것도 안 들려 고장으로 오해하기 쉬워 원인을 함께 남긴다.
+        DiagLog.add("안전 안내 · 경고음 미리 듣기 (크기 ${volumeLevel.coerceIn(1, 3)}, 미디어 음량 ${mediaVolume ?: "확인 불가"})")
+        holdAudioFocus()
+        previewJob = scope.launch {
+            val current = coroutineContext[Job]
+            try {
+                repeat(3) { index ->
+                    runCatching { previewChime.play(volumeLevel) }
+                    if (index < 2) delay(warningIntervalMillis(0.0, progressiveSound))
+                }
+                // 마지막 소리가 끝날 때까지 음악 감쇠를 유지한다.
+                delay(400)
+            } finally {
+                // 새 미리 듣기로 교체된 경우엔 새 재생을 끊지 않도록 자기 차례일 때만 정리한다.
+                if (previewJob === current) {
+                    previewJob = null
+                    previewChime.stop()
+                    releaseAudioFocusIfIdle()
+                }
+            }
+        }
     }
 
     /**

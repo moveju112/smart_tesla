@@ -683,7 +683,7 @@ class SafetySettingsTest {
             assertEquals("실패 뒤 GPS마다 재시도하면 엔진이 로그·음성을 반복한다", 1, attempts)
             unavailable = false
             guide.testSpeech()
-            assertEquals("한국어 단속 안내 음성 점검입니다.", spoken.single())
+            assertEquals("500미터 앞 시속 100킬로미터 단속구간입니다.", spoken.single())
             nowNanos += 1_000_000_000L
             approach(36.9986)
             assertEquals("500미터 앞 시속 50킬로미터 단속구간입니다.", spoken.last())

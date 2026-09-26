@@ -95,7 +95,9 @@ class SafeDriveGuide(
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
 ) {
     // 준비 중인 문장에 카메라를 묶어 엔진 초기화 뒤 지난 후보를 읽거나 단계를 소모하지 않는다.
-    private data class SpeechRequest(val text: String, val cameraKey: String? = null, val stage: Int = 0)
+    // 딩동은 카메라 진입 안내와, 그 안내를 그대로 들려주는 음성 점검에만 붙인다.
+    private data class SpeechRequest(val text: String, val cameraKey: String? = null, val stage: Int = 0,
+                                     val chimeLead: Boolean = stage == 1)
 
     private val mutableState = MutableStateFlow(SafetyState())
     val state: StateFlow<SafetyState> = mutableState.asStateFlow()
@@ -457,7 +459,7 @@ class SafeDriveGuide(
         requestSpeech(SpeechRequest(text, key, previous + 1))
     }
 
-    /** 음성 점검을 누르면 설치·언어 변경 뒤 잠긴 엔진도 다시 초기화한다. */
+    /** 음성 점검을 누르면 설치·언어 변경 뒤 잠긴 엔진도 다시 초기화하고, 실제 진입 안내와 같은 딩동·문구로 들려준다. */
     fun testSpeech() {
         speechGeneration++
         runCatching { speechEngine?.shutdown() }
@@ -467,7 +469,8 @@ class SafeDriveGuide(
         speechUnavailable = false
         pendingSpeech = null
         mutableSpeechStatus.value = "한국어 음성 확인 중"
-        requestSpeech(SpeechRequest("한국어 단속 안내 음성 점검입니다."))
+        requestSpeech(SpeechRequest(cameraAnnouncement(SafetyKind.SPEED_CAMERA, 500, 100, CameraSequence.SINGLE),
+            chimeLead = true))
     }
 
     /** 음성 엔진이 준비되기 전에는 최신 안내만 보관해 지나간 카메라를 늦게 읽지 않는다. */
@@ -556,7 +559,7 @@ class SafeDriveGuide(
                         }
                     }
                 })
-                if (request.stage == 1) {
+                if (request.chimeLead) {
                     // 진입 안내는 딩동으로 먼저 주의를 끈 뒤 무음만큼 기다렸다 읽는다.
                     // 대기 중 과속 경고음이 딩동을 덮지 않게 이때부터 말하는 중으로 본다.
                     runCatching { announceChime.play(volume, WarningSound.DING_DONG) }

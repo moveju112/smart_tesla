@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -352,14 +354,14 @@ private fun StealthChargePanel(
     }
 }
 
-/**
- * 켜면 부가 설정이 딸려 나오는 스위치.
- * 부가 설정이 모두 펼쳐져 있으면 화면이 길어져 읽기 어려워 기본은 접고, 사용자가 방금 켰을 때만 자동으로 펼친다.
- * 접혀 있으면 [summary]로 현재 값만 보여 주고, 권한 경고·진행 상태처럼 놓치면 안 되는 안내는 [notices]로 접힘과 무관하게 둔다.
- */
 /** 스냅샷 검증용. 부가 설정을 처음부터 펼친 상태로 그리게 한다. 앱에서는 항상 false(접힘)다 */
 internal val LocalExpandSettingsDetails = androidx.compose.runtime.staticCompositionLocalOf { false }
 
+/**
+ * 켜면 부가 설정이 딸려 나오는 스위치.
+ * 부가 설정이 모두 펼쳐져 있으면 화면이 길어져 읽기 어려워 기본은 접고, 사용자가 방금 켰을 때만 자동으로 펼친다.
+ * [summary]로 현재 값을 한 줄 보여 주고, 권한 경고·진행 상태처럼 놓치면 안 되는 안내는 [notices]로 접힘과 무관하게 둔다.
+ */
 @Composable
 private fun ExpandableToggle(
     title: String,
@@ -373,6 +375,11 @@ private fun ExpandableToggle(
     val expandInitially = LocalExpandSettingsDetails.current
     var expanded by rememberSaveable { mutableStateOf(expandInitially) }
     val open = checked && expanded
+    val chevronTurn by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (open) 180f else 0f,
+        animationSpec = com.wemade.teslamacro.ui.theme.Motion.quick(),
+        label = "settingsDisclosureChevron",
+    )
     Column(Modifier.fillMaxWidth()) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         // 2. 제목 줄 전체를 펼침 영역으로 둬 작은 화살표만 노리지 않아도 되게 한다.
@@ -391,17 +398,17 @@ private fun ExpandableToggle(
         ) {
             Column(Modifier.weight(1f, fill = false)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
-                if (checked && !open && summary != null) {
-                    Text(summary, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                // 3. 요약 줄은 켜짐·펼침과 무관하게 자리를 지켜 제목이 위아래로 흔들리지 않게 한다. 꺼져 있으면 흐리게만 둔다.
+                if (summary != null) {
+                    Text(summary, style = MaterialTheme.typography.bodySmall, color = if (checked) T.InkMuted else T.InkFaint,
                         modifier = Modifier.padding(top = Space.xs))
                 }
             }
-            if (checked) {
-                androidx.compose.material3.Icon(
-                    com.wemade.teslamacro.ui.component.DraftMark.Expand, contentDescription = null, tint = T.InkMuted,
-                    modifier = Modifier.size(Space.lg).rotate(if (open) 180f else 0f),
-                )
-            }
+            // 4. 화살표는 꺼져 있어도 자리를 잡아 두고 투명하게만 해 켜는 순간 제목 줄이 밀리지 않게 한다.
+            androidx.compose.material3.Icon(
+                com.wemade.teslamacro.ui.component.DraftMark.Expand, contentDescription = null, tint = T.InkMuted,
+                modifier = Modifier.size(Space.lg).alpha(if (checked) 1f else 0f).rotate(chevronTurn),
+            )
         }
         Spacer(Modifier.width(Space.md))
         com.wemade.teslamacro.ui.component.DraftToggle(
@@ -415,12 +422,22 @@ private fun ExpandableToggle(
             label = if (checked) "켬" else "끔",
         )
     }
-    notices()
-    if (open) {
-        Spacer(Modifier.height(Space.md))
-        Hairline()
-        Spacer(Modifier.height(Space.md))
-        details()
+    // 5. 켜고 끌 때 붙고 빠지는 경고·주의 문구는 높이가 순간 이동하지 않고 늘고 줄게 한다.
+    Column(Modifier.fillMaxWidth().animateContentSize(com.wemade.teslamacro.ui.theme.Motion.standard())) { notices() }
+    // 6. 부가 설정은 한꺼번에 튀어나오지 않게 펼치며 서서히 나타나고, 접을 때는 빠르게 사라진다.
+    androidx.compose.animation.AnimatedVisibility(
+        visible = open,
+        enter = androidx.compose.animation.fadeIn(com.wemade.teslamacro.ui.theme.Motion.standard()) +
+            androidx.compose.animation.expandVertically(com.wemade.teslamacro.ui.theme.Motion.standard()),
+        exit = androidx.compose.animation.fadeOut(com.wemade.teslamacro.ui.theme.Motion.quick()) +
+            androidx.compose.animation.shrinkVertically(com.wemade.teslamacro.ui.theme.Motion.standard()),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(Space.md))
+            Hairline()
+            Spacer(Modifier.height(Space.md))
+            details()
+        }
     }
     }
 }
@@ -1084,12 +1101,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 summary = "${settings.safeDriveAlertDistanceMeters}m 전 안내 · 초과 +${settings.safeDriveToleranceKph}km/h · " +
                     if (settings.safeDriveSound) "소리 $soundLabel" else "소리 끔",
                 notices = {
-                    // 이미 켜 둔 사용자에게도 수신 서버를 스위치 바로 아래 고지한다.
-                    if (com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
-                        Spacer(Modifier.height(Space.sm))
-                        Text("GPS 경로 전송 → gps-map.choondoggy.com",
-                            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                    }
+                    // 서버 전송 고지는 켤 때 확인 창에서 받으므로 스위치 아래에 상시 표시하지 않는다.
                     // 권한 부족은 접어 둬도 안내가 멈춘 이유라 항상 보인다.
                     if (settings.safeDrive && !controls.locationPermitted) {
                         LocationPermissionNotice(controls)

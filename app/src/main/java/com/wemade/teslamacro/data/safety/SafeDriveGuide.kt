@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
 import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.media.AudioManager
 import android.media.AudioFocusRequest
 import android.speech.tts.TextToSpeech
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
+import java.io.File
 import java.util.Locale
 
 /**
@@ -47,6 +49,9 @@ internal enum class CameraSequence { SINGLE, CONTINUOUS, FOLLOWING }
 
 /** 딩동(약 0.37초)이 끝난 뒤 음성이 시작되게 두는 무음 길이. 겹치면 둘 다 알아듣기 어렵다 */
 private const val ANNOUNCE_CHIME_LEAD_MILLIS = 450L
+
+/** 합성 음성 임시 파일 이름 앞부분. 안내 종료 때 남은 파일을 이 이름으로 찾아 지운다 */
+private const val SPEECH_FILE_PREFIX = "safe_drive_tts_"
 
 /**
  * "N미터 앞 시속 N킬로미터 단속구간입니다." 한 문장에 거리·제한속도를 담는다.
@@ -153,6 +158,10 @@ class SafeDriveGuide(
     private var speechGeneration = 0
     private var speechUtterance = 0L
     private var pendingSpeech: SpeechRequest? = null
+    // TTS 엔진이 직접 재생하면 소리가 엔진 앱 소유라 분리 앱 사운드를 따르지 않아, 파일로 받아 앱이 재생한다.
+    private var speechPlayer: MediaPlayer? = null
+    private var speechFile: File? = null
+    private var speechPlaybackJob: Job? = null
     var toleranceKph: Int = 5
         private set
     private val chime = WarningChime()
@@ -464,6 +473,7 @@ class SafeDriveGuide(
         speechGeneration++
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        releaseSpeechPlayer()
         speaking = false
         speechReady = false
         speechUnavailable = false
@@ -493,9 +503,6 @@ class SafeDriveGuide(
                     }
                 }
             }
-            speechEngine?.setAudioAttributes(AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             if (speechUnavailable) { runCatching { speechEngine?.shutdown() }; speechEngine = null }
             else if (speechReady) prepareSpeech()
         }.onFailure { disableSpeech("엔진 시작 실패 · ${it.javaClass.simpleName}") }
@@ -532,43 +539,48 @@ class SafeDriveGuide(
             } else {
                 val generation = speechGeneration
                 val utteranceId = (++speechUtterance).toString()
+                // 새 안내는 합성 중이거나 재생 중인 지난 안내를 끊는다.
+                runCatching { speechEngine?.stop() }
+                releaseSpeechPlayer()
                 holdAudioFocus()
+                // 합성·딩동 대기 중 과속 경고음이 끼어들지 않게 요청 시점부터 말하는 중으로 본다.
+                speaking = true
+                val nowMillis = elapsedRealtimeNanos() / 1_000_000
+                val leadUntilMillis = if (request.chimeLead) {
+                    // 진입 안내는 딩동으로 먼저 주의를 끈 뒤 딩동이 끝나면 읽는다.
+                    runCatching { announceChime.play(volume, WarningSound.DING_DONG) }
+                    nowMillis + ANNOUNCE_CHIME_LEAD_MILLIS
+                } else nowMillis
                 speechEngine?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    // 발화가 시작되면 울리던 경고음을 끊어 음성만 들리게 한다.
-                    override fun onStart(id: String) {
+                    // 파일 합성 시작은 소리가 나는 시점이 아니라 재생 시작에서 경고음을 끊는다.
+                    override fun onStart(id: String) = Unit
+                    // 합성이 끝난 최신 안내만 재생하고 지난 안내 파일은 버린다.
+                    override fun onDone(id: String) {
                         scope.launch {
-                            if (id != speechUtterance.toString()) return@launch
-                            speaking = true
-                            chime.stop()
+                            val file = speechFileFor(id) ?: return@launch
+                            if (generation != speechGeneration || id != speechUtterance.toString() || speechUnavailable) {
+                                file.delete()
+                                return@launch
+                            }
+                            playSpeechFile(id, file, leadUntilMillis, request)
                         }
                     }
-                    // 완료 신호만으로 청취를 단정할 수는 없지만 경고음 재개·음악 복구는 허용한다.
-                    override fun onDone(id: String) = finishSpeaking(id)
-                    // 새 안내가 끼어들거나 설정 변경으로 끊긴 발화도 같은 정리를 거친다.
-                    override fun onStop(id: String, interrupted: Boolean) = finishSpeaking(id)
+                    // 새 안내가 끼어들거나 설정 변경으로 끊긴 합성도 같은 정리를 거친다.
+                    override fun onStop(id: String, interrupted: Boolean) {
+                        speechFileFor(id)?.delete()
+                        finishSpeaking(id)
+                    }
                     // 콜백은 다른 스레드에서 오므로 최신 발화일 때만 상태를 갱신한다.
                     override fun onError(id: String) {
                         scope.launch {
+                            speechFileFor(id)?.delete()
                             if (generation != speechGeneration || id != speechUtterance.toString() || speechUnavailable) return@launch
-                            request.cameraKey?.let { key ->
-                                if (spokenStages[key] == request.stage) spokenStages.remove(key)
-                            }
-                            disableSpeech("음성 출력 오류")
-                            speaking = false
-                            releaseAudioFocusIfIdle()
+                            failSpeech(request)
                         }
                     }
                 })
-                if (request.chimeLead) {
-                    // 진입 안내는 딩동으로 먼저 주의를 끈 뒤 무음만큼 기다렸다 읽는다.
-                    // 대기 중 과속 경고음이 딩동을 덮지 않게 이때부터 말하는 중으로 본다.
-                    runCatching { announceChime.play(volume, WarningSound.DING_DONG) }
-                    speaking = true
-                    speechEngine?.playSilentUtterance(ANNOUNCE_CHIME_LEAD_MILLIS, TextToSpeech.QUEUE_FLUSH, "lead-$utteranceId")
-                    speechEngine?.speak(request.text, TextToSpeech.QUEUE_ADD, null, utteranceId)
-                } else {
-                    speechEngine?.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-                }
+                val file = speechFileFor(utteranceId) ?: error("캐시 폴더 없음")
+                speechEngine?.synthesizeToFile(request.text, null, file, utteranceId)
             }
         }
         if (result.getOrNull() == TextToSpeech.SUCCESS && !speechUnavailable) {
@@ -589,9 +601,72 @@ class SafeDriveGuide(
     private fun finishSpeaking(id: String) {
         scope.launch {
             if (id != speechUtterance.toString()) return@launch
+            releaseSpeechPlayer()
             speaking = false
             releaseAudioFocusIfIdle()
         }
+    }
+
+    /** 발화마다 다른 파일을 써 지난 합성이 늦게 끝나도 재생 중인 파일을 덮지 않는다. */
+    private fun speechFileFor(id: String): File? =
+        runCatching { application.cacheDir }.getOrNull()?.let { File(it, "$SPEECH_FILE_PREFIX$id.wav") }
+
+    /** 합성한 음성을 앱이 직접 재생해 분리 앱 사운드 같은 앱별 출력 지정을 따르게 한다. */
+    private fun playSpeechFile(id: String, file: File, leadUntilMillis: Long, request: SpeechRequest) {
+        speechFile = file
+        speechPlaybackJob = scope.launch {
+            // 합성이 딩동보다 먼저 끝나면 남은 시간만큼 기다려 둘이 겹치지 않게 한다.
+            val wait = leadUntilMillis - elapsedRealtimeNanos() / 1_000_000
+            if (wait > 0) delay(wait)
+            val player = runCatching {
+                MediaPlayer().apply {
+                    setAudioAttributes(AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                    setDataSource(file.path)
+                    prepare()
+                    setOnCompletionListener { finishSpeaking(id) }
+                    setOnErrorListener { _, _, _ ->
+                        if (id == speechUtterance.toString()) failSpeech(request)
+                        true
+                    }
+                }
+            }.getOrElse {
+                failSpeech(request)
+                return@launch
+            }
+            speechPlayer = player
+            // 음성이 시작되면 울리던 경고음을 끊어 음성만 들리게 한다.
+            chime.stop()
+            player.start()
+        }
+    }
+
+    /** 합성·재생 실패는 이번 단계를 되돌리고 음성을 끄되 GPS·과속 경고음은 계속 동작시킨다. */
+    private fun failSpeech(request: SpeechRequest) {
+        request.cameraKey?.let { key ->
+            if (spokenStages[key] == request.stage) spokenStages.remove(key)
+        }
+        disableSpeech("음성 출력 오류")
+        releaseAudioFocusIfIdle()
+    }
+
+    /** 재생 대기·재생 중인 음성을 멈추고 임시 파일을 지운다. */
+    private fun releaseSpeechPlayer() {
+        speechPlaybackJob?.cancel()
+        speechPlaybackJob = null
+        speechPlayer?.let { runCatching { it.release() } }
+        speechPlayer = null
+        speechFile?.delete()
+        speechFile = null
+    }
+
+    /** 소리 끄기·자동 소리 보류 때 합성과 재생을 함께 멈추고 음악 감쇠를 푼다. */
+    private fun stopSpeechOutput() {
+        runCatching { speechEngine?.stop() }
+        releaseSpeechPlayer()
+        speaking = false
+        releaseAudioFocusIfIdle()
     }
 
     /** 음성 실패는 설정에 표시하되 GPS·과속 경고음은 계속 동작시킨다. */
@@ -601,6 +676,7 @@ class SafeDriveGuide(
         pendingSpeech = null
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        releaseSpeechPlayer()
         speaking = false
         mutableSpeechStatus.value = "한국어 음성 사용 불가 ($reason) · 음성 설정을 확인하세요."
         DiagLog.add("안전 안내 · 음성 사용할 수 없음 ($reason)")
@@ -695,7 +771,7 @@ class SafeDriveGuide(
         voiceEnabled = voice
         if (!voice) {
             pendingSpeech = null
-            runCatching { speechEngine?.stop() }
+            stopSpeechOutput()
         }
     }
 
@@ -709,7 +785,7 @@ class SafeDriveGuide(
             pendingSpeech = null
             spokenStages.clear()
             stopWarning()
-            runCatching { speechEngine?.stop() }
+            stopSpeechOutput()
             chime.stop()
         }
         if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "연결/주행 확인" else reason}")
@@ -733,7 +809,7 @@ class SafeDriveGuide(
         chime.release()
         if (!sound) {
             pendingSpeech = null
-            runCatching { speechEngine?.stop() }
+            stopSpeechOutput()
         }
         if (changed && job?.isActive == true) {
             DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, ${warningSound.label}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h, 속도별 ${if (progressive) "켬" else "끔"})")
@@ -764,6 +840,9 @@ class SafeDriveGuide(
         speechGeneration++
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
+        releaseSpeechPlayer()
+        // 합성 중 종료돼 지우지 못한 임시 파일도 정리한다.
+        runCatching { application.cacheDir?.listFiles { file -> file.name.startsWith(SPEECH_FILE_PREFIX) }?.forEach { it.delete() } }
         mutableSpeechStatus.value = null
         lastAlertStatus = null
         lastAlertLogMillis = null

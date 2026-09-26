@@ -33,15 +33,17 @@ class PhoneScreenshotTest {
     fun `P9 음성 명령 유효시간`() {
         paparazzi.snapshot("P9-smartthings-validity") {
             AppFrame(Destination.Settings) {
-                com.wemade.teslamacro.feature.settings.SmartThingsPanel(
-                    settings = com.wemade.teslamacro.data.settings.AppSettings(smartThingsEnabled = true),
-                    controls = com.wemade.teslamacro.feature.settings.SmartThingsControls(
-                        notificationAccessGranted = true,
-                        onEnabledChange = {},
-                        onCommandTextChange = { _, _ -> },
-                        onRequestNotificationAccess = {},
-                    ),
-                )
+                androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
+                    com.wemade.teslamacro.feature.settings.SmartThingsPanel(
+                        settings = com.wemade.teslamacro.data.settings.AppSettings(smartThingsEnabled = true),
+                        controls = com.wemade.teslamacro.feature.settings.SmartThingsControls(
+                            notificationAccessGranted = true,
+                            onEnabledChange = {},
+                            onCommandTextChange = { _, _ -> },
+                            onRequestNotificationAccess = {},
+                        ),
+                    )
+                }
             }
         }
     }

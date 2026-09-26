@@ -110,20 +110,22 @@ class WideFontScaleTest {
     fun `F5 설정 자동화 - 글자 확대`() {
         paparazzi.snapshot("F5-settings-automation-fontscale") {
             AppFrame(Destination.Settings) {
-                com.wemade.teslamacro.feature.settings.SettingsScreen(
-                    chargeHistory = sampleChargeHistory(),
-                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
-                    settings = com.wemade.teslamacro.data.settings.AppSettings(
-                        vin = "5YJS0000000000000",
-                        stealthCharging = true,
-                        stealthMaxAmps = 13,
-                        stealthScheduleEnabled = true,
-                    ),
-                    stealthSecondsUntilNextChange = 134,
-                    onUnpair = {},
-                    onStartPairing = {},
-                    initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
-                )
+                androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
+                    com.wemade.teslamacro.feature.settings.SettingsScreen(
+                        chargeHistory = sampleChargeHistory(),
+                        chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
+                        settings = com.wemade.teslamacro.data.settings.AppSettings(
+                            vin = "5YJS0000000000000",
+                            stealthCharging = true,
+                            stealthMaxAmps = 13,
+                            stealthScheduleEnabled = true,
+                        ),
+                        stealthSecondsUntilNextChange = 134,
+                        onUnpair = {},
+                        onStartPairing = {},
+                        initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
+                    )
+                }
             }
         }
     }

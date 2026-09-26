@@ -51,8 +51,11 @@ class FleetConnectionScreenshotTest(private val dark: Boolean, private val wide:
                     AppFrame(Destination.Settings, dark = dark) {
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.xl)) {
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState(if (state.stored && !observing) Int.MAX_VALUE else 0))) {
-                                FleetApiPanel(enabled = state.stored, onEnabledChange = {},
-                                    credentials = FleetCredentialControls(state, {}, {}, {}))
+                                androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
+                                    // 토큰 입력은 켠 뒤 펼친 부가 설정에서 하므로 켜진 상태로 모든 토큰 단계를 그린다.
+                                    FleetApiPanel(enabled = true, onEnabledChange = {},
+                                        credentials = FleetCredentialControls(state, {}, {}, {}))
+                                }
                             }
                             if (wide) Box(Modifier.weight(1f))
                         }

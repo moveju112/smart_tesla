@@ -34,11 +34,13 @@ class SafetySettingsScreenshotTest(private val dark: Boolean, private val wide: 
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(Space.md)) {
-                    SafeDrivePanel(
-                        AppSettings(safeDrive = true, safeDriveToleranceKph = 5),
-                        NavigationControls(onAppChange = {}, onHudOverlayChange = {},
-                            safeDriveAvailable = true, locationPermitted = true),
-                    )
+                    androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
+                        SafeDrivePanel(
+                            AppSettings(safeDrive = true, safeDriveToleranceKph = 5),
+                            NavigationControls(onAppChange = {}, onHudOverlayChange = {},
+                                safeDriveAvailable = true, locationPermitted = true),
+                        )
+                    }
                 }
             }
         }

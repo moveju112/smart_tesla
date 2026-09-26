@@ -40,15 +40,17 @@ class TabletPortraitScreenshotTest(private val dark: Boolean, private val fontSc
         paparazzi.snapshot("tablet-portrait-charge-$dark-$fontScale") {
             AppFrame(Destination.Settings, dark = dark) {
                 assertEquals(Pane.Compact, LocalPane.current)
-                SettingsScreen(
-                    settings = AppSettings(stealthCharging = true, stealthMaxAmps = 13),
-                    chargeHistory = sampleChargeHistory(),
-                    chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
-                    stealthSecondsUntilNextChange = 134,
-                    onUnpair = {},
-                    onStartPairing = {},
-                    initialGroup = SettingsGroup.AUTOMATION,
-                )
+                androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
+                    SettingsScreen(
+                        settings = AppSettings(stealthCharging = true, stealthMaxAmps = 13),
+                        chargeHistory = sampleChargeHistory(),
+                        chargeHistoryNowMillis = SNAPSHOT_NOW_MILLIS,
+                        stealthSecondsUntilNextChange = 134,
+                        onUnpair = {},
+                        onStartPairing = {},
+                        initialGroup = SettingsGroup.AUTOMATION,
+                    )
+                }
             }
         }
     }

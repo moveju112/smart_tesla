@@ -223,7 +223,7 @@ components:
 
 ## Components
 
-- `TButton`: 기본 최소 높이 52dp, 소형 48dp, 누를 때 0.97배와 160ms 전환을 사용한다. `LocalCompactButtons`가 켜진 화면(설정)은 소형이 기본이다.
+- `TButton`: 기본 최소 높이 52dp, 소형 48dp, 누를 때 0.97배와 160ms 전환을 사용한다. `LocalCompactButtons`가 켜진 화면(설정)은 소형이 기본이고, 폭을 채우지 않는 줄 끝 버튼(등록 해제·권한 허용·업데이트 확인·대화상자 확인 등)은 보이는 면을 32dp 알약으로 줄이되 누르는 영역은 48dp를 유지한다. 짝을 이루는 보조 동작(음성 점검·음성 설정)은 한 줄에 나란히 둔다.
   Primary는 `Electric` 면과 `Void` 글자, Secondary는 `Slate` 면과 `Ink` 글자, Danger는 보조 면과 오류색 글자다.
 - `TCard`: 20dp 반경, `Carbon` 면, 16dp 내부 여백으로 관련 내용을 묶는다.
 - `DraftToggle`: 이름은 유지하되 Material Switch를 사용하고 행의 최소 높이는 48dp다.

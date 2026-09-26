@@ -1070,9 +1070,13 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                             Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                         }
                         Spacer(Modifier.height(Space.sm))
-                        TButton("음성 점검", ButtonTone.Secondary, small = true, onClick = controls.onTestSafeDriveVoice)
-                        Spacer(Modifier.height(Space.sm))
-                        TButton("음성 설정", ButtonTone.Secondary, small = true, onClick = controls.onOpenSpeechSettings)
+                        // 짝을 이루는 두 보조 동작이라 세로로 쌓지 않고 한 줄에 나란히 둔다.
+                        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                            TButton("음성 점검", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                                onClick = controls.onTestSafeDriveVoice)
+                            TButton("음성 설정", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                                onClick = controls.onOpenSpeechSettings)
+                        }
                     }
                     Spacer(Modifier.height(Space.md))
                     ToggleRow(

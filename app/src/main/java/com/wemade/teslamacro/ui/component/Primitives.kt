@@ -103,29 +103,22 @@ fun TButton(
     }
 
     val shape = RoundedCornerShape(Radius.button)
-
-    Box(
-        modifier = modifier
-            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
-            .scale(press)
-            // 토스 버튼은 평평하다. 글로우/그림자를 쓰지 않는다
-            .clip(shape)
-            .background(fillColor)
-            .border(1.dp, borderColor, shape)
-            // small도 48dp — 안드로이드 최소 타깃이고, 장갑 끼고 흔들리는 차에서는 더 커야 한다
-            .defaultMinSize(minHeight = if (small) 48.dp else 52.dp)
-            .clickable(
-                enabled = enabled,
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(
-                horizontal = if (small) Space.sm + Space.xs else Space.md,
-                vertical = if (small) 0.dp else Space.sm,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
+    // 설정의 줄 끝 버튼(폭을 채우지 않는 버튼)은 48dp 면이면 옆 글자 줄보다 유난히 커 보인다.
+    // 보이는 면은 32dp 알약으로 줄이고 누르는 영역만 48dp로 넓혀 최소 터치 높이를 지킨다.
+    val inline = LocalCompactButtons.current && !fillWidth
+    val face = Modifier
+        .scale(press)
+        // 토스 버튼은 평평하다. 글로우/그림자를 쓰지 않는다
+        .clip(shape)
+        .background(fillColor)
+        .border(1.dp, borderColor, shape)
+    val clickable = Modifier.clickable(
+        enabled = enabled,
+        interactionSource = interaction,
+        indication = null,
+        onClick = onClick,
+    )
+    val label: @Composable () -> Unit = {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.xs + 2.dp),
@@ -148,6 +141,29 @@ fun TButton(
             )
         }
     }
+
+    if (inline) {
+        Box(modifier = modifier.defaultMinSize(minHeight = 48.dp).then(clickable), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = face.defaultMinSize(minHeight = 32.dp).padding(horizontal = Space.sm + Space.xs),
+                contentAlignment = Alignment.Center,
+            ) { label() }
+        }
+        return
+    }
+    Box(
+        modifier = modifier
+            .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+            .then(face)
+            // small도 48dp — 안드로이드 최소 타깃이고, 장갑 끼고 흔들리는 차에서는 더 커야 한다
+            .defaultMinSize(minHeight = if (small) 48.dp else 52.dp)
+            .then(clickable)
+            .padding(
+                horizontal = if (small) Space.sm + Space.xs else Space.md,
+                vertical = if (small) 0.dp else Space.sm,
+            ),
+        contentAlignment = Alignment.Center,
+    ) { label() }
 }
 
 /** 관련 설정과 동작을 하나의 읽기 쉬운 면으로 묶는다. */

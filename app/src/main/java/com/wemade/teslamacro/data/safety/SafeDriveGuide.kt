@@ -45,8 +45,11 @@ private const val WARNING_REFRESH_NANOS = 2_000_000_000L
 /** 첫 안내 문장이 단독 카메라인지, 뒤에 카메라가 더 있는지, 앞 카메라에 바로 이어지는지 */
 internal enum class CameraSequence { SINGLE, CONTINUOUS, FOLLOWING }
 
+/** 딩동(약 0.37초)이 끝난 뒤 음성이 시작되게 두는 무음 길이. 겹치면 둘 다 알아듣기 어렵다 */
+private const val ANNOUNCE_CHIME_LEAD_MILLIS = 450L
+
 /**
- * 상용 내비 문형으로 거리·종류·제한속도를 한 문장에 담는다.
+ * "N미터 앞 시속 N킬로미터 단속구간입니다." 한 문장에 거리·제한속도를 담는다.
  * 가까울수록 반올림 단위를 줄여 "0미터"나 지나친 과장 없이 실제 거리에 가깝게 읽는다.
  */
 internal fun cameraAnnouncement(kind: SafetyKind, distanceMeters: Int, limitKph: Int?, sequence: CameraSequence): String {
@@ -55,10 +58,11 @@ internal fun cameraAnnouncement(kind: SafetyKind, distanceMeters: Int, limitKph:
         distanceMeters >= 100 -> ((distanceMeters + 25) / 50) * 50
         else -> (((distanceMeters + 5) / 10) * 10).coerceAtLeast(10)
     }
-    val camera = if (kind == SafetyKind.SECTION_CAMERA) "구간 단속 카메라" else "과속 단속 카메라"
+    // 구간단속은 평균속도 판정이라 지점 단속과 구분해 읽는다.
+    val zone = if (kind == SafetyKind.SECTION_CAMERA) "구간단속 구간" else "단속구간"
     // 같은 좌표에 제한속도가 엇갈리면 임의 숫자를 읽지 않고 표지 확인을 요청한다.
-    val limit = limitKph?.let { "제한속도 ${it}킬로미터입니다." } ?: "제한속도는 표지판을 확인하세요."
-    val body = "${rounded}미터 앞, ${camera}입니다. $limit"
+    val body = limitKph?.let { "${rounded}미터 앞 시속 ${it}킬로미터 ${zone}입니다." }
+        ?: "${rounded}미터 앞 ${zone}입니다. 제한속도는 표지판을 확인하세요."
     return when (sequence) {
         CameraSequence.SINGLE -> body
         CameraSequence.CONTINUOUS -> "연속 단속 구간입니다. $body"
@@ -155,6 +159,8 @@ class SafeDriveGuide(
     private var audioFocus: AudioFocusRequest? = null
     // 설정 화면 미리 듣기는 주행 경보 음원을 건드리지 않게 따로 둔다. 크기 변경이 주행 음원을 새로 만들기 때문이다.
     private val previewChime = WarningChime()
+    // 카메라 진입 안내 앞 딩동은 사용자가 고른 과속 경고음과 달라 음원을 따로 둬 매번 다시 만들지 않는다.
+    private val announceChime = WarningChime()
     private var previewJob: Job? = null
 
     /** 목록 로드는 IO에서 하고, GPS 수신 중단 시 과거 제한속도를 즉시 버린다. */
@@ -550,7 +556,16 @@ class SafeDriveGuide(
                         }
                     }
                 })
-                speechEngine?.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                if (request.stage == 1) {
+                    // 진입 안내는 딩동으로 먼저 주의를 끈 뒤 무음만큼 기다렸다 읽는다.
+                    // 대기 중 과속 경고음이 딩동을 덮지 않게 이때부터 말하는 중으로 본다.
+                    runCatching { announceChime.play(volume, WarningSound.DING_DONG) }
+                    speaking = true
+                    speechEngine?.playSilentUtterance(ANNOUNCE_CHIME_LEAD_MILLIS, TextToSpeech.QUEUE_FLUSH, "lead-$utteranceId")
+                    speechEngine?.speak(request.text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+                } else {
+                    speechEngine?.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+                }
             }
         }
         if (result.getOrNull() == TextToSpeech.SUCCESS && !speechUnavailable) {
@@ -751,6 +766,7 @@ class SafeDriveGuide(
         lastAlertLogMillis = null
         speaking = false
         chime.release()
+        announceChime.release()
         releaseAudioFocusIfIdle(force = true)
         mutableState.value = SafetyState()
     }

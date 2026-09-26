@@ -1,5 +1,6 @@
 package com.wemade.teslable
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.os.Build
 import android.bluetooth.BluetoothAdapter
@@ -8,6 +9,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import java.io.IOException
 import kotlinx.coroutines.delay
@@ -47,6 +49,7 @@ data class DiscoveredVehicle(
  */
 class TeslaBleScanner(context: Context) {
 
+    private val appContext = context.applicationContext ?: context
     private val adapter: BluetoothAdapter? =
         (context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager)?.adapter
 
@@ -61,17 +64,24 @@ class TeslaBleScanner(context: Context) {
      * 차가 없어도, 집에서도, 인터넷 없이도 읽힌다.
      *
      * 차에 지은 별칭(예 "Tesla Model Y Why")이 대소문자 그대로 여기 들어 있다.
-     * 호출 전에 BLUETOOTH_CONNECT 권한이 있어야 이름이 나온다.
+     * Android 12+에서 근처 기기(BLUETOOTH_CONNECT) 권한 없이 읽으면 SecurityException으로 앱이 죽어,
+     * 권한 전이나 도중 회수된 경우는 빈 목록으로 본다. 권한 요청은 화면(MainActivity)이 맡는다.
      */
     @SuppressLint("MissingPermission")
-    fun bondedDevices(): List<BondedDevice> =
-        adapter?.bondedDevices.orEmpty().map { device ->
-            BondedDevice(
-                name = runCatching { device.name }.getOrNull() ?: "(이름 없음)",
-                address = device.address,
-                uuids = device.uuids?.map { it.uuid.toString().take(8) }.orEmpty(),
-            )
-        }
+    fun bondedDevices(): List<BondedDevice> {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            appContext.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) return emptyList()
+        return runCatching {
+            adapter?.bondedDevices.orEmpty().map { device ->
+                BondedDevice(
+                    name = runCatching { device.name }.getOrNull() ?: "(이름 없음)",
+                    address = device.address,
+                    uuids = device.uuids?.map { it.uuid.toString().take(8) }.orEmpty(),
+                )
+            }
+        }.getOrElse { if (it is SecurityException) emptyList() else throw it }
+    }
 
     /** 페어링 목록에서 테슬라로 보이는 기기. 별칭으로 찾는다 */
     fun bondedTesla(): BondedDevice? =

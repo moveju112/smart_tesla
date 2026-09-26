@@ -518,8 +518,8 @@ class SafeDriveGuide(
             disableSpeech("오프라인 한국어 음성 없음")
             return
         }
-        // 내비 안내는 짧은 시간에 알아들어야 해 기본보다 약간 빠르게 읽는다.
-        runCatching { engine.setSpeechRate(1.1f) }
+        // 말하기 속도·높이는 기기 음성 설정을 그대로 쓴다. 1.1배를 강제하면 엔진의 속도 변환(음 높이 보정) 때문에
+        // 음성 설정 미리 듣기와 음이 달라지고 기계음처럼 뭉개져, 속도가 필요하면 기기 음성 설정에서 바꾼다.
         speakPendingSpeech()
     }
 

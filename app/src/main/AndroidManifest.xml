@@ -48,6 +48,8 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- 사용자가 삼성 TTS를 기본 엔진으로 골라도 앱이 못 보면 Google TTS로 대신 읽어 목소리가 달라진다. -->
+        <package android:name="com.samsung.SMT" />
         <package android:name="com.teslamotors.tesla" />
         <intent>
             <action android:name="android.intent.action.VIEW" />

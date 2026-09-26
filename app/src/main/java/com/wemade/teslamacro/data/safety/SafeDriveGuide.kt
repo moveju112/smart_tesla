@@ -645,9 +645,17 @@ class SafeDriveGuide(
                 return@launch
             }
             speechPlayer = player
-            // 음성 설정 미리 듣기와 음이 다르다는 제보를 진단 로그로 가리도록 음성 점검 때만 목소리·합성 형식을 남긴다.
+            // 음성 설정 미리 듣기와 음이 다르다는 제보를 진단 로그로 가리도록 음성 점검 때만 엔진·목소리·합성 형식을 남긴다.
+            // 기기 설정값과 앱이 볼 수 있는 엔진을 같이 남겨, 설정한 엔진을 못 찾아 다른 엔진으로 읽는 경우를 구분한다.
             if (request.cameraKey == null) {
-                DiagLog.add("안전 안내 · 음성 점검 재생 (엔진 ${runCatching { speechEngine?.defaultEngine }.getOrNull() ?: "미확인"}, " +
+                val configured = runCatching {
+                    android.provider.Settings.Secure.getString(application.contentResolver,
+                        android.provider.Settings.Secure.TTS_DEFAULT_SYNTH)
+                }.getOrNull()
+                val visible = runCatching { speechEngine?.engines?.joinToString("/") { it.name } }.getOrNull()
+                DiagLog.add("안전 안내 · 음성 점검 재생 (기기 설정 엔진 ${configured ?: "미설정"}, " +
+                    "사용 엔진 ${runCatching { speechEngine?.defaultEngine }.getOrNull() ?: "미확인"}, " +
+                    "앱에서 보이는 엔진 ${visible?.ifBlank { null } ?: "없음"}, " +
                     "목소리 ${runCatching { speechEngine?.voice?.name }.getOrNull() ?: "미확인"}, " +
                     "합성 ${wavSampleRate(file)?.let { "${it}Hz" } ?: "형식 미확인"})")
             }

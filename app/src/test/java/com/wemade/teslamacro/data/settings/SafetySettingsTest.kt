@@ -162,6 +162,8 @@ class SafetySettingsTest {
             assertFalse(guide.state.value.stalled)
             assertNull(guide.state.value.alert)
 
+            // 이전 측정보다 새 시각이면서 현재 기준 4.9초 전인 GPS로 freshness 경계를 확인한다.
+            nowNanos += 5_000_000_000L
             val delayed = fix(4_900_000_000L)
             confirmCamera(guide, delayed)
             assertNotNull(guide.state.value.alert)
@@ -345,7 +347,11 @@ class SafetySettingsTest {
             assertEquals(2_000L, lastSound.get(guide))
             wait(300)
             val entries = DiagLog.lines.value.count { it.contains("카메라 후보 진입") }
-            approach(37.0034) // 다음 카메라로 넘어가면 남은 간격을 기다리지 않고 바로 울린다.
+            confirmCamera(guide, Location("gps").apply {
+                latitude = 37.0034; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            }) // 다음 카메라도 2회 확인되면 남은 간격을 기다리지 않고 바로 울린다.
             assertEquals(2_300L, lastSound.get(guide))
             assertEquals(entries + 1, DiagLog.lines.value.count { it.contains("카메라 후보 진입") })
             wait(1_000)
@@ -549,7 +555,11 @@ class SafetySettingsTest {
             approach(37.0013) // 약 189m: 진입 안내를 자르지 않게 기다린다.
             assertEquals(1, spoken.size)
             nowNanos += 5_000_000_000L
-            approach(37.0013) // 5초 뒤에도 과속이면 감속만 요청한다.
+            confirmCamera(guide, Location("gps").apply {
+                latitude = 37.0013; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            }) // 재확인 제한보다 긴 공백 뒤에는 2회 확인 후 감속만 요청한다.
             assertEquals(2, spoken.size)
             assertEquals("속도를 줄이세요. 제한속도 50킬로미터입니다.", spoken.last())
             nowNanos += 1_000_000_000L

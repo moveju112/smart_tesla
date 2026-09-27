@@ -26,6 +26,15 @@
 - 주석은 한국어 "왜" 중심, 새 함수 위 설명 주석 필수
 - 프레임워크 선제 도입 금지(Hilt/Room 등 의도적 미채택) — 전환 조건은 주석으로
 
+## CI / GitHub Actions
+
+- GitHub Actions CI를 사용하지 않는다.
+- `.github/workflows/` 파일을 새로 만들거나 수정하지 않는다.
+- `workflow_dispatch` 등 GitHub Actions를 직접 실행하지 않는다.
+- 테스트·빌드를 위해 CI를 임시로 추가하지 않는다.
+- 로컬에서 검증할 수 없으면 CI를 추가하지 않고 실행하지 못한 항목을 사용자에게 명시한다.
+- 사용자가 GitHub Actions 사용을 명시적으로 요청한 경우에만 예외로 한다.
+
 ## 명령
 
 ```bash

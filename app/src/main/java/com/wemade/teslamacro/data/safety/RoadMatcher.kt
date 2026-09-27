@@ -22,9 +22,16 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlin.coroutines.resume
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
 
 internal data class RoadPoint(val latitude: Double, val longitude: Double, val timestamp: Long, val accuracyMeters: Double)
-internal data class MatchedRoad(val latitude: Double, val longitude: Double)
+internal data class MatchedRoad(
+    val latitude: Double,
+    val longitude: Double,
+    val bearingDegrees: Double? = null,
+)
 internal data class RoadMatchResponse(val road: MatchedRoad? = null, val code: Int = 0)
 internal data class RoadHttpResponse(val code: Int = 0, val body: String = "")
 
@@ -199,5 +206,22 @@ internal fun parseRoadMatch(body: String): MatchedRoad? = runCatching {
     val longitude = (last[0] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
     val latitude = (last[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
     if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return@runCatching null
-    MatchedRoad(latitude, longitude)
+    MatchedRoad(latitude, longitude, matchedBearing(coordinates, latitude, longitude))
 }.getOrNull()
+
+/** 마지막 도로 조각을 최소 5m 길이로 잡아 GPS 순간 bearing보다 안정적인 진행방향을 만든다. */
+private fun matchedBearing(coordinates: JsonArray, latitude: Double, longitude: Double): Double? {
+    for (index in coordinates.size - 2 downTo 0) {
+        val point = coordinates[index] as? JsonArray ?: continue
+        if (point.size != 2) continue
+        val previousLongitude = (point[0] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: continue
+        val previousLatitude = (point[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: continue
+        if (previousLatitude !in -90.0..90.0 || previousLongitude !in -180.0..180.0) continue
+        val meanLatitude = Math.toRadians((latitude + previousLatitude) / 2.0)
+        val northMeters = (latitude - previousLatitude) * 111_195.0
+        val eastMeters = (longitude - previousLongitude) * 111_195.0 * cos(meanLatitude)
+        if (hypot(northMeters, eastMeters) < 5.0) continue
+        return (Math.toDegrees(atan2(eastMeters, northMeters)) + 360.0) % 360.0
+    }
+    return null
+}

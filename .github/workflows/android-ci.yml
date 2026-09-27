@@ -8,7 +8,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test-and-build:
@@ -27,3 +27,22 @@ jobs:
           name: smart-tesla-release
           path: app/build/outputs/apk/release/app-arm64-v8a-release.apk
           if-no-files-found: error
+      - name: Publish tagged release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)
+          test -n "$VERSION"
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already exists; keeping the existing release."
+            exit 0
+          fi
+          APK="SmartTesla-$VERSION-arm64.apk"
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk "$APK"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $VERSION"
+          git push origin "$TAG"
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "$VERSION" --notes "단속카메라 접근 추적, 도로 매칭 지연 보정, 중복 GPS 후보 확정 방지, 늦은 음성 재생 차단을 개선했습니다. 일반 연속 카메라와 구간단속 안내 문구도 구분했습니다."

@@ -68,14 +68,14 @@ internal fun cameraAnnouncement(kind: SafetyKind, distanceMeters: Int, limitKph:
         distanceMeters >= 100 -> ((distanceMeters + 25) / 50) * 50
         else -> (((distanceMeters + 5) / 10) * 10).coerceAtLeast(10)
     }
-    // 구간단속은 평균속도 판정이라 지점 단속과 구분해 읽는다.
-    val zone = if (kind == SafetyKind.SECTION_CAMERA) "구간단속 구간" else "단속구간"
+    // 현재 데이터는 구간단속 시작·종점 짝과 평균속도를 제공하지 않아 "구간" 전체를 판정한다고 말하지 않는다.
+    val zone = if (kind == SafetyKind.SECTION_CAMERA) "구간단속 지점" else "단속카메라"
     // 같은 좌표에 제한속도가 엇갈리면 임의 숫자를 읽지 않고 표지 확인을 요청한다.
     val body = limitKph?.let { "${rounded}미터 앞 시속 ${it}킬로미터 ${zone}입니다." }
         ?: "${rounded}미터 앞 ${zone}입니다. 제한속도는 표지판을 확인하세요."
     return when (sequence) {
         CameraSequence.SINGLE -> body
-        CameraSequence.CONTINUOUS -> "연속 단속 구간입니다. $body"
+        CameraSequence.CONTINUOUS -> "단속카메라가 연이어 있습니다. $body"
         CameraSequence.FOLLOWING -> "이어서 $body"
     }
 }

@@ -831,6 +831,7 @@ data class NavigationControls(
     val onSafeDriveSoundChange: (Boolean) -> Unit = {},
     val onSafeDriveAlertDistanceChange: (Int) -> Unit = {},
     val onSafeDriveVoiceChange: (Boolean) -> Unit = {},
+    val onSafeDriveStartVoiceChange: (Boolean) -> Unit = {},
     val onTestSafeDriveVoice: () -> Unit = {},
     val onOpenSpeechSettings: () -> Unit = {},
     val safeDriveVoiceStatus: String? = null,
@@ -1118,7 +1119,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 },
             ) {
                 // 펼친 안에서 또 접히면 원하는 설정을 찾기 어려워 한 단계만 펼친다.
-                // 순서: 언제 알릴지(거리·초과속도) → 경고음 → 음성. 상위 스위치가 꺼지면 딸린 설정만 숨긴다.
+                // 순서: 언제 알릴지(거리·초과속도) → 경고음 → 접근·시작 음성. 상위 스위치가 꺼지면 딸린 설정만 숨긴다.
                 Text("카메라 안내 시작 거리", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                 Spacer(Modifier.height(Space.sm))
                 ChoiceRow(
@@ -1171,7 +1172,16 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                         checked = settings.safeDriveVoice,
                         onCheckedChange = controls.onSafeDriveVoiceChange,
                     )
-                    if (settings.safeDriveVoice) {
+                    Spacer(Modifier.height(Space.md))
+                    ToggleRow(
+                        title = "안내 시작 음성",
+                        checked = settings.safeDriveStartVoice,
+                        onCheckedChange = controls.onSafeDriveStartVoiceChange,
+                    )
+                    Text("안내가 시작되면 ‘안전운전하세요’를 한 번 말해요.",
+                        style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                        modifier = Modifier.padding(top = Space.xs))
+                    if (settings.safeDriveVoice || settings.safeDriveStartVoice) {
                         // 음성 엔진 문제는 안 들리는 이유라 음성 점검 버튼 바로 위에 둔다.
                         controls.safeDriveVoiceStatus?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
@@ -1398,7 +1408,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
             " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
             " · 과속안내=${settings.safeDrive}" +
-            " · 경보소리=${settings.safeDriveSound}(${settings.safeDriveWarningSound}, 음량 ${settings.safeDriveVolume}, 속도별 ${settings.safeDriveProgressiveSound}, 음성 ${settings.safeDriveVoice})" +
+            " · 경보소리=${settings.safeDriveSound}(${settings.safeDriveWarningSound}, 음량 ${settings.safeDriveVolume}, 속도별 ${settings.safeDriveProgressiveSound}, 접근 음성 ${settings.safeDriveVoice}, 시작 음성 ${settings.safeDriveStartVoice})" +
             " · 경보거리=${settings.safeDriveAlertDistanceMeters}m · 경보초과속도=${settings.safeDriveToleranceKph}km/h",
     )
 }

@@ -38,7 +38,8 @@ class BackupFileTest {
             createdAtMillis = 1_700_000_000_000L,
             appVersion = "0.9.1",
             macros = listOf(rule),
-            settings = BackupSettings(protectPhoneKey = false, safeDriveWarningSound = "beep"),
+            settings = BackupSettings(protectPhoneKey = false, safeDriveWarningSound = "beep",
+                safeDriveVoice = false, safeDriveStartVoice = true),
         )
         val text = BackupFile.json.encodeToString(BackupFile.serializer(), original)
         val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
@@ -47,6 +48,8 @@ class BackupFileTest {
         assertEquals("여름 탑승 쿨링", restored.macros.single().name)
         assertEquals("beep", restored.settings.safeDriveWarningSound)
         assertFalse(restored.settings.protectPhoneKey)
+        assertTrue(restored.settings.safeDriveStartVoice)
+        assertFalse(restored.settings.safeDriveVoice)
     }
 
     /** 차를 특정하거나 여는 정보는 파일에 한 글자도 없어야 한다 */
@@ -57,6 +60,8 @@ class BackupFileTest {
             vehicleAddress = "AA:BB:CC:DD:EE:FF",
             vehicleName = "내 차",
             isEnrolled = true,
+            safeDriveVoice = false,
+            safeDriveStartVoice = true,
         )
         val text = BackupFile.json.encodeToString(
             BackupFile.serializer(),
@@ -70,6 +75,9 @@ class BackupFileTest {
         // 담기로 한 취향은 제대로 들어간다
         assertTrue(text.contains("safeDriveWarningSound"))
         assertTrue(text.contains("protectPhoneKey"))
+        val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
+        assertTrue(restored.settings.safeDriveStartVoice)
+        assertFalse(restored.settings.safeDriveVoice)
     }
 
     /** 앱이 새 필드를 추가하거나 빼도 옛 파일이 열려야 한다. 옛 매크로 자동 실행 값은 무시한다 */
@@ -78,6 +86,7 @@ class BackupFileTest {
         val text = """{"version":5,"macros":[],"settings":{"automationEnabled":false,"idlePollSeconds":45},"미래필드":true}"""
         val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
         assertEquals("chime", restored.settings.safeDriveWarningSound)
+        assertFalse(restored.settings.safeDriveStartVoice)
     }
 
     @Test

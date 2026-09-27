@@ -502,6 +502,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
                             onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
                             onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
+                            onSafeDriveStartVoiceChange = settingsViewModel::setSafeDriveStartVoice,
                             onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
                             onOpenSpeechSettings = { openSpeechSettings(context) },
                             safeDriveVoiceStatus = safeDriveVoiceStatus,

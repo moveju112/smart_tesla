@@ -64,22 +64,26 @@ class SafetySettingsTest {
         assertTrue(store.settings.first().safeDriveProgressiveSound)
         assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
         assertTrue(store.settings.first().safeDriveVoice)
+        assertFalse(store.settings.first().safeDriveStartVoice)
         assertFalse(store.settings.first().safeDrive)
         store.setSafeDrive(true)
         store.setSafeDriveToleranceKph(7)
         store.setSafeDriveProgressiveSound(false)
         store.setSafeDriveAlertDistanceMeters(300)
         store.setSafeDriveVoice(false)
+        store.setSafeDriveStartVoice(true)
         val restored = SettingsStore(ContextWrapper(paparazzi.context), preferences)
         assertEquals(7, restored.settings.first().safeDriveToleranceKph)
         assertFalse(restored.settings.first().safeDriveProgressiveSound)
         assertEquals(300, restored.settings.first().safeDriveAlertDistanceMeters)
         assertFalse(restored.settings.first().safeDriveVoice)
+        assertTrue(restored.settings.first().safeDriveStartVoice)
         assertTrue(restored.settings.first().safeDrive)
         assertEquals(7, restored.settings.first().toBackup().safeDriveToleranceKph)
         assertFalse(restored.settings.first().toBackup().safeDriveProgressiveSound)
         assertEquals(300, restored.settings.first().toBackup().safeDriveAlertDistanceMeters)
         assertFalse(restored.settings.first().toBackup().safeDriveVoice)
+        assertTrue(restored.settings.first().toBackup().safeDriveStartVoice)
         store.setSafeDriveAlertDistanceMeters(550)
         assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
         store.setSafeDriveToleranceKph(-1)
@@ -91,9 +95,12 @@ class SafetySettingsTest {
         assertTrue(store.settings.first().safeDriveProgressiveSound)
         assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
         assertTrue(store.settings.first().safeDriveVoice)
-        store.restore(BackupSettings(safeDriveProgressiveSound = false, safeDriveAlertDistanceMeters = 700, safeDriveVoice = false))
+        assertFalse(store.settings.first().safeDriveStartVoice)
+        store.restore(BackupSettings(safeDriveProgressiveSound = false, safeDriveAlertDistanceMeters = 700,
+            safeDriveVoice = false, safeDriveStartVoice = true))
         assertEquals(700, store.settings.first().safeDriveAlertDistanceMeters)
         assertFalse(store.settings.first().safeDriveVoice)
+        assertTrue("카메라 음성 선택과 관계없이 시작 음성을 복원한다", store.settings.first().safeDriveStartVoice)
         store.restore(BackupSettings(safeDriveAlertDistanceMeters = 900))
         assertEquals(500, store.settings.first().safeDriveAlertDistanceMeters)
         assertTrue(store.settings.first().safeDriveProgressiveSound)
@@ -391,6 +398,128 @@ class SafetySettingsTest {
         assertEquals(800L, warningIntervalMillis(14.99, true))
         assertEquals(600L, warningIntervalMillis(15.0, true))
         assertEquals(1_000L, warningIntervalMillis(15.0, false))
+    }
+
+    /** 목록·차량 출력 허가·상위 소리가 함께 준비된 시작만 한 번 읽고 설정 변동과 재시작을 구분한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun startVoiceNeedsActiveGuideAndAudioPermission() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { 1_000_000_000L }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setAlertOptions(500, voice = false)
+            guide.setStartVoice(true)
+            guide.setAutomaticAlertsAllowed(true)
+            assertTrue("감시 시작 전에는 차량이 연결돼도 읽지 않는다", spoken.isEmpty())
+            guide.start()
+            runCurrent()
+            assertTrue(guide.state.value.ready)
+            assertTrue("상위 소리가 꺼져 있으면 읽지 않는다", spoken.isEmpty())
+            guide.setAutomaticAlertsAllowed(false)
+            guide.setSound(true, 2)
+            assertTrue("차량 오디오 승인이 풀리면 주차 중 읽지 않는다", spoken.isEmpty())
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(listOf("안전운전하세요."), spoken)
+            guide.setStartVoice(false)
+            guide.setStartVoice(true)
+            guide.setAlertOptions(500, voice = false)
+            guide.setSound(false, 2)
+            guide.setSound(true, 2)
+            guide.setAutomaticAlertsAllowed(false)
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals("설정과 연결이 잠시 바뀌어도 재발화하지 않는다", 1, spoken.size)
+            guide.stop()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals("안내가 끝난 뒤 늦은 연결 승인도 무시한다", 1, spoken.size)
+            guide.start()
+            runCurrent()
+            assertEquals("새로운 안내 수명에만 한 번 더 읽는다", listOf("안전운전하세요.", "안전운전하세요."), spoken)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 차량 승인이 늦은 경우 이미 보이는 카메라를 먼저 읽고 뒤늦은 시작 인사가 끼어들지 않는다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun startVoiceNeverSupersedesCurrentCameraAnnouncement() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setStartVoice(true)
+            guide.setSound(true, 2)
+            guide.start()
+            runCurrent()
+            confirmApproach(guide, 36.9986, nowNanos)
+            assertNotNull(guide.state.value.alert)
+            assertTrue(spoken.isEmpty())
+            guide.setAutomaticAlertsAllowed(true)
+            assertTrue("카메라가 보이면 늦은 인사를 시작하지 않는다", spoken.isEmpty())
+            guide.onLocation(Location("gps").apply {
+                latitude = 36.9986; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            assertEquals(listOf("500미터 앞 시속 50킬로미터 단속구간입니다."), spoken)
+            nowNanos += 1_000_000_000L
+            guide.onLocation(Location("gps").apply {
+                latitude = 37.01; longitude = 127.0
+                speed = 20f; bearing = 0f; accuracy = 10f
+                elapsedRealtimeNanos = nowNanos
+            })
+            assertNull(guide.state.value.alert)
+            guide.setStartVoice(true)
+            assertEquals("카메라 뒤의 오래된 인사도 재생하지 않는다", 1, spoken.size)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 엔진 요청이 거절되면 GPS나 설정마다 반복하지 않고 차량 승인 재획득 때만 한 번 재시도한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun rejectedStartVoiceRetriesOnlyOnFreshAudioApproval() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var attempts = 0
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = { text ->
+            attempts++
+            if (attempts == 1) error("output unavailable")
+            spoken.add(text)
+        }) { 1_000_000_000L }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setStartVoice(true)
+            guide.setSound(true, 2)
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(1, attempts)
+            assertTrue(spoken.isEmpty())
+            guide.setStartVoice(true)
+            guide.setSound(true, 2)
+            assertEquals("거절된 출력을 설정 갱신마다 반복하지 않는다", 1, attempts)
+            guide.setAutomaticAlertsAllowed(false)
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(2, attempts)
+            assertEquals(listOf("안전운전하세요."), spoken)
+            guide.setAutomaticAlertsAllowed(false)
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals("수락 후 짧은 차량 오디오 변동에는 중복하지 않는다", 2, attempts)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
     }
 
     /** 보행·미판정 때는 같은 카메라의 화면 경보를 남기되 자동 음성과 경고음 요청은 취소한다. */
@@ -762,8 +891,9 @@ class SafetySettingsTest {
         assertTrue(old.settings.safeDriveProgressiveSound)
         assertEquals(500, old.settings.safeDriveAlertDistanceMeters)
         assertTrue(old.settings.safeDriveVoice)
+        assertFalse(old.settings.safeDriveStartVoice)
         val backup = BackupFile(settings = BackupSettings(safeDriveToleranceKph = 8, safeDriveProgressiveSound = false,
-            safeDriveAlertDistanceMeters = 300, safeDriveVoice = false))
+            safeDriveAlertDistanceMeters = 300, safeDriveVoice = false, safeDriveStartVoice = true))
         val text = BackupFile.json.encodeToString(BackupFile.serializer(), backup)
         assertEquals(backup, BackupFile.json.decodeFromString<BackupFile>(text))
     }

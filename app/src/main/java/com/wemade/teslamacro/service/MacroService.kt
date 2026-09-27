@@ -64,6 +64,7 @@ private data class SafeDriveOptions(
     val progressiveSound: Boolean,
     val distanceMeters: Int,
     val voice: Boolean,
+    val startVoice: Boolean,
     val deviceMode: DeviceMode,
     val warningSound: String,
 )
@@ -375,18 +376,25 @@ class MacroService : LifecycleService() {
             app.container.settingsStore.settings
                 .map { SafeDriveOptions(it.safeDrive, it.safeDriveSound, it.safeDriveVolume,
                     it.safeDriveToleranceKph, it.safeDriveProgressiveSound,
-                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.deviceMode, it.safeDriveWarningSound) }
+                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.safeDriveStartVoice,
+                    it.deviceMode, it.safeDriveWarningSound) }
                 .combine(portableGuidanceActive) { options, connected ->
                     options to shouldMonitorGuidance(options.deviceMode, options.enabled, connected)
                 }.distinctUntilChanged()
                 .collect { (options, active) ->
+                    // 안내 종료·기기 모드 전환 때 이전 차량 오디오 승인을 새 설정에 재사용하지 않는다.
+                    if (!active || currentDeviceMode != options.deviceMode) {
+                        app.container.safeDrive.setAutomaticAlertsAllowed(false)
+                    }
                     currentDeviceMode = options.deviceMode
                     currentSafeDriveEnabled = options.enabled
                     // 새 설정을 먼저 적용해 GPS 첫 갱신이 이전 거리·음성을 사용하지 않게 한다.
+                    if (!options.startVoice) app.container.safeDrive.setStartVoice(false)
                     app.container.safeDrive.setAlertOptions(options.distanceMeters, options.voice)
                     app.container.safeDrive.setSound(options.sound, options.volume,
                         options.toleranceKph, options.progressiveSound,
                         com.wemade.teslamacro.data.safety.WarningSound.of(options.warningSound))
+                    if (options.startVoice) app.container.safeDrive.setStartVoice(true)
                     // 거치 기기의 기존 활동 인식은 유지하되 휴대폰에선 구독하지 않는다.
                     if (shouldSubscribeDrivingActivity(options.deviceMode, active, options.sound)) startActivityUpdates()
                     else if (activityUpdates != null || !activityCleanupCompleted) stopActivityUpdates()

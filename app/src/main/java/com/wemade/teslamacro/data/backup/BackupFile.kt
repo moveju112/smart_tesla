@@ -27,8 +27,8 @@ data class BackupFile(
     val settings: BackupSettings = BackupSettings(),
 ) {
     companion object {
-        /** 6 — 경고음 종류가 늘고, 항상 켜지는 매크로 자동 실행 값은 빠졌다(옛 파일의 값은 무시한다). */
-        const val CURRENT_VERSION = 6
+        /** 7 — 카메라 접근 음성과 독립적인 안내 시작 음성 선택을 백업한다. */
+        const val CURRENT_VERSION = 7
 
         /** 파일 이름. 날짜를 붙이는 건 저장 다이얼로그에서 사람이 한다 */
         const val DEFAULT_FILE_NAME = "smart-tesla-backup.json"
@@ -59,6 +59,7 @@ data class BackupSettings(
     val safeDriveProgressiveSound: Boolean = true,
     val safeDriveAlertDistanceMeters: Int = 500,
     val safeDriveVoice: Boolean = true,
+    val safeDriveStartVoice: Boolean = false,
     val safeDriveToleranceKph: Int = 5,
 )
 
@@ -75,5 +76,6 @@ fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     safeDriveProgressiveSound = safeDriveProgressiveSound,
     safeDriveAlertDistanceMeters = safeDriveAlertDistanceMeters,
     safeDriveVoice = safeDriveVoice,
+    safeDriveStartVoice = safeDriveStartVoice,
     safeDriveToleranceKph = safeDriveToleranceKph,
 )

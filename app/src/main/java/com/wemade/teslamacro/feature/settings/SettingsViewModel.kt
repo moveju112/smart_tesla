@@ -294,6 +294,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.settingsStore.setSafeDriveVoice(enabled) }
     }
 
+    /** 안내 시작 음성만 바꾸고 진행 중인 안내를 재시작하지 않는다. */
+    fun setSafeDriveStartVoice(enabled: Boolean) {
+        viewModelScope.launch { container.settingsStore.setSafeDriveStartVoice(enabled) }
+    }
+
     val safeDriveVoiceStatus = container.safeDrive.speechStatus
     val safeDriveAutomaticSoundStatus = container.safeDrive.automaticSoundStatus
 

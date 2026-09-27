@@ -139,6 +139,8 @@ data class AppSettings(
     val safeDriveAlertDistanceMeters: Int = 500,
     /** 과속 여부와 무관하게 카메라 접근 시 거리 안내를 들을지 선택한다. */
     val safeDriveVoice: Boolean = true,
+    /** 카메라 접근 음성과 별도로 안내 활성화 시 한 번 들려줄 인사 음성 선택. */
+    val safeDriveStartVoice: Boolean = false,
     val safeDriveToleranceKph: Int = 5,
 ) {
     /** 차량을 특정할 수 있는가 (연결 시도 가능) */
@@ -195,6 +197,7 @@ class SettingsStore(
             safeDriveProgressiveSound = prefs[KeySafeDriveProgressiveSound] ?: true,
             safeDriveAlertDistanceMeters = (prefs[KeySafeDriveAlertDistanceMeters] ?: 500).takeIf { it in listOf(300, 500, 700) } ?: 500,
             safeDriveVoice = prefs[KeySafeDriveVoice] ?: true,
+            safeDriveStartVoice = prefs[KeySafeDriveStartVoice] ?: false,
             safeDriveToleranceKph = (prefs[KeySafeDriveToleranceKph] ?: 5).coerceIn(0, 30),
         )
     }
@@ -330,6 +333,8 @@ class SettingsStore(
     }
     /** 음성은 과속 경고음과 별개로 끌 수 있다. */
     suspend fun setSafeDriveVoice(enabled: Boolean) = edit { it[KeySafeDriveVoice] = enabled }
+    /** 안내 시작 음성은 접근 안내와 별도로 저장해 두 선택을 독립적으로 유지한다. */
+    suspend fun setSafeDriveStartVoice(enabled: Boolean) = edit { it[KeySafeDriveStartVoice] = enabled }
     /** 속도가 높아질수록 간격을 줄일지 저장한다. */
     suspend fun setSafeDriveProgressiveSound(enabled: Boolean) = edit {
         it[KeySafeDriveProgressiveSound] = enabled
@@ -389,6 +394,7 @@ class SettingsStore(
         it[KeySafeDriveProgressiveSound] = backup.safeDriveProgressiveSound
         it[KeySafeDriveAlertDistanceMeters] = backup.safeDriveAlertDistanceMeters.takeIf { value -> value in listOf(300, 500, 700) } ?: 500
         it[KeySafeDriveVoice] = backup.safeDriveVoice
+        it[KeySafeDriveStartVoice] = backup.safeDriveStartVoice
         it[KeySafeDriveToleranceKph] = backup.safeDriveToleranceKph.coerceIn(0, 30)
     }
 
@@ -518,6 +524,7 @@ class SettingsStore(
         val KeySafeDriveProgressiveSound = booleanPreferencesKey("safe_drive_progressive_sound")
         val KeySafeDriveAlertDistanceMeters = intPreferencesKey("safe_drive_alert_distance_meters")
         val KeySafeDriveVoice = booleanPreferencesKey("safe_drive_voice")
+        val KeySafeDriveStartVoice = booleanPreferencesKey("safe_drive_start_voice")
         val KeySafeDriveToleranceKph = intPreferencesKey("safe_drive_tolerance_kph")
         val KeyParkedAt = longPreferencesKey("parked_at")
         val KeyParkedBattery = intPreferencesKey("parked_battery")

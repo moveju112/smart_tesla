@@ -33,10 +33,10 @@ class SafetySettingsScreenshotTest(private val dark: Boolean, private val wide: 
     @Test fun thresholdSettings() {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(Space.md)) {
+                Column(Modifier.verticalScroll(rememberScrollState(initial = if (wide) Int.MAX_VALUE else 0)).padding(Space.md)) {
                     androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
                         SafeDrivePanel(
-                            AppSettings(safeDrive = true, safeDriveToleranceKph = 5),
+                            AppSettings(safeDrive = true, safeDriveToleranceKph = 5, safeDriveStartVoice = true),
                             NavigationControls(onAppChange = {}, onHudOverlayChange = {},
                                 safeDriveAvailable = true, locationPermitted = true,
                                 automaticSoundStatus = "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류",

@@ -105,10 +105,10 @@ class SafeDriveGuide(
     private val voiceOutput: ((String) -> Unit)? = null,
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
 ) {
-    // 준비 중인 문장에 카메라를 묶어 엔진 초기화 뒤 지난 후보를 읽거나 단계를 소모하지 않는다.
+    // 준비 중인 문장에 카메라와 시작 인사를 구별해 엔진 초기화 뒤 지난 후보나 취소된 인사를 읽지 않는다.
     // 딩동은 카메라 진입 안내와, 그 안내를 그대로 들려주는 음성 점검에만 붙인다.
     private data class SpeechRequest(val text: String, val cameraKey: String? = null, val stage: Int = 0,
-                                     val chimeLead: Boolean = stage == 1)
+                                     val chimeLead: Boolean = stage == 1, val startVoice: Boolean = false)
 
     private val mutableState = MutableStateFlow(SafetyState())
     val state: StateFlow<SafetyState> = mutableState.asStateFlow()
@@ -157,6 +157,9 @@ class SafeDriveGuide(
     private var progressiveSound = true
     private var alertDistanceMeters = 500
     private var voiceEnabled = true
+    private var startVoiceEnabled = false
+    private var startVoiceRequested = false
+    private var startVoiceRetryOnApproval = false
     private val spokenStages = mutableMapOf<String, Int>()
     private val spokenSeenMillis = mutableMapOf<String, Long>()
     private var lastVoiceMillis: Long? = null
@@ -166,6 +169,7 @@ class SafeDriveGuide(
     private var speechGeneration = 0
     private var speechUtterance = 0L
     private var pendingSpeech: SpeechRequest? = null
+    private var activeSpeechRequest: SpeechRequest? = null
     // TTS 엔진이 직접 재생하면 소리가 엔진 앱 소유라 분리 앱 사운드를 따르지 않아, 파일로 받아 앱이 재생한다.
     private var speechPlayer: MediaPlayer? = null
     private var speechFile: File? = null
@@ -197,6 +201,7 @@ class SafeDriveGuide(
                 dataWarning = sourceDateWarning(retrievedAt, LocalDate.now(), 6, "목록 수집일")
                 mutableState.value = SafetyState(ready = true, stalled = true,
                     unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
+                requestStartVoiceIfAllowed()
                 DiagLog.add("안전 안내 · 시작 (소리 ${if (sound) "켬" else "끔"}, 초과 +${toleranceKph}km/h, ${mutableState.value.unavailableReason})")
                 guideReadyNanos = elapsedRealtimeNanos()
                 while (isActive) {
@@ -317,12 +322,19 @@ class SafeDriveGuide(
         val overSpeed = state.value.isOverSpeed(toleranceKph = toleranceKph) ||
             (warningJob?.isActive == true && limit != null && speed >= limit + toleranceKph - 2)
         if (alert != null && sound && voiceEnabled && automaticAlertsAllowed) {
+            // 첫 카메라가 보이면 늦은 인사 대신 거리 안내를 우선하고 이번 시작의 인사는 넘긴다.
+            if (startVoiceEnabled && !startVoiceRequested) {
+                startVoiceRequested = true
+                if (pendingSpeech?.startVoice == true) pendingSpeech = null
+            }
             announceCamera(alert, nowMillis, overSpeed, followsPrevious) {
                 index?.hasFollowing(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
                     guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0,
                     roadMatched = snapped != null) == true
             }
-        } else pendingSpeech = null
+        } else {
+            if (pendingSpeech?.startVoice != true) pendingSpeech = null
+        }
         val detail = "GPS ${speed.toInt()}km/h, 오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m, " +
             "후보 ${limit?.let { "제한 ${it}km/h" } ?: "없음"}, 거리 ${alert?.distanceMeters ?: "-"}m, " +
             "초과 설정 +${toleranceKph}km/h, 소리 ${if (sound) "켬" else "끔"}"
@@ -501,6 +513,7 @@ class SafeDriveGuide(
         speechReady = false
         speechUnavailable = false
         pendingSpeech = null
+        activeSpeechRequest = null
         mutableSpeechStatus.value = "한국어 음성 확인 중"
         requestSpeech(SpeechRequest(cameraAnnouncement(SafetyKind.SPEED_CAMERA, 500, 100, CameraSequence.SINGLE),
             chimeLead = true))
@@ -508,7 +521,7 @@ class SafeDriveGuide(
 
     /** 음성 엔진이 준비되기 전에는 최신 안내만 보관해 지나간 카메라를 늦게 읽지 않는다. */
     private fun requestSpeech(request: SpeechRequest) {
-        if (speechUnavailable || (request.cameraKey != null && job?.isActive != true)) return
+        if (speechUnavailable || ((request.cameraKey != null || request.startVoice) && job?.isActive != true)) return
         pendingSpeech = request
         if (voiceOutput != null || speechReady) { speakPendingSpeech(); return }
         if (speechEngine != null) return
@@ -558,11 +571,13 @@ class SafeDriveGuide(
     /** 실제 발화 요청이 수락됐을 때만 해당 거리 단계를 소모한다. */
     private fun speakPendingSpeech() {
         val request = pendingSpeech ?: return
-        if (request.cameraKey != null && (!voiceEnabled || !sound || !automaticAlertsAllowed || state.value.stalled ||
-                state.value.alert?.cameraKey != request.cameraKey)) {
+        if ((request.startVoice && !startVoiceAllowed()) ||
+            (request.cameraKey != null && (!voiceEnabled || !sound || !automaticAlertsAllowed || state.value.stalled ||
+                state.value.alert?.cameraKey != request.cameraKey))) {
             pendingSpeech = null
             return
         }
+        activeSpeechRequest = request
         pendingSpeech = null
         val result = runCatching {
             if (voiceOutput != null) {
@@ -616,6 +631,10 @@ class SafeDriveGuide(
             }
         }
         if (result.getOrNull() == TextToSpeech.SUCCESS && !speechUnavailable) {
+            if (request.startVoice) {
+                startVoiceRequested = true
+                startVoiceRetryOnApproval = false
+            }
             request.cameraKey?.let { key ->
                 spokenStages[key] = maxOf(spokenStages[key] ?: 0, request.stage)
                 lastVoiceMillis = elapsedRealtimeNanos() / 1_000_000
@@ -624,6 +643,7 @@ class SafeDriveGuide(
             }
             mutableSpeechStatus.value = "음성 재생 요청됨 · 들리지 않으면 미디어 음량을 확인하세요."
         } else if (!speechUnavailable) {
+            if (request.startVoice) startVoiceRetryOnApproval = true
             disableSpeech("재생 실패 · ${result.exceptionOrNull()?.javaClass?.simpleName ?: "엔진 응답"}")
             releaseAudioFocusIfIdle()
         }
@@ -634,6 +654,7 @@ class SafeDriveGuide(
         scope.launch {
             if (id != speechUtterance.toString()) return@launch
             releaseSpeechPlayer()
+            activeSpeechRequest = null
             speaking = false
             releaseAudioFocusIfIdle()
         }
@@ -650,6 +671,12 @@ class SafeDriveGuide(
             // 합성이 딩동보다 먼저 끝나면 남은 시간만큼 기다려 둘이 겹치지 않게 한다.
             val wait = leadUntilMillis - elapsedRealtimeNanos() / 1_000_000
             if (wait > 0) delay(wait)
+            // 연결·주행 근거가 사라진 뒤 늦게 완성된 인사는 차량 밖에서 재생하지 않는다.
+            if (request.startVoice && !startVoiceAllowed()) {
+                file.delete()
+                finishSpeaking(id)
+                return@launch
+            }
             val player = runCatching {
                 MediaPlayer().apply {
                     setAudioAttributes(AudioAttributes.Builder()
@@ -670,7 +697,7 @@ class SafeDriveGuide(
             speechPlayer = player
             // 음성 설정 미리 듣기와 음이 다르다는 제보를 진단 로그로 가리도록 음성 점검 때만 엔진·목소리·합성 형식을 남긴다.
             // 기기 설정값과 앱이 볼 수 있는 엔진을 같이 남겨, 설정한 엔진을 못 찾아 다른 엔진으로 읽는 경우를 구분한다.
-            if (request.cameraKey == null) {
+            if (request.cameraKey == null && !request.startVoice) {
                 val configured = runCatching {
                     android.provider.Settings.Secure.getString(application.contentResolver,
                         android.provider.Settings.Secure.TTS_DEFAULT_SYNTH)
@@ -681,6 +708,10 @@ class SafeDriveGuide(
                     "앱에서 보이는 엔진 ${visible?.ifBlank { null } ?: "없음"}, " +
                     "목소리 ${runCatching { speechEngine?.voice?.name }.getOrNull() ?: "미확인"}, " +
                     "합성 ${wavSampleRate(file)?.let { "${it}Hz" } ?: "형식 미확인"})")
+            }
+            if (request.startVoice && !startVoiceAllowed()) {
+                finishSpeaking(id)
+                return@launch
             }
             // 음성이 시작되면 울리던 경고음을 끊어 음성만 들리게 한다.
             chime.stop()
@@ -720,16 +751,23 @@ class SafeDriveGuide(
     /** 소리 끄기·자동 소리 보류 때 합성과 재생을 함께 멈추고 음악 감쇠를 푼다. */
     private fun stopSpeechOutput() {
         runCatching { speechEngine?.stop() }
+        speechUtterance++
         releaseSpeechPlayer()
+        activeSpeechRequest = null
         speaking = false
         releaseAudioFocusIfIdle()
     }
 
     /** 음성 실패는 설정에 표시하되 GPS·과속 경고음은 계속 동작시킨다. */
     private fun disableSpeech(reason: String) {
+        if (pendingSpeech?.startVoice == true || activeSpeechRequest?.startVoice == true) {
+            startVoiceRequested = false
+            startVoiceRetryOnApproval = true
+        }
         speechUnavailable = true
         speechReady = false
         pendingSpeech = null
+        activeSpeechRequest = null
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
         releaseSpeechPlayer()
@@ -820,6 +858,34 @@ class SafeDriveGuide(
         // 후보 경계·권한 변화·설정 토글에도 전역 요청 간격과 서버 재시도 대기를 유지한다.
     }
 
+    /** 설정만 켰을 때는 발화하지 않고, 실제 안내 시작과 차량 출력 허가를 함께 기다린다. */
+    fun setStartVoice(enabled: Boolean) {
+        startVoiceEnabled = enabled
+        if (!enabled) {
+            if (pendingSpeech?.startVoice == true) pendingSpeech = null
+            if (activeSpeechRequest?.startVoice == true) stopSpeechOutput()
+            startVoiceRetryOnApproval = false
+        } else requestStartVoiceIfAllowed()
+    }
+
+    /** 목록 준비와 자동 소리 승인이 모두 끝난 뒤에만 인사를 요청해 주차 중 출력과 짧은 권한 변동을 피한다. */
+    private fun requestStartVoiceIfAllowed() {
+        if (!startVoiceEnabled || startVoiceRequested || job?.isActive != true || !state.value.ready ||
+            !sound || !automaticAlertsAllowed || speechUnavailable || pendingSpeech?.startVoice == true) return
+        // 카메라 요청은 인사로 덮지 않고, 이미 시작된 거리 안내 뒤에 낡은 인사를 덧붙이지 않는다.
+        if (voiceEnabled && (state.value.alert != null || pendingSpeech?.cameraKey != null ||
+                activeSpeechRequest?.cameraKey != null)) {
+            startVoiceRequested = true
+            return
+        }
+        requestSpeech(SpeechRequest("안전운전하세요.", startVoice = true))
+    }
+
+    /** 지연 합성과 재생에도 같은 차량 오디오·주행 게이트를 적용한다. */
+    private fun startVoiceAllowed(): Boolean =
+        job?.isActive == true && state.value.ready && startVoiceEnabled && sound && automaticAlertsAllowed &&
+            (!voiceEnabled || state.value.alert == null)
+
     /** 설정 거리에 들어온 뒤에만 화면 경보·과속음을 시작하며 도로 매칭 범위는 건드리지 않는다. */
     fun setAlertOptions(distanceMeters: Int, voice: Boolean) {
         val adjustedDistance = distanceMeters.takeIf { it in listOf(300, 500, 700) } ?: 500
@@ -831,9 +897,17 @@ class SafeDriveGuide(
             mutableSpeechStatus.value = null
         }
         voiceEnabled = voice
+        if (voice && state.value.alert != null) {
+            // 카메라 음성을 나중에 켰어도 대기 중인 인사가 거리 안내보다 앞서지 않게 한다.
+            if (pendingSpeech?.startVoice == true) {
+                pendingSpeech = null
+                startVoiceRequested = true
+            }
+            if (activeSpeechRequest?.startVoice == true) stopSpeechOutput()
+        }
         if (!voice) {
-            pendingSpeech = null
-            stopSpeechOutput()
+            if (pendingSpeech?.startVoice != true) pendingSpeech = null
+            if (activeSpeechRequest?.startVoice != true) stopSpeechOutput()
         }
     }
 
@@ -843,6 +917,12 @@ class SafeDriveGuide(
         mutableAutomaticSoundStatus.value = if (allowed) allowedStatus else reason
         if (automaticAlertsAllowed == allowed) return
         automaticAlertsAllowed = allowed
+        if (allowed && startVoiceRetryOnApproval) {
+            speechGeneration++
+            speechUnavailable = false
+            startVoiceRetryOnApproval = false
+            mutableSpeechStatus.value = null
+        }
         if (!allowed) {
             pendingSpeech = null
             spokenStages.clear()
@@ -851,6 +931,7 @@ class SafeDriveGuide(
             stopSpeechOutput()
             chime.stop()
         }
+        if (allowed) requestStartVoiceIfAllowed()
         if (job?.isActive == true) DiagLog.add("안전 안내 · 자동 소리 ${if (allowed) "연결/주행 확인" else reason}")
     }
 
@@ -874,6 +955,7 @@ class SafeDriveGuide(
             pendingSpeech = null
             stopSpeechOutput()
         }
+        if (sound) requestStartVoiceIfAllowed()
         if (changed && job?.isActive == true) {
             DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, ${warningSound.label}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h, 속도별 ${if (progressive) "켬" else "끔"})")
         }
@@ -900,12 +982,15 @@ class SafeDriveGuide(
         automaticAlertsAllowed = false
         lastVoiceMillis = null
         pendingSpeech = null
+        startVoiceRequested = false
+        startVoiceRetryOnApproval = false
         speechReady = false
         speechUnavailable = false
         speechGeneration++
         runCatching { speechEngine?.shutdown() }
         speechEngine = null
         releaseSpeechPlayer()
+        activeSpeechRequest = null
         // 합성 중 종료돼 지우지 못한 임시 파일도 정리한다.
         runCatching { application.cacheDir?.listFiles { file -> file.name.startsWith(SPEECH_FILE_PREFIX) }?.forEach { it.delete() } }
         mutableSpeechStatus.value = null

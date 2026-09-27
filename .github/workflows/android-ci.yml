@@ -4,8 +4,12 @@ on:
   push:
     branches:
       - main
-      - "camera-guide-hardening-*"
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

@@ -206,22 +206,24 @@ internal fun parseRoadMatch(body: String): MatchedRoad? = runCatching {
     val longitude = (last[0] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
     val latitude = (last[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
     if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return@runCatching null
-    MatchedRoad(latitude, longitude, matchedBearing(coordinates, latitude, longitude))
+    matchedRoadFromGeometry(coordinates, latitude, longitude)
 }.getOrNull()
 
-/** 마지막 도로 조각을 최소 5m 길이로 잡아 GPS 순간 bearing보다 안정적인 진행방향을 만든다. */
-private fun matchedBearing(coordinates: JsonArray, latitude: Double, longitude: Double): Double? {
+/** 경로의 모든 꼭짓점을 검증하고 마지막 5m 이상 구간에서 진행방향을 구한다. 손상된 경로는 쓰지 않는다. */
+private fun matchedRoadFromGeometry(coordinates: JsonArray, latitude: Double, longitude: Double): MatchedRoad? {
+    var bearingDegrees: Double? = null
     for (index in coordinates.size - 2 downTo 0) {
-        val point = coordinates[index] as? JsonArray ?: continue
-        if (point.size != 2) continue
-        val previousLongitude = (point[0] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: continue
-        val previousLatitude = (point[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: continue
-        if (previousLatitude !in -90.0..90.0 || previousLongitude !in -180.0..180.0) continue
+        val point = coordinates[index] as? JsonArray ?: return null
+        if (point.size != 2) return null
+        val previousLongitude = (point[0] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return null
+        val previousLatitude = (point[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return null
+        if (previousLatitude !in -90.0..90.0 || previousLongitude !in -180.0..180.0) return null
+        if (bearingDegrees != null) continue
         val meanLatitude = Math.toRadians((latitude + previousLatitude) / 2.0)
         val northMeters = (latitude - previousLatitude) * 111_195.0
         val eastMeters = (longitude - previousLongitude) * 111_195.0 * cos(meanLatitude)
         if (hypot(northMeters, eastMeters) < 5.0) continue
-        return (Math.toDegrees(atan2(eastMeters, northMeters)) + 360.0) % 360.0
+        bearingDegrees = (Math.toDegrees(atan2(eastMeters, northMeters)) + 360.0) % 360.0
     }
-    return null
+    return MatchedRoad(latitude, longitude, bearingDegrees)
 }

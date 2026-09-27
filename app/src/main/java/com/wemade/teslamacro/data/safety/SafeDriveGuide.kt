@@ -837,7 +837,7 @@ class SafeDriveGuide(
         }
     }
 
-    /** 차량 오디오 해제나 탑승 근거 소멸 시 대기·재생 중인 자동 안내도 즉시 취소한다. */
+    /** 차량 오디오 해제나 탑승 근거 소멸 시 대기·재생 중인 자동 안내도 즉시 취소하되 화면 후보 판정은 유지한다. */
     fun setAutomaticAlertsAllowed(allowed: Boolean, reason: String = "주행 판정 대기",
                                   allowedStatus: String = "주행 확인 · 자동 소리 사용") {
         mutableAutomaticSoundStatus.value = if (allowed) allowedStatus else reason
@@ -847,7 +847,6 @@ class SafeDriveGuide(
             pendingSpeech = null
             spokenStages.clear()
             spokenSeenMillis.clear()
-            cameraTracker.reset()
             stopWarning()
             stopSpeechOutput()
             chime.stop()

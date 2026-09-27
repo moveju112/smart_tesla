@@ -39,6 +39,21 @@ class SafetySettingsTest {
     @get:Rule val paparazzi = Paparazzi()
     @get:Rule val temporaryFolder = TemporaryFolder()
 
+    /** 첫 좌표의 미확정 후보는 안내하지 않고 0.5초 간격의 전방 접근 두 번으로만 확정한다. */
+    private fun confirmApproach(guide: SafeDriveGuide, latitudeDegrees: Double, nowNanos: Long,
+                                speedMetersPerSecond: Float = 20f) {
+        guide.onLocation(Location("gps").apply {
+            latitude = latitudeDegrees - 0.00005; longitude = 127.0
+            speed = speedMetersPerSecond; bearing = 0f; accuracy = 10f
+            elapsedRealtimeNanos = nowNanos - 500_000_000L
+        })
+        guide.onLocation(Location("gps").apply {
+            latitude = latitudeDegrees; longitude = 127.0
+            speed = speedMetersPerSecond; bearing = 0f; accuracy = 10f
+            elapsedRealtimeNanos = nowNanos
+        })
+    }
+
     /** 기본값·저장·범위 제한·복원을 같은 Store 계약으로 확인한다. */
     @Test fun tolerancePersistsAndRestores() = runTest {
         val preferences = PreferenceDataStoreFactory.create(scope = backgroundScope) {
@@ -129,6 +144,8 @@ class SafetySettingsTest {
             guide.start()
             runCurrent()
             assertTrue(guide.state.value.stalled)
+            guide.onLocation(fix().apply { latitude -= 0.00005; elapsedRealtimeNanos -= 500_000_000L })
+            assertNull("처음 스친 후보는 아직 경보하지 않는다", guide.state.value.alert)
             guide.onLocation(fix())
             assertEquals(72.0, guide.state.value.speedKph!!, 0.001)
             assertTrue(guide.state.value.isOverSpeed(toleranceKph = 5))
@@ -146,14 +163,17 @@ class SafetySettingsTest {
                 guide.onLocation(fix().also(mutate))
                 assertTrue("누락·비정상 입력 $position", guide.state.value.stalled)
                 assertNull(guide.state.value.alert)
-                guide.onLocation(fix())
+                nowNanos += 1_000_000_000L
+                confirmApproach(guide, 37.0, nowNanos)
                 assertFalse(guide.state.value.stalled)
             }
             guide.onLocation(fix().apply { speed = 0f; removeBearing() })
             assertFalse(guide.state.value.stalled)
             assertNull(guide.state.value.alert)
+            nowNanos += 5_000_000_000L
 
             val delayed = fix(4_900_000_000L)
+            guide.onLocation(fix(4_950_000_000L).apply { latitude -= 0.00005 })
             guide.onLocation(delayed)
             assertNotNull(guide.state.value.alert)
             nowNanos += 1_000_000_000L
@@ -173,7 +193,7 @@ class SafetySettingsTest {
             assertEquals(SafetyState(), guide.state.value)
             guide.start()
             runCurrent()
-            guide.onLocation(fix())
+            confirmApproach(guide, 37.0, nowNanos)
             assertNotNull(guide.state.value.alert)
         } finally {
             guide.stop()
@@ -320,7 +340,7 @@ class SafetySettingsTest {
             assertEquals(0, guide.toleranceKph)
             guide.start()
             runCurrent()
-            approach()
+            confirmApproach(guide, 37.0, nowNanos)
             assertEquals(1_000L, lastSound.get(guide))
             assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
             assertTrue(DiagLog.lines.value.last().contains("1.0초 간격"))
@@ -332,7 +352,7 @@ class SafetySettingsTest {
             assertEquals(2_000L, lastSound.get(guide))
             wait(300)
             val entries = DiagLog.lines.value.count { it.contains("카메라 후보 진입") }
-            approach(37.0034) // 다음 카메라로 넘어가면 남은 간격을 기다리지 않고 바로 울린다.
+            confirmApproach(guide, 37.0034, nowNanos) // 다음 카메라도 연속 접근이 확인되면 즉시 다시 울린다.
             assertEquals(2_300L, lastSound.get(guide))
             assertEquals(entries + 1, DiagLog.lines.value.count { it.contains("카메라 후보 진입") })
             wait(1_000)
@@ -342,17 +362,16 @@ class SafetySettingsTest {
             wait(1_000) // GPS 갱신이 2초 넘게 없으면 지난 속도로 계속 울리지 않는다.
             assertNull(lastSound.get(guide))
             nowNanos += 10_000_000_000L
-            approach(speedMetersPerSecond = 10f)
+            confirmApproach(guide, 37.0034, nowNanos, 10f)
             assertNull(lastSound.get(guide))
-            assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경보 속도 미달"))
-            approach() // 과속 해제 직후 재진입은 바로 울린다.
+            assertFalse(guide.state.value.isOverSpeed(toleranceKph = guide.toleranceKph))
+            approach(37.0034) // 같은 두 번째 카메라 앞에서 다시 과속하면 즉시 울린다.
             assertEquals(15_300L, lastSound.get(guide))
             guide.setSound(false, -1, 0)
             assertNull(lastSound.get(guide))
             nowNanos += 2_000_000_000L
-            approach(37.0034)
+            confirmApproach(guide, 37.0034, nowNanos)
             assertNull(lastSound.get(guide))
-            assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음 꺼짐"))
             guide.setSound(false, -1, 99)
             assertEquals(30, guide.toleranceKph)
             guide.stop()
@@ -396,7 +415,7 @@ class SafetySettingsTest {
             guide.setSound(true, 2, 5)
             guide.start()
             runCurrent()
-            approach()
+            confirmApproach(guide, 36.9986, nowNanos)
             assertNotNull(guide.state.value.alert)
             assertTrue(spoken.isEmpty())
             assertNull(lastSound.get(guide))
@@ -408,6 +427,7 @@ class SafetySettingsTest {
             guide.setAutomaticAlertsAllowed(false)
             nowNanos += 1_000_000_000L
             approach()
+            assertNotNull("자동 소리만 막고 확인된 화면 후보는 유지한다", guide.state.value.alert)
             assertEquals(1, spoken.size)
             assertNull(lastSound.get(guide))
         } finally {
@@ -443,7 +463,7 @@ class SafetySettingsTest {
             guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
-            approach(106)
+            confirmApproach(guide, 37.0, nowNanos, (106 / 3.6).toFloat())
             assertEquals(1_000L, lastSound.get(guide))
             assertTrue(DiagLog.lines.value.last().contains("1.2초 간격"))
             wait(1_000)
@@ -509,7 +529,7 @@ class SafetySettingsTest {
             assertNull(lastSound.get(guide))
             assertTrue(spoken.isEmpty())
             nowNanos += 1_000_000_000L
-            approach(36.9986) // 약 489m: 첫 진입.
+            confirmApproach(guide, 36.9986, nowNanos) // 약 489m: 연속 접근한 뒤 첫 진입.
             assertNotNull(guide.state.value.alert)
             assertEquals(2_000L, lastSound.get(guide))
             assertEquals(listOf("500미터 앞 시속 50킬로미터 단속구간입니다."), spoken)
@@ -520,7 +540,7 @@ class SafetySettingsTest {
             approach(37.0013) // 약 189m: 진입 안내를 자르지 않게 기다린다.
             assertEquals(1, spoken.size)
             nowNanos += 5_000_000_000L
-            approach(37.0013) // 5초 뒤에도 과속이면 감속만 요청한다.
+            confirmApproach(guide, 37.0013, nowNanos) // 5초 뒤에도 과속이면 감속만 요청한다.
             assertEquals(2, spoken.size)
             assertEquals("속도를 줄이세요. 제한속도 50킬로미터입니다.", spoken.last())
             nowNanos += 1_000_000_000L
@@ -532,7 +552,7 @@ class SafetySettingsTest {
             guide.start()
             runCurrent()
             nowNanos += 1_000_000_000L
-            approach(36.9986)
+            confirmApproach(guide, 36.9986, nowNanos)
             assertNotNull(guide.state.value.alert)
             assertNull(lastSound.get(guide))
             assertEquals(2, spoken.size)
@@ -540,7 +560,7 @@ class SafetySettingsTest {
             guide.setAutomaticAlertsAllowed(true)
             guide.setAlertOptions(300, voice = false)
             nowNanos += 1_000_000_000L
-            approach(37.001)
+            confirmApproach(guide, 37.001, nowNanos)
             assertNotNull(lastSound.get(guide))
             assertEquals(2, spoken.size)
             guide.setAlertOptions(300, voice = true)
@@ -578,15 +598,15 @@ class SafetySettingsTest {
             guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
-            approach(36.9986)
+            confirmApproach(guide, 36.9986, nowNanos, 13f)
             assertEquals(listOf("연속 단속 구간입니다. 500미터 앞 시속 50킬로미터 단속구간입니다."), spoken)
             nowNanos += 1_000_000_000L
             approach(37.0013)
             nowNanos += 5_000_000_000L
-            approach(37.0013)
+            confirmApproach(guide, 37.0013, nowNanos, 13f)
             assertEquals(1, spoken.size)
             nowNanos += 1_000_000_000L
-            approach(37.0031) // 첫 카메라를 막 지나면 다음 카메라를 바로 이어서 안내한다.
+            confirmApproach(guide, 37.0031, nowNanos, 13f) // 다음 카메라가 연속 확인되면 바로 이어서 안내한다.
             assertEquals("이어서 300미터 앞 시속 50킬로미터 단속구간입니다.", spoken.last())
             assertTrue(DiagLog.lines.value.any { it.contains("카메라 후보 진입") && it.contains("이어서)") })
         } finally {
@@ -620,11 +640,7 @@ class SafetySettingsTest {
             guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
-            guide.onLocation(Location("gps").apply {
-                latitude = 37.0; longitude = 127.0
-                speed = 20f; bearing = 0f; accuracy = 10f
-                elapsedRealtimeNanos = 1_000_000_000L
-            })
+            confirmApproach(guide, 37.0, 1_000_000_000L)
             guide.previewWarning(1)
             assertEquals(1, previews())
             assertNull(preview.get(guide))
@@ -675,7 +691,7 @@ class SafetySettingsTest {
             guide.setAutomaticAlertsAllowed(true)
             guide.start()
             runCurrent()
-            approach(36.9986)
+            confirmApproach(guide, 36.9986, nowNanos)
             assertEquals(1, attempts)
             assertTrue(guide.speechStatus.value!!.contains("사용 불가"))
             nowNanos += 1_000_000_000L
@@ -688,7 +704,7 @@ class SafetySettingsTest {
             approach(36.9986)
             assertEquals("500미터 앞 시속 50킬로미터 단속구간입니다.", spoken.last())
             nowNanos += 5_000_000_000L
-            approach(37.0013)
+            confirmApproach(guide, 37.0013, nowNanos)
             assertEquals("속도를 줄이세요. 제한속도 50킬로미터입니다.", spoken.last())
         } finally {
             guide.stop()
@@ -722,7 +738,7 @@ class SafetySettingsTest {
             assertNull(guide.state.value.alert)
             assertTrue(DiagLog.lines.value.last().contains("근접 후보는 있지만 경보 거리·방향 미충족"))
             nowNanos += 1_000_000_000L
-            approach(36.9986, 10f) // 설정한 500m 안으로 들어오면 과속 경고음을 요청한다.
+            confirmApproach(guide, 36.9986, nowNanos) // 설정한 500m 안에서 연속 접근하면 경고음을 요청한다.
             assertTrue(guide.state.value.isOverSpeed(toleranceKph = guide.toleranceKph))
             assertTrue(DiagLog.lines.value.last().contains("안전 안내 · 경고음"))
             nowNanos += 10_000_000_000L

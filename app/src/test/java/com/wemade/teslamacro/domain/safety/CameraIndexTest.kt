@@ -118,6 +118,14 @@ class CameraIndexTest {
         assertNull(outside.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
     }
 
+    /** 도로 매칭 좌표에서는 평행도로 오탐을 줄이고 같은 도로 전방 후보는 유지한다. */
+    @Test fun matchedRoadUsesNarrowerCorridor() {
+        val adjacent = CameraIndex(listOf(OfflineCamera("adjacent", 37.003, 127.00135, 50)))
+        assertNotNull(adjacent.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
+        assertNull(adjacent.nearest(37.0, 127.0, 0.0, 60.0, 10.0, roadMatched = true))
+        assertNotNull(index.nearest(37.0, 127.0, 0.0, 60.0, 10.0, roadMatched = true))
+    }
+
     /** 가장 가까운 유효 후보와 구간 카메라 표기를 확인한다. */
     @Test fun closestCandidateAndSection() {
         val local = CameraIndex(listOf(

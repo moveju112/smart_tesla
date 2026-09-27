@@ -44,6 +44,12 @@ internal fun warningIntervalMillis(excessKph: Double, progressive: Boolean): Lon
 /** GPS 갱신이 이 시간 넘게 끊기면 지난 속도로 경고음을 계속 반복하지 않는다 */
 private const val WARNING_REFRESH_NANOS = 2_000_000_000L
 
+/** 카메라 1km 안에서만 쓰는 도로 매칭은 곡선·램프 진행방향을 따라가도록 3초 간격으로 갱신한다. */
+private const val ROAD_MATCH_INTERVAL_MILLIS = 3_000L
+
+/** 같은 카메라를 한참 뒤 다시 지나면 이전 음성 단계를 새 통과에 재사용하지 않는다. */
+private const val CAMERA_REANNOUNCE_MILLIS = 90_000L
+
 /** 첫 안내 문장이 단독 카메라인지, 뒤에 카메라가 더 있는지, 앞 카메라에 바로 이어지는지 */
 internal enum class CameraSequence { SINGLE, CONTINUOUS, FOLLOWING }
 
@@ -119,11 +125,12 @@ class SafeDriveGuide(
     private var lastLocationNanos: Long? = null
     private var lastSilenceLogNanos: Long? = null
     private val roadMatcher = RoadMatcher(application)
+    private val cameraTracker = CameraApproachTracker()
     private var roadMatchEnabled = false
     private val recentPoints = ArrayDeque<RoadPoint>()
     private var matchJob: Job? = null
     private var lastMatchAttemptMillis = 0L
-    private var retryDelayMillis = 10_000L
+    private var retryDelayMillis = ROAD_MATCH_INTERVAL_MILLIS
     private var lastMatchLogMillis = 0L
     private var requestsSinceLog = 0
     private var lastMatchOutcome: String? = null
@@ -151,6 +158,7 @@ class SafeDriveGuide(
     private var alertDistanceMeters = 500
     private var voiceEnabled = true
     private val spokenStages = mutableMapOf<String, Int>()
+    private val spokenSeenMillis = mutableMapOf<String, Long>()
     private var lastVoiceMillis: Long? = null
     private var speechEngine: TextToSpeech? = null
     private var speechReady = false
@@ -255,6 +263,7 @@ class SafeDriveGuide(
                 else -> "GPS 속도 확인 불가"
             }
             clearRoadMatch()
+            cameraTracker.reset()
             lastFixNanos = null
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = reason, dataWarning = dataWarning)
             stopWarning()
@@ -265,6 +274,7 @@ class SafeDriveGuide(
         lastFixNanos = location.elapsedRealtimeNanos
         if (speed >= 5 && (!location.hasBearing() || !location.bearing.isFinite())) {
             clearRoadMatch()
+            cameraTracker.reset()
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
             stopWarning()
             pendingSpeech = null
@@ -277,13 +287,19 @@ class SafeDriveGuide(
             location.time / 1_000 - timestamp in 0L..5L &&
                 ConditionEvaluator.distanceMeters(location.latitude, location.longitude, road.latitude, road.longitude) <= 30
         }?.second
-        val alert = if (location.hasBearing()) index?.nearest(
-            snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
-            location.bearing.toDouble(), speed, location.accuracy.toDouble(),
-            maxDistanceMeters = alertDistanceMeters,
-        ) else null
-        mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
+        val guidanceBearing = snapped?.bearingDegrees ?: location.bearing.takeIf { location.hasBearing() }?.toDouble()
         val nowMillis = nowNanos / 1_000_000
+        val rawAlert = guidanceBearing?.let { bearing ->
+            index?.nearest(
+                snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
+                bearing, speed, location.accuracy.toDouble(),
+                maxDistanceMeters = alertDistanceMeters,
+                roadMatched = snapped != null,
+            )
+        }
+        // 한 번 스친 옆 도로 후보는 버리고 같은 카메라가 연속으로 접근할 때만 실제 안내로 승격한다.
+        val alert = cameraTracker.observe(rawAlert, nowMillis)
+        mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         // 연속 카메라 중 어느 것을 인식했는지 로그로 확인하도록 새 후보를 만날 때만 남긴다.
         // 후보가 잠깐 사라졌다 같은 카메라로 돌아오는 GPS 흔들림은 새 후보로 치지 않는다.
         val previousCameraKey = lastAlertCameraKey
@@ -303,7 +319,8 @@ class SafeDriveGuide(
         if (alert != null && sound && voiceEnabled && automaticAlertsAllowed) {
             announceCamera(alert, nowMillis, overSpeed, followsPrevious) {
                 index?.hasFollowing(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
-                    location.bearing.toDouble(), alert.distanceMeters ?: 0) == true
+                    guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0,
+                    roadMatched = snapped != null) == true
             }
         } else pendingSpeech = null
         val detail = "GPS ${speed.toInt()}km/h, 오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m, " +
@@ -312,7 +329,9 @@ class SafeDriveGuide(
         val status = when {
             speed < 5 -> "GPS 속도 5km/h 미만"
             !location.hasBearing() -> "GPS 방향 없음"
-            alert == null && index?.hasNearby(location.latitude, location.longitude, location.bearing.toDouble()) == true ->
+            alert == null && guidanceBearing != null &&
+                index?.hasNearby(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
+                    guidanceBearing) == true ->
                 "근접 후보는 있지만 경보 거리·방향 미충족"
             alert == null -> "전방 1km 내 후보 없음"
             alert.limitConflict -> "후보 제한속도 상충"
@@ -453,6 +472,10 @@ class SafeDriveGuide(
                                overSpeed: Boolean, followsPrevious: Boolean, continuous: () -> Boolean) {
         val key = alert.cameraKey ?: return
         val distance = alert.distanceMeters ?: return
+        spokenSeenMillis[key]?.let { lastSeen ->
+            if (nowMillis - lastSeen > CAMERA_REANNOUNCE_MILLIS) spokenStages.remove(key)
+        }
+        spokenSeenMillis[key] = nowMillis
         val previous = spokenStages[key] ?: 0
         val text = when {
             previous == 0 -> cameraAnnouncement(alert.kind, distance, alert.speedLimitKph, when {
@@ -736,7 +759,7 @@ class SafeDriveGuide(
         if (!roadMatchEnabled) clearRoadMatch()
     }
 
-    /** 후보·주행·시각을 확인한 뒤 10초마다 최대 한 요청만 보낸다. 실패는 오프라인으로 넘긴다. */
+    /** 후보·주행·시각을 확인한 뒤 성공 시 3초마다 갱신하고, 실패는 느린 재시도로 오프라인 판정을 지킨다. */
     private fun updateRoadMatch(location: Location, speed: Double, nowNanos: Long) {
         if (!roadMatchEnabled || speed < 5 || !location.hasBearing() ||
             index?.hasNearby(location.latitude, location.longitude, location.bearing.toDouble()) != true) {
@@ -765,7 +788,11 @@ class SafeDriveGuide(
         matchJob = scope.launch {
             val result = roadMatcher.match(points)
             if (result.code == 401) tokenRejected = true
-            retryDelayMillis = if (result.code in listOf(429, 503, 504)) 30_000L else 10_000L
+            retryDelayMillis = when {
+                result.code == 200 -> ROAD_MATCH_INTERVAL_MILLIS
+                result.code in listOf(429, 503, 504) -> 30_000L
+                else -> 10_000L
+            }
             matchedRoad = result.road?.let { points.last().timestamp to it }
             // 좌표·토큰·응답 원문 없이 결과 변화와 대기 이유만 기록한다.
             val outcome = when {
@@ -795,7 +822,9 @@ class SafeDriveGuide(
 
     /** 설정 거리에 들어온 뒤에만 화면 경보·과속음을 시작하며 도로 매칭 범위는 건드리지 않는다. */
     fun setAlertOptions(distanceMeters: Int, voice: Boolean) {
-        alertDistanceMeters = distanceMeters.takeIf { it in listOf(300, 500, 700) } ?: 500
+        val adjustedDistance = distanceMeters.takeIf { it in listOf(300, 500, 700) } ?: 500
+        if (alertDistanceMeters != adjustedDistance) cameraTracker.reset()
+        alertDistanceMeters = adjustedDistance
         if (voice && !voiceEnabled && speechUnavailable) {
             speechGeneration++
             speechUnavailable = false
@@ -817,6 +846,8 @@ class SafeDriveGuide(
         if (!allowed) {
             pendingSpeech = null
             spokenStages.clear()
+            spokenSeenMillis.clear()
+            cameraTracker.reset()
             stopWarning()
             stopSpeechOutput()
             chime.stop()
@@ -865,6 +896,8 @@ class SafeDriveGuide(
         lastAlertCameraKey = null
         lastAlertSeenMillis = null
         spokenStages.clear()
+        spokenSeenMillis.clear()
+        cameraTracker.reset()
         automaticAlertsAllowed = false
         lastVoiceMillis = null
         pendingSpeech = null

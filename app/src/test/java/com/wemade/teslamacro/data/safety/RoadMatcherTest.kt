@@ -2,13 +2,17 @@ package com.wemade.teslamacro.data.safety
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RoadMatcherTest {
     /** 실제 서버 응답의 경도·위도 순서와 마지막 도로 좌표를 지킨다. */
     @Test fun matchedPath() {
         val body = """{"status":"matched","matchings":[{"confidence":0.98028863,"geometry":{"coordinates":[[127.010008,37.500102],[127.010015,37.500306]],"type":"LineString"}}],"unmatchedCount":0}"""
-        assertEquals(MatchedRoad(37.500306, 127.010015), parseRoadMatch(body))
+        val matched = parseRoadMatch(body)
+        assertEquals(37.500306, matched?.latitude ?: 0.0, 0.0)
+        assertEquals(127.010015, matched?.longitude ?: 0.0, 0.0)
+        assertTrue((matched?.bearingDegrees ?: -1.0) in 1.3..1.8)
     }
 
     /** 발급 응답의 타입·토큰 접두어·만료 한도가 틀리면 GPS를 보내지 않는다. */

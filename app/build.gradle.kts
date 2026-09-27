@@ -69,6 +69,14 @@ tasks.withType<Test>().configureEach {
     if (!allowSnapshots) {
         exclude("**/*ScreenshotTest*", "**/WideFontScaleTest*", "**/PortraitTabletTest*")
     }
+    // CI에서도 실패 원인의 expected/actual과 실제 예외 위치를 숨기지 않는다.
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showExceptions = true
+        showStackTraces = true
+    }
 }
 
 dependencies {

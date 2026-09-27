@@ -24,6 +24,14 @@ class RoadDeviceIdentityTest {
     private val samples = listOf(RoadPoint(37.5, 127.0, 100L, 10.0), RoadPoint(37.5001, 127.0001, 105L, 10.0))
     private val matched = """{"status":"matched","matchings":[{"confidence":0.9,"geometry":{"type":"LineString","coordinates":[[127.0,37.5],[127.0001,37.5001]]}}],"unmatchedCount":0}"""
 
+    /** 도로 매칭은 좌표뿐 아니라 마지막 경로 조각의 진행방향도 계약에 포함한다. */
+    private fun assertMatchedRoad(road: MatchedRoad?) {
+        requireNotNull(road)
+        assertEquals(37.5001, road.latitude, 0.0)
+        assertEquals(127.0001, road.longitude, 0.0)
+        assertTrue(road.bearingDegrees != null)
+    }
+
     /** 같은 설치의 개인키로 서명하며 서버로 보낼 공개키·서명만 파일 밖으로 꺼낸다. */
     @Test fun certificateAndProofSurviveRecreation() {
         val key = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
@@ -77,8 +85,8 @@ class RoadDeviceIdentityTest {
                 }
             }
         }
-        assertEquals(MatchedRoad(37.5001, 127.0001), matcher.match(samples).road)
-        assertEquals(MatchedRoad(37.5001, 127.0001), matcher.match(samples).road)
+        assertMatchedRoad(matcher.match(samples).road)
+        assertMatchedRoad(matcher.match(samples).road)
         assertEquals(listOf("/v1/devices", "/v1/session", "/v1/match", "/v1/session", "/v1/match", "/v1/match"), paths)
     }
 
@@ -103,7 +111,7 @@ class RoadDeviceIdentityTest {
         }
         assertEquals(RoadMatchResponse(code = 429), matcher.match(samples))
         assertEquals(RoadMatchResponse(code = 503), matcher.match(samples))
-        assertEquals(MatchedRoad(37.5001, 127.0001), matcher.match(samples).road)
+        assertMatchedRoad(matcher.match(samples).road)
         assertEquals(listOf("/v1/devices", "/v1/session", "/v1/match", "/v1/match", "/v1/match"), paths)
     }
 
@@ -127,7 +135,7 @@ class RoadDeviceIdentityTest {
                 else -> RoadHttpResponse(200, matched)
             }
         }
-        assertEquals(MatchedRoad(37.5001, 127.0001), matcher.match(samples).road)
+        assertMatchedRoad(matcher.match(samples).road)
         assertEquals("dc1.fresh.signature", identity.readCertificate())
         assertEquals(listOf("/v1/session", "/v1/devices", "/v1/session", "/v1/match"), paths)
 

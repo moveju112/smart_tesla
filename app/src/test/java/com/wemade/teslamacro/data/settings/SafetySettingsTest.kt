@@ -512,7 +512,7 @@ class SafetySettingsTest {
             approach(36.9986) // 약 489m: 첫 진입.
             assertNotNull(guide.state.value.alert)
             assertEquals(2_000L, lastSound.get(guide))
-            assertEquals(listOf("500미터 앞 시속 50킬로미터 단속구간입니다."), spoken)
+            assertEquals(listOf("500미터 앞 시속 50킬로미터 단속카메라입니다."), spoken)
             nowNanos += 1_000_000_000L
             approach(36.9988)
             assertEquals(1, spoken.size)
@@ -547,7 +547,7 @@ class SafetySettingsTest {
             nowNanos += 1_000_000_000L
             approach(37.001)
             assertEquals(3, spoken.size)
-            assertEquals("200미터 앞 시속 50킬로미터 단속구간입니다.", spoken.last())
+            assertEquals("200미터 앞 시속 50킬로미터 단속카메라입니다.", spoken.last())
         } finally {
             guide.stop()
             runCurrent()
@@ -555,7 +555,7 @@ class SafetySettingsTest {
         }
     }
 
-    /** 뒤에 카메라가 더 있으면 "연속 단속 구간", 앞 카메라를 지나 바로 다음이 보이면 "이어서"로 안내하고, 정속이면 감속 요청은 없다. */
+    /** 뒤에 카메라가 더 있으면 일반 카메라가 이어짐을 알리고, 앞 카메라를 지나 바로 다음이 보이면 "이어서"로 안내한다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun consecutiveCamerasAreAnnouncedLikeNavigation() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -579,7 +579,7 @@ class SafetySettingsTest {
             guide.start()
             runCurrent()
             approach(36.9986)
-            assertEquals(listOf("연속 단속 구간입니다. 500미터 앞 시속 50킬로미터 단속구간입니다."), spoken)
+            assertEquals(listOf("단속카메라가 연이어 있습니다. 500미터 앞 시속 50킬로미터 단속카메라입니다."), spoken)
             nowNanos += 1_000_000_000L
             approach(37.0013)
             nowNanos += 5_000_000_000L
@@ -587,7 +587,7 @@ class SafetySettingsTest {
             assertEquals(1, spoken.size)
             nowNanos += 1_000_000_000L
             approach(37.0031) // 첫 카메라를 막 지나면 다음 카메라를 바로 이어서 안내한다.
-            assertEquals("이어서 300미터 앞 시속 50킬로미터 단속구간입니다.", spoken.last())
+            assertEquals("이어서 300미터 앞 시속 50킬로미터 단속카메라입니다.", spoken.last())
             assertTrue(DiagLog.lines.value.any { it.contains("카메라 후보 진입") && it.contains("이어서)") })
         } finally {
             guide.stop()
@@ -637,13 +637,13 @@ class SafetySettingsTest {
 
     /** 종류·제한속도 상충·가까운 거리 반올림을 상용 내비 문형으로 읽는다. */
     @Test fun announcementWording() {
-        assertEquals("700미터 앞 시속 100킬로미터 구간단속 구간입니다.",
+        assertEquals("700미터 앞 시속 100킬로미터 구간단속 지점입니다.",
             cameraAnnouncement(SafetyKind.SECTION_CAMERA, 651, 100, CameraSequence.SINGLE))
-        assertEquals("150미터 앞 단속구간입니다. 제한속도는 표지판을 확인하세요.",
+        assertEquals("150미터 앞 단속카메라입니다. 제한속도는 표지판을 확인하세요.",
             cameraAnnouncement(SafetyKind.SPEED_CAMERA, 149, null, CameraSequence.SINGLE))
-        assertEquals("연속 단속 구간입니다. 90미터 앞 시속 30킬로미터 단속구간입니다.",
+        assertEquals("단속카메라가 연이어 있습니다. 90미터 앞 시속 30킬로미터 단속카메라입니다.",
             cameraAnnouncement(SafetyKind.SPEED_CAMERA, 94, 30, CameraSequence.CONTINUOUS))
-        assertEquals("이어서 10미터 앞 시속 30킬로미터 단속구간입니다.",
+        assertEquals("이어서 10미터 앞 시속 30킬로미터 단속카메라입니다.",
             cameraAnnouncement(SafetyKind.SPEED_CAMERA, 4, 30, CameraSequence.FOLLOWING))
         assertEquals("속도를 줄이세요.", slowDownAnnouncement(null))
     }
@@ -683,10 +683,10 @@ class SafetySettingsTest {
             assertEquals("실패 뒤 GPS마다 재시도하면 엔진이 로그·음성을 반복한다", 1, attempts)
             unavailable = false
             guide.testSpeech()
-            assertEquals("500미터 앞 시속 100킬로미터 단속구간입니다.", spoken.single())
+            assertEquals("500미터 앞 시속 100킬로미터 단속카메라입니다.", spoken.single())
             nowNanos += 1_000_000_000L
             approach(36.9986)
-            assertEquals("500미터 앞 시속 50킬로미터 단속구간입니다.", spoken.last())
+            assertEquals("500미터 앞 시속 50킬로미터 단속카메라입니다.", spoken.last())
             nowNanos += 5_000_000_000L
             approach(37.0013)
             assertEquals("속도를 줄이세요. 제한속도 50킬로미터입니다.", spoken.last())

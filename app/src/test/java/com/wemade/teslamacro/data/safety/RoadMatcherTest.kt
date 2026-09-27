@@ -2,6 +2,7 @@ package com.wemade.teslamacro.data.safety
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,6 +24,28 @@ class RoadMatcherTest {
         assertNull(parseRoadAccess(valid.replace("1800", "1801")))
         assertNull(parseRoadAccess(valid.replace("1800", "\"1800\"")))
         assertNull(parseRoadAccess("not json"))
+    }
+
+    /** 늦게 온 매칭 좌표는 과거 지점에 멈추지 않고 현재 GPS 진행량만큼 도로축에서 전진한다. */
+    @Test fun delayedMatchProjectsToCurrentProgress() {
+        val anchor = RoadMatchAnchor(
+            RoadPoint(37.0, 127.0, 1_000, 5.0),
+            MatchedRoad(37.00005, 127.00005, 0.0),
+        )
+        val projected = projectRoadMatch(anchor, 37.00090, 127.0, 1_003, 0.0, 100.0, 5.0)
+        assertNotNull(projected)
+        assertTrue(projected!!.latitude > 37.00080)
+        assertEquals(127.00005, projected.longitude, 0.00002)
+    }
+
+    /** 5초 넘은 응답이나 현재 진행방향과 맞지 않는 도로는 GPS를 보정하지 않는다. */
+    @Test fun staleOrWrongHeadingMatchIsIgnored() {
+        val anchor = RoadMatchAnchor(
+            RoadPoint(37.0, 127.0, 1_000, 5.0),
+            MatchedRoad(37.0, 127.0, 0.0),
+        )
+        assertNull(projectRoadMatch(anchor, 37.0002, 127.0, 1_006, 0.0, 60.0, 5.0))
+        assertNull(projectRoadMatch(anchor, 37.0002, 127.0, 1_001, 90.0, 60.0, 5.0))
     }
 
     /** 200이어도 불확실·실패·형식 오류는 GPS를 대체하지 않는다. */

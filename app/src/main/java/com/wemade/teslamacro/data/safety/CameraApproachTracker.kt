@@ -6,6 +6,10 @@ import com.wemade.teslamacro.domain.safety.SafetyAlert
 internal class CameraApproachTracker {
     private var acceptedKey: String? = null
     private var acceptedSeenMillis: Long? = null
+    private var lastObservedMillis: Long? = null
+
+    /** 확정된 카메라는 발견용 각도 필터에서 잠깐 빠져도 근거리 재탐색할 수 있게 키만 노출한다. */
+    val currentKey: String? get() = acceptedKey
     private var pendingKey: String? = null
     private var pendingCount = 0
     private var pendingDistanceMeters: Int? = null
@@ -14,6 +18,12 @@ internal class CameraApproachTracker {
     /** 한 번 잡힌 카메라는 짧은 GPS 흔들림 뒤 바로 복구하되 새 후보는 연속 관측으로만 확정한다. */
     fun observe(candidate: SafetyAlert?, nowMillis: Long): SafetyAlert? {
         if (nowMillis < 0) return null
+        // 같은 GPS 측정값이 콜백으로 두 번 와도 새 후보 확인 횟수를 늘리지 않는다.
+        if (lastObservedMillis?.let { nowMillis <= it } == true) {
+            return candidate?.takeIf { it.cameraKey == acceptedKey &&
+                acceptedSeenMillis?.let { seen -> nowMillis - seen in 0..REACQUIRE_MILLIS } == true }
+        }
+        lastObservedMillis = nowMillis
         if (candidate?.cameraKey == null) {
             clearPending()
             if (acceptedSeenMillis?.let { nowMillis - it > REACQUIRE_MILLIS } == true) {
@@ -60,6 +70,7 @@ internal class CameraApproachTracker {
     fun reset() {
         acceptedKey = null
         acceptedSeenMillis = null
+        lastObservedMillis = null
         clearPending()
     }
 

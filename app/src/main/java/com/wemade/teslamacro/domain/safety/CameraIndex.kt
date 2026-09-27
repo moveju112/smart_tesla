@@ -29,6 +29,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     }
     private val cells = validCameras.groupBy { cell(it.latitude, it.longitude) }
     private val points = validCameras.groupBy { it.latitude to it.longitude }
+    private val camerasByKey = validCameras.groupBy { "${it.latitude},${it.longitude}" }
     // 같은 좌표의 제한속도·기준일은 파일 순서로 낙관적인 값을 택하지 않는다.
     private val conflictingPoints = points
         .filterValues { records -> records.map { it.speedLimitKph }.distinct().size > 1 }.keys
@@ -81,15 +82,41 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                 distance = meters
             }
         }
-        return nearest?.let {
-            val point = it.latitude to it.longitude
-            val conflict = point in conflictingPoints
-            val referenceDate = pointDates[point]
-            SafetyAlert(if (it.section) SafetyKind.SECTION_CAMERA else SafetyKind.SPEED_CAMERA,
-                distance.roundToInt(), it.speedLimitKph.takeUnless { conflict }, limitConflict = conflict,
-                cameraKey = "${it.latitude},${it.longitude}", referenceDate = referenceDate,
-                dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"))
+        return nearest?.let { alertFor(it, distance.roundToInt(), today) }
+    }
+
+    /**
+     * 이미 두 번 확인한 카메라는 근거리에서 위치 벡터 각도가 커져도 통과 직전까지 다시 찾는다.
+     * 새 후보에는 쓰지 않으므로 교차로·평행도로 오탐 범위를 넓히지 않는다.
+     */
+    fun reacquire(cameraKey: String, latitude: Double, longitude: Double, bearing: Double,
+                  speedKph: Double, accuracyMeters: Double, today: LocalDate = LocalDate.now(),
+                  roadMatched: Boolean = false): SafetyAlert? {
+        if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite() ||
+            !speedKph.isFinite() || speedKph < 5 || accuracyMeters !in 0.0..30.0) return null
+        val maxBearingDifference = if (roadMatched) 75.0 else 85.0
+        val maxLateralMeters = if (roadMatched) 90.0 else 200.0
+        return camerasByKey[cameraKey].orEmpty().asSequence().map { camera ->
+            camera to ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
+        }.filter { (camera, meters) ->
+            if (meters !in 5.0..300.0) return@filter false
+            val difference = bearingDifference(latitude, longitude, bearing, camera)
+            difference <= maxBearingDifference &&
+                meters * sin(Math.toRadians(difference)) <= maxLateralMeters
+        }.minByOrNull { it.second }?.let { (camera, meters) ->
+            alertFor(camera, meters.roundToInt(), today)
         }
+    }
+
+    /** 발견·근거리 재탐색이 중복 좌표의 제한속도와 기준일을 같은 규칙으로 표시하게 한다. */
+    private fun alertFor(camera: OfflineCamera, distanceMeters: Int, today: LocalDate): SafetyAlert {
+        val point = camera.latitude to camera.longitude
+        val conflict = point in conflictingPoints
+        val referenceDate = pointDates[point]
+        return SafetyAlert(if (camera.section) SafetyKind.SECTION_CAMERA else SafetyKind.SPEED_CAMERA,
+            distanceMeters, camera.speedLimitKph.takeUnless { conflict }, limitConflict = conflict,
+            cameraKey = "${camera.latitude},${camera.longitude}", referenceDate = referenceDate,
+            dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"))
     }
 
     /**

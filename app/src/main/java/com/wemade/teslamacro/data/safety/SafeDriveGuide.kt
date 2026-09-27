@@ -16,7 +16,6 @@ import com.wemade.teslamacro.data.location.freshSpeedKph
 import com.wemade.teslamacro.data.location.isFreshLocation
 import com.wemade.teslamacro.domain.safety.CameraDataset
 import com.wemade.teslamacro.domain.safety.CameraIndex
-import com.wemade.teslamacro.domain.macro.ConditionEvaluator
 import com.wemade.teslamacro.domain.safety.SafetyKind
 import com.wemade.teslamacro.domain.safety.SafetyState
 import com.wemade.teslamacro.domain.safety.sourceDateWarning
@@ -135,7 +134,7 @@ class SafeDriveGuide(
     private var requestsSinceLog = 0
     private var lastMatchOutcome: String? = null
     private var tokenRejected = false
-    private var matchedRoad: Pair<Long, MatchedRoad>? = null
+    private var matchedRoad: RoadMatchAnchor? = null
     private var lastSoundMillis: Long? = null
     private var lastSoundIntervalMillis: Long? = null
     // GPS는 1초마다 와서 위치 콜백만으로는 1초보다 좁은 간격을 낼 수 없어 반복은 별도 타이머가 맡는다.
@@ -282,11 +281,19 @@ class SafeDriveGuide(
             return
         }
         updateRoadMatch(location, speed, nowNanos)
-        // 결과가 GPS와 멀거나 오래되면 원래 측위로 되돌아간다. 도로 매칭만으로 단속 방향을 확정하지 않는다.
-        val snapped = matchedRoad?.takeIf { (timestamp, road) ->
-            location.time / 1_000 - timestamp in 0L..5L &&
-                ConditionEvaluator.distanceMeters(location.latitude, location.longitude, road.latitude, road.longitude) <= 30
-        }?.second
+        // 매칭 응답의 과거 좌표를 그대로 쓰면 고속 주행에서 수십 m 뒤로 되돌아간다.
+        // 마지막 매칭 도로축에 현재 GPS를 다시 투영해 진행 거리는 최신 측위를 따른다.
+        val snapped = matchedRoad?.let { anchor ->
+            projectRoadMatch(
+                anchor = anchor,
+                latitude = location.latitude,
+                longitude = location.longitude,
+                timestamp = location.time / 1_000,
+                bearingDegrees = location.bearing.takeIf { location.hasBearing() }?.toDouble(),
+                speedKph = speed,
+                accuracyMeters = location.accuracy.toDouble(),
+            )
+        }
         val guidanceBearing = snapped?.bearingDegrees ?: location.bearing.takeIf { location.hasBearing() }?.toDouble()
         val nowMillis = nowNanos / 1_000_000
         val rawAlert = guidanceBearing?.let { bearing ->
@@ -297,8 +304,19 @@ class SafeDriveGuide(
                 roadMatched = snapped != null,
             )
         }
-        // 한 번 스친 옆 도로 후보는 버리고 같은 카메라가 연속으로 접근할 때만 실제 안내로 승격한다.
-        val alert = cameraTracker.observe(rawAlert, nowMillis)
+        // 새 후보는 좁게 찾되, 이미 두 번 확인한 카메라는 근거리에서 직전까지 다시 찾는다.
+        val candidate = rawAlert ?: cameraTracker.currentKey?.let { key ->
+            guidanceBearing?.let { bearing ->
+                index?.reacquire(
+                    key,
+                    snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
+                    bearing, speed, location.accuracy.toDouble(),
+                    roadMatched = snapped != null,
+                )
+            }
+        }
+        // 확인 횟수는 콜백 시각이 아니라 GPS 측정 시각을 써 같은 측정값 중복 전달을 막는다.
+        val alert = cameraTracker.observe(candidate, location.elapsedRealtimeNanos / 1_000_000)
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         // 연속 카메라 중 어느 것을 인식했는지 로그로 확인하도록 새 후보를 만날 때만 남긴다.
         // 후보가 잠깐 사라졌다 같은 카메라로 돌아오는 GPS 흔들림은 새 후보로 치지 않는다.
@@ -555,11 +573,16 @@ class SafeDriveGuide(
         speakPendingSpeech()
     }
 
+    /** 합성 시작과 실제 재생 사이 상태가 바뀌면 지난 카메라 음성을 재생하지 않는다. */
+    private fun isSpeechRequestCurrent(request: SpeechRequest): Boolean =
+        request.cameraKey == null || (voiceEnabled && sound && automaticAlertsAllowed &&
+            job?.isActive == true && !state.value.stalled &&
+            state.value.alert?.cameraKey == request.cameraKey)
+
     /** 실제 발화 요청이 수락됐을 때만 해당 거리 단계를 소모한다. */
     private fun speakPendingSpeech() {
         val request = pendingSpeech ?: return
-        if (request.cameraKey != null && (!voiceEnabled || !sound || !automaticAlertsAllowed || state.value.stalled ||
-                state.value.alert?.cameraKey != request.cameraKey)) {
+        if (!isSpeechRequestCurrent(request)) {
             pendingSpeech = null
             return
         }
@@ -650,6 +673,12 @@ class SafeDriveGuide(
             // 합성이 딩동보다 먼저 끝나면 남은 시간만큼 기다려 둘이 겹치지 않게 한다.
             val wait = leadUntilMillis - elapsedRealtimeNanos() / 1_000_000
             if (wait > 0) delay(wait)
+            // 합성 완료 뒤 후보가 사라졌거나 소리가 꺼졌다면 지난 안내 파일을 재생하지 않는다.
+            if (id != speechUtterance.toString() || !isSpeechRequestCurrent(request)) {
+                file.delete()
+                finishSpeaking(id)
+                return@launch
+            }
             val player = runCatching {
                 MediaPlayer().apply {
                     setAudioAttributes(AudioAttributes.Builder()
@@ -719,6 +748,8 @@ class SafeDriveGuide(
 
     /** 소리 끄기·자동 소리 보류 때 합성과 재생을 함께 멈추고 음악 감쇠를 푼다. */
     private fun stopSpeechOutput() {
+        // stop() 콜백이 늦게 도착해도 직전 합성 ID와 같지 않게 만들어 재생을 차단한다.
+        speechUtterance++
         runCatching { speechEngine?.stop() }
         releaseSpeechPlayer()
         speaking = false
@@ -793,7 +824,7 @@ class SafeDriveGuide(
                 result.code in listOf(429, 503, 504) -> 30_000L
                 else -> 10_000L
             }
-            matchedRoad = result.road?.let { points.last().timestamp to it }
+            matchedRoad = result.road?.let { RoadMatchAnchor(points.last(), it) }
             // 좌표·토큰·응답 원문 없이 결과 변화와 대기 이유만 기록한다.
             val outcome = when {
                 result.code == 401 -> "인증 오류(401), 요청 중지"

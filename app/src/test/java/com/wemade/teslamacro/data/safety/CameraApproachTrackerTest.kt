@@ -31,6 +31,14 @@ class CameraApproachTrackerTest {
         assertEquals("a", tracker.observe(alert("a", 430), 3_000)?.cameraKey)
     }
 
+    /** 같은 GPS 측정 시각이 재전달돼도 새 후보 두 번 확인으로 세지 않는다. */
+    @Test fun duplicateFixDoesNotConfirmCandidate() {
+        val tracker = CameraApproachTracker()
+        assertNull(tracker.observe(alert("a", 500), 1_000))
+        assertNull(tracker.observe(alert("a", 490), 1_000))
+        assertEquals("a", tracker.observe(alert("a", 470), 2_000)?.cameraKey)
+    }
+
     /** 오래 벗어난 뒤 같은 좌표를 다시 만나면 새 통과로 보고 다시 확인한다. */
     @Test fun staleCameraNeedsConfirmationAgain() {
         val tracker = CameraApproachTracker()

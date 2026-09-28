@@ -144,6 +144,8 @@ class SafeDriveGuide(
     private var lastMatchOutcome: String? = null
     private var tokenRejected = false
     private var matchedRoad: Pair<Long, MatchedRoad>? = null
+    // 불확실 응답은 "다른 도로"가 아니라 "모름"이라, 도로명 대조에는 마지막 확정 결과를 따로 5초간 유지한다.
+    private var namedRoad: Pair<Long, MatchedRoad>? = null
     private var roadNameWaitKey: String? = null
     private var roadNameWaitStartedMillis = 0L
     private var lastSoundMillis: Long? = null
@@ -303,13 +305,13 @@ class SafeDriveGuide(
         }
         updateRoadMatch(location, speed, nowNanos)
         // 결과가 GPS와 멀거나 오래되면 원래 측위로 되돌아간다. 도로 매칭만으로 단속 방향을 확정하지 않는다.
-        val snapped = matchedRoad?.takeIf { (timestamp, road) ->
-            location.time / 1_000 - timestamp in 0L..5L &&
+        val snapped = matchedRoad?.let { (timestamp, road) -> advancedRoad(road, location.time / 1_000 - timestamp, speed) }
+            ?.takeIf { road ->
                 ConditionEvaluator.distanceMeters(location.latitude, location.longitude, road.latitude, road.longitude) <= 30
-        }?.second
+            }
         // 도로명은 좌표보다 오래 유효하다. 3초 매칭 간격 동안 차가 이동한 거리만큼 허용해야
         // 50km/h에서도 매칭 사이 1~2초 공백 없이 옆 골목 카메라를 거를 수 있다.
-        val travelRoadName = matchedRoad?.takeIf { (timestamp, road) ->
+        val travelRoadName = namedRoad?.takeIf { (timestamp, road) ->
             val ageSeconds = location.time / 1_000 - timestamp
             ageSeconds in 0L..5L && ConditionEvaluator.distanceMeters(location.latitude, location.longitude,
                 road.latitude, road.longitude) <= 30 + speed / 3.6 * ageSeconds
@@ -392,6 +394,23 @@ class SafeDriveGuide(
             stopWarning()
             logAlertStatus(status, detail, nowMillis)
         }
+    }
+
+    /**
+     * 매칭 끝점은 요청 시점 위치라 그 뒤 달린 거리만큼 도로 진행방향으로 옮겨 쓴다.
+     * 옮기지 않으면 다음 매칭까지 1~2초간 카메라 거리가 줄지 않아 새 카메라 접근 확인이 계속 초기화된다(40~54km/h에서 실제 카메라 누락).
+     * 방향을 모르면 같은 초의 결과만 쓴다.
+     */
+    private fun advancedRoad(road: MatchedRoad, ageSeconds: Long, speedKph: Double): MatchedRoad? {
+        if (ageSeconds !in 0L..5L) return null
+        val bearing = road.bearingDegrees ?: return road.takeIf { ageSeconds == 0L }
+        val meters = speedKph / 3.6 * ageSeconds
+        val radians = Math.toRadians(bearing)
+        return road.copy(
+            latitude = road.latitude + meters * kotlin.math.cos(radians) / 111_195.0,
+            longitude = road.longitude + meters * kotlin.math.sin(radians) /
+                (111_195.0 * kotlin.math.cos(Math.toRadians(road.latitude))),
+        )
     }
 
     /**
@@ -880,6 +899,7 @@ class SafeDriveGuide(
                 else -> 10_000L
             }
             matchedRoad = result.road?.let { points.last().timestamp to it }
+            if (matchedRoad != null) namedRoad = matchedRoad
             // 좌표·토큰·응답 원문 없이 결과 변화와 대기 이유만 기록한다.
             val outcome = when {
                 result.code == 401 -> "인증 오류(401), 요청 중지"
@@ -903,6 +923,7 @@ class SafeDriveGuide(
         matchJob = null
         recentPoints.clear()
         matchedRoad = null
+        namedRoad = null
         // 후보 경계·권한 변화·설정 토글에도 전역 요청 간격과 서버 재시도 대기를 유지한다.
     }
 

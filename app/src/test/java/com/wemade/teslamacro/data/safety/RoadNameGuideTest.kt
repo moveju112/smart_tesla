@@ -36,6 +36,12 @@ class RoadNameGuideTest {
         assertTrue("옆 골목 카메라를 읽으면 안 된다: $spoken", spoken.isEmpty())
     }
 
+    /** 같은 도로 카메라는 매칭 좌표가 3초마다만 갱신돼도 접근 확인을 통과해 제때 안내한다. */
+    @Test fun sameRoadCameraIsAnnouncedWhileMatched() = runTest {
+        val spoken = drive(roadName = "중앙로", cameraRoadName = "중앙로")
+        assertTrue("같은 도로 카메라는 곧바로 안내: $spoken", spoken.firstOrNull()?.let { it.second <= 3 } == true)
+    }
+
     /** 매칭이 계속 불확실하면 6초 뒤 기존 판정대로 안내해 실제 카메라를 놓치지 않는다. */
     @Test fun unknownRoadNameFallsBackAfterWait() = runTest {
         val spoken = drive(roadName = null)
@@ -46,13 +52,13 @@ class RoadNameGuideTest {
     }
 
     // 1초마다 북쪽으로 14m씩 가며 매칭은 요청마다 같은 도로명을 돌려준다(null이면 불확실 응답).
-    private fun TestScope.drive(roadName: String?): List<Pair<String, Int>> {
+    private fun TestScope.drive(roadName: String?, cameraRoadName: String = "중앙로10번길"): List<Pair<String, Int>> {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var second = 0
         val spoken = mutableListOf<Pair<String, Int>>()
         val guide = SafeDriveGuide(Application(), voiceOutput = { spoken += it to second },
             wallClockMillis = { 1_900_000_000_000L + second * 1_000L }) { 100_000_000_000L + second * 1_000_000_000L }
-        field("index").set(guide, CameraIndex(listOf(OfflineCamera("side", 37.004, 127.0002, 30, roadName = "중앙로10번길"))))
+        field("index").set(guide, CameraIndex(listOf(OfflineCamera("side", 37.004, 127.0002, 30, roadName = cameraRoadName))))
         val key = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
         val identity = RoadDeviceIdentity(AtomicFile(File(temporary.root, "device.txt"))) { key }
         field("roadMatcher").set(guide, RoadMatcher(Application(), bootstrapToken = "test", identityOverride = identity) { path, _, _ ->

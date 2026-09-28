@@ -56,6 +56,10 @@ class CameraIndexTest {
         assertEquals(50, matched?.speedLimitKph)
         assertEquals("중앙로 (시청 앞)", matched?.cameraRoadName)
         assertFalse(CameraIndex(listOf(side)).hasFollowing(37.0, 127.0, 0.0, afterMeters = 100, matchedRoadName = "중앙로"))
+        // 지하차도로 지나가면 옆 지상 도로 카메라는 다른 도로다.
+        val surface = CameraIndex(listOf(OfflineCamera("surface", 37.002, 127.0001, 30, roadName = "광교중앙로")))
+        assertNull(surface.nearest(37.0, 127.0, 0.0, 50.0, 10.0, matchedRoadName = "법원지하차도"))
+        assertEquals(30, surface.nearest(37.0, 127.0, 0.0, 50.0, 10.0, matchedRoadName = "광교대교")?.speedLimitKph)
     }
 
     /** 30m 안 같은 제한속도 레코드는 한 카메라로 묶어 앞 기둥을 지난 직후 새 카메라로 다시 안내하지 않는다. */

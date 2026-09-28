@@ -52,7 +52,7 @@ def convert(row):
 # 도로명 대조에 쓰는 이름과 같은 표기 정규화(앱 comparableRoadName과 동일)를 적용한다.
 def comparable_road_name(name):
     name = re.sub(r"\s+", "", re.sub(r"\([^)]*\)", "", name or ""))
-    return name if len(name) >= 2 and name[-1] in "로길" else None
+    return name if len(name) >= 2 and name.endswith(("로", "길", "지하차도", "고가차도")) else None
 
 
 # 매칭 서버 지도에서 카메라 주변 실제 도로명으로 확인된 이름만 남긴다.

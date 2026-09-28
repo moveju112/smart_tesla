@@ -97,6 +97,7 @@ class SafeDriveReplayTest {
         if (cache != null) field("roadMatcher").set(guide, replayMatcher(cache))
         val lines = mutableListOf<String>()
         var lastCamera: String? = null
+        var lastRoadName: String? = null
         var warningSeconds = 0
         var warningStarts = 0
         var wasWarning = false
@@ -125,6 +126,11 @@ class SafeDriveReplayTest {
                 val alert = guide.state.value.alert
                 @Suppress("UNCHECKED_CAST")
                 val matched = (field("matchedRoad").get(guide) as Pair<Long, MatchedRoad>?)?.second
+                // 매칭 도로명 변화도 남겨 카메라가 도로명 때문에 빠졌는지 보고서에서 바로 보이게 한다.
+                if (cache != null && matched?.roadName != lastRoadName) {
+                    lines += "%4ds 매칭 도로 %s → %s".format(second, lastRoadName ?: "-", matched?.roadName ?: "-")
+                    lastRoadName = matched?.roadName
+                }
                 val camera = alert?.let { "${it.cameraId}(제한 ${it.speedLimitKph ?: "?"}, 카메라 도로 ${it.cameraRoadName ?: "-"})" }
                 if (camera != lastCamera) {
                     lines += "%4ds 후보 %s · 거리 %sm · 매칭 도로 %s · 위치 %.6f,%.6f".format(second,

@@ -24,12 +24,15 @@ data class OfflineCamera(
 )
 
 /**
- * 도로명 주소 체계(…로/…길) 이름만 비교 대상으로 삼는다.
+ * 도로명 주소 체계(…로/…길)와 지상 도로와 나란히 가는 지하차도·고가차도 이름만 비교 대상으로 삼는다.
  * 괄호 설명·공백은 표기 차이라 지우고, "중앙로"와 "중앙로10번길"처럼 이어지는 이름도 다른 도로로 본다.
+ * 교량·터널은 카메라가 그 안에 설치된 경우가 흔해 도로명과 이름이 달라도 거르지 않는다.
  */
 internal fun comparableRoadName(name: String?): String? =
     name?.replace(Regex("\\([^)]*\\)"), "")?.replace(Regex("\\s+"), "")
-        ?.takeIf { it.length >= 2 && (it.endsWith("로") || it.endsWith("길")) }
+        ?.takeIf { it.length >= 2 && ROAD_NAME_SUFFIXES.any(it::endsWith) }
+
+private val ROAD_NAME_SUFFIXES = listOf("로", "길", "지하차도", "고가차도")
 
 /** 주변 격자만 조회한다. 도로 매칭이 없으므로 결과는 확정 단속이 아니라 전방 후보다. */
 class CameraIndex(cameras: List<OfflineCamera>) {

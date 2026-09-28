@@ -42,6 +42,33 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     private val pointIds = points.mapValues { (_, records) ->
         records.map { it.id }.distinct().sorted().joinToString("|")
     }
+    /**
+     * 30m 안의 같은 제한속도·같은 단속 종류 레코드는 방향별·중복 등록된 한 카메라로 묶는다.
+     * 좌표가 조금만 달라도 새 카메라로 보면 앞 기둥을 지나자마자 "이어서" 안내·경고음이 다시 나기 때문이다.
+     * 입력 순서와 무관하게 좌표 정렬 순으로 대표를 정하고, 대표에서 30m 안만 묶어 사슬처럼 번지지 않게 한다.
+     */
+    private val pointKeys: Map<Pair<Double, Double>, String> = run {
+        val representatives = HashMap<Pair<Int, Int>, MutableList<Pair<Double, Double>>>()
+        val keys = HashMap<Pair<Double, Double>, String>()
+        for (point in points.keys.sortedWith(compareBy({ it.first }, { it.second }))) {
+            val records = points.getValue(point)
+            val row = floor(point.first / 0.001).toInt()
+            val column = floor(point.second / 0.001).toInt()
+            val representative = (row - 1..row + 1).asSequence().flatMap { x ->
+                (column - 1..column + 1).asSequence().flatMap { y -> representatives[x to y].orEmpty().asSequence() }
+            }.firstOrNull { other ->
+                ConditionEvaluator.distanceMeters(point.first, point.second, other.first, other.second) <= 30 &&
+                    sameCamera(records, points.getValue(other))
+            }
+            if (representative != null) {
+                keys[point] = keys.getValue(representative)
+            } else {
+                keys[point] = "${point.first},${point.second}"
+                representatives.getOrPut(row to column) { mutableListOf() }.add(point)
+            }
+        }
+        keys
+    }
     // 같은 좌표의 제한속도·기준일은 파일 순서로 낙관적인 값을 택하지 않는다.
     private val conflictingPoints = points
         .filterValues { records -> records.map { it.speedLimitKph }.distinct().size > 1 }.keys
@@ -97,7 +124,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
             val referenceDate = pointDates[point]
             SafetyAlert(if (it.section) SafetyKind.SECTION_CAMERA else SafetyKind.SPEED_CAMERA,
                 distance.roundToInt(), it.speedLimitKph.takeUnless { conflict }, limitConflict = conflict,
-                cameraKey = "${it.latitude},${it.longitude}", referenceDate = referenceDate,
+                cameraKey = pointKeys[point], referenceDate = referenceDate,
                 dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"), cameraId = pointIds[point],
                 cameraRoadName = it.roadName?.takeIf(String::isNotBlank))
         }
@@ -122,6 +149,11 @@ class CameraIndex(cameras: List<OfflineCamera>) {
         }
         return false
     }
+
+    /** 제한속도 집합과 구간단속 여부가 같아야 같은 카메라로 묶어 다른 안내 문구가 생략되지 않게 한다. */
+    private fun sameCamera(first: List<OfflineCamera>, second: List<OfflineCamera>): Boolean =
+        first.map { it.speedLimitKph }.toSet() == second.map { it.speedLimitKph }.toSet() &&
+            first.map { it.section }.toSet() == second.map { it.section }.toSet()
 
     /**
      * 매칭된 도로명과 카메라 자료의 도로명이 둘 다 비교 가능하고 다를 때만 다른 도로로 본다.

@@ -58,6 +58,22 @@ class CameraIndexTest {
         assertFalse(CameraIndex(listOf(side)).hasFollowing(37.0, 127.0, 0.0, afterMeters = 100, matchedRoadName = "중앙로"))
     }
 
+    /** 30m 안 같은 제한속도 레코드는 한 카메라로 묶어 앞 기둥을 지난 직후 새 카메라로 다시 안내하지 않는다. */
+    @Test fun nearbyDuplicateRecordsShareCameraKey() {
+        val pair = CameraIndex(listOf(OfflineCamera("north", 37.0032, 127.0, 30), OfflineCamera("south", 37.003, 127.0, 30)))
+        val first = pair.nearest(37.0, 127.0, 0.0, 50.0, 10.0)
+        val afterFirst = pair.nearest(37.00305, 127.0, 0.0, 50.0, 10.0)
+        assertEquals("south", first?.cameraId)
+        assertEquals("north", afterFirst?.cameraId)
+        assertEquals(first?.cameraKey, afterFirst?.cameraKey)
+        val differentLimit = CameraIndex(listOf(OfflineCamera("north", 37.0032, 127.0, 50), OfflineCamera("south", 37.003, 127.0, 30)))
+        assertNotEquals(differentLimit.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.cameraKey,
+            differentLimit.nearest(37.00305, 127.0, 0.0, 50.0, 10.0)?.cameraKey)
+        val apart = CameraIndex(listOf(OfflineCamera("north", 37.0034, 127.0, 30), OfflineCamera("south", 37.003, 127.0, 30)))
+        assertNotEquals(apart.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.cameraKey,
+            apart.nearest(37.00305, 127.0, 0.0, 50.0, 10.0)?.cameraKey)
+    }
+
     /** 한쪽 도로명이 없거나 노선번호 표기면 실제 카메라를 놓치지 않게 기존 회랑 판정을 유지한다. */
     @Test fun unknownRoadNameKeepsCorridorCandidate() {
         val unnamed = CameraIndex(listOf(OfflineCamera("unnamed", 37.003, 127.0, 30, roadName = "")))

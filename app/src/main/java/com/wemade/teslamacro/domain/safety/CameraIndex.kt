@@ -29,6 +29,10 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     }
     private val cells = validCameras.groupBy { cell(it.latitude, it.longitude) }
     private val points = validCameras.groupBy { it.latitude to it.longitude }
+    // 동일 좌표의 중복 원본도 모두 추적하되 입력 순서로 경보 상태가 달라지지 않게 한 번만 정렬한다.
+    private val pointIds = points.mapValues { (_, records) ->
+        records.map { it.id }.distinct().sorted().joinToString("|")
+    }
     // 같은 좌표의 제한속도·기준일은 파일 순서로 낙관적인 값을 택하지 않는다.
     private val conflictingPoints = points
         .filterValues { records -> records.map { it.speedLimitKph }.distinct().size > 1 }.keys
@@ -83,7 +87,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
             SafetyAlert(if (it.section) SafetyKind.SECTION_CAMERA else SafetyKind.SPEED_CAMERA,
                 distance.roundToInt(), it.speedLimitKph.takeUnless { conflict }, limitConflict = conflict,
                 cameraKey = "${it.latitude},${it.longitude}", referenceDate = referenceDate,
-                dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"))
+                dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"), cameraId = pointIds[point])
         }
     }
 

@@ -319,7 +319,10 @@ class SafeDriveGuide(
             lastAlertSeenMillis?.let { nowMillis - it in 0..15_000 } == true
         if (cameraChanged) {
             DiagLog.add("안전 안내 · 카메라 후보 진입 (제한 ${alert?.speedLimitKph?.let { "${it}km/h" } ?: "확인 필요"}, " +
-                "거리 ${alert?.distanceMeters ?: "-"}m${if (followsPrevious) ", 이어서" else ""})")
+                "거리 ${alert?.distanceMeters ?: "-"}m${if (followsPrevious) ", 이어서" else ""}) · " +
+                "카메라 ID=${alert?.cameraId ?: "-"} · 카메라 좌표=${alert?.cameraKey ?: "-"} · " +
+                "주행 좌표=${location.latitude},${location.longitude} · 방향=${location.bearing}° · " +
+                "매칭 좌표=${snapped?.let { "${it.latitude},${it.longitude}" } ?: "미적용"}")
             lastAlertCameraKey = alert?.cameraKey
         }
         if (alert != null) lastAlertSeenMillis = nowMillis
@@ -342,7 +345,8 @@ class SafeDriveGuide(
         }
         val detail = "GPS ${speed.toInt()}km/h, 오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m, " +
             "후보 ${limit?.let { "제한 ${it}km/h" } ?: "없음"}, 거리 ${alert?.distanceMeters ?: "-"}m, " +
-            "초과 설정 +${toleranceKph}km/h, 소리 ${if (sound) "켬" else "끔"}"
+            "초과 설정 +${toleranceKph}km/h, 소리 ${if (sound) "켬" else "끔"}, " +
+            "카메라 ID=${alert?.cameraId ?: "-"}, 주행 좌표=${location.latitude},${location.longitude}"
         val status = when {
             speed < 5 -> "GPS 속도 5km/h 미만"
             !location.hasBearing() -> "GPS 방향 없음"

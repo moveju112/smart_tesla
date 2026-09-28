@@ -21,6 +21,8 @@ data class SafetyAlert(
     val referenceDate: String? = null,
     /** 오래되거나 확인 불가능한 자료를 UI에 분명히 표시한다. */
     val dateWarning: String? = null,
+    /** 개발 주행 로그에서 공공데이터 원본 레코드를 역추적하는 식별자. */
+    val cameraId: String? = null,
 )
 
 /** 미래·누락·오래된 기준일은 최신 자료로 오인하지 않게 표시한다. */

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """공공데이터포털의 공개 다운로드를 앱 내 오프라인 카메라 목록으로 변환한다."""
+import argparse
 import datetime
 import json
 import math
 import re
-import sys
 from pathlib import Path
 import urllib.parse
 import urllib.request
@@ -71,8 +71,8 @@ def keep_verified_road_names(cameras, probe_path):
     print(f"지도 확인 안 된 도로명 {cleared}건 비움", flush=True)
 
 
-# 전체 페이지 수가 맞을 때만 교체하여 부분 다운로드를 전국 데이터로 배포하지 않는다.
-def main():
+# 공식 다운로드를 페이지 단위로 읽고 전체 건수가 맞을 때만 돌려준다.
+def download():
     header = read_json("/download/columList.json", {"pk": "15028200", "ext": "csv"})
     total = int(header["totalCount"])
     rows = []
@@ -89,16 +89,46 @@ def main():
         print(f"공공데이터 읽기 {len(rows)}/{total}", flush=True)
     if len(rows) != total:
         raise RuntimeError("전체 건수가 달라 기존 파일을 유지합니다")
+    return rows
+
+
+# 방향 판정(tools/camera_directions.py)이 없는 카메라는 방향을 넣지 않아 앱이 방향 무관 판정을 유지한다.
+def apply_directions(cameras, directions_path):
+    directions = json.load(open(directions_path, encoding="utf-8"))
+    applied = 0
+    for camera in cameras:
+        value = directions.get(camera["id"])
+        # 반올림으로 360이 나올 수 있어 범위 검사 전에 0~359로 접는다.
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            camera["direction"] = int(round(value)) % 360
+            applied += 1
+    print(f"단속 방향 {applied}건 적용", flush=True)
+
+
+# 전체 페이지 수가 맞을 때만 교체하여 부분 다운로드를 전국 데이터로 배포하지 않는다.
+def main():
+    parser = argparse.ArgumentParser(description="공공데이터 → 앱 번들")
+    parser.add_argument("--raw", help="이미 받은 원본 json을 재사용(없으면 공식 다운로드)")
+    parser.add_argument("--save-raw", help="받은 원본 json 저장 경로(방향 판정 입력)")
+    parser.add_argument("--road-names", help="tools/probe_camera_road_names.py 결과 jsonl")
+    parser.add_argument("--directions", help="tools/camera_directions.py 결과 json")
+    arguments = parser.parse_args()
+    rows = json.load(open(arguments.raw, encoding="utf-8")) if arguments.raw else download()
+    if arguments.save_raw:
+        Path(arguments.save_raw).write_text(json.dumps(rows, ensure_ascii=False))
+    total = len(rows)
     cameras = [camera for row in rows if (camera := convert(row)) is not None]
     if not cameras:
         raise RuntimeError("유효한 과속 카메라가 없습니다")
-    # 도로명 대조는 매칭 서버 지도로 확인한 결과(tools/probe_camera_road_names.py)가 있어야 안전하므로 없으면 모두 비운다.
-    if len(sys.argv) > 1:
-        keep_verified_road_names(cameras, sys.argv[1])
+    # 도로명 대조는 매칭 서버 지도로 확인한 결과가 있어야 안전하므로 없으면 모두 비운다.
+    if arguments.road_names:
+        keep_verified_road_names(cameras, arguments.road_names)
     else:
         for camera in cameras:
             camera["roadName"] = ""
         print("지도 이름 목록 없음 → 도로명 대조 비활성", flush=True)
+    if arguments.directions:
+        apply_directions(cameras, arguments.directions)
     data = {
         "schemaVersion": 1,
         "source": SOURCE_URL,

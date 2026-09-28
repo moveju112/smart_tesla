@@ -21,6 +21,8 @@ data class OfflineCamera(
     val section: Boolean = false,
     val referenceDate: String? = null,
     val roadName: String? = null,
+    /** 설치 장소 (A→B) 글자로 판정한 단속 진행방위(도, 북=0). 모르면 null이라 방향 무관하게 안내한다. */
+    val direction: Int? = null,
 )
 
 /**
@@ -117,6 +119,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                 if (meters < 10 || meters > maxDistance || meters >= distance) continue
                 if (!onTravelCorridor(latitude, longitude, bearing, camera, meters)) continue
                 if (onOtherRoad(camera, travelRoad)) continue
+                if (oppositeDirection(camera, bearing)) continue
                 nearest = camera
                 distance = meters
             }
@@ -129,7 +132,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                 distance.roundToInt(), it.speedLimitKph.takeUnless { conflict }, limitConflict = conflict,
                 cameraKey = pointKeys[point], referenceDate = referenceDate,
                 dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"), cameraId = pointIds[point],
-                cameraRoadName = it.roadName?.takeIf(String::isNotBlank))
+                cameraRoadName = it.roadName?.takeIf(String::isNotBlank), cameraDirection = it.direction)
         }
     }
 
@@ -147,16 +150,32 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                     val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
                     // 같은 지점의 중복 레코드(30m 이내)는 다음 카메라로 치지 않는다.
                     meters > afterMeters + 30 && meters <= afterMeters + withinMeters &&
-                        onTravelCorridor(latitude, longitude, bearing, camera, meters) && !onOtherRoad(camera, travelRoad)
+                        onTravelCorridor(latitude, longitude, bearing, camera, meters) && !onOtherRoad(camera, travelRoad) &&
+                        !oppositeDirection(camera, bearing)
                 }) return true
         }
         return false
     }
 
-    /** 제한속도 집합과 구간단속 여부가 같아야 같은 카메라로 묶어 다른 안내 문구가 생략되지 않게 한다. */
+    /** 제한속도 집합·구간단속 여부·단속 방향이 같아야 같은 카메라로 묶어 반대 방향 카메라 안내가 생략되지 않게 한다. */
     private fun sameCamera(first: List<OfflineCamera>, second: List<OfflineCamera>): Boolean =
         first.map { it.speedLimitKph }.toSet() == second.map { it.speedLimitKph }.toSet() &&
-            first.map { it.section }.toSet() == second.map { it.section }.toSet()
+            first.map { it.section }.toSet() == second.map { it.section }.toSet() &&
+            first.all { one -> second.all { other -> sameDirection(one.direction, other.direction) } }
+
+    /** 방향을 둘 다 모르거나 45도 안이면 같은 단속 방향으로 본다. 한쪽만 알면 다른 카메라로 둔다. */
+    private fun sameDirection(first: Int?, second: Int?): Boolean =
+        if (first == null || second == null) first == second
+        else abs(((first - second + 540) % 360) - 180) <= 45
+
+    /**
+     * 단속 방향을 아는 카메라는 진행방향이 120도 넘게 다를 때만 반대 방향으로 거른다.
+     * 방향 판정 오차(쌍 검증에서 최대 약 60도)가 있어도 실제 단속 방향 차량은 거르지 않게 넉넉히 둔다.
+     */
+    private fun oppositeDirection(camera: OfflineCamera, bearing: Double): Boolean {
+        val direction = camera.direction ?: return false
+        return abs(((bearing - direction + 540) % 360) - 180) > 120
+    }
 
     /**
      * 매칭된 도로명과 카메라 자료의 도로명이 둘 다 비교 가능하고 다를 때만 다른 도로로 본다.

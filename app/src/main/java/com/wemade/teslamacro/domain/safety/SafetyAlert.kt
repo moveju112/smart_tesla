@@ -25,6 +25,8 @@ data class SafetyAlert(
     val cameraId: String? = null,
     /** 오탐 로그에서 매칭 도로명과 비교할 카메라 자료의 도로명. */
     val cameraRoadName: String? = null,
+    /** 오탐 로그에서 진행방향과 비교할 카메라 단속 방위(도). */
+    val cameraDirection: Int? = null,
 )
 
 /** 미래·누락·오래된 기준일은 최신 자료로 오인하지 않게 표시한다. */

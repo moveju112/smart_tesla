@@ -341,7 +341,8 @@ class SafeDriveGuide(
                 "카메라 ID=${alert?.cameraId ?: "-"} · 카메라 좌표=${alert?.cameraKey ?: "-"} · " +
                 "주행 좌표=${location.latitude},${location.longitude} · 방향=${location.bearing}° · " +
                 "매칭 좌표=${snapped?.let { "${it.latitude},${it.longitude}" } ?: "미적용"} · " +
-                "카메라 도로=${alert?.cameraRoadName ?: "-"} · 매칭 도로=${travelRoadName ?: "-"}")
+                "카메라 도로=${alert?.cameraRoadName ?: "-"} · 매칭 도로=${travelRoadName ?: "-"} · " +
+                "단속 방향=${alert?.cameraDirection?.let { "$it°" } ?: "-"}")
             lastAlertCameraKey = alert?.cameraKey
         }
         if (alert != null) lastAlertSeenMillis = nowMillis

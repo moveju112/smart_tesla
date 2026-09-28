@@ -78,6 +78,32 @@ class CameraIndexTest {
             apart.nearest(37.00305, 127.0, 0.0, 50.0, 10.0)?.cameraKey)
     }
 
+    /** 단속 방향을 아는 카메라는 120도 넘게 반대로 달릴 때만 거르고, 방향 오차 범위 안이면 안내한다. */
+    @Test fun enforcementDirectionFiltersOppositeTraffic() {
+        val northbound = CameraIndex(listOf(OfflineCamera("north", 37.003, 127.0, 30, direction = 8)))
+        assertEquals(30, northbound.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.speedLimitKph)
+        assertEquals(8, northbound.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.cameraDirection)
+        val southbound = CameraIndex(listOf(OfflineCamera("south", 37.003, 127.0, 30, direction = 188)))
+        assertNull(southbound.nearest(37.0, 127.0, 0.0, 50.0, 10.0))
+        assertFalse(CameraIndex(listOf(OfflineCamera("a", 37.003, 127.0, 50), OfflineCamera("b", 37.006, 127.0, 50, direction = 180)))
+            .hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
+        // 판정 오차로 100도 어긋나도 실제 방향 차량은 안내한다.
+        assertEquals(30, CameraIndex(listOf(OfflineCamera("rough", 37.003, 127.0, 30, direction = 100)))
+            .nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.speedLimitKph)
+        assertEquals(30, CameraIndex(listOf(OfflineCamera("wrap", 37.003, 127.0, 30, direction = 350)))
+            .nearest(37.0, 127.0, 5.0, 50.0, 10.0)?.speedLimitKph)
+    }
+
+    /** 30m 안 같은 제한속도라도 단속 방향이 45도 안일 때만 묶고, 한쪽만 방향을 알면 다른 카메라로 둔다. */
+    @Test fun oppositeDirectionRecordsKeepSeparateKeys() {
+        val pair = CameraIndex(listOf(OfflineCamera("north", 37.0032, 127.0, 30, direction = 0),
+            OfflineCamera("south", 37.003, 127.0, 30, direction = 10)))
+        assertEquals(pair.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.cameraKey, pair.nearest(37.00305, 127.0, 0.0, 50.0, 10.0)?.cameraKey)
+        val opposite = CameraIndex(listOf(OfflineCamera("north", 37.0032, 127.0, 30), OfflineCamera("south", 37.003, 127.0, 30, direction = 0)))
+        assertNotEquals(opposite.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.cameraKey,
+            opposite.nearest(37.00305, 127.0, 0.0, 50.0, 10.0)?.cameraKey)
+    }
+
     /** 한쪽 도로명이 없거나 노선번호 표기면 실제 카메라를 놓치지 않게 기존 회랑 판정을 유지한다. */
     @Test fun unknownRoadNameKeepsCorridorCandidate() {
         val unnamed = CameraIndex(listOf(OfflineCamera("unnamed", 37.003, 127.0, 30, roadName = "")))

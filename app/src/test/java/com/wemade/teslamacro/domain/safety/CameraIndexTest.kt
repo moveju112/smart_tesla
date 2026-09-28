@@ -46,6 +46,30 @@ class CameraIndexTest {
         assertFalse(far.hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
     }
 
+    /** 50 간선도로 주행 중 회랑 안에 든 옆 골목 30 카메라는 매칭 도로명이 다르면 거르고, 같은 도로 카메라는 남긴다. */
+    @Test fun matchedRoadNameRejectsSideStreetCamera() {
+        val side = OfflineCamera("side", 37.002, 127.0001, 30, roadName = "중앙로10번길")
+        val inline = OfflineCamera("inline", 37.004, 127.0, 50, roadName = "중앙로 (시청 앞)")
+        val both = CameraIndex(listOf(side, inline))
+        assertEquals(30, both.nearest(37.0, 127.0, 0.0, 50.0, 10.0)?.speedLimitKph)
+        val matched = both.nearest(37.0, 127.0, 0.0, 50.0, 10.0, matchedRoadName = "중앙로")
+        assertEquals(50, matched?.speedLimitKph)
+        assertEquals("중앙로 (시청 앞)", matched?.cameraRoadName)
+        assertFalse(CameraIndex(listOf(side)).hasFollowing(37.0, 127.0, 0.0, afterMeters = 100, matchedRoadName = "중앙로"))
+    }
+
+    /** 한쪽 도로명이 없거나 노선번호 표기면 실제 카메라를 놓치지 않게 기존 회랑 판정을 유지한다. */
+    @Test fun unknownRoadNameKeepsCorridorCandidate() {
+        val unnamed = CameraIndex(listOf(OfflineCamera("unnamed", 37.003, 127.0, 30, roadName = "")))
+        assertEquals(30, unnamed.nearest(37.0, 127.0, 0.0, 50.0, 10.0, matchedRoadName = "중앙로")?.speedLimitKph)
+        val route = CameraIndex(listOf(OfflineCamera("route", 37.003, 127.0, 60, roadName = "4번 국도")))
+        assertEquals(60, route.nearest(37.0, 127.0, 0.0, 50.0, 10.0, matchedRoadName = "중앙로")?.speedLimitKph)
+        val named = CameraIndex(listOf(OfflineCamera("named", 37.003, 127.0, 30, roadName = "옆길")))
+        for (roadName in listOf(null, "", "Main Street")) {
+            assertEquals(30, named.nearest(37.0, 127.0, 0.0, 50.0, 10.0, matchedRoadName = roadName)?.speedLimitKph)
+        }
+    }
+
     /** 연속 안내도 주 경보와 같은 회랑을 써서 보정 좌표가 바뀌어도 옆 도로를 오인하지 않는다. */
     @Test fun followingCameraIgnoresParallelRoad() {
         val side = OfflineCamera("parallel", 37.005, 127.001, 30)

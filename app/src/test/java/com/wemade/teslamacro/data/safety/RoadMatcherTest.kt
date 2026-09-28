@@ -15,6 +15,17 @@ class RoadMatcherTest {
         assertTrue((matched?.bearingDegrees ?: -1.0) in 1.3..1.8)
     }
 
+    /** 서버 도로명은 보조 근거라 형식이 틀리면 이름만 버리고 매칭 좌표는 유지한다. */
+    @Test fun matchedRoadName() {
+        val body = """{"status":"matched","roadName":" 경수대로 ","matchings":[{"confidence":0.9,"geometry":{"coordinates":[[127.010008,37.500102],[127.010015,37.500306]],"type":"LineString"}}],"unmatchedCount":0}"""
+        assertEquals("경수대로", parseRoadMatch(body)?.roadName)
+        for (invalid in listOf("\"\"", "123", "\"${"로".repeat(65)}\"")) {
+            val road = parseRoadMatch(body.replace("\" 경수대로 \"", invalid))
+            assertEquals(37.500306, road?.latitude ?: 0.0, 0.0)
+            assertNull(road?.roadName)
+        }
+    }
+
     /** 발급 응답의 타입·토큰 접두어·만료 한도가 틀리면 GPS를 보내지 않는다. */
     @Test fun shortLivedAccessOnly() {
         val valid = """{"accessToken":"rm1.abc.def","expiresInSeconds":1800}"""

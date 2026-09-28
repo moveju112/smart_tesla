@@ -23,6 +23,8 @@ data class SafetyAlert(
     val dateWarning: String? = null,
     /** 개발 주행 로그에서 공공데이터 원본 레코드를 역추적하는 식별자. */
     val cameraId: String? = null,
+    /** 오탐 로그에서 매칭 도로명과 비교할 카메라 자료의 도로명. */
+    val cameraRoadName: String? = null,
 )
 
 /** 미래·누락·오래된 기준일은 최신 자료로 오인하지 않게 표시한다. */

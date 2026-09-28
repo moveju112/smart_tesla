@@ -20,7 +20,16 @@ data class OfflineCamera(
     val speedLimitKph: Int,
     val section: Boolean = false,
     val referenceDate: String? = null,
+    val roadName: String? = null,
 )
+
+/**
+ * 도로명 주소 체계(…로/…길) 이름만 비교 대상으로 삼는다.
+ * 괄호 설명·공백은 표기 차이라 지우고, "중앙로"와 "중앙로10번길"처럼 이어지는 이름도 다른 도로로 본다.
+ */
+internal fun comparableRoadName(name: String?): String? =
+    name?.replace(Regex("\\([^)]*\\)"), "")?.replace(Regex("\\s+"), "")
+        ?.takeIf { it.length >= 2 && (it.endsWith("로") || it.endsWith("길")) }
 
 /** 주변 격자만 조회한다. 도로 매칭이 없으므로 결과는 확정 단속이 아니라 전방 후보다. */
 class CameraIndex(cameras: List<OfflineCamera>) {
@@ -64,18 +73,20 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     /** 매칭 성공·실패가 번갈아도 넓은 GPS 회랑으로 옆 도로 후보가 되살아나지 않게 같은 진행 회랑을 쓴다. */
     fun nearest(latitude: Double, longitude: Double, bearing: Double, speedKph: Double,
                 accuracyMeters: Double, today: LocalDate = LocalDate.now(),
-                maxDistanceMeters: Int = 700): SafetyAlert? {
+                maxDistanceMeters: Int = 700, matchedRoadName: String? = null): SafetyAlert? {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite() ||
             !speedKph.isFinite() || speedKph < 5 || accuracyMeters !in 0.0..30.0) return null
         val (row, column) = cell(latitude, longitude)
         var nearest: OfflineCamera? = null
         val maxDistance = maxDistanceMeters.coerceIn(10, 700)
         var distance = maxDistance + 1.0
+        val travelRoad = comparableRoadName(matchedRoadName)
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             for (camera in cells[x to y].orEmpty()) {
                 val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
                 if (meters < 10 || meters > maxDistance || meters >= distance) continue
                 if (!onTravelCorridor(latitude, longitude, bearing, camera, meters)) continue
+                if (onOtherRoad(camera, travelRoad)) continue
                 nearest = camera
                 distance = meters
             }
@@ -87,7 +98,8 @@ class CameraIndex(cameras: List<OfflineCamera>) {
             SafetyAlert(if (it.section) SafetyKind.SECTION_CAMERA else SafetyKind.SPEED_CAMERA,
                 distance.roundToInt(), it.speedLimitKph.takeUnless { conflict }, limitConflict = conflict,
                 cameraKey = "${it.latitude},${it.longitude}", referenceDate = referenceDate,
-                dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"), cameraId = pointIds[point])
+                dateWarning = sourceDateWarning(referenceDate, today, 12, "자료 기준일"), cameraId = pointIds[point],
+                cameraRoadName = it.roadName?.takeIf(String::isNotBlank))
         }
     }
 
@@ -96,18 +108,28 @@ class CameraIndex(cameras: List<OfflineCamera>) {
      * 매칭이 끊겨도 판정을 넓히지 않으며, 첫 안내에서 연속 구간을 알려 속도 재상승을 막는다.
      */
     fun hasFollowing(latitude: Double, longitude: Double, bearing: Double, afterMeters: Int,
-                     withinMeters: Int = 1_000): Boolean {
+                     withinMeters: Int = 1_000, matchedRoadName: String? = null): Boolean {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite()) return false
         val (row, column) = cell(latitude, longitude)
+        val travelRoad = comparableRoadName(matchedRoadName)
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             if (cells[x to y].orEmpty().any { camera ->
                     val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
                     // 같은 지점의 중복 레코드(30m 이내)는 다음 카메라로 치지 않는다.
                     meters > afterMeters + 30 && meters <= afterMeters + withinMeters &&
-                        onTravelCorridor(latitude, longitude, bearing, camera, meters)
+                        onTravelCorridor(latitude, longitude, bearing, camera, meters) && !onOtherRoad(camera, travelRoad)
                 }) return true
         }
         return false
+    }
+
+    /**
+     * 매칭된 도로명과 카메라 자료의 도로명이 둘 다 비교 가능하고 다를 때만 다른 도로로 본다.
+     * 한쪽이라도 없거나 노선번호 표기이면 실제 카메라를 놓치지 않게 기존 회랑 판정에 맡긴다.
+     */
+    private fun onOtherRoad(camera: OfflineCamera, travelRoad: String?): Boolean {
+        val cameraRoad = comparableRoadName(camera.roadName) ?: return false
+        return travelRoad != null && cameraRoad != travelRoad
     }
 
     /** 짧은 직선 오차는 허용하되 먼 평행도로를 배제한다. 큰 곡선은 접근할 때까지 안내가 늦어진다. */

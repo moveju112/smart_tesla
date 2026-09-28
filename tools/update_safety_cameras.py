@@ -3,6 +3,8 @@
 import datetime
 import json
 import math
+import re
+import sys
 from pathlib import Path
 import urllib.parse
 import urllib.request
@@ -40,9 +42,23 @@ def convert(row):
             "speedLimitKph": limit,
             "section": str(row.get("REGLT_SCTN_LC_SE", "")).strip() in ("1", "2", "01", "02"),
             "referenceDate": str(row.get("REFERENCE_DATE", "")),
+            # 도로 매칭 도로명과 대조해 옆 도로·교차 골목 카메라를 거르는 근거로 남긴다.
+            "roadName": str(row.get("ROAD_ROUTE_NM") or "").strip(),
         }
     except (ValueError, TypeError, KeyError, OverflowError):
         return None
+
+
+# 매칭 서버 지도(OSRM .names)에 없는 도로명은 비교하면 실제 카메라를 거를 수 있어 비운다.
+def keep_known_road_names(cameras, names_path):
+    known = Path(names_path).read_bytes().decode("utf-8", "ignore")
+    cleared = 0
+    for camera in cameras:
+        name = re.sub(r"\s+", "", re.sub(r"\([^)]*\)", "", camera["roadName"]))
+        if camera["roadName"] and name not in known:
+            camera["roadName"] = ""
+            cleared += 1
+    print(f"지도에 없는 도로명 {cleared}건 비움", flush=True)
 
 
 # 전체 페이지 수가 맞을 때만 교체하여 부분 다운로드를 전국 데이터로 배포하지 않는다.
@@ -66,6 +82,13 @@ def main():
     cameras = [camera for row in rows if (camera := convert(row)) is not None]
     if not cameras:
         raise RuntimeError("유효한 과속 카메라가 없습니다")
+    # 도로명 대조는 매칭 서버와 같은 지도 이름 목록이 있어야 안전하므로 없으면 도로명을 모두 비운다.
+    if len(sys.argv) > 1:
+        keep_known_road_names(cameras, sys.argv[1])
+    else:
+        for camera in cameras:
+            camera["roadName"] = ""
+        print("지도 이름 목록 없음 → 도로명 대조 비활성", flush=True)
     data = {
         "schemaVersion": 1,
         "source": SOURCE_URL,

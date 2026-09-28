@@ -31,6 +31,8 @@ internal data class MatchedRoad(
     val latitude: Double,
     val longitude: Double,
     val bearingDegrees: Double? = null,
+    /** 서버가 준 마지막 측위의 도로명. 없거나 이전 서버면 null이라 도로명 대조를 건너뛴다. */
+    val roadName: String? = null,
 )
 internal data class RoadMatchResponse(val road: MatchedRoad? = null, val code: Int = 0)
 internal data class RoadHttpResponse(val code: Int = 0, val body: String = "")
@@ -206,7 +208,9 @@ internal fun parseRoadMatch(body: String): MatchedRoad? = runCatching {
     val longitude = (last[0] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
     val latitude = (last[1] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
     if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return@runCatching null
-    matchedRoadFromGeometry(coordinates, latitude, longitude)
+    // 도로명은 보조 근거라 형식이 틀려도 매칭 좌표는 그대로 쓰고 이름만 버린다.
+    val roadName = root["roadName"].asString()?.trim()?.takeIf { it.length in 1..64 }
+    matchedRoadFromGeometry(coordinates, latitude, longitude)?.copy(roadName = roadName)
 }.getOrNull()
 
 /** 경로의 모든 꼭짓점을 검증하고 마지막 5m 이상 구간에서 진행방향을 구한다. 손상된 경로는 쓰지 않는다. */

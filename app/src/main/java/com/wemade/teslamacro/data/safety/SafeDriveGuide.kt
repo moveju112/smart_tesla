@@ -305,7 +305,7 @@ class SafeDriveGuide(
             index?.nearest(
                 snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
                 bearing, speed, location.accuracy.toDouble(),
-                maxDistanceMeters = alertDistanceMeters,
+                maxDistanceMeters = alertDistanceMeters, matchedRoadName = snapped?.roadName,
             )
         }
         // 실제 측정 시각으로 접근을 확인해 같은 GPS 측정의 재전달을 새 접근 근거로 세지 않는다.
@@ -322,7 +322,8 @@ class SafeDriveGuide(
                 "거리 ${alert?.distanceMeters ?: "-"}m${if (followsPrevious) ", 이어서" else ""}) · " +
                 "카메라 ID=${alert?.cameraId ?: "-"} · 카메라 좌표=${alert?.cameraKey ?: "-"} · " +
                 "주행 좌표=${location.latitude},${location.longitude} · 방향=${location.bearing}° · " +
-                "매칭 좌표=${snapped?.let { "${it.latitude},${it.longitude}" } ?: "미적용"}")
+                "매칭 좌표=${snapped?.let { "${it.latitude},${it.longitude}" } ?: "미적용"} · " +
+                "카메라 도로=${alert?.cameraRoadName ?: "-"} · 매칭 도로=${snapped?.roadName ?: "-"}")
             lastAlertCameraKey = alert?.cameraKey
         }
         if (alert != null) lastAlertSeenMillis = nowMillis
@@ -338,7 +339,8 @@ class SafeDriveGuide(
             }
             announceCamera(alert, nowMillis, overSpeed, followsPrevious) {
                 index?.hasFollowing(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
-                    guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0) == true
+                    guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0,
+                    matchedRoadName = snapped?.roadName) == true
             }
         } else {
             if (pendingSpeech?.startVoice != true) pendingSpeech = null

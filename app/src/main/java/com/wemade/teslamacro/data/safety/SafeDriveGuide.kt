@@ -19,6 +19,7 @@ import com.wemade.teslamacro.domain.safety.CameraIndex
 import com.wemade.teslamacro.domain.macro.ConditionEvaluator
 import com.wemade.teslamacro.domain.safety.SafetyKind
 import com.wemade.teslamacro.domain.safety.SafetyState
+import com.wemade.teslamacro.domain.safety.comparableRoadName
 import com.wemade.teslamacro.domain.safety.sourceDateWarning
 import com.wemade.teslable.DiagLog
 import kotlinx.coroutines.*
@@ -46,6 +47,8 @@ private const val WARNING_REFRESH_NANOS = 2_000_000_000L
 
 /** 카메라 1km 안에서만 쓰는 도로 매칭은 곡선·램프 진행방향을 따라가도록 3초 간격으로 갱신한다. */
 private const val ROAD_MATCH_INTERVAL_MILLIS = 3_000L
+/** 매칭 2회(3초 간격)를 받을 시간. 80km/h에서도 500m 안내가 370m 전에는 나온다. */
+private const val ROAD_NAME_WAIT_MILLIS = 6_000L
 
 /** 같은 카메라를 한참 뒤 다시 지나면 이전 음성 단계를 새 통과에 재사용하지 않는다. */
 private const val CAMERA_REANNOUNCE_MILLIS = 90_000L
@@ -105,6 +108,9 @@ internal fun gpsSilenceSecondsToLog(nowNanos: Long, readyNanos: Long, lastLocati
 class SafeDriveGuide(
     private val application: Application,
     private val voiceOutput: ((String) -> Unit)? = null,
+    // 주행 재현 테스트가 GPS 시각과 같은 가상 벽시계로 매칭 요청 조건을 통과하게 한다.
+    // 기존 호출의 후행 람다가 elapsedRealtimeNanos에 붙도록 그보다 앞에 둔다.
+    private val wallClockMillis: () -> Long = System::currentTimeMillis,
     private val elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
 ) {
     // 준비 중인 문장에 카메라와 시작 인사를 구별해 엔진 초기화 뒤 지난 후보나 취소된 인사를 읽지 않는다.
@@ -138,6 +144,8 @@ class SafeDriveGuide(
     private var lastMatchOutcome: String? = null
     private var tokenRejected = false
     private var matchedRoad: Pair<Long, MatchedRoad>? = null
+    private var roadNameWaitKey: String? = null
+    private var roadNameWaitStartedMillis = 0L
     private var lastSoundMillis: Long? = null
     private var lastSoundIntervalMillis: Long? = null
     // GPS는 1초마다 와서 위치 콜백만으로는 1초보다 좁은 간격을 낼 수 없어 반복은 별도 타이머가 맡는다.
@@ -299,17 +307,25 @@ class SafeDriveGuide(
             location.time / 1_000 - timestamp in 0L..5L &&
                 ConditionEvaluator.distanceMeters(location.latitude, location.longitude, road.latitude, road.longitude) <= 30
         }?.second
+        // 도로명은 좌표보다 오래 유효하다. 3초 매칭 간격 동안 차가 이동한 거리만큼 허용해야
+        // 50km/h에서도 매칭 사이 1~2초 공백 없이 옆 골목 카메라를 거를 수 있다.
+        val travelRoadName = matchedRoad?.takeIf { (timestamp, road) ->
+            val ageSeconds = location.time / 1_000 - timestamp
+            ageSeconds in 0L..5L && ConditionEvaluator.distanceMeters(location.latitude, location.longitude,
+                road.latitude, road.longitude) <= 30 + speed / 3.6 * ageSeconds
+        }?.second?.roadName
         val guidanceBearing = snapped?.bearingDegrees ?: location.bearing.takeIf { location.hasBearing() }?.toDouble()
         val nowMillis = nowNanos / 1_000_000
         val rawAlert = guidanceBearing?.let { bearing ->
             index?.nearest(
                 snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
                 bearing, speed, location.accuracy.toDouble(),
-                maxDistanceMeters = alertDistanceMeters, matchedRoadName = snapped?.roadName,
+                maxDistanceMeters = alertDistanceMeters, matchedRoadName = travelRoadName,
             )
         }
+        val candidate = rawAlert?.takeUnless { waitingForRoadName(it, travelRoadName, nowMillis) }
         // 실제 측정 시각으로 접근을 확인해 같은 GPS 측정의 재전달을 새 접근 근거로 세지 않는다.
-        val alert = cameraTracker.observe(rawAlert, location.elapsedRealtimeNanos / 1_000_000)
+        val alert = cameraTracker.observe(candidate, location.elapsedRealtimeNanos / 1_000_000)
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         // 연속 카메라 중 어느 것을 인식했는지 로그로 확인하도록 새 후보를 만날 때만 남긴다.
         // 후보가 잠깐 사라졌다 같은 카메라로 돌아오는 GPS 흔들림은 새 후보로 치지 않는다.
@@ -323,7 +339,7 @@ class SafeDriveGuide(
                 "카메라 ID=${alert?.cameraId ?: "-"} · 카메라 좌표=${alert?.cameraKey ?: "-"} · " +
                 "주행 좌표=${location.latitude},${location.longitude} · 방향=${location.bearing}° · " +
                 "매칭 좌표=${snapped?.let { "${it.latitude},${it.longitude}" } ?: "미적용"} · " +
-                "카메라 도로=${alert?.cameraRoadName ?: "-"} · 매칭 도로=${snapped?.roadName ?: "-"}")
+                "카메라 도로=${alert?.cameraRoadName ?: "-"} · 매칭 도로=${travelRoadName ?: "-"}")
             lastAlertCameraKey = alert?.cameraKey
         }
         if (alert != null) lastAlertSeenMillis = nowMillis
@@ -340,7 +356,7 @@ class SafeDriveGuide(
             announceCamera(alert, nowMillis, overSpeed, followsPrevious) {
                 index?.hasFollowing(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
                     guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0,
-                    matchedRoadName = snapped?.roadName) == true
+                    matchedRoadName = travelRoadName) == true
             }
         } else {
             if (pendingSpeech?.startVoice != true) pendingSpeech = null
@@ -376,6 +392,26 @@ class SafeDriveGuide(
             stopWarning()
             logAlertStatus(status, detail, nowMillis)
         }
+    }
+
+    /**
+     * 지도 확인된 도로명이 있는 카메라는 매칭 도로명을 받을 때까지 첫 안내를 최대 6초 미룬다.
+     * 매칭은 후보 근처에서야 시작돼 첫 후보가 결과보다 먼저 확정되면 옆 골목 카메라를 읽어 버리기 때문이다.
+     * 매칭이 꺼졌거나 인증이 거절됐거나 6초 안에 이름을 못 받으면 기존 판정대로 안내해 실제 카메라를 놓치지 않는다.
+     * 이미 안내 중인 카메라는 도로명이 잠깐 끊겨도 멈추지 않는다.
+     */
+    private fun waitingForRoadName(alert: com.wemade.teslamacro.domain.safety.SafetyAlert, travelRoadName: String?,
+                                   nowMillis: Long): Boolean {
+        if (travelRoadName != null || !roadMatchEnabled || tokenRejected || comparableRoadName(alert.cameraRoadName) == null) {
+            roadNameWaitKey = null
+            return false
+        }
+        if (alert.cameraKey == lastAlertCameraKey && lastAlertSeenMillis?.let { nowMillis - it in 0..3_000 } == true) return false
+        if (roadNameWaitKey != alert.cameraKey) {
+            roadNameWaitKey = alert.cameraKey
+            roadNameWaitStartedMillis = nowMillis
+        }
+        return nowMillis - roadNameWaitStartedMillis < ROAD_NAME_WAIT_MILLIS
     }
 
     /** 첫 경고음은 바로 내고, 이후는 GPS 갱신이 이어지는 동안 현재 단계 간격으로 반복한다. */
@@ -816,7 +852,8 @@ class SafeDriveGuide(
             return
         }
         val timestamp = location.time / 1_000
-        if (timestamp !in (System.currentTimeMillis() / 1_000 - 5)..(System.currentTimeMillis() / 1_000 + 5)) return
+        val wallSeconds = wallClockMillis() / 1_000
+        if (timestamp !in (wallSeconds - 5)..(wallSeconds + 5)) return
         if (recentPoints.lastOrNull()?.timestamp?.let { timestamp <= it } == true) return
         if (recentPoints.lastOrNull()?.timestamp?.let { timestamp - it > 30 } == true) recentPoints.clear()
         // 서버의 120초 창과 최소 1m 오차 범위를 지켜 장시간 주행에서도 요청이 거절되지 않게 한다.
@@ -987,6 +1024,7 @@ class SafeDriveGuide(
         lastSilenceLogNanos = null
         stopWarning()
         lastAlertCameraKey = null
+        roadNameWaitKey = null
         lastAlertSeenMillis = null
         spokenStages.clear()
         spokenSeenMillis.clear()

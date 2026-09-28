@@ -16,3 +16,4 @@ icon-preview.png
 # 참고용 3rd-party APK/번들. 저장소 밖(RND/tepilot-ref)에서 다룬다
 *.apk
 *.apks
+local-replay/

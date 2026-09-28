@@ -383,7 +383,8 @@ class MacroService : LifecycleService() {
                 }.distinctUntilChanged()
                 .collect { (options, active) ->
                     // 안내 종료·기기 모드 전환 때 이전 차량 오디오 승인을 새 설정에 재사용하지 않는다.
-                    if (!active || currentDeviceMode != options.deviceMode) {
+                    val modeChanged = currentDeviceMode != options.deviceMode
+                    if (!active || modeChanged) {
                         app.container.safeDrive.setAutomaticAlertsAllowed(false)
                     }
                     currentDeviceMode = options.deviceMode
@@ -400,7 +401,8 @@ class MacroService : LifecycleService() {
                     else if (activityUpdates != null || !activityCleanupCompleted) stopActivityUpdates()
                     app.container.safeDrive.setRoadMatchEnabled(active)
                     if (active) app.container.safeDrive.start()
-                    else app.container.safeDrive.stop()
+                    else app.container.safeDrive.stop(preserveStartVoiceForReconnect =
+                        !modeChanged && options.deviceMode == DeviceMode.PORTABLE && options.enabled && options.startVoice)
                     refreshAutomaticAlerts()
                 }
         }
@@ -413,7 +415,7 @@ class MacroService : LifecycleService() {
                 val settings = app.container.settingsStore.settings.first()
                 if (!shouldMonitorGuidance(settings.deviceMode, settings.safeDrive, portableGuidanceActive.value)) return@collect
                 com.wemade.teslable.DiagLog.add("위치 권한이 바뀌어 안전운전 안내를 다시 세웁니다")
-                app.container.safeDrive.stop()
+                app.container.safeDrive.stop(preserveStartVoiceForReconnect = true)
                 app.container.safeDrive.start()
             }
         }

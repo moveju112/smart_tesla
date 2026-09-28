@@ -49,6 +49,8 @@ private const val ROAD_MATCH_INTERVAL_MILLIS = 3_000L
 
 /** 같은 카메라를 한참 뒤 다시 지나면 이전 음성 단계를 새 통과에 재사용하지 않는다. */
 private const val CAMERA_REANNOUNCE_MILLIS = 90_000L
+/** 차량 오디오가 순간 끊겼다 돌아와도 같은 주행에서 시작 인사를 반복하지 않는 짧은 유예. */
+private const val START_VOICE_RECONNECT_GRACE_NANOS = 30_000_000_000L
 
 /** 첫 안내 문장이 단독 카메라인지, 뒤에 카메라가 더 있는지, 앞 카메라에 바로 이어지는지 */
 internal enum class CameraSequence { SINGLE, CONTINUOUS, FOLLOWING }
@@ -160,6 +162,7 @@ class SafeDriveGuide(
     private var startVoiceEnabled = false
     private var startVoiceRequested = false
     private var startVoiceRetryOnApproval = false
+    private var startVoiceDisconnectNanos: Long? = null
     private val spokenStages = mutableMapOf<String, Int>()
     private val spokenSeenMillis = mutableMapOf<String, Long>()
     private var lastVoiceMillis: Long? = null
@@ -189,6 +192,10 @@ class SafeDriveGuide(
     /** 목록 로드는 IO에서 하고, GPS 수신 중단 시 과거 제한속도를 즉시 버린다. */
     fun start() {
         if (job?.isActive == true) return
+        startVoiceRequested = startVoiceDisconnectNanos?.let {
+            elapsedRealtimeNanos() - it in 0..START_VOICE_RECONNECT_GRACE_NANOS
+        } == true
+        startVoiceDisconnectNanos = null
         mutableState.value = SafetyState(stalled = true, unavailableReason = "단속 목록 준비 중")
         job = scope.launch {
             try {
@@ -213,7 +220,7 @@ class SafeDriveGuide(
                         }
                     }
                     if (lastFixNanos?.let { isFreshLocation(it, elapsedRealtimeNanos()) } == false) {
-                        pendingSpeech = null
+                        if (pendingSpeech?.startVoice != true) pendingSpeech = null
                         stopWarning()
                         val waiting = SafetyState(ready = true, stalled = true,
                             unavailableReason = gpsWaitingReason(), dataWarning = dataWarning)
@@ -272,7 +279,7 @@ class SafeDriveGuide(
             lastFixNanos = null
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = reason, dataWarning = dataWarning)
             stopWarning()
-            pendingSpeech = null
+            if (pendingSpeech?.startVoice != true) pendingSpeech = null
             logAlertStatus(reason, "오차 ${if (location.hasAccuracy()) location.accuracy.toInt() else "미확인"}m", nowNanos / 1_000_000)
             return
         }
@@ -282,7 +289,7 @@ class SafeDriveGuide(
             cameraTracker.reset()
             mutableState.value = SafetyState(ready = true, stalled = true, unavailableReason = "방향 확인 불가", dataWarning = dataWarning)
             stopWarning()
-            pendingSpeech = null
+            if (pendingSpeech?.startVoice != true) pendingSpeech = null
             logAlertStatus("방향 확인 불가", "GPS ${speed.toInt()}km/h, 방향 없음", nowNanos / 1_000_000)
             return
         }
@@ -865,13 +872,15 @@ class SafeDriveGuide(
             if (pendingSpeech?.startVoice == true) pendingSpeech = null
             if (activeSpeechRequest?.startVoice == true) stopSpeechOutput()
             startVoiceRetryOnApproval = false
-        } else requestStartVoiceIfAllowed()
+            startVoiceDisconnectNanos = null
+        }
     }
 
     /** 목록 준비와 자동 소리 승인이 모두 끝난 뒤에만 인사를 요청해 주차 중 출력과 짧은 권한 변동을 피한다. */
     private fun requestStartVoiceIfAllowed() {
-        if (!startVoiceEnabled || startVoiceRequested || job?.isActive != true || !state.value.ready ||
-            !sound || !automaticAlertsAllowed || speechUnavailable || pendingSpeech?.startVoice == true) return
+        if (!startVoiceEnabled || startVoiceRequested || startVoiceRetryOnApproval ||
+            job?.isActive != true || !state.value.ready || !sound || !automaticAlertsAllowed ||
+            speechUnavailable || pendingSpeech?.startVoice == true) return
         // 카메라 요청은 인사로 덮지 않고, 이미 시작된 거리 안내 뒤에 낡은 인사를 덧붙이지 않는다.
         if (voiceEnabled && (state.value.alert != null || pendingSpeech?.cameraKey != null ||
                 activeSpeechRequest?.cameraKey != null)) {
@@ -955,14 +964,13 @@ class SafeDriveGuide(
             pendingSpeech = null
             stopSpeechOutput()
         }
-        if (sound) requestStartVoiceIfAllowed()
         if (changed && job?.isActive == true) {
             DiagLog.add("안전 안내 · 소리 설정 변경 (소리 ${if (sound) "켬" else "끔"}, ${warningSound.label}, 음량 $adjustedVolume, 초과 +${adjustedTolerance}km/h, 속도별 ${if (progressive) "켬" else "끔"})")
         }
     }
 
-    /** 감시 종료 시 이전 카메라와 경보를 남기지 않는다. */
-    fun stop() {
+    /** 감시 종료 시 이전 카메라를 지우되 차량 오디오의 짧은 단절만 인사 이력을 잠시 보존한다. */
+    fun stop(preserveStartVoiceForReconnect: Boolean = false) {
         job?.cancel()
         job = null
         clearRoadMatch()
@@ -982,6 +990,9 @@ class SafeDriveGuide(
         automaticAlertsAllowed = false
         lastVoiceMillis = null
         pendingSpeech = null
+        startVoiceDisconnectNanos = if (preserveStartVoiceForReconnect && startVoiceEnabled && startVoiceRequested) {
+            elapsedRealtimeNanos()
+        } else null
         startVoiceRequested = false
         startVoiceRetryOnApproval = false
         speechReady = false

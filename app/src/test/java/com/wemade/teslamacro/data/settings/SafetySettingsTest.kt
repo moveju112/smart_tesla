@@ -400,6 +400,112 @@ class SafetySettingsTest {
         assertEquals(1_000L, warningIntervalMillis(15.0, false))
     }
 
+    /** 이미 진행 중인 안내에서 스위치를 켜도 운전 중 갑자기 말하지 않고 다음 안내 시작을 기다린다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun enablingStartVoiceDuringActiveGuideWaitsForNextStart() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { 1_000_000_000L }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setSound(true, 2)
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            guide.setStartVoice(true)
+            assertTrue("진행 중 설정 변경은 발화하지 않는다", spoken.isEmpty())
+            guide.stop()
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(listOf("안전운전하세요."), spoken)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 실패한 인사는 음성 설정 변경에서 재시도하지 않고 새 차량 출력 승인 뒤에만 다시 요청한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun failedStartVoiceWaitsForNewAudioApprovalAcrossSettingsChanges() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var attempts = 0
+        val guide = SafeDriveGuide(Application(), voiceOutput = {
+            attempts++
+            error("output unavailable")
+        }) { 1_000_000_000L }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setAlertOptions(500, voice = false)
+            guide.setStartVoice(true)
+            guide.setSound(true, 2)
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(1, attempts)
+            guide.setAlertOptions(500, voice = true)
+            guide.setSound(true, 2)
+            guide.setStartVoice(true)
+            assertEquals("설정 변경은 실패한 인사를 다시 요청하지 않는다", 1, attempts)
+            guide.setAutomaticAlertsAllowed(false)
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(2, attempts)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    /** 차량 오디오의 짧은 단절은 같은 시작 인사를 반복하지 않고 새 출발·긴 단절은 다시 안내한다. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun shortAudioReconnectKeepsStartVoiceWithinGracePeriod() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        var nowNanos = 1_000_000_000L
+        val spoken = mutableListOf<String>()
+        val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
+        SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+        try {
+            guide.setAlertOptions(500, voice = false)
+            guide.setStartVoice(true)
+            guide.setSound(true, 2)
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals(1, spoken.size)
+
+            guide.setAutomaticAlertsAllowed(false)
+            guide.stop(preserveStartVoiceForReconnect = true)
+            nowNanos += 5_000_000_000L
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals("짧은 차량 오디오 재연결은 기존 인사를 반복하지 않는다", 1, spoken.size)
+
+            guide.setAutomaticAlertsAllowed(false)
+            guide.stop(preserveStartVoiceForReconnect = true)
+            nowNanos += 31_000_000_000L
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals("긴 단절 뒤에는 새 안내로 인사한다", 2, spoken.size)
+
+            guide.stop()
+            guide.start()
+            runCurrent()
+            guide.setAutomaticAlertsAllowed(true)
+            assertEquals("명시적으로 종료한 안내는 즉시 새 출발로 취급한다", 3, spoken.size)
+        } finally {
+            guide.stop()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** 목록·차량 출력 허가·상위 소리가 함께 준비된 시작만 한 번 읽고 설정 변동과 재시작을 구분한다. */
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun startVoiceNeedsActiveGuideAndAudioPermission() = runTest {

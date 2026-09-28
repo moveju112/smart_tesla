@@ -306,11 +306,10 @@ class SafeDriveGuide(
                 snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
                 bearing, speed, location.accuracy.toDouble(),
                 maxDistanceMeters = alertDistanceMeters,
-                roadMatched = snapped != null,
             )
         }
-        // 한 번 스친 옆 도로 후보는 버리고 같은 카메라가 연속으로 접근할 때만 실제 안내로 승격한다.
-        val alert = cameraTracker.observe(rawAlert, nowMillis)
+        // 실제 측정 시각으로 접근을 확인해 같은 GPS 측정의 재전달을 새 접근 근거로 세지 않는다.
+        val alert = cameraTracker.observe(rawAlert, location.elapsedRealtimeNanos / 1_000_000)
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
         // 연속 카메라 중 어느 것을 인식했는지 로그로 확인하도록 새 후보를 만날 때만 남긴다.
         // 후보가 잠깐 사라졌다 같은 카메라로 돌아오는 GPS 흔들림은 새 후보로 치지 않는다.
@@ -336,8 +335,7 @@ class SafeDriveGuide(
             }
             announceCamera(alert, nowMillis, overSpeed, followsPrevious) {
                 index?.hasFollowing(snapped?.latitude ?: location.latitude, snapped?.longitude ?: location.longitude,
-                    guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0,
-                    roadMatched = snapped != null) == true
+                    guidanceBearing ?: location.bearing.toDouble(), alert.distanceMeters ?: 0) == true
             }
         } else {
             if (pendingSpeech?.startVoice != true) pendingSpeech = null

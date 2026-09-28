@@ -57,26 +57,21 @@ class CameraIndex(cameras: List<OfflineCamera>) {
         return false
     }
 
-    /** 설정 거리 안의 전방 후보만 찾는다. 도로 매칭 좌표면 평행도로 오탐을 줄이려고 진행 회랑을 더 좁힌다. */
+    /** 매칭 성공·실패가 번갈아도 넓은 GPS 회랑으로 옆 도로 후보가 되살아나지 않게 같은 진행 회랑을 쓴다. */
     fun nearest(latitude: Double, longitude: Double, bearing: Double, speedKph: Double,
                 accuracyMeters: Double, today: LocalDate = LocalDate.now(),
-                maxDistanceMeters: Int = 700, roadMatched: Boolean = false): SafetyAlert? {
+                maxDistanceMeters: Int = 700): SafetyAlert? {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite() ||
             !speedKph.isFinite() || speedKph < 5 || accuracyMeters !in 0.0..30.0) return null
         val (row, column) = cell(latitude, longitude)
         var nearest: OfflineCamera? = null
         val maxDistance = maxDistanceMeters.coerceIn(10, 700)
-        val maxBearingDifference = if (roadMatched) 32.0 else 40.0
-        val maxLateralMeters = if (roadMatched) 90.0 else 200.0
         var distance = maxDistance + 1.0
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             for (camera in cells[x to y].orEmpty()) {
                 val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
                 if (meters < 10 || meters > maxDistance || meters >= distance) continue
-                val difference = bearingDifference(latitude, longitude, bearing, camera)
-                // 도로 매칭 성공 때는 실제 주행 도로 중심에 가까우므로 평행도로 후보를 더 강하게 버린다.
-                if (difference > maxBearingDifference ||
-                    meters * sin(Math.toRadians(difference)) > maxLateralMeters) continue
+                if (!onTravelCorridor(latitude, longitude, bearing, camera, meters)) continue
                 nearest = camera
                 distance = meters
             }
@@ -93,26 +88,29 @@ class CameraIndex(cameras: List<OfflineCamera>) {
     }
 
     /**
-     * 지금 후보 바로 뒤(1km 안)에 같은 방향 카메라가 또 있는지 본다.
-     * 첫 안내에서 "연속 단속 구간"을 알려 두 번째 카메라 앞에서 방심해 속도를 올리지 않게 한다.
+     * 지금 후보 바로 뒤(1km 안)에 같은 진행 회랑의 카메라가 또 있는지 본다.
+     * 매칭이 끊겨도 판정을 넓히지 않으며, 첫 안내에서 연속 구간을 알려 속도 재상승을 막는다.
      */
     fun hasFollowing(latitude: Double, longitude: Double, bearing: Double, afterMeters: Int,
-                     withinMeters: Int = 1_000, roadMatched: Boolean = false): Boolean {
+                     withinMeters: Int = 1_000): Boolean {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite()) return false
         val (row, column) = cell(latitude, longitude)
-        val maxBearingDifference = if (roadMatched) 32.0 else 40.0
-        val maxLateralMeters = if (roadMatched) 90.0 else 200.0
         for (x in row - 1..row + 1) for (y in column - 1..column + 1) {
             if (cells[x to y].orEmpty().any { camera ->
                     val meters = ConditionEvaluator.distanceMeters(latitude, longitude, camera.latitude, camera.longitude)
-                    val difference = bearingDifference(latitude, longitude, bearing, camera)
                     // 같은 지점의 중복 레코드(30m 이내)는 다음 카메라로 치지 않는다.
                     meters > afterMeters + 30 && meters <= afterMeters + withinMeters &&
-                        difference <= maxBearingDifference &&
-                        meters * sin(Math.toRadians(difference)) <= maxLateralMeters
+                        onTravelCorridor(latitude, longitude, bearing, camera, meters)
                 }) return true
         }
         return false
+    }
+
+    /** 짧은 직선 오차는 허용하되 먼 평행도로를 배제한다. 큰 곡선은 접근할 때까지 안내가 늦어진다. */
+    private fun onTravelCorridor(latitude: Double, longitude: Double, bearing: Double,
+                                 camera: OfflineCamera, meters: Double): Boolean {
+        val difference = bearingDifference(latitude, longitude, bearing, camera)
+        return difference <= 25.0 && meters * sin(Math.toRadians(difference)) <= 35.0
     }
 
     /** 안내와 요청의 방향 계산을 공유해 경계에서 서로 다른 후보를 고르지 않게 한다. */

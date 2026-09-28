@@ -189,7 +189,10 @@ class SafetySettingsTest {
             assertTrue(guide.state.value.stalled)
             assertNull(freshSpeedKph(delayed, nowNanos))
             guide.onLocation(fix())
-            assertNotNull(guide.state.value.alert)
+            assertNull("측정 시각 기준으로 오래 끊긴 후보는 새 접근을 확인한다", guide.state.value.alert)
+            nowNanos += 500_000_000L
+            guide.onLocation(fix().apply { latitude += 0.00005 })
+            assertEquals(50, guide.state.value.alert?.speedLimitKph)
             nowNanos += 5_000_000_000L
             advanceTimeBy(5_000)
             runCurrent()

@@ -25,17 +25,14 @@ class CameraIndexTest {
         assertNull(index.nearest(37.0, 127.0, Double.NaN, 60.0, 10.0))
     }
 
-    /** 굽은 도로와 600m 밖 후보는 수용하되, 전방 40도 밖은 경보하지 않는다. */
-    @Test fun forwardCandidatesWithinNarrowedBounds() {
-        val curved = CameraIndex(listOf(OfflineCamera("curve", 37.003, 127.002, 50)))
-        assertNotNull(curved.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
-        assertNotNull(index.nearest(37.0, 127.001, 0.0, 60.0, 10.0))
-        assertNotNull(index.nearest(37.0, 127.0, 35.0, 60.0, 10.0))
-        val close = CameraIndex(listOf(OfflineCamera("close", 37.001, 127.0, 50)))
-        assertNotNull(close.nearest(37.0, 127.0, 39.0, 60.0, 10.0))
-        assertNull(close.nearest(37.0, 127.0, 41.0, 60.0, 10.0))
-        val farther = CameraIndex(listOf(OfflineCamera("farther", 37.006, 127.0, 50)))
-        assertNotNull(farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
+    /** 완만한 굴곡은 받아들이되 현 위치에서 거의 가로질러야 하는 후보와 지난 후보는 버린다. */
+    @Test fun gentleCurveAndDepartingCamera() {
+        val curved = CameraIndex(listOf(OfflineCamera("curve", 37.003, 127.00023, 30)))
+        assertEquals(30, curved.nearest(37.0, 127.0, 4.0, 60.0, 10.0)?.speedLimitKph)
+        assertNull(curved.nearest(37.0, 127.0, 90.0, 60.0, 10.0))
+        assertNull(index.nearest(37.004, 127.0, 0.0, 60.0, 10.0))
+        val farther = CameraIndex(listOf(OfflineCamera("farther", 37.006, 127.0, 60)))
+        assertEquals(60, farther.nearest(37.0, 127.0, 0.0, 60.0, 10.0)?.speedLimitKph)
     }
 
     /** 현재 후보 뒤 1km 안의 같은 방향 카메라만 연속 구간으로 본다. 같은 지점 중복·반대편·1km 밖은 제외한다. */
@@ -47,6 +44,18 @@ class CameraIndexTest {
         assertFalse(duplicate.hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
         val far = CameraIndex(listOf(OfflineCamera("a", 37.003, 127.0, 50), OfflineCamera("c", 37.0135, 127.0, 50)))
         assertFalse(far.hasFollowing(37.0, 127.0, 0.0, afterMeters = 332))
+    }
+
+    /** 연속 안내도 주 경보와 같은 회랑을 써서 보정 좌표가 바뀌어도 옆 도로를 오인하지 않는다. */
+    @Test fun followingCameraIgnoresParallelRoad() {
+        val side = OfflineCamera("parallel", 37.005, 127.001, 30)
+        val inline = OfflineCamera("following", 37.006, 127.0, 60)
+        val onlySide = CameraIndex(listOf(side))
+        val withInline = CameraIndex(listOf(side, inline))
+        for (longitude in listOf(127.0, 127.0001)) {
+            assertFalse(onlySide.hasFollowing(37.0, longitude, 0.0, afterMeters = 333))
+            assertTrue(withInline.hasFollowing(37.0, longitude, 0.0, afterMeters = 333))
+        }
     }
 
     /** 선택한 시작 거리 바깥은 화면·과속음 후보에서 빼되 기본 최대 거리는 유지한다. */
@@ -110,20 +119,31 @@ class CameraIndexTest {
         }
     }
 
-    /** 방향 안쪽이어도 횡방향 200m를 넘는 옆 도로 카메라는 제외한다. */
-    @Test fun lateralDistanceBoundary() {
-        val inside = CameraIndex(listOf(OfflineCamera("inside", 37.003, 127.0022, 50)))
-        val outside = CameraIndex(listOf(OfflineCamera("outside", 37.003, 127.00235, 50)))
-        assertNotNull(inside.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
-        assertNull(outside.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
+    /** GPS·매칭 좌표가 번갈아도 양쪽 옆 도로 30은 빼고 실제 전방 30·50·60은 유지한다. */
+    @Test fun correctedAndRawFixesKeepSameAlertCorridor() {
+        for (limit in listOf(30, 50, 60)) {
+            val ahead = CameraIndex(listOf(OfflineCamera("ahead", 37.004, 127.0, limit)))
+            for (longitude in listOf(127.0, 127.0001)) {
+                assertEquals(limit, ahead.nearest(37.0, longitude, 0.0, 60.0, 10.0)?.speedLimitKph)
+            }
+        }
+        for (offset in listOf(-0.0017, -0.0009, 0.0009, 0.0017)) {
+            val adjacent = CameraIndex(listOf(OfflineCamera("adjacent", 37.004, 127.0 + offset, 30)))
+            assertTrue(adjacent.hasNearby(37.0, 127.0, 0.0))
+            for (speed in listOf(50.0, 60.0)) for (longitude in listOf(127.0, 127.0001)) {
+                assertNull(adjacent.nearest(37.0, longitude, 0.0, speed, 10.0))
+            }
+        }
     }
 
-    /** 도로 매칭 좌표에서는 평행도로 오탐을 줄이고 같은 도로 전방 후보는 유지한다. */
-    @Test fun matchedRoadUsesNarrowerCorridor() {
-        val adjacent = CameraIndex(listOf(OfflineCamera("adjacent", 37.003, 127.00135, 50)))
-        assertNotNull(adjacent.nearest(37.0, 127.0, 0.0, 60.0, 10.0))
-        assertNull(adjacent.nearest(37.0, 127.0, 0.0, 60.0, 10.0, roadMatched = true))
-        assertNotNull(index.nearest(37.0, 127.0, 0.0, 60.0, 10.0, roadMatched = true))
+    /** 더 가까운 평행도로 30 제한을 건너뛰고 같은 진행선의 50 제한을 안내한다. */
+    @Test fun sideRoadCannotHideForwardCamera() {
+        val cameras = CameraIndex(listOf(
+            OfflineCamera("side", 37.003, 127.0009, 30),
+            OfflineCamera("ahead", 37.005, 127.0, 50),
+        ))
+        assertEquals(50, cameras.nearest(37.0, 127.0, 0.0, 60.0, 10.0)?.speedLimitKph)
+        assertEquals(50, cameras.nearest(37.0, 127.0001, 0.0, 60.0, 10.0)?.speedLimitKph)
     }
 
     /** 가장 가까운 유효 후보와 구간 카메라 표기를 확인한다. */

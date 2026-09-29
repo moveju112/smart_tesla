@@ -61,32 +61,51 @@ class SafeDriveReplayTest {
             .orEmpty().sortedBy { it.name }
         assumeTrue("재현 경로 json 없음", routes.isNotEmpty())
         val dataset = Json { ignoreUnknownKeys = true }.decodeFromString(CameraDataset.serializer(),
-            File("src/main/assets/safety_cameras.json").readText())
+            File(System.getenv("SAFETY_REPLAY_DATASET") ?: "src/main/assets/safety_cameras.json").readText())
         val cache = MatchCache(File(directory, CACHE_FILE), System.getenv("SAFETY_REPLAY_MATCH_URL"),
             System.getenv("SAFETY_REPLAY_TOKEN"))
         val summary = StringBuilder()
+        val failures = mutableListOf<String>()
         try {
             for (route in routes) for (matching in listOf(true, false)) {
-                val report = replay(route, CameraIndex(dataset.cameras), cache.takeIf { matching })
+                val routeJson = Json.parseToJsonElement(route.readText()).jsonObject
+                val mode = if (matching) "Matched" else "Offline"
+                val expected = routeJson.cameraIds("expectedCameraIds") + routeJson.cameraIds("expected${mode}CameraIds")
+                val excluded = routeJson.cameraIds("excludedCameraIds") + routeJson.cameraIds("excluded${mode}CameraIds")
+                val stats = MatchStats()
+                val report = replay(routeJson, CameraIndex(dataset.cameras),
+                    cache.takeIf { matching }, stats, expected, excluded)
                 val name = "report-${route.nameWithoutExtension}-${if (matching) "matched" else "offline"}.txt"
-                File(directory, name).writeText(report.first)
-                summary.append("${route.nameWithoutExtension} ${if (matching) "매칭" else "오프라인"}: ${report.second}\n")
+                File(directory, name).writeText(report.text)
+                summary.append("${route.nameWithoutExtension} ${if (matching) "매칭" else "오프라인"}: ${report.summary}\n")
+                failures += report.failures.map { "${route.nameWithoutExtension} $mode: $it" }
             }
         } finally {
             cache.save()
+            File(directory, "summary.txt").writeText(summary.toString())
+            println(summary)
         }
-        File(directory, "summary.txt").writeText(summary.toString())
-        println(summary)
+        org.junit.Assert.assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
-    // 1. 경로 한 개를 1초씩 넣고 후보·음성·경고음 변화만 기록한다.
-    private fun TestScope.replay(route: File, index: CameraIndex, cache: MatchCache?): Pair<String, String> {
+    private data class ReplayResult(val text: String, val summary: String, val failures: List<String>)
+    private class MatchStats(var cacheHits: Int = 0, var serverHits: Int = 0,
+                             var unmatched: Int = 0, var failures: Int = 0, var cacheMisses: Int = 0)
+
+    // 모드별 기대값이 지정된 경로만 oracle로 검사하며, 미지정 경로는 관찰 모드로 둔다.
+    private fun JsonObject.cameraIds(name: String): Set<String> =
+        this[name]?.jsonArray?.map { it.jsonPrimitive.content }?.toSet().orEmpty()
+
+    // 경로 한 개를 1초씩 넣고 후보·음성·경고음 변화만 기록한다.
+    private fun TestScope.replay(route: JsonObject, index: CameraIndex, cache: MatchCache?,
+                                 stats: MatchStats, expected: Set<String>, excluded: Set<String>): ReplayResult {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val samples = Json.parseToJsonElement(route.readText()).jsonObject["samples"]!!.jsonArray.map {
+        val samples = route["samples"]!!.jsonArray.map {
             val sample = it.jsonObject
             Sample(sample.number("latitude"), sample.number("longitude"), sample.number("bearing").toFloat(),
                 sample.number("speedMps").toFloat(), sample.number("accuracy").toFloat())
         }
+
         var second = 0
         val baseNanos = 100_000_000_000L
         val baseWallMillis = 1_900_000_000_000L
@@ -94,8 +113,10 @@ class SafeDriveReplayTest {
         val guide = SafeDriveGuide(Application(), voiceOutput = { spoken += second to it },
             wallClockMillis = { baseWallMillis + second * 1_000L }) { baseNanos + second * 1_000_000_000L }
         field("index").set(guide, index)
-        if (cache != null) field("roadMatcher").set(guide, replayMatcher(cache))
+        if (cache != null) field("roadMatcher").set(guide, replayMatcher(cache, stats))
         val lines = mutableListOf<String>()
+        val seen = mutableSetOf<String>()
+        val cameraBySecond = mutableMapOf<Int, String>()
         var lastCamera: String? = null
         var lastRoadName: String? = null
         var warningSeconds = 0
@@ -132,6 +153,7 @@ class SafeDriveReplayTest {
                     lastRoadName = matched?.roadName
                 }
                 val camera = alert?.let { "${it.cameraId}(제한 ${it.speedLimitKph ?: "?"}, 카메라 도로 ${it.cameraRoadName ?: "-"})" }
+                alert?.cameraId?.let { seen += it.split("|"); cameraBySecond[second] = it }
                 if (camera != lastCamera) {
                     lines += "%4ds 후보 %s · 거리 %sm · 매칭 도로 %s · 위치 %.6f,%.6f".format(second,
                         camera ?: "없음", alert?.distanceMeters ?: "-", matched?.roadName ?: "-", sample.latitude, sample.longitude)
@@ -155,20 +177,42 @@ class SafeDriveReplayTest {
         lines.sortBy { it.trim().substringBefore("s ").toIntOrNull() ?: 0 }
         val limits = Regex("시속 (\\d+)킬로미터").findAll(spoken.joinToString(" ") { it.second })
             .groupingBy { it.groupValues[1] }.eachCount().toSortedMap()
-        val result = "${samples.size}초, 음성 ${spoken.size}회 ${limits.map { "${it.key}:${it.value}" }}, " +
-            "경고음 ${warningStarts}회/${warningSeconds}초"
-        return (lines + "" + "요약: $result").joinToString("\n") to result
+        val missing = expected - seen
+        val unexpected = excluded intersect seen
+        val voiced = spoken.flatMap { cameraBySecond[it.first]?.split("|").orEmpty() }.toSet()
+        val voicedExcluded = excluded intersect voiced
+        val failures = mutableListOf<String>()
+        if (missing.isNotEmpty()) failures += "필수 후보 누락: $missing"
+        val missingVoice = expected - voiced
+        if (missingVoice.isNotEmpty()) failures += "필수 카메라 음성 누락: $missingVoice"
+        if (unexpected.isNotEmpty()) failures += "제외 후보 노출: $unexpected"
+        if (voicedExcluded.isNotEmpty()) failures += "제외 후보 음성 노출: $voicedExcluded"
+        if (cache != null && (expected.isNotEmpty() || excluded.isNotEmpty()) && stats.failures > 0)
+            failures += "매칭 서버 실패 ${stats.failures}회"
+        if (cache != null && stats.cacheMisses > 0 &&
+            (expected.isNotEmpty() || excluded.isNotEmpty() ||
+                System.getenv("SAFETY_REPLAY_REQUIRE_MATCH") == "true"))
+            failures += "서버 없는 캐시 누락 ${stats.cacheMisses}회 (매칭 미실행)"
+        if (cache != null && (expected.isNotEmpty() || excluded.isNotEmpty()) && stats.cacheHits + stats.serverHits == 0)
+            failures += "확정 도로 매칭 응답 없음 (HTTP 200 불확실 응답은 확정 아님)"
+        val matchingStatus = if (cache == null) "매칭 미사용" else
+            "확정 매칭 응답 캐시 ${stats.cacheHits}회/서버 ${stats.serverHits}회, 불확실 ${stats.unmatched}회, " +
+                "HTTP 실패 ${stats.failures}회, 캐시누락 ${stats.cacheMisses}회"
+        val result = "${samples.size}초, 후보 ${seen.size}개, 음성 ${spoken.size}회 ${limits.map { "${it.key}:${it.value}" }}, " +
+            "경고음 ${warningStarts}회/${warningSeconds}초, $matchingStatus"
+        return ReplayResult((lines + "" + "요약: $result" + failures.map { "검증 실패: $it" }).joinToString("\n"),
+            result, failures)
     }
 
     // 2. 인증은 가짜로 통과시키고 매칭만 캐시 또는 실제 서버로 보낸다.
-    private fun replayMatcher(cache: MatchCache): RoadMatcher {
+    private fun replayMatcher(cache: MatchCache, stats: MatchStats): RoadMatcher {
         val key = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
         val identity = RoadDeviceIdentity(AtomicFile(File(temporary.root, "device.txt"))) { key }
         return RoadMatcher(Application(), bootstrapToken = "replay", identityOverride = identity) { path, body, _ ->
             when (path) {
                 "/v1/devices" -> RoadHttpResponse(200, """{"certificate":"dc1.replay"}""")
                 "/v1/session" -> RoadHttpResponse(200, """{"accessToken":"rm1.replay.token","expiresInSeconds":1800}""")
-                else -> cache.match(body.toString(Charsets.UTF_8))
+                else -> cache.match(body.toString(Charsets.UTF_8), stats)
             }
         }
     }
@@ -178,17 +222,24 @@ class SafeDriveReplayTest {
         private val entries: MutableMap<String, String> = if (file.isFile) {
             Json.parseToJsonElement(file.readText()).jsonObject.mapValues { it.value.jsonPrimitive.content }.toMutableMap()
         } else mutableMapOf()
+        private var lastServerRequestNanos = 0L
 
         // 서버는 오래된 시각을 거절하므로 마지막 점을 현재 시각에 맞춰 옮겨 보낸다.
-        fun match(body: String): RoadHttpResponse {
+        fun match(body: String, stats: MatchStats): RoadHttpResponse {
             val points = Json.parseToJsonElement(body).jsonObject["points"]!!.jsonArray.map { it.jsonObject }
             val last = points.last()["timestamp"]!!.jsonPrimitive.long
             val cacheKey = points.joinToString(";") { point ->
                 val coordinate = point["coordinate"]!!.jsonArray
                 "${coordinate[0]},${coordinate[1]},${point["timestamp"]!!.jsonPrimitive.long - last},${point["accuracyMeters"]}"
             }
-            entries[cacheKey]?.let { return RoadHttpResponse(200, it) }
-            if (serverUrl == null || token == null) return RoadHttpResponse()
+            entries[cacheKey]?.let {
+                if (parseRoadMatch(it) != null) stats.cacheHits++ else stats.unmatched++
+                return RoadHttpResponse(200, it)
+            }
+            if (serverUrl == null || token == null) {
+                stats.cacheMisses++
+                return RoadHttpResponse()
+            }
             val now = System.currentTimeMillis() / 1_000
             val shifted = buildJsonObject {
                 put("points", buildJsonArray {
@@ -201,19 +252,41 @@ class SafeDriveReplayTest {
                     }
                 })
             }.toString().toByteArray()
-            val connection = URL("$serverUrl/v1/match").openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Authorization", "Bearer $token")
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.outputStream.use { it.write(shifted) }
-            val code = connection.responseCode
-            if (code != 200) return RoadHttpResponse(code)
-            val response = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-            entries[cacheKey] = response
-            return RoadHttpResponse(200, response)
+            // 가상 1초 GPS가 실서버에 몰리지 않도록 캐시 미스 호출을 초당 8회 이하로 제한한다.
+            val elapsed = System.nanoTime() - lastServerRequestNanos
+            if (lastServerRequestNanos != 0L && elapsed < 125_000_000L)
+                Thread.sleep((125_000_000L - elapsed + 999_999L) / 1_000_000L)
+            lastServerRequestNanos = System.nanoTime()
+            return try {
+                val connection = URL("$serverUrl/v1/match").openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 10_000
+                    connection.readTimeout = 10_000
+                    connection.setRequestProperty("Authorization", "Bearer $token")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.outputStream.use { it.write(shifted) }
+                    val code = connection.responseCode
+                    if (code != 200) {
+                        stats.failures++
+                        RoadHttpResponse(code)
+                    } else {
+                        val response = connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                        entries[cacheKey] = response
+                        if (parseRoadMatch(response) != null) stats.serverHits++ else stats.unmatched++
+                        RoadHttpResponse(200, response)
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            } catch (_: java.io.IOException) {
+                stats.failures++
+                RoadHttpResponse()
+            }
         }
 
+        // 실패한 재현도 이미 받은 응답을 보존해 다음 실행이 같은 지도 근거를 재사용한다.
         fun save() {
             file.writeText(JsonObject(entries.mapValues { JsonPrimitive(it.value) }).toString())
         }

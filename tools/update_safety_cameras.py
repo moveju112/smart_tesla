@@ -105,6 +105,30 @@ def apply_directions(cameras, directions_path):
     print(f"단속 방향 {applied}건 적용", flush=True)
 
 
+
+# 동일한 카메라 좌표와 지도 확인 도로명에 대해서만 이전에 검증한 축을 재사용한다.
+def apply_road_axes(cameras, axes_path):
+    axes = json.load(open(axes_path, encoding="utf-8"))
+    applied = 0
+    for camera in cameras:
+        record = axes.get(camera["id"])
+        if not isinstance(record, dict):
+            continue
+        axis = record.get("roadAxisDegrees")
+        if (not isinstance(axis, int) or isinstance(axis, bool) or not 0 <= axis < 180
+                or not comparable_road_name(camera["roadName"])
+                or record.get("roadName") != camera["roadName"]
+                or record.get("latitude") != camera["latitude"]
+                or record.get("longitude") != camera["longitude"]):
+            continue
+        direction = camera.get("direction")
+        if direction is not None and abs((direction - axis + 90) % 180 - 90) > 60:
+            continue
+        camera["roadAxisDegrees"] = axis
+        applied += 1
+    print(f"검증된 도로 축 {applied}건 적용", flush=True)
+
+
 # 전체 페이지 수가 맞을 때만 교체하여 부분 다운로드를 전국 데이터로 배포하지 않는다.
 def main():
     parser = argparse.ArgumentParser(description="공공데이터 → 앱 번들")
@@ -112,6 +136,7 @@ def main():
     parser.add_argument("--save-raw", help="받은 원본 json 저장 경로(방향 판정 입력)")
     parser.add_argument("--road-names", help="tools/probe_camera_road_names.py 결과 jsonl")
     parser.add_argument("--directions", help="tools/camera_directions.py 결과 json")
+    parser.add_argument("--road-axes", help="tools/camera_road_context.py 결과 id→카메라 위치·도로명·축 JSON")
     arguments = parser.parse_args()
     rows = json.load(open(arguments.raw, encoding="utf-8")) if arguments.raw else download()
     if arguments.save_raw:
@@ -129,6 +154,8 @@ def main():
         print("지도 이름 목록 없음 → 도로명 대조 비활성", flush=True)
     if arguments.directions:
         apply_directions(cameras, arguments.directions)
+    if arguments.road_axes:
+        apply_road_axes(cameras, arguments.road_axes)
     data = {
         "schemaVersion": 1,
         "source": SOURCE_URL,

@@ -198,7 +198,7 @@ internal fun parseRoadMatch(body: String): MatchedRoad? = runCatching {
     if (routes.size != 1) return@runCatching null
     val route = routes[0] as? JsonObject ?: return@runCatching null
     val confidence = (route["confidence"] as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@runCatching null
-    if (!confidence.isFinite() || confidence < 0.8) return@runCatching null
+    if (confidence !in 0.8..1.0) return@runCatching null
     val geometry = route["geometry"] as? JsonObject ?: return@runCatching null
     if ((geometry["type"] as? JsonPrimitive)?.content != "LineString") return@runCatching null
     val coordinates = geometry["coordinates"] as? JsonArray ?: return@runCatching null

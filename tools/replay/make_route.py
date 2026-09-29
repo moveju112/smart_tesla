@@ -4,10 +4,10 @@
 사용: python3 make_route.py <osrm 주소> <출력 json> <속도 km/h> <경도,위도> <경도,위도> [...]
 경로 좌표는 실제 생활 동선일 수 있어 공개 저장소에 올리지 않는다(local-replay/ 는 Git 제외).
 """
+import argparse
 import json
 import math
 import random
-import sys
 import urllib.request
 
 
@@ -59,14 +59,37 @@ def sample(line, speed_kph, seed=7):
     return samples
 
 
+# 지정한 지도 경로와 선택적 기대 카메라를 함께 저장해 재현 결과를 자동 대조한다.
 def main():
-    server, output, speed = sys.argv[1], sys.argv[2], float(sys.argv[3])
-    line, names = route(server, sys.argv[4:])
-    samples = sample(line, speed)
-    with open(output, "w", encoding="utf-8") as file:
-        json.dump({"speedKph": speed, "waypoints": sys.argv[4:], "roadNames": names, "samples": samples},
-                  file, ensure_ascii=False)
-    print(f"{output}: {len(samples)}초, 경유 도로 {len(set(names))}개")
+    # 재현 기대 ID는 선택 입력이며 미지정 경로는 관찰 전용으로 남긴다.
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--expected-camera-id", action="append", default=[])
+    parser.add_argument("--excluded-camera-id", action="append", default=[])
+    parser.add_argument("--expected-matched-camera-id", action="append", default=[])
+    parser.add_argument("--expected-offline-camera-id", action="append", default=[])
+    parser.add_argument("--excluded-matched-camera-id", action="append", default=[])
+    parser.add_argument("--excluded-offline-camera-id", action="append", default=[])
+    parser.add_argument("server")
+    parser.add_argument("output")
+    parser.add_argument("speed", type=float)
+    parser.add_argument("points", nargs="+")
+    args = parser.parse_args()
+    line, names = route(args.server, args.points)
+    samples = sample(line, args.speed)
+    result = {"speedKph": args.speed, "waypoints": args.points, "roadNames": names, "samples": samples}
+    for field, ids in (
+        ("expectedCameraIds", args.expected_camera_id),
+        ("excludedCameraIds", args.excluded_camera_id),
+        ("expectedMatchedCameraIds", args.expected_matched_camera_id),
+        ("expectedOfflineCameraIds", args.expected_offline_camera_id),
+        ("excludedMatchedCameraIds", args.excluded_matched_camera_id),
+        ("excludedOfflineCameraIds", args.excluded_offline_camera_id),
+    ):
+        if ids:
+            result[field] = ids
+    with open(args.output, "w", encoding="utf-8") as file:
+        json.dump(result, file, ensure_ascii=False)
+    print(f"{args.output}: {len(samples)}초, 경유 도로 {len(set(names))}개")
 
 
 if __name__ == "__main__":

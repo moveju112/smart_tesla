@@ -42,6 +42,7 @@ class RoadMatcherTest {
         assertNull(parseRoadMatch(base.replace("matched", "uncertain")))
         assertNull(parseRoadMatch(base.replace("matched", "failed")))
         assertNull(parseRoadMatch(base.replace("0.9", "0.79")))
+        assertNull(parseRoadMatch(base.replace("0.9", "1.01")))
         assertNull(parseRoadMatch(base.replace("\"unmatchedCount\":0", "\"unmatchedCount\":1")))
         assertNull(parseRoadMatch(base.replace("127.1", "999.0")))
         assertNull(parseRoadMatch("not json"))

@@ -23,6 +23,8 @@ data class OfflineCamera(
     val roadName: String? = null,
     /** 설치 장소 (A→B) 글자로 판정한 단속 진행방위(도, 북=0). 모르면 null이라 방향 무관하게 안내한다. */
     val direction: Int? = null,
+    /** 지도에서 여러 접근이 일치한 양방향 도로 축(0~179도). 단속 방향을 추정한 값이 아니다. */
+    val roadAxisDegrees: Int? = null,
 )
 
 /**
@@ -31,16 +33,20 @@ data class OfflineCamera(
  * 교량·터널은 카메라가 그 안에 설치된 경우가 흔해 도로명과 이름이 달라도 거르지 않는다.
  */
 internal fun comparableRoadName(name: String?): String? =
-    name?.replace(Regex("\\([^)]*\\)"), "")?.replace(Regex("\\s+"), "")
+    name?.replace(ROAD_NAME_PARENS, "")?.replace(ROAD_NAME_SPACES, "")
         ?.takeIf { it.length >= 2 && ROAD_NAME_SUFFIXES.any(it::endsWith) }
 
 private val ROAD_NAME_SUFFIXES = listOf("로", "길", "지하차도", "고가차도")
+private val ROAD_NAME_PARENS = Regex("\\([^)]*\\)")
+private val ROAD_NAME_SPACES = Regex("\\s+")
 
 /** 주변 격자만 조회한다. 도로 매칭이 없으므로 결과는 확정 단속이 아니라 전방 후보다. */
 class CameraIndex(cameras: List<OfflineCamera>) {
     private val validCameras = cameras.filter {
         it.latitude in 33.0..39.0 && it.longitude in 124.0..132.0 && it.speedLimitKph in 10..130
     }
+    // 카메라 도로명은 불변이므로 매초 후보마다 정규식 처리하지 않는다.
+    private val cameraRoadNames = validCameras.associateWith { comparableRoadName(it.roadName) }
     private val cells = validCameras.groupBy { cell(it.latitude, it.longitude) }
     private val points = validCameras.groupBy { it.latitude to it.longitude }
     // 동일 좌표의 중복 원본도 모두 추적하되 입력 순서로 경보 상태가 달라지지 않게 한 번만 정렬한다.
@@ -120,6 +126,7 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                 if (!onTravelCorridor(latitude, longitude, bearing, camera, meters)) continue
                 if (onOtherRoad(camera, travelRoad)) continue
                 if (oppositeDirection(camera, bearing)) continue
+                if (onCrossingRoad(camera, bearing)) continue
                 nearest = camera
                 distance = meters
             }
@@ -151,17 +158,23 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                     // 같은 지점의 중복 레코드(30m 이내)는 다음 카메라로 치지 않는다.
                     meters > afterMeters + 30 && meters <= afterMeters + withinMeters &&
                         onTravelCorridor(latitude, longitude, bearing, camera, meters) && !onOtherRoad(camera, travelRoad) &&
-                        !oppositeDirection(camera, bearing)
+                        !oppositeDirection(camera, bearing) && !onCrossingRoad(camera, bearing)
                 }) return true
         }
         return false
     }
 
-    /** 제한속도 집합·구간단속 여부·단속 방향이 같아야 같은 카메라로 묶어 반대 방향 카메라 안내가 생략되지 않게 한다. */
+    /** 확인된 도로명·도로 축이 상충하면 가까워도 다른 카메라로 두고, 자료 누락만으로 중복 안내를 늘리지 않는다. */
     private fun sameCamera(first: List<OfflineCamera>, second: List<OfflineCamera>): Boolean =
         first.map { it.speedLimitKph }.toSet() == second.map { it.speedLimitKph }.toSet() &&
             first.map { it.section }.toSet() == second.map { it.section }.toSet() &&
-            first.all { one -> second.all { other -> sameDirection(one.direction, other.direction) } }
+            first.all { one -> second.all { other ->
+                sameDirection(one.direction, other.direction) &&
+                    (cameraRoadNames[one] == null || cameraRoadNames[other] == null ||
+                        cameraRoadNames[one] == cameraRoadNames[other]) &&
+                    (one.roadAxisDegrees == null || other.roadAxisDegrees == null ||
+                        axisDifference(one.roadAxisDegrees.toDouble(), other.roadAxisDegrees.toDouble()) <= 20)
+            } }
 
     /** 방향을 둘 다 모르거나 45도 안이면 같은 단속 방향으로 본다. 한쪽만 알면 다른 카메라로 둔다. */
     private fun sameDirection(first: Int?, second: Int?): Boolean =
@@ -177,12 +190,23 @@ class CameraIndex(cameras: List<OfflineCamera>) {
         return abs(((bearing - direction + 540) % 360) - 180) > 120
     }
 
+    /** 방향 미상 카메라라도 도로 축과 명백히 교차하면 다른 도로다. 양방향 통행은 모두 보존한다. */
+    private fun onCrossingRoad(camera: OfflineCamera, bearing: Double): Boolean {
+        if (camera.direction != null) return false
+        val axis = camera.roadAxisDegrees?.takeIf { it in 0..179 } ?: return false
+        return axisDifference(bearing, axis.toDouble()) > 60
+    }
+
+    /** 양방향 도로 축은 180도 회전해도 같으므로 북쪽 경계에서도 최소 차이만 쓴다. */
+    private fun axisDifference(first: Double, second: Double): Double =
+        abs(((first - second) % 180 + 270) % 180 - 90)
+
     /**
      * 매칭된 도로명과 카메라 자료의 도로명이 둘 다 비교 가능하고 다를 때만 다른 도로로 본다.
      * 한쪽이라도 없거나 노선번호 표기이면 실제 카메라를 놓치지 않게 기존 회랑 판정에 맡긴다.
      */
     private fun onOtherRoad(camera: OfflineCamera, travelRoad: String?): Boolean {
-        val cameraRoad = comparableRoadName(camera.roadName) ?: return false
+        val cameraRoad = cameraRoadNames[camera] ?: return false
         return travelRoad != null && cameraRoad != travelRoad
     }
 

@@ -305,7 +305,8 @@ class SafeDriveGuide(
         }
         updateRoadMatch(location, speed, nowNanos)
         // 결과가 GPS와 멀거나 오래되면 원래 측위로 되돌아간다. 도로 매칭만으로 단속 방향을 확정하지 않는다.
-        val snapped = matchedRoad?.let { (timestamp, road) -> advancedRoad(road, location.time / 1_000 - timestamp, speed) }
+        val snapped = matchedRoad?.takeIf { (_, road) -> matchesTravelHeading(road, location) }
+            ?.let { (timestamp, road) -> advancedRoad(road, location.time / 1_000 - timestamp, speed) }
             ?.takeIf { road ->
                 ConditionEvaluator.distanceMeters(location.latitude, location.longitude, road.latitude, road.longitude) <= 30
             }
@@ -313,7 +314,8 @@ class SafeDriveGuide(
         // 50km/h에서도 매칭 사이 1~2초 공백 없이 옆 골목 카메라를 거를 수 있다.
         val travelRoadName = namedRoad?.takeIf { (timestamp, road) ->
             val ageSeconds = location.time / 1_000 - timestamp
-            ageSeconds in 0L..5L && ConditionEvaluator.distanceMeters(location.latitude, location.longitude,
+            ageSeconds in 0L..5L && matchesTravelHeading(road, location) &&
+                ConditionEvaluator.distanceMeters(location.latitude, location.longitude,
                 road.latitude, road.longitude) <= 30 + speed / 3.6 * ageSeconds
         }?.second?.roadName
         val guidanceBearing = snapped?.bearingDegrees ?: location.bearing.takeIf { location.hasBearing() }?.toDouble()
@@ -325,7 +327,7 @@ class SafeDriveGuide(
                 maxDistanceMeters = alertDistanceMeters, matchedRoadName = travelRoadName,
             )
         }
-        val candidate = rawAlert?.takeUnless { waitingForRoadName(it, travelRoadName, nowMillis) }
+        val candidate = rawAlert?.takeUnless { waitingForRoadName(it, travelRoadName, nowMillis, speed) }
         // 실제 측정 시각으로 접근을 확인해 같은 GPS 측정의 재전달을 새 접근 근거로 세지 않는다.
         val alert = cameraTracker.observe(candidate, location.elapsedRealtimeNanos / 1_000_000)
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
@@ -397,6 +399,13 @@ class SafeDriveGuide(
         }
     }
 
+    /** 회전 전 도로·반대 차로의 매칭은 가까워도 현재 진행방향과 상충하면 좌표와 이름 모두 버린다. */
+    private fun matchesTravelHeading(road: MatchedRoad, location: Location): Boolean {
+        val bearing = road.bearingDegrees ?: return true
+        val difference = kotlin.math.abs(((bearing - location.bearing + 540) % 360) - 180)
+        return location.hasBearing() && difference <= 60
+    }
+
     /**
      * 매칭 끝점은 요청 시점 위치라 그 뒤 달린 거리만큼 도로 진행방향으로 옮겨 쓴다.
      * 옮기지 않으면 다음 매칭까지 1~2초간 카메라 거리가 줄지 않아 새 카메라 접근 확인이 계속 초기화된다(40~54km/h에서 실제 카메라 누락).
@@ -418,14 +427,16 @@ class SafeDriveGuide(
      * 지도 확인된 도로명이 있는 카메라는 매칭 도로명을 받을 때까지 첫 안내를 최대 6초 미룬다.
      * 매칭은 후보 근처에서야 시작돼 첫 후보가 결과보다 먼저 확정되면 옆 골목 카메라를 읽어 버리기 때문이다.
      * 매칭이 꺼졌거나 인증이 거절됐거나 6초 안에 이름을 못 받으면 기존 판정대로 안내해 실제 카메라를 놓치지 않는다.
+     * 바로 앞 후보는 GPS 오차 30m와 접근 확인 3초를 남기고 대기를 끝내, 이름을 기다리다 지나치지 않는다.
      * 이미 안내 중인 카메라는 도로명이 잠깐 끊겨도 멈추지 않는다.
      */
     private fun waitingForRoadName(alert: com.wemade.teslamacro.domain.safety.SafetyAlert, travelRoadName: String?,
-                                   nowMillis: Long): Boolean {
+                                   nowMillis: Long, speedKph: Double): Boolean {
         if (travelRoadName != null || !roadMatchEnabled || tokenRejected || comparableRoadName(alert.cameraRoadName) == null) {
             roadNameWaitKey = null
             return false
         }
+        if ((alert.distanceMeters ?: Int.MAX_VALUE) <= 30 + speedKph / 3.6 * 3) return false
         if (alert.cameraKey == lastAlertCameraKey && lastAlertSeenMillis?.let { nowMillis - it in 0..3_000 } == true) return false
         if (roadNameWaitKey != alert.cameraKey) {
             roadNameWaitKey = alert.cameraKey

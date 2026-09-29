@@ -94,6 +94,53 @@ class CameraIndexTest {
             .nearest(37.0, 127.0, 5.0, 50.0, 10.0)?.speedLimitKph)
     }
 
+    /** 방향 미상 교차도로 카메라가 더 가까워도 같은 도로의 실제 카메라를 가리지 않는다. */
+    @Test fun unknownDirectionUsesRoadAxisWithoutInventingEnforcementDirection() {
+        val crossing = OfflineCamera("crossing", 37.003, 127.0001, 30, roadAxisDegrees = 90)
+        val ahead = OfflineCamera("ahead", 37.004, 127.0, 50, roadAxisDegrees = 0)
+        val cameras = CameraIndex(listOf(crossing, ahead))
+        assertEquals("ahead", cameras.nearest(37.0, 127.0, 0.0, 60.0, 8.0)?.cameraId)
+        assertFalse(CameraIndex(listOf(crossing)).hasFollowing(37.0, 127.0, 0.0, 100))
+        // 도로 축은 양방향이므로 동일 도로의 역방향 주행도 일률적으로 버리지 않는다.
+        assertEquals("ahead", cameras.nearest(37.006, 127.0, 180.0, 60.0, 8.0)?.cameraId)
+        assertNull(cameras.nearest(37.0, 127.0, 0.0, 60.0, 8.0)?.cameraDirection)
+    }
+
+    /** 지도 축 불명·범위 오류는 임의 방향으로 간주하지 않고 기존 안내를 보존한다. */
+    @Test fun unavailableRoadAxisPreservesActualCamera() {
+        for (axis in listOf(null, -1, 180, 999)) {
+            val cameras = CameraIndex(listOf(OfflineCamera("unknown", 37.003, 127.0, 30, roadAxisDegrees = axis)))
+            assertEquals("unknown", cameras.nearest(37.0, 127.0, 0.0, 50.0, 8.0)?.cameraId)
+        }
+        val known = CameraIndex(listOf(OfflineCamera("known", 37.003, 127.0, 30, direction = 0, roadAxisDegrees = 90)))
+        assertEquals("known", known.nearest(37.0, 127.0, 0.0, 50.0, 8.0)?.cameraId)
+    }
+
+    /** 북쪽 경계의 양방향 축과 오차 여유를 지켜 곡선·좌표 근사의 실제 카메라를 보존한다. */
+    @Test fun roadAxisWrapAndTolerance() {
+        for (axis in listOf(0, 179, 60, 120)) {
+            val cameras = CameraIndex(listOf(OfflineCamera("curve", 37.003, 127.0, 50, roadAxisDegrees = axis)))
+            assertNotNull("axis=$axis", cameras.nearest(37.0, 127.0, 0.0, 60.0, 8.0))
+        }
+        for (axis in listOf(61, 90, 119)) {
+            val cameras = CameraIndex(listOf(OfflineCamera("cross", 37.003, 127.0, 30, roadAxisDegrees = axis)))
+            assertNull("axis=$axis", cameras.nearest(37.0, 127.0, 0.0, 60.0, 8.0))
+        }
+    }
+
+    /** 가까운 서로 다른 도로의 같은 속도 카메라를 한 통과로 묶어 다음 도로 안내를 생략하지 않는다. */
+    @Test fun differentRoadsDoNotShareAnnouncementKey() {
+        val cameras = CameraIndex(listOf(
+            OfflineCamera("main", 37.003, 127.0, 50, roadName = "중앙로"),
+            OfflineCamera("side", 37.0032, 127.0, 50, roadName = "중앙로10번길"),
+        ))
+        val main = cameras.nearest(37.0, 127.0, 0.0, 60.0, 8.0, matchedRoadName = "중앙로")
+        val side = cameras.nearest(37.0, 127.0, 0.0, 60.0, 8.0, matchedRoadName = "중앙로10번길")
+        assertNotNull(main)
+        assertNotNull(side)
+        assertNotEquals(main?.cameraKey, side?.cameraKey)
+    }
+
     /** 30m 안 같은 제한속도라도 단속 방향이 45도 안일 때만 묶고, 한쪽만 방향을 알면 다른 카메라로 둔다. */
     @Test fun oppositeDirectionRecordsKeepSeparateKeys() {
         val pair = CameraIndex(listOf(OfflineCamera("north", 37.0032, 127.0, 30, direction = 0),

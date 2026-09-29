@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.SetSerializer
@@ -29,7 +28,8 @@ import java.io.File
  */
 class RuleStore(context: Context) {
 
-    private val file = File(context.filesDir, "macros.json")
+    private val file = AtomicFile(File(context.filesDir, "macros.json"))
+    private val ruleLock = Mutex()
     private val folderFile = AtomicFile(File(context.filesDir, "macro_folders.json"))
     private val folderLock = Mutex()
     private val _folders = MutableStateFlow<List<MacroFolder>>(emptyList())
@@ -48,9 +48,9 @@ class RuleStore(context: Context) {
 
     /** 앱 시작 시 1회. 파일이 없으면 기본 매크로를 깔아준다 */
     suspend fun load() = withContext(Dispatchers.IO) {
-        val loaded = runCatching {
-            if (!file.exists()) null else json.decodeFromString<List<MacroRule>>(file.readText())
-        }.getOrNull()
+        val loaded = if (file.baseFile.exists() || File(file.baseFile.path + ".bak").exists()) {
+            json.decodeFromString<List<MacroRule>>(file.readFully().decodeToString())
+        } else null
 
         // 업데이트로 새 프리셋이 생겨도 기존 사용자에게 깔린다.
         // 같은 id는 사용자가 고친 버전을 존중하고, 한 번도 소개 안 한 것만 이어붙인다 —
@@ -63,7 +63,7 @@ class RuleStore(context: Context) {
 
         // 손대지 않은 옛 여름·겨울 프리셋만 교체해 서로 다른 단계가 동시에 켜지지 않게 한다.
         val obsolete = listOf(MacroPresets.summerBoarding(), MacroPresets.winterBoarding())
-        _rules.value = loaded?.filterNot { rule ->
+        val updated = loaded?.filterNot { rule ->
             rule.id == REMOVED_AFTER_BLOW_PRESET_ID || obsolete.any { rule == it || rule == it.copy(enabled = false) }
         }?.let { existing ->
             val knownIds = existing.map { it.id }.toSet() + seen
@@ -71,6 +71,7 @@ class RuleStore(context: Context) {
             if (missing.isEmpty() && existing.size == loaded.size) existing
             else (existing + missing).also { persist(it) }
         } ?: MacroPresets.defaults().also { persist(it) }
+        _rules.value = updated
 
         folderLock.withLock {
             // 이미 저장된 폴더가 있으면 사용자의 이동·이름 변경을 다시 분류하지 않는다.
@@ -140,14 +141,24 @@ class RuleStore(context: Context) {
         current.map { if (it.id == id) it.copy(enabled = enabled) else it }
     }
 
-    private suspend fun mutate(transform: (List<MacroRule>) -> List<MacroRule>) {
-        val updated = transform(_rules.value)
-        _rules.update { updated }
-        withContext(Dispatchers.IO) { persist(updated) }
+    private suspend fun mutate(transform: (List<MacroRule>) -> List<MacroRule>) = withContext(Dispatchers.IO) {
+        ruleLock.withLock {
+            val updated = transform(_rules.value)
+            persist(updated)
+            _rules.value = updated
+        }
     }
 
+    /** 저장 실패 시 이전 파일을 복원하고 화면 상태는 바꾸지 않는다. */
     private fun persist(rules: List<MacroRule>) {
-        runCatching { file.writeText(json.encodeToString(ruleListSerializer, rules)) }
+        val output = file.startWrite()
+        try {
+            output.write(json.encodeToString(ruleListSerializer, rules).encodeToByteArray())
+            file.finishWrite(output)
+        } catch (error: Exception) {
+            file.failWrite(output)
+            throw error
+        }
     }
 
     private companion object {

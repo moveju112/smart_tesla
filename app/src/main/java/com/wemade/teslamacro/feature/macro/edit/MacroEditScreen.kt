@@ -97,6 +97,7 @@ fun MacroEditScreen(
     onDelete: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    saveError: String? = null,
 ) {
     var picker by remember { mutableStateOf(OpenPicker.NONE) }
     var step by rememberSaveable(draft.id) { mutableStateOf(if (draft.isNew) 0 else 2) }
@@ -224,6 +225,19 @@ fun MacroEditScreen(
                 text = it,
                 style = MaterialTheme.typography.bodySmall,
                 color = T.WarnText,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = 680.dp)
+                    .fillMaxWidth()
+                    .padding(top = Space.sm),
+            )
+        }
+        saveError?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = T.Danger,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)

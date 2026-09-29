@@ -450,6 +450,71 @@ class PortableBoardingPollTest {
         fixture.poller.stop()
     }
 
+    /** 오늘 예보를 날짜가 바뀐 매크로 판정에 넘기지 않는다. */
+    @Test
+    fun `현지 자정에는 캐시가 한시간 미만이어도 오늘 예보를 다시 읽는다`() = runTest {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.SEPTEMBER, 30, 23, 59, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val fixture = fixture(mode = DeviceMode.MOUNTED, epoch = calendar.timeInMillis)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.forecastResult = com.wemade.teslamacro.domain.macro.WeatherForecast(todayMaxTempC = 30.0)
+        fixture.start()
+        assertEquals(30.0, fixture.reading.value?.weather?.todayMaxTempC)
+
+        fixture.forecastResult = null
+        advanceTimeBy(61_000)
+        runCurrent()
+        assertTrue(fixture.forecastReads >= 2)
+        assertEquals(null, fixture.reading.value?.weather)
+        fixture.poller.stop()
+    }
+
+    /** 비동기 문 감시 예보도 전날 수집값이면 다음날 실행 조건에 싣지 않는다. */
+    @Test
+    fun `문 감시 중 현지 자정이 지나면 전날 예보를 버린다`() = runTest {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.SEPTEMBER, 30, 23, 59, 30)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false, doorMacro = true,
+            epoch = calendar.timeInMillis)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.forecastResult = com.wemade.teslamacro.domain.macro.WeatherForecast(todayMaxTempC = 30.0)
+        fixture.start()
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(30.0, fixture.reading.value?.weather?.todayMaxTempC)
+
+        fixture.forecastResult = null
+        advanceTimeBy(31_000)
+        runCurrent()
+        assertTrue(fixture.forecastReads >= 2)
+        assertEquals(null, fixture.reading.value?.weather)
+        fixture.poller.stop()
+    }
+
+    /** 자정 직전에 시작한 비동기 요청이 늦게 끝나도 어제 예보로 취급한다. */
+    @Test
+    fun `문 감시의 자정 횡단 예보 응답은 요청 시각으로 판정한다`() = runTest {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(2026, java.util.Calendar.SEPTEMBER, 30, 23, 59, 50)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false, doorMacro = true,
+            forecastDelayMillis = 20_000, epoch = calendar.timeInMillis)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.forecastResult = com.wemade.teslamacro.domain.macro.WeatherForecast(todayMaxTempC = 30.0)
+        fixture.start()
+        advanceTimeBy(24_000)
+        runCurrent()
+
+        assertTrue(fixture.forecastReads >= 1)
+        assertEquals(null, fixture.reading.value?.weather)
+        fixture.poller.stop()
+    }
+
     /** 네이버 지도 안심운전 탑승 확인은 재개발 전까지 숨겨 꺼져 있어, 기능을 다시 열 때만 검증한다. */
     private fun requireNavigatorSafeDrive() =
         org.junit.Assume.assumeTrue(com.wemade.teslamacro.data.settings.FeatureAvailability.NAVIGATOR_SAFE_DRIVE)
@@ -461,6 +526,7 @@ class PortableBoardingPollTest {
         locationDelayMillis: Long = 0L,
         forecastDelayMillis: Long = 0L,
         doorMacro: Boolean = false,
+        epoch: Long = System.currentTimeMillis(),
     ): Fixture {
         val context = object : ContextWrapper(paparazzi.context) {
             /** 매크로 파일도 테스트 종료 때 함께 지워지도록 임시 폴더로 격리한다. */
@@ -497,7 +563,7 @@ class PortableBoardingPollTest {
             actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn)),
             cooldownSeconds = 0,
         ))
-        return Fixture(this, settings, rules, locationDelayMillis, forecastDelayMillis)
+        return Fixture(this, settings, rules, locationDelayMillis, forecastDelayMillis, epoch)
     }
 
     /** 실제 StatePoller에 저장소와 가짜 BLE만 연결하며 시간을 코루틴 스케줄러와 맞춘다. */
@@ -507,13 +573,13 @@ class PortableBoardingPollTest {
         val rules: RuleStore,
         locationDelayMillis: Long,
         forecastDelayMillis: Long,
+        private val epoch: Long = System.currentTimeMillis(),
     ) {
         val gateway = TestGateway()
         var boardings = 0
         var locationReads = 0
         var forecastReads = 0
         var forecastResult: com.wemade.teslamacro.domain.macro.WeatherForecast? = null
-        private val epoch = System.currentTimeMillis()
         val reading = MutableStateFlow<Reading?>(null)
         val poller = StatePoller(
             gateway = gateway,

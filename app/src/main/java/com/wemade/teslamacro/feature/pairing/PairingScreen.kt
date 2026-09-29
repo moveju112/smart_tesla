@@ -75,6 +75,7 @@ fun PairingScreen(
     onScanNearby: () -> Unit = {},
     onLoadBonded: () -> Unit = {},
     onConnectDirect: (String) -> Unit = {},
+    onEditVin: () -> Unit = {},
 ) {
     val compact = LocalPane.current.isCompact
 
@@ -128,6 +129,11 @@ fun PairingScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (state.isError) T.Danger else T.InkMuted,
                 )
+            }
+            if (state.isError && state.step == PairingStep.FindVehicle) {
+                Spacer(Modifier.height(Space.sm))
+                TButton("VIN 수정", tone = ButtonTone.Ghost, fillWidth = false,
+                    enabled = !state.isBusy, onClick = onEditVin)
             }
 
             // 못 찾았을 때만 나온다. 차가 안 보이는 건지 VIN이 다른 건지 가려준다

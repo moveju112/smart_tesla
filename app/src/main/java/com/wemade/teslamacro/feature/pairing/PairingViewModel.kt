@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wemade.teslable.TeslaBleSpec
 import com.wemade.teslamacro.di.AppContainer
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +18,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PairingUiState())
     val uiState: StateFlow<PairingUiState> = _uiState.asStateFlow()
+    private var pairingJob: Job? = null
 
     init {
         // 페어링 목록에 테슬라가 있으면 별칭을 미리 채운다. 차 없이도 읽힌다
@@ -29,30 +33,34 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
         val cleaned = input.uppercase().filter { it.isLetterOrDigit() }.take(17)
         _uiState.update { it.copy(vin = cleaned, message = null, isError = false) }
     }
+    /** 실패한 검색에서 입력 단계로 돌아가 VIN을 고친다. */
+    fun editVin() {
+        if (_uiState.value.isBusy) return
+        _uiState.update { it.copy(step = PairingStep.EnterVin, message = null, isError = false, nearby = null) }
+    }
+
+    /** 화면을 떠날 때 진행 중인 검색·등록 확인만 중지한다. 차량 측 요청은 되돌리지 않는다. */
+    fun cancelPairing() {
+        pairingJob?.cancel()
+        pairingJob = null
+        _uiState.update { it.copy(isBusy = false, message = null, isError = false) }
+    }
+
 
     /** VIN을 저장하고 BLE로 차량을 찾는다 */
     fun findVehicle() {
+        if (_uiState.value.isBusy) return
         val vin = _uiState.value.vin
         if (!TeslaBleSpec.isValidVin(vin)) return
 
-        viewModelScope.launch {
+        pairingJob = viewModelScope.launch {
             _uiState.update { it.copy(isBusy = true, message = "차량을 찾는 중…", isError = false) }
 
             // 시뮬레이터가 붙어 있으면 가짜로 성공해버린다. 실차로 갈아끼운다
             container.useRealVehicle()
 
             val result = container.gateway.connect(vin, allowProbe = true)
-
-            // 차를 실제로 찾았을 때만 VIN을 저장한다.
-            // 실패했는데 저장하면 "등록된 차"로 남아 백그라운드가 헛돌고,
-            // 설정 화면에도 유령 VIN이 찍힌다
-            if (result.isSuccess) {
-                container.settingsStore.setVin(vin)
-                // 페어링 목록에 별칭이 있으면 같이 저장해 화면에 이름으로 쓴다
-                container.scanner.bondedTesla()?.let {
-                    container.settingsStore.setVehicleName(it.name)
-                }
-            }
+            currentCoroutineContext().ensureActive()
 
             _uiState.update {
                 if (result.isSuccess) {
@@ -83,7 +91,8 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
      * 하나도 안 뜨면 스캔 자체가 막힌 것이다.
      */
     fun scanNearby() {
-        viewModelScope.launch {
+        if (_uiState.value.isBusy) return
+        pairingJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(isBusy = true, nearby = null, message = "주변 기기를 훑는 중…", isError = false)
             }
@@ -95,26 +104,35 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             // 목표: 내 앱의 스캔 콜백이 그 이름/주소를 받는지 눈으로 확인하는 것
             val seen = linkedMapOf<String, NearbyDevice>()
             var matchedRaw = false
-            withTimeoutOrNull(DIAG_SCAN_MS) {
-                container.scanner.scanNearby().collect { found ->
-                    val addr = found.device.address
-                    val isMine = expected.any { found.localName.equals(it, ignoreCase = true) }
-                    // 찾는 이름이 실제로 콜백에 도착하는 순간을 놓치지 않고 찍는다
-                    if (isMine && !matchedRaw) {
-                        matchedRaw = true
-                        com.wemade.teslable.DiagLog.add("★ 찾는 이름 수신! $addr ${found.rssi}dBm")
-                    }
-                    val prev = seen[addr]
-                    if (prev == null || found.rssi > prev.rssi) {
-                        seen[addr] = NearbyDevice(
-                            name = found.localName,
-                            rssi = found.rssi,
-                            isTesla = isMine || found.hasTeslaService ||
-                                container.scanner.isTeslaNamePattern(found.localName),
-                        )
+            try {
+                withTimeoutOrNull(DIAG_SCAN_MS) {
+                    container.scanner.scanNearby().collect { found ->
+                        val addr = found.device.address
+                        val isMine = expected.any { found.localName.equals(it, ignoreCase = true) }
+                        // 찾는 이름이 실제로 콜백에 도착하는 순간을 놓치지 않고 찍는다
+                        if (isMine && !matchedRaw) {
+                            matchedRaw = true
+                            com.wemade.teslable.DiagLog.add("★ 찾는 이름 수신! $addr ${found.rssi}dBm")
+                        }
+                        val prev = seen[addr]
+                        if (prev == null || found.rssi > prev.rssi) {
+                            seen[addr] = NearbyDevice(
+                                name = found.localName,
+                                rssi = found.rssi,
+                                isTesla = isMine || found.hasTeslaService ||
+                                    container.scanner.isTeslaNamePattern(found.localName),
+                            )
+                        }
                     }
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isBusy = false, isError = true,
+                    message = "주변 스캔을 완료하지 못했어요 · 블루투스 권한과 연결 상태를 확인하고 다시 시도해 주세요") }
+                return@launch
             }
+            currentCoroutineContext().ensureActive()
 
             val all = seen.values.sortedByDescending { it.rssi }
             val mine = all.any { found -> expected.any { found.name.equals(it, ignoreCase = true) } }
@@ -143,6 +161,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
      * nRF 등에서 확인한 차의 BLE 주소를 알 때 쓰는 지름길이다.
      */
     fun connectDirect(address: String) {
+        if (_uiState.value.isBusy) return
         val vin = _uiState.value.vin
         if (!TeslaBleSpec.isValidVin(vin)) {
             _uiState.update { it.copy(isError = true, message = "먼저 VIN을 입력해 주세요") }
@@ -154,18 +173,12 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
 
-        viewModelScope.launch {
+        pairingJob = viewModelScope.launch {
             _uiState.update { it.copy(isBusy = true, message = "주소로 직접 연결 중…", isError = false) }
-            container.settingsStore.setVin(vin)
             container.useRealVehicle()
 
             val result = container.gateway.connectDirect(vin, cleaned)
-            // update 람다는 경합 시 재실행된다 — 부수효과(코루틴 기동)는 밖에서 한 번만
-            if (result.isSuccess) {
-                container.scanner.bondedTesla()?.let { t ->
-                    launch { container.settingsStore.setVehicleName(t.name) }
-                }
-            }
+            currentCoroutineContext().ensureActive()
             _uiState.update {
                 if (result.isSuccess) {
                     it.copy(step = PairingStep.TapCard, isBusy = false,
@@ -212,12 +225,14 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
      * 승인 전에는 차량이 이 키의 세션을 거부하므로, 세션이 서는 순간이 곧 완료다.
      */
     fun requestEnrollment() {
-        viewModelScope.launch {
+        if (_uiState.value.isBusy) return
+        pairingJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(isBusy = true, message = "차량에 키 등록을 요청하는 중…", isError = false)
             }
 
             val request = container.gateway.requestKeyEnrollment()
+            currentCoroutineContext().ensureActive()
             if (request.isFailure) {
                 _uiState.update {
                     it.copy(isBusy = false, isError = true,
@@ -238,6 +253,7 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                 kotlinx.coroutines.delay(TAP_POLL_SECONDS * 1000L)
 
                 if (container.gateway.verifyKeyEnrollment().isSuccess) {
+                    currentCoroutineContext().ensureActive()
                     // 2. 차량이 이 키를 받아들였다. 여기가 진짜 등록 완료다
                     container.settingsStore.setEnrolled(true)
                     _uiState.update {

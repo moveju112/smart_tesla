@@ -76,8 +76,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         viewModelScope.launch {
-            val stored = withContext(Dispatchers.IO) { container.fleetTokenStore.hasToken() }
-            mutableFleetCredentials.value = FleetCredentialState(stored = stored)
+            val stored = runCatching {
+                withContext(Dispatchers.IO) { container.fleetTokenStore.hasToken() }
+            }
+            mutableFleetCredentials.value = stored.fold(
+                onSuccess = { FleetCredentialState(stored = it) },
+                onFailure = { FleetCredentialState(message = "토큰 저장 상태를 확인하지 못했어요 · 다시 시도해 주세요") },
+            )
         }
     }
 
@@ -125,8 +130,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             catch (_: Exception) {
                 mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = "처리하지 못했어요 · 토큰 형식, 차량 등록 및 서버 연결을 확인해 주세요")
             } finally {
-                val stored = withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { container.fleetTokenStore.hasToken() }
-                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(busy = false, stored = stored)
+                val stored = runCatching {
+                    withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+                        container.fleetTokenStore.hasToken()
+                    }
+                }
+                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(
+                    busy = false,
+                    stored = stored.getOrDefault(mutableFleetCredentials.value.stored),
+                    message = if (stored.isFailure) "토큰 저장 상태를 확인하지 못했어요 · 다시 시도해 주세요"
+                        else mutableFleetCredentials.value.message,
+                )
             }
         }
     }
@@ -388,6 +402,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     } ?: error("파일을 열지 못했어요")
                 }
                 val backup = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
+                requireSupportedBackupVersion(backup.version)
                 container.ruleStore.restore(backup.macros)
                 container.settingsStore.restore(backup.settings)
                 backup.macros.size
@@ -410,4 +425,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+}
+
+/** 손실 가능한 새 형식은 복원 작업 전에 막고 기존 백업만 허용한다. */
+internal fun requireSupportedBackupVersion(version: Int) {
+    require(version in 1..BackupFile.CURRENT_VERSION) {
+        "지원하지 않는 백업 형식이에요 ($version)"
+    }
 }

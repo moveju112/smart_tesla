@@ -42,6 +42,9 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
 import com.wemade.teslamacro.ui.theme.Space
@@ -320,7 +323,12 @@ fun DraftField(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = Space.xxl),
+                    .heightIn(min = Space.xxl)
+                    // 라벨은 입력칸 밖에 있으므로 빈 필드에서도 TalkBack이 입력 목적과 오류를 읽어야 한다.
+                    .semantics {
+                        contentDescription = label
+                        if (isError) error("$label 입력을 확인해 주세요")
+                    },
             )
             if (suffix != null) {
                 Text(

@@ -174,6 +174,7 @@ class MainActivity : ComponentActivity() {
                     bars.isAppearanceLightNavigationBars = light
                 }
                 val ready by app.ready.collectAsState()
+                val initializationError by app.initializationError.collectAsState()
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxSize()
@@ -196,7 +197,14 @@ class MainActivity : ComponentActivity() {
                             )
                             Box(modifier = Modifier.weight(1f)) {
                                 if (!ready) {
-                                    AppSplash()
+                                    if (initializationError == null) {
+                                        AppSplash()
+                                    } else {
+                                        com.wemade.teslamacro.ui.component.AppStartupFailure(
+                                            message = initializationError!!,
+                                            onRetry = app::retryInitialization,
+                                        )
+                                    }
                                 } else {
                                     val factory = remember { ViewModelFactory(app.container) }
                                     AppRoot(factory)
@@ -264,7 +272,8 @@ private fun AppRoot(factory: ViewModelFactory) {
             onVinChange = pairingViewModel::onVinChange,
             onFindVehicle = pairingViewModel::findVehicle,
             onRequestEnrollment = pairingViewModel::requestEnrollment,
-            onSkip = { skippedPairing = true },
+            onSkip = { pairingViewModel.cancelPairing(); skippedPairing = true },
+            onEditVin = pairingViewModel::editVin,
             onScanNearby = pairingViewModel::scanNearby,
             onLoadBonded = pairingViewModel::loadBonded,
             onConnectDirect = pairingViewModel::connectDirect,
@@ -301,6 +310,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                 Destination.Macros -> {
                     val vm: MacroViewModel = viewModel(factory = factory)
                     val draft by vm.draft.collectAsState()
+                    val saveError by vm.saveError.collectAsState()
 
                     // 편집 중이면 목록 대신 편집 화면이 자리를 차지한다
                     val editing = draft
@@ -311,6 +321,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onSave = vm::saveDraft,
                             onDelete = vm::deleteDraft,
                             onCancel = vm::cancelEdit,
+                            saveError = saveError,
                         )
                     } else {
                         val rules by vm.rules.collectAsState()

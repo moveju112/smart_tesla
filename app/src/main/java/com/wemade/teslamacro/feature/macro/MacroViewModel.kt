@@ -16,6 +16,9 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
     val folders = container.ruleStore.folders
     private val _folderError = MutableStateFlow<String?>(null)
     val folderError: StateFlow<String?> = _folderError.asStateFlow()
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError.asStateFlow()
+    private var saving = false
 
     /** 생성·이름 변경 결과를 저장하고 실패는 목록에서 알린다. */
     fun saveFolder(id: String?, name: String) {
@@ -51,7 +54,15 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
     val draft: StateFlow<MacroDraft?> = _draft.asStateFlow()
 
     fun setEnabled(id: String, enabled: Boolean) {
-        viewModelScope.launch { container.ruleStore.setEnabled(id, enabled) }
+        viewModelScope.launch {
+            try {
+                container.ruleStore.setEnabled(id, enabled)
+                _folderError.value = null
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _folderError.value = "자동 실행 설정을 저장하지 못했어요."
+            }
+        }
     }
 
     /** 조건과 무관하게 즉시 실행 (매크로 동작을 눈으로 확인할 때) */
@@ -75,47 +86,77 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
     fun createMacro() {
         draftFolderId = null
+        _saveError.value = null
         _draft.value = MacroDraft.blank()
     }
 
     fun editMacro(rule: MacroRule) {
+        draftFolderId = null
+        _saveError.value = null
         _draft.value = MacroDraft.from(rule)
     }
 
     fun updateDraft(draft: MacroDraft) {
+        _saveError.value = null
         _draft.value = draft
     }
 
     fun cancelEdit() {
+        _saveError.value = null
         _draft.value = null
     }
-
     fun saveDraft() {
         val current = _draft.value ?: return
-        if (!current.canSave) return
+        if (!current.canSave || saving) return
+        saving = true
+        _saveError.value = null
+        val folderId = draftFolderId
         viewModelScope.launch {
-            container.ruleStore.upsert(current.toRule())
-            if (current.isNew && draftFolderId != null) moveToFolder(current.id, draftFolderId)
-            _draft.value = null
+            try {
+                container.ruleStore.upsert(current.toRule())
+                if (current.isNew && folderId != null) container.ruleStore.moveToFolder(current.id, folderId)
+                if (_draft.value == current) _draft.value = null
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                if (_draft.value?.id == current.id) {
+                    _saveError.value = error.message ?: "매크로를 저장하지 못했어요."
+                }
+            } finally {
+                saving = false
+            }
         }
     }
 
     /** 목록 카드의 삭제 버튼. 편집 화면에 들어가지 않고 바로 지운다 */
     fun delete(rule: MacroRule) {
-        viewModelScope.launch { container.ruleStore.delete(rule.id) }
+        viewModelScope.launch {
+            try {
+                container.ruleStore.delete(rule.id)
+                _folderError.value = null
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                _folderError.value = "매크로를 삭제하지 못했어요."
+            }
+        }
     }
 
     fun deleteDraft() {
         val current = _draft.value ?: return
         viewModelScope.launch {
-            container.ruleStore.delete(current.id)
-            _draft.value = null
+            try {
+                container.ruleStore.delete(current.id)
+                if (_draft.value?.id == current.id) _draft.value = null
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                if (_draft.value?.id == current.id) _saveError.value = "매크로를 삭제하지 못했어요."
+            }
         }
     }
 
     /** 프리셋을 복제해 새 매크로의 출발점으로 쓴다 */
     fun duplicate(rule: MacroRule) {
         draftFolderId = folders.value.firstOrNull { rule.id in it.ruleIds }?.id
+        _saveError.value = null
         _draft.value = MacroDraft.from(rule).copy(
             id = "macro-${java.util.UUID.randomUUID()}",
             name = "${rule.name} 복사본",

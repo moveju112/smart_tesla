@@ -2,6 +2,7 @@ package com.wemade.teslamacro.data.macro
 
 import android.content.ContextWrapper
 import app.cash.paparazzi.Paparazzi
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -60,5 +61,55 @@ class RuleStoreFoldersTest {
         val restarted = store()
         restarted.load()
         assertEquals(saved, restarted.folders.value)
+    }
+
+    /** 동시에 저장한 매크로가 서로 덮이지 않고 재시작 뒤에도 모두 남는다. */
+    @Test fun `concurrent rule edits survive restart`() = runBlocking {
+        val first = store()
+        first.load()
+        val template = first.rules.value.first()
+        coroutineScope {
+            repeat(8) { index ->
+                launch(Dispatchers.Default) {
+                    first.upsert(template.copy(id = "concurrent-$index", name = "매크로 $index"))
+                }
+            }
+        }
+        val restarted = store()
+        restarted.load()
+        assertEquals((0 until 8).map { "concurrent-$it" }.toSet(),
+            restarted.rules.value.map { it.id }.filter { it.startsWith("concurrent-") }.toSet())
+    }
+
+    /** 쓰기가 막히면 화면 상태를 앞서 바꾸지 않고 기존 저장본을 복구한다. */
+    @Test fun `failed rule write preserves state and previous file`() = runBlocking {
+        val first = store()
+        first.load()
+        val before = first.rules.value
+        val blockingDirectory = java.io.File(temporary.root, "macros.json.new")
+        assertTrue(blockingDirectory.mkdir())
+        assertTrue(runCatching {
+            first.upsert(before.first().copy(name = "저장되지 않아야 함"))
+        }.isFailure)
+        assertEquals(before, first.rules.value)
+        val restarted = store()
+        restarted.load()
+        assertEquals(before, restarted.rules.value)
+    }
+
+    /** 손상된 저장본을 기본값으로 덮지 않고, 파일 복구 뒤 같은 스토어에서 재시도한다. */
+    @Test fun `corrupt rules remain intact until repaired and reloaded`() = runBlocking {
+        val original = store()
+        original.load()
+        original.upsert(original.rules.value.first().copy(name = "보존할 매크로"))
+        val file = java.io.File(temporary.root, "macros.json")
+        val saved = file.readText()
+        file.writeText("{broken")
+        val restarted = store()
+        assertTrue(runCatching { restarted.load() }.isFailure)
+        assertEquals("{broken", file.readText())
+        file.writeText(saved)
+        restarted.load()
+        assertEquals(original.rules.value, restarted.rules.value)
     }
 }

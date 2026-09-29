@@ -205,13 +205,25 @@ class SettingsStore(
     /** 화면 모드를 저장해 앱을 다시 열어도 사용자의 선택을 유지한다. */
     suspend fun setThemeMode(mode: ThemeMode) = edit { it[KeyThemeMode] = mode.name }
 
-    /** 다른 차량으로 바뀌면 이전 차량의 오디오 선택·별칭을 같은 트랜잭션에서 버린다. */
-    suspend fun setVin(vin: String) = edit {
-        if (it[KeyVin] != vin) {
-            it.remove(KeyVehicleAudioAddress)
-            it.remove(KeyVehicleName)
+    /** 차량 식별자가 바뀌면 이전 차의 등록 승인·BLE 주소·오디오·별칭을 원자적으로 지운다. */
+    suspend fun setVin(vin: String) = edit { setVinInPreferences(it, vin) }
+
+    /** 연결 성공 후 VIN과 검증된 주소를 함께 저장해 재연결 상태가 어긋나지 않게 한다. */
+    suspend fun setConnectedVehicle(vin: String, address: String, name: String? = null) = edit {
+        setVinInPreferences(it, vin)
+        it[KeyVehicleAddress] = address
+        if (name != null) it[KeyVehicleName] = name
+    }
+
+    /** 동일 차량은 승인을 유지하고 차량 변경 때만 식별자에 종속된 상태를 비운다. */
+    private fun setVinInPreferences(prefs: androidx.datastore.preferences.core.MutablePreferences, vin: String) {
+        if (prefs[KeyVin] != vin) {
+            prefs.remove(KeyEnrolled)
+            prefs.remove(KeyVehicleAddress)
+            prefs.remove(KeyVehicleAudioAddress)
+            prefs.remove(KeyVehicleName)
         }
-        it[KeyVin] = vin
+        prefs[KeyVin] = vin
     }
     suspend fun setEnrolled(enrolled: Boolean) = edit { it[KeyEnrolled] = enrolled }
     /** 알림 접근 권한과 별개로 차량 명령 수신 여부를 저장한다. */

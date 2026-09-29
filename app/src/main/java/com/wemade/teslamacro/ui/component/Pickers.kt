@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.ui.component
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.border
 import com.wemade.teslamacro.ui.theme.Stroke
@@ -43,6 +44,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Motion
@@ -63,6 +66,8 @@ fun PickerSheet(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
+    // 설정에서도 시스템 뒤로가기가 앱 대신 현재 선택창 하나만 닫도록 공용 패널이 맡는다.
+    BackHandler(onBack = onDismiss)
     val compact = LocalPane.current.isCompact
     BoxWithConstraints(
         modifier = modifier
@@ -78,6 +83,7 @@ fun PickerSheet(
         Column(
             modifier = Modifier
                 .widthIn(max = 560.dp)
+                .semantics { paneTitle = title }
                 .heightIn(max = panelMaxHeight)
                 .padding(if (compact) Space.sm else Space.lg)
                 .background(T.Carbon, RoundedCornerShape(Radius.card))
@@ -90,7 +96,8 @@ fun PickerSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+                Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink,
+                    modifier = Modifier.weight(1f).padding(end = Space.sm))
                 // 아이콘은 24dp지만 패딩으로 터치 타깃을 48dp까지 키운다 — 주행 중 닫기 실패 방지
                 Icon(
                     imageVector = DraftMark.Close,

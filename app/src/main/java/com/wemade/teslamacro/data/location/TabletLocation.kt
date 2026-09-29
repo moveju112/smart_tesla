@@ -43,16 +43,17 @@ class TabletLocation(private val context: Context) {
         val manager = context.getSystemService(LocationManager::class.java) ?: return null
 
         return runCatching {
-            // 1. 최근 위치가 신선하면 그대로 쓴다 — 지하주차장은 새 측위가 안 된다
-            val cached = lastKnown(manager)
-            if (cached != null && ageMillis(cached) in 0 until FRESH_MILLIS) {
+            // 정확도 없는 최근 캐시는 조건 판정에 쓸 수 없으므로 새 측위를 기다린다.
+            val cached = lastKnown(manager)?.takeIf { ageMillis(it) in 0 until FRESH_MILLIS }
+            val cachedPoint = cached?.toPoint()
+            if (cached != null && cachedPoint != null) {
                 logOutcome("최근위치", "최근 위치 사용 (${ageMillis(cached) / 60_000}분 전)")
-                return cached.toPoint()
+                return cachedPoint
             }
 
             // 오래된 집 좌표로 다른 장소에서 자동 실행하지 않도록 과거 위치 대체는 금지한다.
             val fresh = withTimeoutOrNull(FIX_TIMEOUT_MILLIS) { requestOnce(manager) }
-                ?.takeIf { ageMillis(it) in 0 until FRESH_MILLIS }
+                ?.takeIf { ageMillis(it) in 0 until FRESH_MILLIS && it.toPoint() != null }
             when {
                 fresh != null ->
                     logOutcome("신규", "새 측위 성공 (${fresh.provider}, 정확도 ${fresh.accuracy.toInt()}m)")

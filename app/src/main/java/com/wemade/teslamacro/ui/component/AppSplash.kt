@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -61,6 +64,23 @@ fun AppSplash(modifier: Modifier = Modifier) {
 
         Spacer(Modifier.height(Space.xl))
         Box(modifier = Modifier.width(160.dp)) { IndeterminateBar() }
+    }
+}
+
+/** 준비 실패는 무한 로딩과 구별하고, 작은 화면·큰 글씨에서도 재시도 동작에 닿게 한다. */
+@Composable
+fun AppStartupFailure(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Space.lg),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        EmptyState(
+            title = "앱을 준비하지 못했어요",
+            description = message,
+            actionLabel = "다시 시도",
+            onAction = onRetry,
+        )
     }
 }
 

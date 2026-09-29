@@ -332,6 +332,72 @@ class PhoneScreenshotTest {
         }
     }
 
+    /** 검색 실패 뒤에도 VIN 수정과 재검색을 작은 화면에서 찾을 수 있어야 한다. */
+    @Test
+    fun `P24 차량 검색 실패 복구`() {
+        paparazzi.snapshot("P24-pairing-retry") {
+            FullScreenFrame {
+                PairingScreen(
+                    state = PairingUiState(step = PairingStep.FindVehicle, vin = "5YJS0000000000000",
+                        isError = true, message = "차량을 찾지 못했어요. VIN과 블루투스 권한을 확인해 주세요."),
+                    onVinChange = {}, onFindVehicle = {}, onRequestEnrollment = {}, onSkip = {},
+                    onEditVin = {},
+                )
+            }
+        }
+    }
+
+    /** 저장 파일을 못 읽을 때 로딩 대신 복구 동작이 낮·밤에서 보여야 한다. */
+    @Test
+    fun `P25 초기화 실패 복구`() {
+        for (dark in listOf(false, true)) {
+            paparazzi.snapshot("P25-startup-failure-$dark") {
+                FullScreenFrame(dark = dark) {
+                    com.wemade.teslamacro.ui.component.AppStartupFailure(
+                        message = "데이터를 불러오지 못했어요. 기존 데이터는 지우지 않았어요.\n저장 공간을 확인한 뒤 다시 시도해 주세요.",
+                        onRetry = {},
+                    )
+                }
+            }
+        }
+    }
+
+    /** 저장 실패 뒤에도 편집 내용과 재시도 버튼을 화면에 남긴다. */
+    @Test
+    fun `P26 매크로 저장 실패`() {
+        paparazzi.snapshot("P26-macro-save-error") {
+            AppFrame(Destination.Macros) {
+                MacroEditScreen(
+                    draft = MacroDraft.from(MacroPresets.summerBoarding()),
+                    onChange = {}, onSave = {}, onDelete = {}, onCancel = {},
+                    saveError = "매크로를 저장하지 못했어요. 저장 공간을 확인해 주세요.",
+                )
+            }
+        }
+    }
+
+    /** 큰 글씨에서도 백업 동작이 줄바꿈되고 긴 실패 안내를 끝까지 읽을 수 있어야 한다. */
+    @Test
+    fun `P27 백업 실패 큰 글씨`() {
+        for (dark in listOf(false, true)) {
+            paparazzi.snapshot("P27-backup-error-$dark") {
+                AppFrame(Destination.Settings, dark = dark) {
+                    val density = androidx.compose.ui.platform.LocalDensity.current
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density, 1.3f),
+                    ) {
+                        com.wemade.teslamacro.feature.settings.BackupPanel(
+                            com.wemade.teslamacro.feature.settings.BackupControls(
+                                onExport = {}, onImport = {},
+                                message = "되돌리지 못했어요. 이 앱에서 지원하지 않는 백업 버전이에요. 앱을 업데이트한 뒤 다시 시도해 주세요.",
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private fun dashboardState() = DashboardUiState(
         link = LinkState.Ready,
         vehicleName = "내 테슬라",

@@ -5,8 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -16,7 +14,6 @@ import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.theme.Space
-import com.wemade.teslamacro.ui.theme.T
 
 /** 토큰 원문은 화면 상태에 포함하지 않는다. */
 data class FleetCredentialState(val stored: Boolean = false, val busy: Boolean = false, val message: String? = null)
@@ -34,8 +31,6 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
     val focus = LocalFocusManager.current
     val state = controls.state
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        Text(if (state.stored) "토큰 저장됨" else "토큰 미등록",
-            style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         if (!state.stored) {
             DraftField(
                 value = token,
@@ -60,6 +55,5 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
             TButton(text = "토큰 삭제", tone = ButtonTone.Ghost, modifier = Modifier.weight(1f),
                 enabled = state.stored && !state.busy, onClick = { token = ""; controls.onDelete() })
         }
-        state.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = T.Ink) }
     }
 }

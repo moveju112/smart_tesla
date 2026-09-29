@@ -16,17 +16,22 @@ class InstallResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -1)) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                // 확인이 필요하다는 뜻. 취소하고 돌아와도 다시 누를 수 있게 상태를 되돌린다
-                AppUpdater.restoreAvailable()
                 val confirm = IntentCompat.getParcelableExtra(
                     intent,
                     Intent.EXTRA_INTENT,
                     Intent::class.java,
                 )
-                if (confirm != null) {
+                if (confirm == null) {
+                    AppUpdater.state.value = UpdateState.Failed("설치 확인 화면을 받지 못했어요. 다시 확인해 주세요.")
+                    DiagLog.add("업데이트 · 설치 확인 화면 누락")
+                } else {
                     confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     runCatching { context.startActivity(confirm) }
-                        .onFailure { DiagLog.add("업데이트 · 설치 화면을 열지 못함") }
+                        .onSuccess { AppUpdater.restoreAvailable() }
+                        .onFailure {
+                            AppUpdater.state.value = UpdateState.Failed("설치 확인 화면을 열지 못했어요. 다시 확인해 주세요.")
+                            DiagLog.add("업데이트 · 설치 화면을 열지 못함")
+                        }
                 }
             }
 

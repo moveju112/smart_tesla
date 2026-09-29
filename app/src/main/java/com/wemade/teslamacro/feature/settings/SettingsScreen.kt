@@ -3,6 +3,8 @@ package com.wemade.teslamacro.feature.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -679,6 +681,19 @@ internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit,
             checked = enabled,
             onCheckedChange = onEnabledChange,
             summary = credentials?.let { if (it.state.stored) "토큰 저장됨" else "토큰 미등록" },
+            notices = {
+                credentials?.state?.message?.let { message ->
+                    Spacer(Modifier.height(Space.sm))
+                    Text(message, style = MaterialTheme.typography.bodySmall,
+                        color = if (message.startsWith("연결 확인 완료") || message.startsWith("토큰을 삭제하고") ||
+                            message.startsWith("토큰을 암호화")) T.InkMuted else T.Danger)
+                }
+                // 토큰이 없어 꺼진 스위치에서도 입력을 열어야 처음 등록할 수 있다.
+                if (!enabled && credentials != null) {
+                    Spacer(Modifier.height(Space.md))
+                    FleetCredentialPanel(credentials)
+                }
+            },
         ) {
             if (credentials != null) FleetCredentialPanel(credentials)
         }
@@ -1302,12 +1317,13 @@ data class BackupControls(
     val onDismissMessage: () -> Unit = {},
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BackupPanel(backup: BackupControls) {
+internal fun BackupPanel(backup: BackupControls) {
     TCard {
-        Row {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             TButton("백업 내보내기", fillWidth = false, small = true, onClick = backup.onExport)
-            Spacer(Modifier.width(Space.sm))
             TButton(
                 text = "백업 가져오기",
                 tone = ButtonTone.Secondary,
@@ -1328,9 +1344,10 @@ private fun BackupPanel(backup: BackupControls) {
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
-                color = T.Ink,
-                modifier = Modifier.clickable(onClick = backup.onDismissMessage),
+                color = if (message.startsWith("되돌리지 못했어요") || message.startsWith("내보내지 못했어요")) T.Danger else T.Ink,
             )
+            TButton("알림 닫기", tone = ButtonTone.Ghost, fillWidth = false, small = true,
+                onClick = backup.onDismissMessage)
         }
     }
 }

@@ -17,6 +17,7 @@ import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.StateCategory
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import com.wemade.teslamacro.domain.model.overlay
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -65,7 +66,15 @@ class BleVehicleGateway(
     val isCommandConnected: Boolean get() = link.isConnected && client != null
 
     override suspend fun connect(vin: String, allowProbe: Boolean): Result<Unit> = connectMutex.withLock {
-        if (link.isConnected && client != null) return@withLock Result.success(Unit)
+        val storedVehicle = settingsStore.settings.first()
+        if (link.isConnected && client != null && storedVehicle.vin == vin) {
+            return@withLock Result.success(Unit)
+        }
+        if (client != null) {
+            client = null
+            link.close()
+            _linkState.value = LinkState.Idle
+        }
         if (!scanner.isBluetoothReady) {
             _linkState.value = LinkState.Failed("블루투스가 꺼져 있어요")
             return@withLock Result.failure(IllegalStateException("블루투스가 꺼져 있어요"))
@@ -84,7 +93,7 @@ class BleVehicleGateway(
             }
 
             // 0. 전에 검증해 둔 차 주소가 있으면 스캔 없이 바로 붙는다. 제일 빠른 길
-            val saved = settingsStore.settings.first().vehicleAddress
+            val saved = storedVehicle.vehicleAddress.takeIf { storedVehicle.vin == vin }.orEmpty()
             if (saved.isNotBlank() && !repeatAttempt) {
                 com.wemade.teslable.DiagLog.add("저장된 주소로 직행 시도 $saved")
             }
@@ -159,21 +168,27 @@ class BleVehicleGateway(
                     ?: error("차량을 찾지 못했어요.\n차 가까이에서 다시 시도해 주세요")
             }
 
-            // 3. 검증된 주소를 저장한다. 다음 연결은 0단계에서 끝난다
+            // 3. 검증된 주소와 VIN을 함께 저장한다. VIN 변경 시 옛 차의 주소는 재사용하지 않는다.
             com.wemade.teslable.DiagLog.add("차량 확정 ${found.device.address} (${found.localName}) — 주소 저장")
-            settingsStore.setVehicleAddress(found.device.address)
-
-            // 4. 프로토콜 클라이언트 준비 (핸드셰이크는 첫 명령 때 지연 수행)
-            client = TeslaClient(context, link, vin)
+            val connectedClient = TeslaClient(context, link, vin)
+            settingsStore.setConnectedVehicle(vin, found.device.address, scanner.bondedTesla()?.name)
+            client = connectedClient
             _linkState.value = LinkState.Ready
         }.onFailure { throwable ->
+            if (throwable is CancellationException) {
+                client = null
+                link.close()
+                _linkState.value = LinkState.Idle
+                throw throwable
+            }
             // 같은 실패가 이어지면 첫 번째만 남긴다 — 원인이 바뀌는 순간은 반드시 남긴다
             if (throwable.message != lastConnectFailure) {
                 com.wemade.teslable.DiagLog.add("연결 실패: ${throwable.message}")
             }
             lastConnectFailure = throwable.message ?: "연결 실패"
-            _linkState.value = LinkState.Failed(throwable.message ?: "연결 실패")
             client = null
+            link.close()
+            _linkState.value = LinkState.Failed(throwable.message ?: "연결 실패")
         }
     }
 
@@ -188,7 +203,15 @@ class BleVehicleGateway(
      */
     override suspend fun connectDirect(vin: String, address: String): Result<Unit> = connectMutex.withLock {
         lastConnectFailure = null   // 사용자가 직접 시도했다 — 이번 결과는 조용히 넘기지 않는다
-        if (link.isConnected && client != null) return@withLock Result.success(Unit)
+        val storedVehicle = settingsStore.settings.first()
+        if (link.isConnected && client != null && storedVehicle.vin == vin &&
+            storedVehicle.vehicleAddress.equals(address, ignoreCase = true)
+        ) return@withLock Result.success(Unit)
+        if (client != null) {
+            client = null
+            link.close()
+            _linkState.value = LinkState.Idle
+        }
         if (!scanner.isBluetoothReady) {
             _linkState.value = LinkState.Failed("블루투스가 꺼져 있어요")
             return@withLock Result.failure(IllegalStateException("블루투스가 꺼져 있어요"))
@@ -205,14 +228,18 @@ class BleVehicleGateway(
             com.wemade.teslable.DiagLog.add("autoConnect 대기 중… 최대 ${DIRECT_TIMEOUT_MS / 1000}초")
             link.connect(device, DIRECT_TIMEOUT_MS, autoConnect = true)
 
-            settingsStore.setVin(vin)
-            settingsStore.setVehicleAddress(address)
-            scanner.bondedTesla()?.let { settingsStore.setVehicleName(it.name) }
-
-            client = TeslaClient(context, link, vin)
+            val connectedClient = TeslaClient(context, link, vin)
+            settingsStore.setConnectedVehicle(vin, address, scanner.bondedTesla()?.name)
+            client = connectedClient
             _linkState.value = LinkState.Ready
             com.wemade.teslable.DiagLog.add("직접 연결 성공 $address")
         }.onFailure { throwable ->
+            if (throwable is CancellationException) {
+                client = null
+                link.close()
+                _linkState.value = LinkState.Idle
+                throw throwable
+            }
             com.wemade.teslable.DiagLog.add("직접 연결 실패: ${throwable.message}")
             _linkState.value = LinkState.Failed(throwable.message ?: "연결 실패")
             client = null
@@ -229,6 +256,7 @@ class BleVehicleGateway(
         val result = runCatching {
             link.connect(device, DIRECT_TIMEOUT_MS, autoConnect = true, quiet = quiet)
         }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         if (result.isFailure) {
             // 반복 재시도(quiet) 중에는 같은 실패를 다시 적지 않는다
             if (!quiet) {
@@ -268,7 +296,9 @@ class BleVehicleGateway(
                 _linkState.value = LinkState.Connecting(candidate.rssi)
 
                 val startedAt = System.currentTimeMillis()
-                val ok = runCatching { link.connect(candidate.device, PROBE_TIMEOUT_MS) }.isSuccess
+                val ok = runCatching { link.connect(candidate.device, PROBE_TIMEOUT_MS) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .isSuccess
                 if (ok) return candidate
                 link.close()
 
@@ -310,6 +340,7 @@ class BleVehicleGateway(
 
         return runCatching { active.requestKeyEnrollment() }
             .onFailure {
+                if (it is CancellationException) throw it
                 _enrollmentState.value =
                     EnrollmentState.Failed(it.message ?: "키 등록 요청에 실패했어요")
             }
@@ -321,6 +352,7 @@ class BleVehicleGateway(
     override suspend fun verifyKeyEnrollment(): Result<Unit> {
         val active = client ?: return Result.failure(IllegalStateException("먼저 차량에 연결해 주세요"))
         return runCatching { active.verifyEnrollment() }
+            .onFailure { if (it is CancellationException) throw it }
             .onSuccess { _enrollmentState.value = EnrollmentState.Enrolled }
     }
 
@@ -512,6 +544,7 @@ class BleVehicleGateway(
             infotainmentFailure?.let { logReadFailure(infotainment, it) }
             merged.copy(categoryReadAt = read.associateWith { now })
         }.onFailure { failure ->
+            if (failure is CancellationException) throw failure
             logReadFailure(categories, failure)
         }.onSuccess {
             lastReadFailure.remove(keyOf(categories))

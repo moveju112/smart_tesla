@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -114,6 +115,7 @@ fun TButton(
         .border(1.dp, borderColor, shape)
     val clickable = Modifier.clickable(
         enabled = enabled,
+        role = Role.Button,
         interactionSource = interaction,
         indication = null,
         onClick = onClick,
@@ -143,7 +145,7 @@ fun TButton(
     }
 
     if (inline) {
-        Box(modifier = modifier.defaultMinSize(minHeight = 48.dp).then(clickable), contentAlignment = Alignment.Center) {
+        Box(modifier = modifier.defaultMinSize(minWidth = Space.xxl, minHeight = Space.xxl).then(clickable), contentAlignment = Alignment.Center) {
             Box(
                 modifier = face.defaultMinSize(minHeight = 32.dp).padding(horizontal = Space.sm + Space.xs),
                 contentAlignment = Alignment.Center,
@@ -156,7 +158,7 @@ fun TButton(
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .then(face)
             // small도 48dp — 안드로이드 최소 타깃이고, 장갑 끼고 흔들리는 차에서는 더 커야 한다
-            .defaultMinSize(minHeight = if (small) 48.dp else 52.dp)
+            .defaultMinSize(minWidth = Space.xxl, minHeight = if (small) Space.xxl else 52.dp)
             .then(clickable)
             .padding(
                 horizontal = if (small) Space.sm + Space.xs else Space.md,
@@ -209,6 +211,7 @@ fun SectionHeader(
             text = title,
             style = MaterialTheme.typography.titleMedium,
             color = T.Ink,
+            modifier = Modifier.weight(1f),
         )
         trailing?.invoke()
     }

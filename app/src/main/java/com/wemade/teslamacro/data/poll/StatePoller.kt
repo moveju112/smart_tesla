@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 /**
  * 차량 상태를 주기적으로 읽어 매크로 엔진에 먹인다.
@@ -187,6 +188,7 @@ class StatePoller(
         var doorForecastRead: Deferred<WeatherForecast?>? = null
         var doorForecast: WeatherForecast? = null
         var doorForecastReadAt = 0L
+        var doorForecastStartedAt = 0L
         var activeUntil = 0L
         var needFullRead = true   // 연결 직후 첫 사이클 — 자동화에 필요한 것만
         // 명령 후 확인 읽기로 요청된 카테고리 — 확인 창(짧게) 동안만 읽는다.
@@ -233,6 +235,7 @@ class StatePoller(
                 doorForecastRead = null
                 doorForecast = null
                 doorForecastReadAt = 0L
+                doorForecastStartedAt = 0L
                 enforceConnectionGuard()
                 sleep(NORMAL_POLL_SECONDS * 1000L)
                 continue
@@ -426,7 +429,7 @@ class StatePoller(
                     }
                     if (doorForecastRead?.isCompleted == true) {
                         doorForecast = doorForecastRead?.await()
-                        doorForecastReadAt = now()
+                        doorForecastReadAt = doorForecastStartedAt
                         doorForecastRead = null
                     }
                     if ((needsLocation() || needsForecast()) && doorLocationRead == null &&
@@ -436,16 +439,23 @@ class StatePoller(
                     }
                     val forecastLocation = doorLocation
                     if (needsForecast() && forecastLocation != null && doorForecastRead == null &&
-                        now() - doorForecastReadAt >= if (doorForecast == null) 10_000L else FORECAST_TTL_MS
+                        (doorForecast == null || !sameLocalDay(doorForecastReadAt, now()) ||
+                            now() - doorForecastReadAt >= FORECAST_TTL_MS) &&
+                        now() - doorForecastReadAt >= if (doorForecast == null) 10_000L else 0L
                     ) {
-                        doorForecastRead = pollScope.async { forecastReader(forecastLocation, now()) }
+                        val startedAt = now()
+                        doorForecastStartedAt = startedAt
+                        doorForecastRead = pollScope.async { forecastReader(forecastLocation, startedAt) }
                     }
                 }
                 val location = if (doorMacroCheck) doorLocation?.takeIf {
                     it.observedAtMillis == null || now() - it.observedAtMillis in 0..120_000L
                 }
                     else if (portableCheck == null && needsLocation()) cachedLocation() else null
-                val weather = if (doorMacroCheck) doorForecast.takeIf { now() - doorForecastReadAt < FORECAST_TTL_MS }
+                val weather = if (doorMacroCheck) doorForecast.takeIf {
+                    now() - doorForecastReadAt in 0 until FORECAST_TTL_MS &&
+                        sameLocalDay(doorForecastReadAt, now())
+                }
                     else if (portableCheck == null && needsForecast()) {
                         cachedForecast(location ?: cachedLocation())
                     } else null
@@ -828,14 +838,27 @@ class StatePoller(
      */
     private suspend fun cachedForecast(at: GeoPoint?): WeatherForecast? {
         if (at == null) return null
-        if (now() - forecastFetchedAt < FORECAST_TTL_MS && forecastCache != null) return forecastCache
-        forecastFetchedAt = now()
-        val fresh = forecastReader(at, now())
+        val currentTime = now()
+        if (forecastCache != null && currentTime - forecastFetchedAt in 0 until FORECAST_TTL_MS &&
+            sameLocalDay(forecastFetchedAt, currentTime)
+        ) return forecastCache
+        forecastFetchedAt = currentTime
+        val fresh = forecastReader(at, currentTime)
         if (fresh == null) {
             com.wemade.teslable.DiagLog.add("예보 읽기 실패 — 예보 조건은 불충족으로 처리")
         }
         forecastCache = fresh
         return fresh
+    }
+
+    /** '오늘' 예보를 다음날 조건에 재사용하지 않도록 기기 현지 날짜를 비교한다. */
+    private fun sameLocalDay(fetchedAt: Long, currentTime: Long): Boolean {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = fetchedAt
+        val year = calendar.get(Calendar.YEAR)
+        val day = calendar.get(Calendar.DAY_OF_YEAR)
+        calendar.timeInMillis = currentTime
+        return calendar.get(Calendar.YEAR) == year && calendar.get(Calendar.DAY_OF_YEAR) == day
     }
 
     private var forecastCache: WeatherForecast? = null

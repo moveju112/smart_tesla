@@ -145,10 +145,6 @@ class AppContainer(private val context: Context) {
     suspend fun initialize() {
         ruleStore.load()
         chargeHistory.load()
-        // 저장·삭제·이름 변경 직후 빅스비 루틴 목록도 같은 매크로를 보게 한다.
-        appScope.launch {
-            ruleStore.rules.collect(macroShortcutPublisher::publish)
-        }
 
         settingsStore.removeObsoleteSettings()
         val settings = settingsStore.settings.first()
@@ -186,6 +182,10 @@ class AppContainer(private val context: Context) {
         stealthCharge = com.wemade.teslamacro.data.charge.StealthChargeController(
             gateway, poller, settingsStore,
         )
+        // 저장·삭제·이름 변경 직후 빅스비 루틴 목록도 같은 매크로를 보게 한다.
+        appScope.launch {
+            ruleStore.rules.collect(macroShortcutPublisher::publish)
+        }
     }
 
     val isSimulated: Boolean get() = gateway.current is SimulatedVehicleGateway

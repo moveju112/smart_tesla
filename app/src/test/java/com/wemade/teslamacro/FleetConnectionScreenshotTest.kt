@@ -27,7 +27,7 @@ class FleetConnectionScreenshotTest(private val dark: Boolean, private val wide:
     @get:Rule val paparazzi = Paparazzi(
         deviceConfig = if (wide) DeviceConfig.PIXEL_C.copy(screenWidth = 1920, screenHeight = 1200,
             density = Density.XHIGH, orientation = ScreenOrientation.LANDSCAPE, fontScale = 1.3f, softButtons = false)
-        else DeviceConfig.PIXEL_6.copy(softButtons = false), showSystemUi = false,
+        else DeviceConfig.PIXEL_6.copy(softButtons = false, fontScale = 1.3f), showSystemUi = false,
     )
 
     /** 입력할 곳과 저장 전 비활성 버튼을 두 팔레트에서 확인한다. */
@@ -52,8 +52,8 @@ class FleetConnectionScreenshotTest(private val dark: Boolean, private val wide:
                         Row(horizontalArrangement = Arrangement.spacedBy(Space.xl)) {
                             Column(Modifier.weight(1f).verticalScroll(rememberScrollState(if (state.stored && !observing) Int.MAX_VALUE else 0))) {
                                 androidx.compose.runtime.CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails provides true) {
-                                    // 토큰 입력은 켠 뒤 펼친 부가 설정에서 하므로 켜진 상태로 모든 토큰 단계를 그린다.
-                                    FleetApiPanel(enabled = true, onEnabledChange = {},
+                                    // 미등록 상태에서는 토글을 켤 수 없어도 최초 토큰 입력이 보여야 한다.
+                                    FleetApiPanel(enabled = state.stored, onEnabledChange = {},
                                         credentials = FleetCredentialControls(state, {}, {}, {}))
                                 }
                             }

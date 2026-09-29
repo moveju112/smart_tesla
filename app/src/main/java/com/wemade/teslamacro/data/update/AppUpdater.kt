@@ -141,9 +141,10 @@ object AppUpdater {
         lastAvailable = state.value as? UpdateState.Available
     }
 
-    /** 설치 확인 화면에서 취소한 뒤 다시 누를 수 있게 되돌린다. 리시버가 부른다 */
+    /** 설치 화면에서 돌아왔을 때 설치 대상을 되살리거나, 재시작 후에는 재확인을 안내한다. */
     internal fun restoreAvailable() {
         state.value = lastAvailable
+            ?: UpdateState.Failed("설치를 취소했어요. 새 버전을 다시 확인해 주세요.")
     }
 
     /** 받아둔 APK */
@@ -302,19 +303,25 @@ object AppUpdater {
         }
 
         val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            session.openWrite("update", 0, apk.length()).use { output ->
-                apk.inputStream().use { it.copyTo(output) }
-                session.fsync(output)
+        try {
+            installer.openSession(sessionId).use { session ->
+                session.openWrite("update", 0, apk.length()).use { output ->
+                    apk.inputStream().use { it.copyTo(output) }
+                    session.fsync(output)
+                }
+                val pending = android.app.PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(context, InstallResultReceiver::class.java),
+                    android.app.PendingIntent.FLAG_MUTABLE or
+                        android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                session.commit(pending.intentSender)
             }
-            val pending = android.app.PendingIntent.getBroadcast(
-                context,
-                sessionId,
-                Intent(context, InstallResultReceiver::class.java),
-                android.app.PendingIntent.FLAG_MUTABLE or
-                    android.app.PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            session.commit(pending.intentSender)
+        } catch (error: Exception) {
+            // 복사·커밋 실패 시 미완료 세션을 남겨 저장 공간을 잡아먹지 않게 한다.
+            runCatching { installer.abandonSession(sessionId) }
+            throw error
         }
     }
 

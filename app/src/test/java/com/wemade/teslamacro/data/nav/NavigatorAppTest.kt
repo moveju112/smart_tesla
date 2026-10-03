@@ -19,7 +19,7 @@ class NavigatorAppTest {
 
     /** 검색어의 공백·특수문자가 별도 파라미터나 길안내로 해석되지 않게 인코딩한다. */
     @Test fun searchDestinationOpensEncodedNaverSearch() {
-        val query = "위메이드 타워 & 주차장/#?"
+        val query = "서울시청 & 주차장/#?"
         val uri = DestinationPlace(query).naverUri(pkg)
         assertEquals("nmap", uri.scheme)
         assertEquals("search", uri.host)

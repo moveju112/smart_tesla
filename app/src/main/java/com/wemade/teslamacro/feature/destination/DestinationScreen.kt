@@ -134,7 +134,7 @@ fun DestinationScreen(
                     }
                     DestinationSection("전송할 검색어") {
                         DraftField(state.query, onQuery, label = "주소 또는 가게 이름", enabled = !state.busy,
-                            note = "예: 위메이드 타워 · 최대 120자")
+                            note = "최대 120자")
                         Text("태블릿 네이버지도에서 검색 결과를 열어요. 장소 선택과 길안내 시작은 태블릿에서 해 주세요.",
                             style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
                         DraftField(state.minutes, onMinutes, label = "보낸 뒤 유효시간", suffix = "분", enabled = !state.busy,

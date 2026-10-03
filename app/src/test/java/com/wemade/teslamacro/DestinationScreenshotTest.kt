@@ -20,7 +20,7 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
         screenWidth = 1920, screenHeight = 1200, density = Density.XHIGH,
         orientation = ScreenOrientation.LANDSCAPE, fontScale = 1.3f, softButtons = false)
         else DeviceConfig.PIXEL_6.copy(fontScale = 1.3f, softButtons = false), showSystemUi = false)
-    private val place = DestinationPlace("위메이드 타워")
+    private val place = DestinationPlace("서울시청")
 
     /** 검색 전 안내와 연결 전 비활성 동작을 큰 글자로 확인한다. */
     @Test fun empty() = snapshot(DestinationUiState())

@@ -64,9 +64,9 @@ class DestinationReceiverTest {
 
     /** 검색어만 직렬화·복원해도 주소나 가짜 좌표를 만들어 넣지 않는다. */
     @Test fun searchPayloadRoundTripsWithoutCoordinates() {
-        val destination = DestinationPlace("위메이드 타워")
+        val destination = DestinationPlace("서울시청")
         val encoded = Json.encodeToString(destination)
-        assertEquals("""{"name":"위메이드 타워"}""", encoded)
+        assertEquals("""{"name":"서울시청"}""", encoded)
         assertEquals(destination, Json.decodeFromString<DestinationPlace>(encoded))
         assertTrue(destination.valid())
         assertTrue(Json.decodeFromString<DestinationPlace>(Json.encodeToString(place)).valid())
@@ -75,7 +75,7 @@ class DestinationReceiverTest {
 
     /** 빈 검색어·제어문자·길이 초과와 불완전한 기존 목적지를 차단한다. */
     @Test fun malformedSearchAndPartialCoordinatesAreRejected() {
-        listOf(DestinationPlace(""), DestinationPlace("   "), DestinationPlace("위메이드\n타워"),
+        listOf(DestinationPlace(""), DestinationPlace("   "), DestinationPlace("서울\n시청"),
             DestinationPlace("가".repeat(121)), DestinationPlace("회사", latitude = 37.5),
             DestinationPlace("회사", address = "주소"), place.copy(latitude = Double.NaN),
             place.copy(longitude = 0.0), place.copy(address = "")).forEach { assertFalse(it.valid()) }
@@ -85,7 +85,7 @@ class DestinationReceiverTest {
 
     /** 검색어 요청도 기존 인계·완료·중복 차단 경로를 한 번만 통과한다. */
     @Test fun searchRequestUsesExistingHandoffOnce() = runTest {
-        val scenario = Scenario().apply { destination = DestinationPlace("위메이드 타워") }
+        val scenario = Scenario().apply { destination = DestinationPlace("서울시청") }
         val receiver = scenario.receiver()
         assertTrue(receiver.receive(false) { true })
         assertEquals(scenario.destination, scenario.launchedDestination)

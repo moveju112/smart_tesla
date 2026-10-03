@@ -16,7 +16,7 @@ from pathlib import Path
 
 from update_safety_cameras import comparable_road_name
 
-WORKER = ("ssh", "-T", "-o", "BatchMode=yes", "choondoggy",
+WORKER = ("ssh", "-T", "-o", "BatchMode=yes", "oracle_tokyo",
           "cd project/osrm && LD_LIBRARY_PATH=.build/install/lib "
           ".build/install/bin/match_worker .data/south-korea.osrm")
 

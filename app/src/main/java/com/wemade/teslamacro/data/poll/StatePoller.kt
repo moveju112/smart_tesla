@@ -207,7 +207,7 @@ class StatePoller(
             val settings = settingsStore.settings.first()
             val wakeCheck = vehiclePowerWakeCheck.get()
             val doorMacroCheck = needsDoorMacroWakeCheck(settings, ruleStore.rules.value)
-            if ((settings.deviceMode == DeviceMode.PORTABLE || settings.autoStartNavigatorSafeDrive || doorMacroCheck) &&
+            if ((settings.deviceMode == DeviceMode.PORTABLE || settings.needsBoardingNavigation || doorMacroCheck) &&
                 wakeCheck?.expired(now()) == true
             ) {
                 finishPowerWakeCheck(wakeCheck, "60초 확인 시간 종료")
@@ -216,7 +216,7 @@ class StatePoller(
             val boardingCheck = wakeCheck?.takeIf {
                 !it.expired(now()) && when (connectionDecision(settings).reason) {
                     VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK -> true
-                    VehicleConnectionReason.MOUNTED_USE -> settings.autoStartNavigatorSafeDrive || doorMacroCheck
+                    VehicleConnectionReason.MOUNTED_USE -> settings.needsBoardingNavigation || doorMacroCheck
                     else -> false
                 }
             }
@@ -492,7 +492,7 @@ class StatePoller(
             // 문 매크로는 착석 여부와 무관하게 60초 동안 변화를 기다린다.
             // 자동 안심운전만 쓰는 경우에는 기존처럼 착석 확인 즉시 종료한다.
             if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
-                !doorMacroCheck && (!settings.autoStartNavigatorSafeDrive || observedPresence == true)
+                !doorMacroCheck && (!settings.needsBoardingNavigation || observedPresence == true)
             ) {
                 wakeCheck?.let { finishPowerWakeCheck(it, "탑승 상태 확인 완료") }
             }
@@ -698,10 +698,10 @@ class StatePoller(
         decideVehicleConnection(
             deviceMode = settings.deviceMode,
             protectPhoneKey = settings.protectPhoneKey,
-            autoStartNavigatorSafeDrive = settings.autoStartNavigatorSafeDrive,
+            autoStartNavigatorSafeDrive = settings.needsBoardingNavigation,
             vehiclePowerConnected = vehiclePowerConnected,
             vehiclePowerWakePending = vehiclePowerWakeCheck.get()?.let {
-                (settings.deviceMode != DeviceMode.PORTABLE && !settings.autoStartNavigatorSafeDrive &&
+                (settings.deviceMode != DeviceMode.PORTABLE && !settings.needsBoardingNavigation &&
                     !needsDoorMacroWakeCheck(settings, ruleStore.rules.value)) ||
                     !it.expired(now())
             } == true,
@@ -1094,3 +1094,7 @@ internal fun nextIntervalSeconds(
         snapshot.isCharging != true -> maxOf(DEEP_IDLE_SECONDS, idleSeconds)
     else -> idleSeconds
 }
+
+/** 목적지 받기가 켜진 거치 기기만 기존 탑승 확인 주기에 참여시킨다. */
+internal val AppSettings.needsBoardingNavigation: Boolean
+    get() = autoStartNavigatorSafeDrive || (deviceMode == DeviceMode.MOUNTED && destinationReceiveEnabled)

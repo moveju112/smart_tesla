@@ -2,15 +2,7 @@ package com.wemade.teslamacro.data.safety
 
 import android.content.Context
 import com.wemade.teslamacro.BuildConfig
-import java.io.ByteArrayOutputStream
-import java.net.URL
-import java.security.SecureRandom
-import java.util.Base64
-import javax.net.ssl.HttpsURLConnection
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -21,7 +13,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
-import kotlin.coroutines.resume
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -44,11 +35,8 @@ internal class RoadMatcher(
     identityOverride: RoadDeviceIdentity? = null,
     private val requestOverride: (suspend (String, ByteArray, String?) -> RoadHttpResponse)? = null,
 ) {
-    // 안내 상태만 보는 동안은 저장소에 접근하지 않아 테스트·오프라인 시작을 방해하지 않는다.
-    private val identity by lazy { identityOverride ?: RoadDeviceIdentity(context) }
-    private var accessToken: String? = null
-    private var accessExpiresAt: Long = 0
-    val available: Boolean get() = bootstrapToken.isNotBlank()
+    private val api = DeviceApiClient(context, bootstrapToken, identityOverride, requestOverride)
+    val available: Boolean get() = api.available
 
     /** 위치는 기기별 단기 토큰으로만 보내고 인증 실패 시 한 번 자동 갱신한다. */
     suspend fun match(points: List<RoadPoint>): RoadMatchResponse = withContext(Dispatchers.IO) {
@@ -66,111 +54,11 @@ internal class RoadMatcher(
                 }
             })
         }.toString().toByteArray(Charsets.UTF_8)
-        val (firstToken, firstCode) = try { sessionToken() }
-        catch (error: Exception) {
-            if (error is CancellationException) throw error
-            return@withContext RoadMatchResponse()
-        }
-        if (firstToken == null) return@withContext RoadMatchResponse(code = firstCode)
-        var response = post("/v1/match", body, firstToken)
-        if (response.code == 401) {
-            accessToken = null
-            val (nextToken, nextCode) = try { sessionToken() }
-            catch (error: Exception) {
-                if (error is CancellationException) throw error
-                return@withContext RoadMatchResponse()
-            }
-            if (nextToken == null) return@withContext RoadMatchResponse(code = nextCode)
-            response = post("/v1/match", body, nextToken)
-        }
+        val response = api.authenticatedPost("/v1/match", body)
         RoadMatchResponse(if (response.code == 200) parseRoadMatch(response.body) else null, response.code)
     }
 
-    /** 기기 인증서로 30분 토큰을 받고, 인증서가 만료되면 빌드 토큰으로 다시 등록한다. */
-    private suspend fun sessionToken(): Pair<String?, Int> {
-        val now = System.currentTimeMillis() / 1_000
-        accessToken?.takeIf { now + 60 < accessExpiresAt }?.let { return it to 200 }
-        repeat(2) {
-            var certificate = identity.readCertificate()
-            if (certificate == null) {
-                val publicKey = runCatching { identity.publicKey() }.getOrNull() ?: return null to 0
-                val registered = post("/v1/devices", buildJsonObject { put("publicKey", publicKey) }.toString().toByteArray(), bootstrapToken)
-                if (registered.code != 200) return null to registered.code
-                certificate = parseObject(registered.body)?.get("certificate")?.asString()
-                    ?.takeIf { it.startsWith("dc1.") && it.length <= 1024 } ?: return null to 0
-                if (runCatching { identity.saveCertificate(certificate) }.isFailure) return null to 0
-            }
-            val timestamp = System.currentTimeMillis() / 1_000
-            val nonce = ByteArray(16).also { SecureRandom().nextBytes(it) }
-                .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
-            val signature = runCatching { identity.sign(certificate, timestamp, nonce) }.getOrNull() ?: return null to 0
-            val body = buildJsonObject {
-                put("certificate", certificate)
-                put("timestamp", timestamp)
-                put("nonce", nonce)
-                put("signature", signature)
-            }.toString().toByteArray()
-            val issued = post("/v1/session", body, null)
-            if (issued.code == 401) {
-                identity.clearCertificate()
-                return@repeat
-            }
-            if (issued.code != 200) return null to issued.code
-            val (token, seconds) = parseRoadAccess(issued.body) ?: return null to 0
-            accessToken = token
-            accessExpiresAt = System.currentTimeMillis() / 1_000 + seconds
-            return token to 200
-        }
-        return null to 401
-    }
 
-    /** 인증 응답은 GPS 응답과 분리해 크기·형식 오류를 조용히 오프라인으로 돌린다. */
-    private fun parseObject(body: String): JsonObject? = runCatching { Json.parseToJsonElement(body) as? JsonObject }.getOrNull()
-
-    /** 인증서와 접속 토큰을 같은 HTTPS 경로 규칙으로 보내되 GPS는 매칭 경로에만 실어 보낸다. */
-    private suspend fun post(path: String, body: ByteArray, bearer: String?): RoadHttpResponse {
-        requestOverride?.let { return it(path, body, bearer) }
-        val connection = try { URL(BASE_URL + path).openConnection() as HttpsURLConnection }
-        catch (_: Exception) { return RoadHttpResponse() }
-        return suspendCancellableCoroutine { continuation ->
-            continuation.invokeOnCancellation { connection.disconnect() }
-            try {
-                continuation.context.ensureActive()
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 2_000
-                connection.readTimeout = 2_000
-                connection.useCaches = false
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                if (bearer != null) connection.setRequestProperty("Authorization", "Bearer $bearer")
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.setRequestProperty("Accept", "application/json")
-                connection.setFixedLengthStreamingMode(body.size)
-                connection.outputStream.use { it.write(body) }
-                val code = connection.responseCode
-                val output = ByteArrayOutputStream()
-                if (code == 200) connection.inputStream.use { input ->
-                    val buffer = ByteArray(4096)
-                    while (true) {
-                        continuation.context.ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        check(output.size() + count <= 65_536)
-                        output.write(buffer, 0, count)
-                    }
-                }
-                if (continuation.isActive) continuation.resume(RoadHttpResponse(code, output.toString(Charsets.UTF_8.name())))
-            } catch (_: Exception) {
-                if (continuation.isActive) continuation.resume(RoadHttpResponse())
-            } finally {
-                connection.disconnect()
-            }
-        }
-    }
-
-    private companion object {
-        const val BASE_URL = "https://gps-map.choondoggy.com"
-    }
 }
 
 /** 인증 응답에서 문자열이 아닌 값은 헤더·파일로 보내지 않는다. */

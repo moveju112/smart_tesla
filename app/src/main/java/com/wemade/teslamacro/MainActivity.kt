@@ -309,12 +309,16 @@ private fun AppRoot(factory: ViewModelFactory) {
 
                 Destination.Macros -> {
                     val vm: MacroViewModel = viewModel(factory = factory)
+                    var showingDestination by rememberSaveable { mutableStateOf(false) }
                     val draft by vm.draft.collectAsState()
                     val saveError by vm.saveError.collectAsState()
 
                     // 편집 중이면 목록 대신 편집 화면이 자리를 차지한다
                     val editing = draft
-                    if (editing != null) {
+                    if (showingDestination) {
+                        val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
+                        com.wemade.teslamacro.feature.destination.DestinationRoute(destinationViewModel) { showingDestination = false }
+                    } else if (editing != null) {
                         MacroEditScreen(
                             draft = editing,
                             onChange = vm::updateDraft,
@@ -339,6 +343,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onDuplicate = vm::duplicate,
                             onDelete = vm::delete,
                             onCreate = vm::createMacro,
+                            onSendDestination = { showingDestination = true },
                             onCreateInFolder = vm::createMacroInFolder,
                             folders = folders,
                             folderError = folderError,

@@ -99,6 +99,48 @@ class NaverNavigator(private val context: Context) {
     /** 권한이 이미 있는가. 편집 화면이 안내 문구를 띄울지 판단할 때 쓴다 */
     val hasOverlayPermission: Boolean get() = Settings.canDrawOverlays(context)
 
+    /** 폰에서 확정한 좌표를 재검색하지 않고 잠금 해제·최종 인계 확인 뒤 네이버에 전달한다. */
+    suspend fun navigateDestination(place: DestinationPlace, beforeLaunch: suspend () -> Unit): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            if (!safeDriveLaunchMutex.tryLock()) return@withContext Result.failure(IllegalStateException("다른 내비 실행을 처리 중이에요"))
+            try {
+                runCatching {
+                    require(place.valid()) { "목적지 정보가 유효하지 않아요" }
+                    check(hasOverlayPermission) { "다른 앱 위에 표시 권한을 허용해 주세요" }
+                    val app = NavigatorApp.NAVER
+                    val installed = installedPackage(app) ?: error("네이버 지도 앱을 설치해 주세요")
+                    val uri = app.uris(place.latitude, place.longitude, place.name, context.packageName)
+                        .first { it.host == "navigation" }
+                    val intent = Intent(Intent.ACTION_VIEW, uri).setPackage(installed).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val launch: suspend (Activity?) -> Unit = { activity ->
+                        launchFirst(app.label, listOf(intent),
+                            backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(), activity, beforeLaunch)
+                    }
+                    val keyguard = context.getSystemService(KeyguardManager::class.java)
+                    if (!isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
+                        check(SafeDriveUnlockActivity.runWhenUnlocked(context, app.label,
+                            openActivity = { launchFromBackground(it, "목적지 잠금 해제", BackgroundLaunchMethod.DIRECT_ACTIVITY) },
+                            launch = { launch(it) })) { "잠금 해제 대기가 끝났어요. 목적지 상태를 확인해 주세요" }
+                    } else launch(null)
+                    com.wemade.teslable.DiagLog.add("목적지 전달 — 네이버 지도 실행 요청")
+                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            } finally { safeDriveLaunchMutex.unlock() }
+        }
+
+    /** 기존 Android 지오코더로 여러 후보를 보여 주고 보내기 전에 사용자가 지점을 확정한다. */
+    suspend fun searchDestinations(query: String): List<DestinationPlace> = withContext(Dispatchers.IO) {
+        require(query.trim().length in 2..200) { "주소나 가게명을 두 글자 이상 입력해 주세요" }
+        check(Geocoder.isPresent()) { "이 기기의 장소 검색을 사용할 수 없어요" }
+        @Suppress("DEPRECATION")
+        val addresses = Geocoder(context, Locale.KOREA).getFromLocationName(query.trim(), 5).orEmpty()
+        addresses.mapNotNull { address ->
+            if (!address.hasLatitude() || !address.hasLongitude()) return@mapNotNull null
+            val line = address.getAddressLine(0) ?: return@mapNotNull null
+            DestinationPlace(address.featureName?.takeIf { it.isNotBlank() } ?: query.trim(), line,
+                address.latitude, address.longitude).takeIf { it.valid() }
+        }.distinctBy { it.latitude to it.longitude }
+    }
+
     // 1. 권한 확인 → 2. 주소를 좌표로 → 3. 고른 내비 앱에 길안내 인텐트
     suspend fun navigate(
         name: String,
@@ -278,14 +320,16 @@ class NaverNavigator(private val context: Context) {
         candidates: List<Intent>,
         method: BackgroundLaunchMethod,
         foregroundActivity: Activity? = null,
+        beforeLaunch: suspend () -> Unit = {},
     ) {
         var lastFailure: Throwable? = null
         candidates.forEach { intent ->
             val handled = runCatching {
                 if (foregroundActivity == null) {
-                    launchFromBackground(intent, appLabel, method)
+                    launchFromBackground(intent, appLabel, method, beforeLaunch)
                 } else {
                     withContext(Dispatchers.Main) {
+                        beforeLaunch()
                         launchExternalActivity(intent, appLabel, method, foregroundActivity)
                         delay(WINDOW_KEEP_MILLIS)
                     }
@@ -361,6 +405,7 @@ class NaverNavigator(private val context: Context) {
         intent: Intent,
         appLabel: String,
         method: BackgroundLaunchMethod,
+        beforeLaunch: suspend () -> Unit = {},
     ) =
         withContext(Dispatchers.Main) {
             val manager = context.getSystemService(WindowManager::class.java)
@@ -385,6 +430,7 @@ class NaverNavigator(private val context: Context) {
                 if (!anchor.isAttachedToWindow || !anchor.isShown) {
                     error("지도 실행 창이 화면에 붙지 않았어요")
                 }
+                beforeLaunch()
                 launchExternalActivity(intent, appLabel, method)
                 delay(WINDOW_KEEP_MILLIS)
             } finally {

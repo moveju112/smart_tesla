@@ -1,0 +1,81 @@
+--- a/map_server.py
++++ b/map_server.py
+@@ -12,6 +12,7 @@
+ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ from pathlib import Path
+ from device_auth import DeviceAuth
++from destination_relay import DestinationRelay, RelayError
+
+ MAX_BODY = 8192
+ MAX_POINTS = 32
+@@ -219,6 +220,8 @@
+         self.users_path = Path(users_path)
+         self.signing_key_path = Path(signing_key_path) if signing_key_path else None
+         self.worker = worker
++        self.destination_relay = (DestinationRelay(os.environ["MAP_DESTINATION_DB"])
++                                  if os.environ.get("MAP_DESTINATION_DB") else None)
+         self.rates = {}
+         self.next_rate_purge = 0.0
+         self.lock = threading.Lock()
+@@ -285,7 +288,7 @@
+
+     # 1. 경로·쿼리를 고정하고 본문 외의 GPS 유입을 거부합니다.
+     def dispatch(self, method, target, authorization, body, authenticated=None):
+-        if method != "POST" or target not in ("/v1/match", "/v1/devices", "/v1/session"):
++        if method != "POST" or target not in ("/v1/match", "/v1/devices", "/v1/session", "/v1/destinations"):
+             raise APIError(404, "not_found")
+         if target in ("/v1/session", "/v1/devices") and self.device_auth is None:
+             raise APIError(503, "device_auth_unavailable")
+@@ -297,6 +300,20 @@
+             self.limit_rate("device:" + device)
+             return response
+         user = authenticated if authenticated is not None else self.authenticate(authorization)
++        if target == "/v1/destinations":
++            # 기기 서명 인증과 기존 사용자별 가입 토큰을 구분해 수신함 접근을 격리한다.
++            if not authorization.startswith("Bearer rm1.") or self.device_auth is None:
++                raise APIError(401, "authentication_required")
++            try:
++                owner, device = self.device_auth.verify_access(authorization[7:])
++            except ValueError:
++                raise APIError(401, "authentication_required") from None
++            if self.destination_relay is None:
++                raise APIError(503, "destination_unavailable")
++            try:
++                return self.destination_relay.dispatch(owner, device, body)
++            except RelayError as error:
++                raise APIError(error.status, error.code) from None
+         if target == "/v1/devices":
+             # 2. 접속 토큰은 새 기기 등록에 쓸 수 없고 기존 빌드 토큰만 허용합니다.
+             if authorization.startswith("Bearer rm1."):
+@@ -327,7 +344,7 @@
+     def do_POST(self):
+         status = 500
+         try:
+-            if self.path not in ("/v1/match", "/v1/devices", "/v1/session"):
++            if self.path not in ("/v1/match", "/v1/devices", "/v1/session", "/v1/destinations"):
+                 raise APIError(404, "not_found")
+             if self.headers.get("Transfer-Encoding") or len(self.headers.get_all("Content-Length", [])) != 1:
+                 raise APIError(400, "invalid_body_framing")
+--- a/deploy/nginx-gps-map.conf
++++ b/deploy/nginx-gps-map.conf
+@@ -20,7 +20,7 @@
+     add_header Referrer-Policy "no-referrer" always;
+     add_header X-Content-Type-Options "nosniff" always;
+
+-    location ~ ^/v1/(match|devices|session)$ {
++    location ~ ^/v1/(match|devices|session|destinations)$ {
+         limit_except POST { deny all; }
+         proxy_pass http://127.0.0.1:8091;
+         proxy_http_version 1.1;
+--- a/deploy/gps-map.service
++++ b/deploy/gps-map.service
+@@ -13,6 +13,9 @@
+ Environment=MAP_DATA_PATH=/var/lib/gps-map/current/south-korea.osrm
+ Environment=MAP_WORKER_BINARY=/home/ubuntu/project/osrm/.build/install/bin/match_worker
+ Environment=MAP_PORT=8091
++StateDirectory=gps-map-destinations
++StateDirectoryMode=0700
++Environment=MAP_DESTINATION_DB=/var/lib/gps-map-destinations/relay.sqlite3
+ ExecStart=/usr/bin/python3 -B /home/ubuntu/project/osrm/map_server.py
+ Restart=on-failure
+ RestartSec=10

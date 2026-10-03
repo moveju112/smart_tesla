@@ -130,6 +130,10 @@ class MacroService : LifecycleService() {
         watchSafeDrive()
         watchConfirmedPresence()
         watchNavigatorSafeDrive()
+        lifecycleScope.launch {
+            app.ready.first { it }
+            app.container.destinations.watch()
+        }
     }
 
     /**
@@ -427,6 +431,7 @@ class MacroService : LifecycleService() {
         lifecycleScope.launch {
             app.ready.first { it }
             app.container.poller.freshPresence.collect { present ->
+                app.container.destinations.observePresence(present)
                 driveAlertGate.observePresence(present, SystemClock.elapsedRealtime())
                 refreshAutomaticAlerts()
             }
@@ -542,14 +547,13 @@ class MacroService : LifecycleService() {
                     )
                 }
                 app.container.navigator.logSafeDriveState("탑승 자동 실행", navigatorApp, automaticLaunchMode)
-                app.container.navigator.startSafeDrive(
-                    app = navigatorApp,
-                    launchMode = automaticLaunchMode,
-                ).onFailure { error ->
-                    com.wemade.teslable.DiagLog.add(
-                        "${navigatorApp.label} 안심운전 자동 실행 실패 — ${error.message}"
-                    )
+                val start: suspend () -> Unit = {
+                    app.container.navigator.startSafeDrive(app = navigatorApp, launchMode = automaticLaunchMode)
+                        .onFailure { com.wemade.teslable.DiagLog.add("안심운전 자동 실행 실패") }
                 }
+                if (settings.destinationReceiveEnabled && settings.deviceMode == DeviceMode.MOUNTED) {
+                    app.container.destinations.afterBoardingWhenEmpty(start)
+                } else start()
             }
         }
     }
@@ -574,11 +578,13 @@ class MacroService : LifecycleService() {
                                 "기기 충전 연결 — 휴대 모드라 차량 연결 사유에서 제외"
                             }
                         )
+                        app.container.destinations.powerChanged(true)
                         app.container.poller.setVehiclePowerConnected(true)
                     }
                     // 전원이 끊기면 공식 휴대폰 키만 남도록 인증 BLE를 바로 놓는다.
                     Intent.ACTION_POWER_DISCONNECTED -> {
                         com.wemade.teslable.DiagLog.add("기기 전원 끊김 — 차량 BLE 보호 확인")
+                        app.container.destinations.powerChanged(false)
                         app.container.poller.setVehiclePowerConnected(false, endAppSession = true)
                         app.container.poller.enforceConnectionGuard()
                     }

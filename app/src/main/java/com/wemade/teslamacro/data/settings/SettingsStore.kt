@@ -78,6 +78,8 @@ data class AppSettings(
     val protectPhoneKey: Boolean = true,
     /** 기기 종류와 무관하게 처음엔 백그라운드 연결하지 않는 안전한 휴대 모드로 시작한다. */
     val deviceMode: DeviceMode = DeviceMode.PORTABLE,
+    val destinationReceiveEnabled: Boolean = false,
+    val destinationValidityMinutes: Int = 10,
     /**
      * 키 등록까지 끝났는지.
      *
@@ -168,6 +170,8 @@ class SettingsStore(
             fleetApiEnabled = prefs[KeyFleetApiEnabled] ?: false,
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
+            destinationReceiveEnabled = prefs[KeyDestinationReceiveEnabled] ?: false,
+            destinationValidityMinutes = (prefs[KeyDestinationValidityMinutes] ?: 10).coerceIn(1, 120),
             isEnrolled = prefs[KeyEnrolled] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
@@ -250,6 +254,12 @@ class SettingsStore(
     suspend fun setProtectPhoneKey(enabled: Boolean) = edit { it[KeyProtectPhoneKey] = enabled }
     /** 같은 종류의 기기도 사용 방식이 다를 수 있으므로 이 설치본에만 모드를 저장한다. */
     suspend fun setDeviceMode(mode: DeviceMode) = edit { it[KeyDeviceMode] = mode.name }
+
+    /** 목적지 수신은 설치별 선택이라 다른 기기의 차량 설정과 묶지 않는다. */
+    suspend fun setDestinationReceiveEnabled(enabled: Boolean) = edit { it[KeyDestinationReceiveEnabled] = enabled }
+
+    /** 반복 전송에서 같은 유효시간을 다시 입력하지 않게 저장한다. */
+    suspend fun setDestinationValidityMinutes(minutes: Int) = edit { it[KeyDestinationValidityMinutes] = minutes.coerceIn(1, 120) }
     suspend fun setVehicleAddress(address: String) = edit { it[KeyVehicleAddress] = address }
     suspend fun setVehicleName(name: String) = edit { it[KeyVehicleName] = name }
     /** 기기 선택 해제는 빈 값으로 저장해 기본 자동 식별로 되돌린다. */
@@ -504,6 +514,8 @@ class SettingsStore(
         val KeyProtectPhoneKey = booleanPreferencesKey("protect_phone_key")
         // 키 이름은 기존 설치본의 값을 읽기 위해 유지하고, 값만 MOUNTED/PORTABLE로 갱신한다.
         val KeyDeviceMode = stringPreferencesKey("device_role")
+        val KeyDestinationReceiveEnabled = booleanPreferencesKey("destination_receive_enabled")
+        val KeyDestinationValidityMinutes = intPreferencesKey("destination_validity_minutes")
         val KeyEnrolled = booleanPreferencesKey("enrolled")
         val KeyVehicleAddress = stringPreferencesKey("vehicle_address")
         val KeyVehicleName = stringPreferencesKey("vehicle_name")

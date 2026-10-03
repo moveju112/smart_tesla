@@ -18,6 +18,8 @@ class ViewModelFactory(private val container: AppContainer) : ViewModelProvider.
             PairingViewModel(container) as T
         modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
             SettingsViewModel(container) as T
+        modelClass.isAssignableFrom(com.wemade.teslamacro.feature.destination.DestinationViewModel::class.java) ->
+            com.wemade.teslamacro.feature.destination.DestinationViewModel(container) as T
         else -> error("등록되지 않은 ViewModel: ${modelClass.name}")
     }
 }

@@ -28,6 +28,8 @@
 
     <!-- GitHub 릴리스에서 새 버전 확인용. 차량 제어(BLE)는 인터넷을 쓰지 않는다 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 목적지 수신은 비행기 모드·핫스팟 복구 뒤 즉시 재개한다. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- 원클릭 업데이트: 앱이 스스로를 갈아끼운다. 최초 1회 "이 출처 허용"만 필요 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

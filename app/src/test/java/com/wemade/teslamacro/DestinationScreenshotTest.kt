@@ -37,11 +37,26 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     @Test fun testButtons() = snapshot(DestinationUiState(selected = place, overlayAllowed = true,
         minutes = "0", error = "유효시간은 1~120분으로 입력해 주세요"), bottom = true)
 
+    /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 목적지 전달을 찾을 수 있다. */
+    @Test fun settingsEntry() {
+        paparazzi.snapshot {
+            FullScreenFrame(dark = dark) {
+                AppFrame(Destination.Settings, dark = dark) {
+                    com.wemade.teslamacro.feature.settings.SettingsScreen(
+                        settings = com.wemade.teslamacro.data.settings.AppSettings(),
+                        onUnpair = {}, onStartPairing = {}, onSendDestination = {},
+                        initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                    )
+                }
+            }
+        }
+    }
+
     /** 실제 앱의 여백과 반응형 구성 안에서 새 화면을 렌더링한다. */
     private fun snapshot(state: DestinationUiState, setup: Boolean = false, bottom: Boolean = false) {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
-                AppFrame(Destination.Macros, dark = dark) { DestinationScreen(state, initialSetup = setup,
+                AppFrame(Destination.Settings, dark = dark) { DestinationScreen(state, initialSetup = setup,
                     scrollState = androidx.compose.foundation.rememberScrollState(if (bottom) Int.MAX_VALUE else 0)) }
             }
         }

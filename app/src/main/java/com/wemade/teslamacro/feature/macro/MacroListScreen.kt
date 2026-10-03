@@ -68,7 +68,6 @@ fun MacroListScreen(
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
     onCreateInFolder: ((String?) -> Unit)? = null,
-    onSendDestination: (() -> Unit)? = null,
     folders: List<MacroFolder> = emptyList(),
     folderError: String? = null,
     onSaveFolder: (String?, String) -> Unit = { _, _ -> },
@@ -117,9 +116,6 @@ fun MacroListScreen(
         LocalPane.current.columns.coerceAtLeast(2)
     }
     Column(modifier = modifier.fillMaxSize()) {
-        onSendDestination?.let { action ->
-            TButton(text = "차로 보내기", tone = ButtonTone.Secondary, modifier = Modifier.padding(horizontal = Space.md), onClick = action)
-        }
         // 탐색·제목·추가만 한 줄에 두고 드문 관리 동작은 더보기로 모은다.
         Row(
             modifier = Modifier

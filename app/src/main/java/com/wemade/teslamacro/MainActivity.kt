@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -309,16 +310,12 @@ private fun AppRoot(factory: ViewModelFactory) {
 
                 Destination.Macros -> {
                     val vm: MacroViewModel = viewModel(factory = factory)
-                    var showingDestination by rememberSaveable { mutableStateOf(false) }
                     val draft by vm.draft.collectAsState()
                     val saveError by vm.saveError.collectAsState()
 
                     // 편집 중이면 목록 대신 편집 화면이 자리를 차지한다
                     val editing = draft
-                    if (showingDestination) {
-                        val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
-                        com.wemade.teslamacro.feature.destination.DestinationRoute(destinationViewModel) { showingDestination = false }
-                    } else if (editing != null) {
+                    if (editing != null) {
                         MacroEditScreen(
                             draft = editing,
                             onChange = vm::updateDraft,
@@ -343,7 +340,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onDuplicate = vm::duplicate,
                             onDelete = vm::delete,
                             onCreate = vm::createMacro,
-                            onSendDestination = { showingDestination = true },
                             onCreateInFolder = vm::createMacroInFolder,
                             folders = folders,
                             folderError = folderError,
@@ -354,6 +350,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                 }
 
                 Destination.Settings -> {
+                    var showingDestination by rememberSaveable { mutableStateOf(false) }
+                    val settingsState = rememberSaveableStateHolder()
                     val simulated = settingsViewModel.simulatedState?.collectAsState()?.value
                     val update by settingsViewModel.update.collectAsState()
                     val batteryUnrestricted by settingsViewModel.batteryUnrestricted.collectAsState()
@@ -442,116 +440,125 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 .contains(context.packageName)
                         }
 
-                    SettingsScreen(
-                        settings = settings,
-                        onThemeModeChange = settingsViewModel::setThemeMode,
-                        onStealthChargingChange = settingsViewModel::setStealthCharging,
-                        stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
-                        onStealthMaxAmpsChange = settingsViewModel::setStealthMaxAmps,
-                        onStealthMinAmpsChange = settingsViewModel::setStealthMinAmps,
-                        chargeHistory = chargeHistory,
-                        onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
-                        onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
-                        onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,
-                        onProtectPhoneKeyChange = settingsViewModel::setProtectPhoneKey,
-                        onDeviceModeChange = settingsViewModel::setDeviceMode,
-                        onUnpair = settingsViewModel::unpair,
-                        onStartPairing = { skippedPairing = false },
-                        simulator = simulated?.let {
-                            SimulatorControls(
-                                insideTemp = it.insideTempC ?: 25.0,
-                                outsideTemp = it.outsideTempC ?: 25.0,
-                                onInsideTempChange = settingsViewModel::setSimulatedInsideTemp,
-                                onOutsideTempChange = settingsViewModel::setSimulatedOutsideTemp,
-                                onBoard = { settingsViewModel.simulateBoarding() },
-                                onLeave = { settingsViewModel.simulateLeaving() },
+                    if (showingDestination) {
+                        val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
+                        com.wemade.teslamacro.feature.destination.DestinationRoute(destinationViewModel) { showingDestination = false }
+                    } else {
+                        // 목적지 화면에서 돌아오면 선택했던 주행 분류를 복원한다.
+                        settingsState.SaveableStateProvider("settings") {
+                            SettingsScreen(
+                                settings = settings,
+                                onSendDestination = { showingDestination = true },
+                                onThemeModeChange = settingsViewModel::setThemeMode,
+                                onStealthChargingChange = settingsViewModel::setStealthCharging,
+                                stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
+                                onStealthMaxAmpsChange = settingsViewModel::setStealthMaxAmps,
+                                onStealthMinAmpsChange = settingsViewModel::setStealthMinAmps,
+                                chargeHistory = chargeHistory,
+                                onStealthScheduleEnabledChange = settingsViewModel::setStealthScheduleEnabled,
+                                onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
+                                onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,
+                                onProtectPhoneKeyChange = settingsViewModel::setProtectPhoneKey,
+                                onDeviceModeChange = settingsViewModel::setDeviceMode,
+                                onUnpair = settingsViewModel::unpair,
+                                onStartPairing = { skippedPairing = false },
+                                simulator = simulated?.let {
+                                    SimulatorControls(
+                                        insideTemp = it.insideTempC ?: 25.0,
+                                        outsideTemp = it.outsideTempC ?: 25.0,
+                                        onInsideTempChange = settingsViewModel::setSimulatedInsideTemp,
+                                        onOutsideTempChange = settingsViewModel::setSimulatedOutsideTemp,
+                                        onBoard = { settingsViewModel.simulateBoarding() },
+                                        onLeave = { settingsViewModel.simulateLeaving() },
+                                    )
+                                },
+                                battery = com.wemade.teslamacro.feature.settings.BatteryControls(
+                                    unrestricted = batteryUnrestricted,
+                                    onOpenSettings = { requestBatteryUnrestricted(context, batteryDialog) },
+                                ),
+                                update = update,
+                                onCheckUpdate = settingsViewModel::checkUpdate,
+                                onDownloadUpdate = settingsViewModel::downloadAndInstall,
+                                onRequestInstallPermission = {
+                                    requestInstallPermission(context, installPermissionDialog)
+                                },
+                                backup = com.wemade.teslamacro.feature.settings.BackupControls(
+                                    onExport = {
+                                        saveBackup.launch(
+                                            com.wemade.teslamacro.data.backup.BackupFile.DEFAULT_FILE_NAME
+                                        )
+                                    },
+                                    onImport = { openBackup.launch(arrayOf("application/json", "text/*")) },
+                                    message = backupMessage,
+                                    onDismissMessage = settingsViewModel::clearBackupMessage,
+                                ),
+                                onFleetApiEnabledChange = settingsViewModel::setFleetApiEnabled,
+                                fleetCredentials = com.wemade.teslamacro.feature.settings.FleetCredentialControls(
+                                    fleetCredentials, settingsViewModel::saveFleetToken,
+                                    settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,
+                                ),
+                                smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
+                                    notificationAccessGranted = notificationAccessGranted,
+                                    onEnabledChange = settingsViewModel::setSmartThingsEnabled,
+                                    onCommandTextChange = settingsViewModel::setSmartThingsCommandText,
+                                    onValiditySecondsChange = settingsViewModel::setSmartThingsValiditySeconds,
+                                    onRequestNotificationAccess = {
+                                        openNotificationListenerSettings(context)
+                                    },
+                                ),
+                                navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                                    onAppChange = settingsViewModel::setNavigatorApp,
+                                    onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
+                                    onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
+                                    onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
+                                    onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
+                                    safeDriveTestMessage = safeDriveTestMessage,
+                                    onHudOverlayChange = settingsViewModel::setHudOverlay,
+                                    onSafeDriveChange = { enabled ->
+                                        settingsViewModel.setSafeDrive(enabled)
+                                        if (enabled && settings.deviceMode == DeviceMode.MOUNTED &&
+                                            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+                                            !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                                    },
+                                    onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
+                                    onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
+                                    onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
+                                    onSafeDriveStartVoiceChange = settingsViewModel::setSafeDriveStartVoice,
+                                    onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
+                                    onOpenSpeechSettings = { openSpeechSettings(context) },
+                                    safeDriveVoiceStatus = safeDriveVoiceStatus,
+                                    automaticSoundStatus = automaticSoundStatus,
+                                    vehicleAudioStatus = vehicleAudioStatus,
+                                    pairedAudioDevices = pairedAudioDevices,
+                                    onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
+                                    onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
+                                    onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
+                                    onSafeDriveWarningSoundChange = { settingsViewModel.setSafeDriveWarningSound(it, settings.safeDriveVolume) },
+                                    onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
+                                    safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
+                                    installed = remember { settingsViewModel.installedNavigators() },
+                                    // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
+                                    // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
+                                    overlayPermitted = overlayPermitted,
+                                    locationPermitted = locationPermitted,
+                                    activityPermitted = activityPermitted,
+                                    onRequestActivityPermission = {
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
+                                            askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                                    },
+                                    onRequestLocationPermission = {
+                                        askLocation.launch(arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                                        ))
+                                    },
+                                    onRequestOverlayPermission = {
+                                        openOverlayPermissionSettings(context)
+                                    },
+                                ),
                             )
-                        },
-                        battery = com.wemade.teslamacro.feature.settings.BatteryControls(
-                            unrestricted = batteryUnrestricted,
-                            onOpenSettings = { requestBatteryUnrestricted(context, batteryDialog) },
-                        ),
-                        update = update,
-                        onCheckUpdate = settingsViewModel::checkUpdate,
-                        onDownloadUpdate = settingsViewModel::downloadAndInstall,
-                        onRequestInstallPermission = {
-                            requestInstallPermission(context, installPermissionDialog)
-                        },
-                        backup = com.wemade.teslamacro.feature.settings.BackupControls(
-                            onExport = {
-                                saveBackup.launch(
-                                    com.wemade.teslamacro.data.backup.BackupFile.DEFAULT_FILE_NAME
-                                )
-                            },
-                            onImport = { openBackup.launch(arrayOf("application/json", "text/*")) },
-                            message = backupMessage,
-                            onDismissMessage = settingsViewModel::clearBackupMessage,
-                        ),
-                        onFleetApiEnabledChange = settingsViewModel::setFleetApiEnabled,
-                        fleetCredentials = com.wemade.teslamacro.feature.settings.FleetCredentialControls(
-                            fleetCredentials, settingsViewModel::saveFleetToken,
-                            settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,
-                        ),
-                        smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
-                            notificationAccessGranted = notificationAccessGranted,
-                            onEnabledChange = settingsViewModel::setSmartThingsEnabled,
-                            onCommandTextChange = settingsViewModel::setSmartThingsCommandText,
-                            onValiditySecondsChange = settingsViewModel::setSmartThingsValiditySeconds,
-                            onRequestNotificationAccess = {
-                                openNotificationListenerSettings(context)
-                            },
-                        ),
-                        navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
-                            onAppChange = settingsViewModel::setNavigatorApp,
-                            onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
-                            onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
-                            onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
-                            onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
-                            safeDriveTestMessage = safeDriveTestMessage,
-                            onHudOverlayChange = settingsViewModel::setHudOverlay,
-                            onSafeDriveChange = { enabled ->
-                                settingsViewModel.setSafeDrive(enabled)
-                                if (enabled && settings.deviceMode == DeviceMode.MOUNTED &&
-                                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
-                                    !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                            },
-                            onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
-                            onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
-                            onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
-                            onSafeDriveStartVoiceChange = settingsViewModel::setSafeDriveStartVoice,
-                            onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
-                            onOpenSpeechSettings = { openSpeechSettings(context) },
-                            safeDriveVoiceStatus = safeDriveVoiceStatus,
-                            automaticSoundStatus = automaticSoundStatus,
-                            vehicleAudioStatus = vehicleAudioStatus,
-                            pairedAudioDevices = pairedAudioDevices,
-                            onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
-                            onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
-                            onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
-                            onSafeDriveWarningSoundChange = { settingsViewModel.setSafeDriveWarningSound(it, settings.safeDriveVolume) },
-                            onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
-                            safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
-                            installed = remember { settingsViewModel.installedNavigators() },
-                            // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
-                            // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
-                            overlayPermitted = overlayPermitted,
-                            locationPermitted = locationPermitted,
-                            activityPermitted = activityPermitted,
-                            onRequestActivityPermission = {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
-                                    askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                            },
-                            onRequestLocationPermission = {
-                                askLocation.launch(arrayOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                                ))
-                            },
-                            onRequestOverlayPermission = {
-                                openOverlayPermissionSettings(context)
-                            },
-                        ),
-                    )
+                        }
+                    }
                 }
             }
         }

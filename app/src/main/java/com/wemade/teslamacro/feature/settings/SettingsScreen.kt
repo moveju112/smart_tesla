@@ -87,6 +87,7 @@ fun SettingsScreen(
     onRequestInstallPermission: () -> Unit = {},
     backup: BackupControls? = null,
     navigation: NavigationControls? = null,
+    onSendDestination: (() -> Unit)? = null,
     smartThings: SmartThingsControls? = null,
     onFleetApiEnabledChange: ((Boolean) -> Unit)? = null,
     fleetCredentials: FleetCredentialControls? = null,
@@ -137,6 +138,14 @@ fun SettingsScreen(
                 left = {
                     when (group) {
                         SettingsGroup.DRIVING -> {
+                            onSendDestination?.let { action ->
+                                SectionHeader("목적지 전달", topPadding = Space.sm)
+                                TCard {
+                                    Text("휴대폰과 거치 기기를 연결하고 목적지를 전달해요.",
+                                        style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
+                                    TButton(text = "차로 보내기", tone = ButtonTone.Secondary, onClick = action)
+                                }
+                            }
                             if (navigation == null) {
                                 EmptyGroupNote("길안내를 넘길 내비 앱이 이 기기에 없어요.")
                             } else if (FeatureAvailability.NAVIGATOR_SAFE_DRIVE) {

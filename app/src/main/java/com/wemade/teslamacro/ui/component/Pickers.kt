@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.ui.component
 
+import android.view.WindowManager
 import com.wemade.teslamacro.ui.theme.Stroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,7 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,25 +37,26 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.role
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/** 전체 화면 모달에서 시스템 바·키보드 여백을 한 번 소비해 본문과 저장 영역을 함께 줄인다. */
+/** 실제 창 안에서 시스템 바·화면 잘림·키보드 영역을 제외해 본문과 저장 버튼을 함께 배치한다. */
 @Composable
 fun PickerSheet(
     title: String,
@@ -67,10 +69,16 @@ fun PickerSheet(
     val compact = LocalPane.current.isCompact
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        properties = DialogProperties(decorFitsSystemWindows = false),
     ) {
+        val window = (LocalView.current.parent as DialogWindowProvider).window
+        SideEffect {
+            // Compose 1.7의 기본 폭 해제는 실제 창보다 큰 screenHeightDp로 재측정한다.
+            // 창 자체를 확장하고 기본 측정 경로를 유지해야 Android 15에서도 하단이 잘리지 않는다.
+            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        }
         BoxWithConstraints(
-            modifier = modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()
+            modifier = modifier.fillMaxSize().safeDrawingPadding()
                 .clickable(indication = null, interactionSource = remembered(), onClick = onDismiss),
             contentAlignment = if (compact) Alignment.BottomCenter else Alignment.Center,
         ) {

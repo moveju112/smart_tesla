@@ -17,6 +17,7 @@ import com.android.resources.Density
 import com.android.resources.ScreenOrientation
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
+import com.wemade.teslamacro.data.settings.ThemeMode
 import com.wemade.teslamacro.feature.settings.LocalExpandSettingsDetails
 import com.wemade.teslamacro.feature.settings.SettingsGroup
 import com.wemade.teslamacro.feature.settings.SettingsScreen
@@ -33,7 +34,7 @@ import org.junit.runners.Parameterized
 /** 짧은 선택창이 화면 밖으로 늘어나던 문제를 실제 설정과 스크롤 본문에서 막는다. */
 @RunWith(Parameterized::class)
 class SelectionSheetScreenshotTest(private val dark: Boolean, private val wide: Boolean, private val scale: Float) {
-    // Layoutlib의 모달 시스템 바 합성 대신 본문 경계를 검사하고, 바·IME 겹침은 실제 에뮬레이터에서 확인한다.
+    // 본문과 화면 경계를 함께 검사하고, 실제 시스템 바·IME는 Android 15 에뮬레이터에서 확인한다.
     @get:Rule val paparazzi = Paparazzi(
         deviceConfig = if (wide) DeviceConfig.PIXEL_C.copy(
             screenWidth = 1920, screenHeight = 1200, density = Density.XHIGH,
@@ -84,6 +85,30 @@ class SelectionSheetScreenshotTest(private val dark: Boolean, private val wide: 
         assertTrue("선택지 전체가 스크롤 없이 보여야 한다", choices.height > 0f && choices.height <= viewport.height + 1f)
         assertTrue("짧은 선택지가 화면 높이까지 늘어나면 안 된다", choices.height < (if (wide) 1200f else 1560f) / 3f)
         assertTrue("선택지 아래가 본문에서 잘리면 안 된다", choices.bottom <= viewport.bottom + 1f)
+        assertTrue("본문 자체가 화면 밖으로 밀려나면 안 된다", viewport.bottom <= (if (wide) 1200f else 1560f))
+    }
+
+    /** 세 선택지와 큰 글씨 줄바꿈도 실제 화면 안에서 모두 보여야 한다. */
+    @Test fun themeChoicesRemainInsideWindow() {
+        var choices = Rect.Zero
+        paparazzi.snapshot {
+            FullScreenFrame(dark = dark) {
+                MaterialTheme(typography = SettingsTypography) {
+                    PickerSheet("화면 모드", onDismiss = {}) {
+                        ChoiceGrid(
+                            options = ThemeMode.entries,
+                            selected = ThemeMode.LIGHT,
+                            label = { it.label }, onSelect = {}, columns = 3,
+                            modifier = Modifier.onGloballyPositioned {
+                                choices = Rect(it.positionInWindow(), it.size.toSize())
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        assertTrue("선택지는 실제 화면 안에 있어야 한다", choices.height > 0f && choices.top >= 0f &&
+            choices.bottom <= (if (wide) 1200f else 1560f))
     }
 
     companion object {

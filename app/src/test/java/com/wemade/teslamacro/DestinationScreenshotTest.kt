@@ -36,9 +36,13 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     @Test fun receiving() = snapshot(DestinationUiState(mounted = true, receiving = true, receiverCode = "ABCD234567",
         error = "인터넷 연결 후 다시 확인해 주세요"), true)
 
-    /** 스크롤 아래의 임시 수신 버튼도 권한 허용 상태에서 확인한다. */
-    @Test fun testButtons() = snapshot(DestinationUiState(query = place.name, overlayAllowed = true,
-        minutes = "0", error = "유효시간은 1~120분으로 입력해 주세요"), bottom = true)
+    /** 연결 실패 상태에서도 재확인 버튼과 설정 진입이 보이는지 확인한다. */
+    @Test fun testButtons() = snapshot(DestinationUiState(query = place.name,
+        connectionError = "연결을 확인하지 못했어요"))
+
+    /** 설정 아래의 테스트 항목이 큰 글자에서도 잘리지 않는지 확인한다. */
+    @Test fun settingsBottom() = snapshot(DestinationUiState(mounted = true, receiving = true,
+        overlayAllowed = true, minutes = 120), setup = true, bottom = true)
 
     /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 기기 연결·수신 설정을 찾을 수 있다. */
     @Test fun settingsEntry() {

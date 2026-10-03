@@ -32,7 +32,7 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             container.settingsStore.settings.collect { settings ->
                 mutableState.update { it.copy(mounted = settings.deviceMode == DeviceMode.MOUNTED,
-                    receiving = settings.destinationReceiveEnabled, minutes = settings.destinationValidityMinutes.toString()) }
+                    receiving = settings.destinationReceiveEnabled, minutes = settings.destinationValidityMinutes) }
             }
         }
         viewModelScope.launch { coordinator.message.collect { message -> mutableState.update { it.copy(receiveMessage = message) } } }
@@ -41,8 +41,8 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 서버와 같은 길이 제한을 적용하고 검색은 받는 기기의 네이버지도에 맡긴다. */
     fun queryChanged(value: String) { mutableState.update { it.copy(query = value.take(120)) } }
 
-    /** 유효시간 입력 중에는 빈 값도 허용하고 전송할 때 범위를 확인한다. */
-    fun minutesChanged(value: String) { mutableState.update { it.copy(minutes = value.filter(Char::isDigit).take(3)) } }
+    /** 설정 변경 즉시 저장해 전송하지 않고 나가도 다음 전송에 같은 시간을 적용한다. */
+    fun minutesChanged(value: Int) = act { container.settingsStore.setDestinationValidityMinutes(value) }
 
     /** 연결 코드는 대문자로 정리하되 장소 입력과 섞지 않는다. */
     fun pairingCodeChanged(value: String) { mutableState.update { it.copy(pairingCode = value.filter(Char::isLetterOrDigit).uppercase().take(10)) } }
@@ -52,10 +52,8 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
         val value = state.value
         val place = DestinationPlace(value.query.trim())
         check(place.valid()) { "검색어를 1~120자로 입력해 주세요. 줄바꿈은 사용할 수 없어요" }
-        val minutes = value.minutes.toIntOrNull()?.takeIf { it in 1..120 } ?: error("유효시간은 1~120분으로 입력해 주세요")
-        container.settingsStore.setDestinationValidityMinutes(minutes)
-        val reply = client.send(place, minutes, selfTest)
-        mutableState.update { it.copy(request = reply.request, notice = if (selfTest) "이 폰으로 전송했어요. 아래 수신 테스트를 눌러 주세요" else "검색어를 전송했어요. 태블릿이 수신하면 네이버지도에서 검색해요") }
+        val reply = client.send(place, value.minutes, selfTest)
+        mutableState.update { it.copy(request = reply.request, notice = if (selfTest) "이 폰으로 전송했어요" else "전송했어요") }
     }
 
     /** 서버가 취소를 확정한 경우에만 화면을 취소 상태로 바꾼다. */

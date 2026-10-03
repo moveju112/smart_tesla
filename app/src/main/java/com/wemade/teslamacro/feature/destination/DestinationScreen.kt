@@ -8,7 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Refresh
@@ -25,8 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.layout.LocalPane
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -38,7 +36,7 @@ import com.wemade.teslamacro.ui.theme.T
 
 /** 전송 화면은 서버 결과와 아직 보내지 않은 검색어를 따로 보관한다. */
 data class DestinationUiState(
-    val query: String = "", val minutes: String = "10",
+    val query: String = "", val minutes: Int = 10,
     val request: DestinationRequest? = null, val receiverName: String? = null,
     val pairingCode: String = "", val receiverCode: String? = null,
     val mounted: Boolean = false, val receiving: Boolean = false,
@@ -90,7 +88,7 @@ fun DestinationRoute(
 @Composable
 fun DestinationScreen(
     state: DestinationUiState, onBack: () -> Unit = {}, onQuery: (String) -> Unit = {},
-    onMinutes: (String) -> Unit = {}, onSend: (Boolean) -> Unit = {},
+    onMinutes: (Int) -> Unit = {}, onSend: (Boolean) -> Unit = {},
     onCancel: () -> Unit = {}, onReceiveTest: () -> Unit = {}, onRefresh: () -> Unit = {},
     onPairingCode: (String) -> Unit = {}, onPair: () -> Unit = {}, onUnlink: () -> Unit = {},
     onCreateCode: () -> Unit = {}, onEnableReceiver: () -> Unit = {},
@@ -105,7 +103,7 @@ fun DestinationScreen(
     BackHandler { if (setup && !settingsOnly) setup = false else onBack() }
     val wide = !LocalPane.current.isCompact
     val canSend = !state.busy && DestinationPlace(state.query.trim()).valid() &&
-        state.minutes.toIntOrNull() in 1..120
+        state.minutes in 1..120
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -115,10 +113,15 @@ fun DestinationScreen(
             ) {
                 TButton("뒤로", tone = ButtonTone.Ghost, icon = Icons.Rounded.ArrowBack,
                     fillWidth = false, onClick = { if (setup && !settingsOnly) setup = false else onBack() })
-                Text(if (setup) "기기 연결·수신" else "목적지 전송",
+                Text(if (setup) "목적지 설정" else "목적지 전송",
                     style = MaterialTheme.typography.headlineSmall, color = T.Ink)
                 if (state.busy) Text("처리 중이에요…", color = T.InkMuted)
                 if (setup) {
+                    DestinationSection("전송 유효시간") {
+                        NumberStepper(state.minutes.toDouble(), min = 1.0, max = 120.0, step = 1.0,
+                            unit = "분", onChange = { onMinutes(it.toInt()) })
+                        Text("시간이 지나면 자동 수신하지 않아요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                    }
                     DestinationSection("보내는 폰") {
                         Text(state.receiverName?.let { "연결된 기기 · $it" } ?: "받는 태블릿에 표시된 코드를 입력하세요",
                             style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
@@ -141,6 +144,20 @@ fun DestinationScreen(
                         Text("코드는 10분 동안 유효해요. 차량 등록·서비스 실행과 네이버지도 설치가 필요해요.",
                             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
+                    DestinationSection {
+                        com.wemade.teslamacro.ui.component.DisclosureHeader(
+                            "폰 1대 테스트", testExpanded, { testExpanded = !testExpanded })
+                        if (testExpanded) {
+                            DraftField(state.query, onQuery, label = "테스트 검색어", enabled = !state.busy)
+                            TButton("이 폰으로 전송", tone = ButtonTone.Secondary, icon = Icons.Rounded.Send,
+                                fillWidth = false, enabled = canSend, onClick = { onSend(true) })
+                            if (!state.overlayAllowed) TButton("다른 앱 위에 표시 허용", tone = ButtonTone.Ghost,
+                                fillWidth = false, onClick = onOverlay)
+                            TButton("수신해서 네이버지도 열기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Place,
+                                fillWidth = false, enabled = !state.busy && state.overlayAllowed, onClick = onReceiveTest)
+                            Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                        }
+                    }
                 } else {
                     state.request?.let { request ->
                         DestinationSection("전송 상태") {
@@ -153,41 +170,30 @@ fun DestinationScreen(
                                 fillWidth = false, enabled = !state.busy, onClick = onRefresh)
                         }
                     }
-                    DestinationSection("전송할 검색어") {
-                        DraftField(state.query, onQuery, label = "주소 또는 가게 이름", enabled = !state.busy,
-                            note = "최대 120자")
-                        Text("태블릿 네이버지도에서 검색 결과를 열어요. 장소 선택과 길안내 시작은 태블릿에서 해 주세요.",
-                            style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-                        DraftField(state.minutes, onMinutes, label = "보낸 뒤 유효시간", suffix = "분", enabled = !state.busy,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            note = "1~120분 · 시간이 지나면 자동으로 열지 않아요")
-                        TButton("검색어 전송", icon = Icons.Rounded.Send,
+                    DestinationSection {
+                        DraftField(state.query, onQuery, label = "장소 또는 주소", enabled = !state.busy)
+                        Text("태블릿 네이버지도에서 검색해요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                        TButton("전송", icon = Icons.Rounded.Send,
                             enabled = canSend && state.receiverName != null,
                             onClick = { onSend(false) })
-                        Text(state.receiverName?.let { "받는 기기 · $it" } ?: "처음에는 받는 기기를 연결해 주세요",
+                        Text(state.receiverName ?: if (state.connectionError != null) "연결 확인 필요"
+                            else if (!state.connectionChecked) "연결 확인 중…" else "받는 기기 미연결",
                             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                        TButton("기기 연결·수신 설정", tone = ButtonTone.Ghost, icon = Icons.Rounded.Bluetooth,
+                        TButton("설정", tone = ButtonTone.Ghost, icon = Icons.Rounded.Settings,
                             fillWidth = false, onClick = { if (onOpenSettings != null) onOpenSettings() else setup = true })
-                    }
-                    DestinationSection {
-                        com.wemade.teslamacro.ui.component.DisclosureHeader(
-                            "폰 1대 테스트", testExpanded, { testExpanded = !testExpanded },
-                            subtitle = "차량 탑승 없이 전송과 수신을 시험해요")
-                        if (testExpanded) {
-                            TButton("이 폰으로 전송", tone = ButtonTone.Secondary, icon = Icons.Rounded.Send,
-                                fillWidth = false, enabled = canSend, onClick = { onSend(true) })
-                            if (!state.overlayAllowed) TButton("다른 앱 위에 표시 허용", tone = ButtonTone.Ghost,
-                                fillWidth = false, onClick = onOverlay)
-                            TButton("수신해서 네이버지도 열기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Place,
-                                fillWidth = false, enabled = !state.busy && state.overlayAllowed, onClick = onReceiveTest)
-                            Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                        }
                     }
                 }
             }
         }
         (state.error ?: state.connectionError ?: state.notice)?.let { message ->
-            Snackbar(modifier = Modifier.padding(Space.md).semantics { liveRegion = LiveRegionMode.Polite }) { Text(message) }
+            Snackbar(
+                modifier = Modifier.padding(Space.md).semantics { liveRegion = LiveRegionMode.Polite },
+                action = if (state.error != null || state.connectionError != null) {
+                    { androidx.compose.material3.TextButton(enabled = !state.busy, onClick = onRefresh,
+                        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                            contentColor = androidx.compose.material3.SnackbarDefaults.actionColor)) { Text("재확인") } }
+                } else null,
+            ) { Text(message) }
         }
     }
 }

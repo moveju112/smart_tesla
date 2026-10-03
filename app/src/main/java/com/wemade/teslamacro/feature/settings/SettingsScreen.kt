@@ -147,7 +147,7 @@ fun SettingsScreen(
                                 SectionHeader("목적지 전송", topPadding = Space.sm)
                                 TCard {
                                     com.wemade.teslamacro.ui.component.PickerRow(
-                                        label = "기기 연결·수신 설정",
+                                        label = "연결·수신·유효시간",
                                         onClick = action,
                                         showChevron = true,
                                     )

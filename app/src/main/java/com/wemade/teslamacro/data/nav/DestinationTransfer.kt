@@ -71,12 +71,14 @@ internal class DestinationClient(private val api: DeviceApiClient) {
         val response = api.authenticatedPost("/v1/destinations", body)
         if (response.code != 200) {
             val message = when (response.code) {
+                0 -> "연결을 확인하지 못했어요"
                 400 -> "입력값이나 연결 코드가 유효하지 않아요. 다시 확인해 주세요"
                 401, 403 -> "기기 인증에 실패했어요. 인터넷과 기기 시간을 확인해 주세요"
                 404 -> "목적지 수신 서버를 사용할 수 없어요"
                 409 -> "요청 상태가 바뀌었어요. 새로고침 후 확인해 주세요"
                 429 -> "요청이 많아요. 잠시 후 다시 시도해 주세요"
-                else -> "서버 응답을 확인하지 못했어요. 연결 후 새로고침해 주세요"
+                in 500..599 -> "서버 오류 (${response.code}) · 잠시 후 재확인해 주세요"
+                else -> "응답 오류 (${response.code})"
             }
             throw DestinationApiException(response.code, message)
         }

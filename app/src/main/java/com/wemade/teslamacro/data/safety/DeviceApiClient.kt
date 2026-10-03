@@ -2,6 +2,7 @@ package com.wemade.teslamacro.data.safety
 
 import android.content.Context
 import com.wemade.teslamacro.BuildConfig
+import com.wemade.teslable.DiagLog
 import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.security.SecureRandom
@@ -25,6 +26,7 @@ internal class DeviceApiClient(
     private val requestOverride: (suspend (String, ByteArray, String?) -> RoadHttpResponse)? = null,
 ) {
     private val identity by lazy { identityOverride ?: RoadDeviceIdentity(context) }
+    private var lastFailure: String? = null
     private var accessToken: String? = null
     private var accessExpiresAt: Long = 0
     val available: Boolean get() = bootstrapToken.isNotBlank()
@@ -36,7 +38,11 @@ internal class DeviceApiClient(
             val (token, code) = sessionMutex.withLock { sessionToken() }
             if (token == null) return@withContext RoadHttpResponse(code)
             val response = post(path, body, token)
-            if (response.code != 401) return@withContext response
+            if (response.code != 401) {
+                if (response.code == 200) lastFailure = null
+                else if (response.code != 0) reportFailure("요청 HTTP ${response.code}")
+                return@withContext response
+            }
             val (nextToken, nextCode) = sessionMutex.withLock {
                 if (accessToken == token) accessToken = null
                 sessionToken()
@@ -44,8 +50,16 @@ internal class DeviceApiClient(
             if (nextToken == null) RoadHttpResponse(nextCode) else post(path, body, nextToken)
         } catch (error: Exception) {
             if (error is CancellationException) throw error
+            reportFailure("인증 처리 ${error.javaClass.simpleName}")
             RoadHttpResponse()
         }
+    }
+
+    /** 같은 실패를 반복 기록하지 않고 단계·예외 종류만 남겨 비밀값 노출을 막는다. */
+    private fun reportFailure(reason: String) {
+        if (lastFailure == reason) return
+        lastFailure = reason
+        DiagLog.add("기기 API · $reason")
     }
 
     /** 기기 인증서로 30분 토큰을 받고, 인증서가 만료되면 빌드 토큰으로 다시 등록한다. */
@@ -55,17 +69,32 @@ internal class DeviceApiClient(
         repeat(2) {
             var certificate = identity.readCertificate()
             if (certificate == null) {
-                val publicKey = runCatching { identity.publicKey() }.getOrNull() ?: return null to 0
+                val publicKey = runCatching { identity.publicKey() }.getOrElse {
+                    reportFailure("공개키 ${it.javaClass.simpleName}")
+                    return null to 0
+                }
                 val registered = post("/v1/devices", buildJsonObject { put("publicKey", publicKey) }.toString().toByteArray(), bootstrapToken)
-                if (registered.code != 200) return null to registered.code
+                if (registered.code != 200) {
+                    if (registered.code != 0) reportFailure("등록 HTTP ${registered.code}")
+                    return null to registered.code
+                }
                 certificate = parseObject(registered.body)?.get("certificate")?.asString()
-                    ?.takeIf { it.startsWith("dc1.") && it.length <= 1024 } ?: return null to 0
-                if (runCatching { identity.saveCertificate(certificate) }.isFailure) return null to 0
+                    ?.takeIf { it.startsWith("dc1.") && it.length <= 1024 } ?: run {
+                    reportFailure("인증서 응답 형식")
+                    return null to 0
+                }
+                runCatching { identity.saveCertificate(certificate) }.getOrElse {
+                    reportFailure("인증서 저장 ${it.javaClass.simpleName}")
+                    return null to 0
+                }
             }
             val timestamp = System.currentTimeMillis() / 1_000
             val nonce = ByteArray(16).also { SecureRandom().nextBytes(it) }
                 .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
-            val signature = runCatching { identity.sign(certificate, timestamp, nonce) }.getOrNull() ?: return null to 0
+            val signature = runCatching { identity.sign(certificate, timestamp, nonce) }.getOrElse {
+                reportFailure("서명 ${it.javaClass.simpleName}")
+                return null to 0
+            }
             val body = buildJsonObject {
                 put("certificate", certificate)
                 put("timestamp", timestamp)
@@ -77,8 +106,14 @@ internal class DeviceApiClient(
                 identity.clearCertificate()
                 return@repeat
             }
-            if (issued.code != 200) return null to issued.code
-            val (token, seconds) = parseRoadAccess(issued.body) ?: return null to 0
+            if (issued.code != 200) {
+                if (issued.code != 0) reportFailure("세션 HTTP ${issued.code}")
+                return null to issued.code
+            }
+            val (token, seconds) = parseRoadAccess(issued.body) ?: run {
+                reportFailure("세션 응답 형식")
+                return null to 0
+            }
             accessToken = token
             accessExpiresAt = System.currentTimeMillis() / 1_000 + seconds
             return token to 200
@@ -93,7 +128,10 @@ internal class DeviceApiClient(
     private suspend fun post(path: String, body: ByteArray, bearer: String?): RoadHttpResponse {
         requestOverride?.let { return it(path, body, bearer) }
         val connection = try { URL(BASE_URL + path).openConnection() as HttpsURLConnection }
-        catch (_: Exception) { return RoadHttpResponse() }
+        catch (error: Exception) {
+            reportFailure("연결 준비 ${error.javaClass.simpleName}")
+            return RoadHttpResponse()
+        }
         return suspendCancellableCoroutine { continuation ->
             continuation.invokeOnCancellation { connection.disconnect() }
             try {
@@ -122,8 +160,11 @@ internal class DeviceApiClient(
                     }
                 }
                 if (continuation.isActive) continuation.resume(RoadHttpResponse(code, output.toString(Charsets.UTF_8.name())))
-            } catch (_: Exception) {
-                if (continuation.isActive) continuation.resume(RoadHttpResponse())
+            } catch (error: Exception) {
+                if (continuation.isActive) {
+                    reportFailure("통신 ${error.javaClass.simpleName}")
+                    continuation.resume(RoadHttpResponse())
+                }
             } finally {
                 connection.disconnect()
             }

@@ -33,6 +33,12 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
     /** 미등록·권한 부족 상태를 기능 목록에서 구별한다. */
     @Test fun featureList() = features(null)
 
+    /** 사용 가능한 기능의 요약과 켜짐 상태도 조밀한 행 안에서 구별한다. */
+    @Test fun readyFeatureList() = features(null, AppSettings(
+        vin = "5YJS0000000000000", isEnrolled = true,
+        safeDrive = true, stealthCharging = false, smartThingsEnabled = true,
+    ))
+
     /** 실행 스위치와 옵션 요약의 줄바꿈을 확인한다. */
     @Test fun safetyExecution() = features(AppFeature.SAFE_DRIVE)
 
@@ -51,10 +57,12 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
     }
 
     /** 실행 화면은 기존 매크로 및 기능 패널을 실제 앱 프레임 안에 넣는다. */
-    private fun features(selected: AppFeature?) {
+    private fun features(selected: AppFeature?, settings: AppSettings = AppSettings()) {
         paparazzi.snapshot {
             AppFrame(Destination.Features, dark) {
-                FeaturesScreen(AppSettings(), selected, navigation, smartThings, {}, {}, {},
+                FeaturesScreen(settings, selected,
+                    navigation.copy(locationPermitted = settings.isReady),
+                    smartThings.copy(notificationAccessGranted = settings.isReady), {}, {}, {},
                     macroContent = {
                         MacroListScreen(emptyList(), emptySet(), emptyMap(), { _, _ -> }, {}, {}, {}, {}, {})
                     })

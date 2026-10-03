@@ -34,6 +34,25 @@ class TabletPortraitScreenshotTest(private val dark: Boolean, private val fontSc
         showSystemUi = false,
     )
 
+    /** 세로 태블릿에서도 기능의 아이콘·이름·오른쪽 요약을 한 열로 읽을 수 있어야 한다. */
+    @Test
+    fun featureList() {
+        paparazzi.snapshot {
+            AppFrame(Destination.Features, dark = dark) {
+                com.wemade.teslamacro.feature.features.FeaturesScreen(
+                    settings = AppSettings(), selected = null,
+                    navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = {}, onHudOverlayChange = {},
+                    ),
+                    smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
+                        false, {}, { _, _ -> }, {},
+                    ),
+                    onSelect = {}, onSettings = {}, onStealthChange = {},
+                )
+            }
+        }
+    }
+
     /** 실제 앱의 루트 판정과 기존 충전 기록 샘플을 함께 사용한다. */
     @Test
     fun `세로 태블릿의 충전 설정은 한 열이다`() {

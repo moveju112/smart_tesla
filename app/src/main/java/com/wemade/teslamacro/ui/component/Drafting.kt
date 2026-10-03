@@ -40,6 +40,8 @@ import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -285,6 +287,8 @@ object DraftMark {
     val Strike: ImageVector = Icons.Rounded.Delete
     val Edit: ImageVector = Icons.Rounded.Edit
     val Automation: ImageVector = Icons.Rounded.Bolt
+    val Speed: ImageVector = Icons.Rounded.Speed
+    val Notifications: ImageVector = Icons.Rounded.Notifications
     val Settings: ImageVector = Icons.Rounded.Settings
     val ArrowUp: ImageVector = Icons.Rounded.ArrowUpward
     val ArrowDown: ImageVector = Icons.Rounded.ArrowDownward

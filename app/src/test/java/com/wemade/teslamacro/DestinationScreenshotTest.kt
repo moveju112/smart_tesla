@@ -32,16 +32,19 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     /** 장소 선택 없이 검색어와 연결 대상만으로 전송할 수 있는 화면을 확인한다. */
     @Test fun readyToSend() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿"))
 
-    /** 수신 설정과 오류·코드 표시가 태블릿과 폰에서 읽히는지 확인한다. */
-    @Test fun receiving() = snapshot(DestinationUiState(mounted = true, receiving = true, receiverCode = "ABCD234567",
+    /** 휴대 모드에서도 수신 스위치와 연결 코드를 같은 설정에서 표시한다. */
+    @Test fun receiving() = snapshot(DestinationUiState(receiving = true, receiverCode = "ABCD234567",
         error = "인터넷 연결 후 다시 확인해 주세요"), true)
+
+    /** 받기 전에도 모드 전환 없이 수신 설정을 찾을 수 있다. */
+    @Test fun receiverOff() = snapshot(DestinationUiState(), setup = true)
 
     /** 연결 실패 상태에서도 재확인 버튼과 설정 진입이 보이는지 확인한다. */
     @Test fun testButtons() = snapshot(DestinationUiState(query = place.name,
         connectionError = "연결을 확인하지 못했어요"))
 
     /** 설정 아래의 테스트 항목이 큰 글자에서도 잘리지 않는지 확인한다. */
-    @Test fun settingsBottom() = snapshot(DestinationUiState(mounted = true, receiving = true,
+    @Test fun settingsBottom() = snapshot(DestinationUiState(receiving = true,
         overlayAllowed = true, minutes = 120), setup = true, bottom = true)
 
     /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 기기 연결·수신 설정을 찾을 수 있다. */
@@ -63,8 +66,15 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     private fun snapshot(state: DestinationUiState, setup: Boolean = false, bottom: Boolean = false) {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
-                AppFrame(if (setup) Destination.Settings else Destination.Features, dark = dark) { DestinationScreen(state, initialSetup = setup,
-                    scrollState = androidx.compose.foundation.rememberScrollState(if (bottom) Int.MAX_VALUE else 0)) }
+                AppFrame(if (setup) Destination.Settings else Destination.Features, dark = dark) {
+                    if (setup) com.wemade.teslamacro.feature.settings.SettingsScreen(
+                        settings = com.wemade.teslamacro.data.settings.AppSettings(),
+                        onUnpair = {}, onStartPairing = {}, onSendDestination = {},
+                        initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
+                    )
+                    DestinationScreen(state, settingsOnly = setup,
+                        scrollState = androidx.compose.foundation.rememberScrollState(if (bottom) Int.MAX_VALUE else 0))
+                }
             }
         }
     }

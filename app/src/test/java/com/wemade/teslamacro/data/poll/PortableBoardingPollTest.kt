@@ -24,6 +24,7 @@ import com.wemade.teslamacro.domain.model.VehicleSnapshot
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -45,6 +46,49 @@ class PortableBoardingPollTest {
 
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    /** 목적지 수신만 켠 휴대 기기도 탑승을 확인하고 기존 정책대로 BLE를 놓는다. */
+    @Test fun portableDestinationConfirmsPresenceWithoutChangingMode() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        val presence = mutableListOf<Boolean>()
+        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it } }
+        fixture.start()
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertEquals(listOf(true), presence)
+        assertEquals(DeviceMode.PORTABLE, fixture.settings.settings.first().deviceMode)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        assertEquals(0, fixture.locationReads)
+        assertEquals(0, fixture.forecastReads)
+        val reads = fixture.gateway.reads.size
+        advanceTimeBy(90_000)
+        runCurrent()
+        assertEquals(reads, fixture.gateway.reads.size)
+        fixture.poller.stop()
+    }
+
+    /** 목적지 수신도 빈 차에서는 60초 확인만 하고 전원 유지로 다시 연결하지 않는다. */
+    @Test fun portableDestinationStopsCheckingEmptyCar() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        assertEquals(0, fixture.boardings)
+        assertEquals(1, fixture.gateway.connections)
+        val reads = fixture.gateway.reads.size
+        assertTrue(reads in 20..32)
+        fixture.poller.setVehiclePowerConnected(true)
+        advanceTimeBy(90_000)
+        runCurrent()
+        assertEquals(reads, fixture.gateway.reads.size)
+        fixture.poller.stop()
+    }
 
     @Test
     fun `미착석과 UNKNOWN 다음 착석을 추가 조회 없이 한번 전달하고 연결을 놓는다`() = runTest {

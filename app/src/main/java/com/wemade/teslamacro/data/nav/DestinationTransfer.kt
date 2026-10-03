@@ -54,8 +54,8 @@ internal fun destinationDeadline(serverNow: Long, expiresAt: Long, startedAt: Lo
 }
 
 /** 전원·인터넷 복구 순서와 무관하게 현재의 신선한 착석 확인만 자동 실행 근거로 쓴다. */
-internal fun destinationReady(enabled: Boolean, mounted: Boolean, present: Boolean?, observedAt: Long, now: Long): Boolean =
-    enabled && mounted && present == true && observedAt >= 0 && now - observedAt in 0..30_000
+internal fun destinationReady(enabled: Boolean, present: Boolean?, observedAt: Long, now: Long): Boolean =
+    enabled && present == true && observedAt >= 0 && now - observedAt in 0..30_000
 
 /** 서버의 고정 오류를 사용자 복구 동작으로 바꾸고 원문 응답은 노출하지 않는다. */
 internal class DestinationApiException(val code: Int, message: String) : Exception(message)

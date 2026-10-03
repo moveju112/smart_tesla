@@ -168,15 +168,16 @@ class DestinationReceiverTest {
         assertEquals(1, scenario.launches)
     }
 
-    /** 오래된 착석값·휴대 모드·해제된 받기는 전원 복귀만으로 실행되지 않는다. */
-    @Test fun freshPresenceAndMountedModeRequired() {
-        assertTrue(destinationReady(true, true, true, 1_000, 31_000))
-        assertFalse(destinationReady(true, true, true, 1_000, 31_001))
-        assertFalse(destinationReady(true, true, null, 1_000, 1_000))
-        assertFalse(destinationReady(true, false, true, 1_000, 1_000))
-        assertFalse(destinationReady(false, true, true, 1_000, 1_000))
-        assertFalse(AppSettings(deviceMode = DeviceMode.PORTABLE, destinationReceiveEnabled = true).needsBoardingNavigation)
+    /** 수신은 기기 모드와 무관하지만 오래된 착석값이나 꺼진 설정으로 실행하지 않는다. */
+    @Test fun freshPresenceAndReceiveSettingRequired() {
+        assertTrue(destinationReady(true, true, 1_000, 31_000))
+        assertFalse(destinationReady(true, true, 1_000, 31_001))
+        assertFalse(destinationReady(true, null, 1_000, 1_000))
+        assertFalse(destinationReady(true, false, 1_000, 1_000))
+        assertFalse(destinationReady(false, true, 1_000, 1_000))
+        assertTrue(AppSettings(deviceMode = DeviceMode.PORTABLE, destinationReceiveEnabled = true).needsBoardingNavigation)
         assertTrue(AppSettings(deviceMode = DeviceMode.MOUNTED, destinationReceiveEnabled = true).needsBoardingNavigation)
+        assertFalse(AppSettings(deviceMode = DeviceMode.PORTABLE, destinationReceiveEnabled = false).needsBoardingNavigation)
     }
 
     /** 기기 벽시계 대신 서버 잔여시간과 요청 시작의 단조시계를 사용한다. */

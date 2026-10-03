@@ -37,6 +37,7 @@ import com.google.android.gms.location.DetectedActivity
 import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
 import com.wemade.teslamacro.data.nav.forAutomaticStart
+import com.wemade.teslamacro.data.poll.needsBoardingNavigation
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.domain.command.confirmCategory
 import com.wemade.teslable.BondedDevice
@@ -551,7 +552,7 @@ class MacroService : LifecycleService() {
                     app.container.navigator.startSafeDrive(app = navigatorApp, launchMode = automaticLaunchMode)
                         .onFailure { com.wemade.teslable.DiagLog.add("안심운전 자동 실행 실패") }
                 }
-                if (settings.destinationReceiveEnabled && settings.deviceMode == DeviceMode.MOUNTED) {
+                if (settings.destinationReceiveEnabled) {
                     app.container.destinations.afterBoardingWhenEmpty(start)
                 } else start()
             }
@@ -566,14 +567,14 @@ class MacroService : LifecycleService() {
                 val settings = app.container.settingsStore.settings.first()
                 val mode = settings.deviceMode
                 when (intent.action) {
-                    // 거치 기기는 전원 상승을 시동 신호로 쓰고, 휴대 기기는 자동 안심운전이
+                    // 거치 기기는 전원 상승을 시동 신호로 쓰고, 휴대 기기는 탑승 시 내비 실행이나 목적지 수신이
                     // 켜진 경우에만 최대 60초 동안 실제 차량 탑승을 확인한다.
                     Intent.ACTION_POWER_CONNECTED -> {
                         com.wemade.teslable.DiagLog.add(
                             if (mode == DeviceMode.MOUNTED) {
                                 "차량 전원 연결 — 탑승 상태 즉시 확인"
-                            } else if (settings.autoStartNavigatorSafeDrive) {
-                                "기기 충전 연결 — 휴대 모드 안심운전 탑승 확인 (최대 60초)"
+                            } else if (settings.needsBoardingNavigation) {
+                                "기기 충전 연결 — 휴대 모드 탑승 확인 (최대 60초)"
                             } else {
                                 "기기 충전 연결 — 휴대 모드라 차량 연결 사유에서 제외"
                             }

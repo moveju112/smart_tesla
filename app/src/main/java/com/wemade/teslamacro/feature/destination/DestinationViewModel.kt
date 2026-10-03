@@ -3,7 +3,6 @@ package com.wemade.teslamacro.feature.destination
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wemade.teslamacro.data.nav.DestinationPlace
-import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.di.AppContainer
 import com.wemade.teslamacro.ui.component.openOverlayPermissionSettings
 import kotlinx.coroutines.CancellationException
@@ -31,8 +30,7 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     init {
         viewModelScope.launch {
             container.settingsStore.settings.collect { settings ->
-                mutableState.update { it.copy(mounted = settings.deviceMode == DeviceMode.MOUNTED,
-                    receiving = settings.destinationReceiveEnabled, minutes = settings.destinationValidityMinutes) }
+                mutableState.update { it.copy(receiving = settings.destinationReceiveEnabled, minutes = settings.destinationValidityMinutes) }
             }
         }
         viewModelScope.launch { coordinator.message.collect { message -> mutableState.update { it.copy(receiveMessage = message) } } }
@@ -85,22 +83,14 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 새 코드 발급은 이전 코드를 무효화하며 연결할 폰에서만 입력한다. */
     fun createPairCode() = act {
         val reply = client.call("pairCode") { put("name", "차량 태블릿") }
-        mutableState.update { it.copy(receiverCode = reply.code, notice = "보내는 폰에 이 코드를 입력해 주세요. 10분 동안 유효해요") }
+        mutableState.update { it.copy(receiverCode = reply.code, notice = "연결 코드 생성됨") }
     }
 
-    /** 거치 모드 전환은 사용자가 받기 설정에서 명시적으로 선택했을 때만 한다. */
-    fun enableReceiver() = act {
-        container.settingsStore.setDeviceMode(DeviceMode.MOUNTED)
-        container.settingsStore.setDestinationReceiveEnabled(true)
-        coordinator.nudge()
-        container.poller.nudge()
-    }
-
-    /** 휴대 모드에는 자동 수신을 켜지 않고 임시 버튼만 허용한다. */
+    /** 수신 설정은 사용 모드를 바꾸지 않고 기존 탑승 확인 경로를 깨운다. */
     fun receivingChanged(enabled: Boolean) = act {
-        check(!enabled || state.value.mounted) { "자동 수신은 거치 모드에서 켤 수 있어요" }
         container.settingsStore.setDestinationReceiveEnabled(enabled)
         coordinator.nudge()
+        container.poller.nudge()
     }
 
     /** 권한 화면에서 돌아온 뒤 실제 허용 상태를 다시 읽는다. */

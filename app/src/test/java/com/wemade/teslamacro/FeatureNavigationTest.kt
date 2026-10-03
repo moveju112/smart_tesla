@@ -57,8 +57,8 @@ class FeatureNavigationTest {
         assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked))
         assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(connectionError = "연결 실패")))
         assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiverName = "차량 태블릿")))
-        assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(mounted = true, receiving = true)))
-        assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(mounted = true, receiving = false)))
+        assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = true)))
+        assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = false)))
     }
 
 }

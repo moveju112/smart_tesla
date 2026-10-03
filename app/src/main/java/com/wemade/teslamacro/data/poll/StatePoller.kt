@@ -1095,6 +1095,6 @@ internal fun nextIntervalSeconds(
     else -> idleSeconds
 }
 
-/** 목적지 받기가 켜진 거치 기기만 기존 탑승 확인 주기에 참여시킨다. */
+/** 목적지 수신도 사용 모드와 무관하게 기존 60초 탑승 확인 예산을 사용한다. */
 internal val AppSettings.needsBoardingNavigation: Boolean
-    get() = autoStartNavigatorSafeDrive || (deviceMode == DeviceMode.MOUNTED && destinationReceiveEnabled)
+    get() = autoStartNavigatorSafeDrive || destinationReceiveEnabled

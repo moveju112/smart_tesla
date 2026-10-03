@@ -506,21 +506,17 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 },
                             )
                         }
-                    } else if (settingsTarget == FeatureSettings.DESTINATION) {
-                        val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
-                        com.wemade.teslamacro.feature.destination.DestinationRoute(
-                            destinationViewModel, settingsOnly = true, onBack = backFromSettings,
-                        )
                     } else {
-                        settingsState.SaveableStateProvider(settingsTarget?.name ?: "settings") {
+                        val focusedSettings = settingsTarget?.takeUnless { it == FeatureSettings.DESTINATION }
+                        settingsState.SaveableStateProvider(focusedSettings?.name ?: "settings") {
                             SettingsScreen(
                                 settings = settings,
                                 onSendDestination = { settingsTarget = FeatureSettings.DESTINATION },
-                                focusedFeature = settingsTarget,
+                                focusedFeature = focusedSettings,
                                 onBackToFeature = if (returnToFeature) backFromSettings else null,
                                 initialGroup = when (settingsTarget) {
                                     FeatureSettings.VEHICLE -> SettingsGroup.VEHICLE
-                                    FeatureSettings.SAFE_DRIVE -> SettingsGroup.DRIVING
+                                    FeatureSettings.SAFE_DRIVE, FeatureSettings.DESTINATION -> SettingsGroup.DRIVING
                                     FeatureSettings.STEALTH_CHARGE, FeatureSettings.SMARTTHINGS -> SettingsGroup.AUTOMATION
                                     else -> null
                                 },
@@ -574,6 +570,12 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 ),
                                 smartThings = smartThingsControls,
                                 navigation = navigationControls,
+                            )
+                        }
+                        if (settingsTarget == FeatureSettings.DESTINATION) {
+                            val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
+                            com.wemade.teslamacro.feature.destination.DestinationRoute(
+                                destinationViewModel, settingsOnly = true, onBack = backFromSettings,
                             )
                         }
                     }

@@ -11,7 +11,6 @@ import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.wemade.teslamacro.data.safety.DeviceApiClient
 import com.wemade.teslamacro.data.settings.AppSettings
-import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.settings.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -30,7 +29,7 @@ internal class DestinationCoordinator(
     navigator: NaverNavigator,
 ) {
     val client = DestinationClient(DeviceApiClient(context))
-    val message = MutableStateFlow("탑승하면 목적지를 확인해요")
+    val message = MutableStateFlow("탑승 대기")
     private val journal = DestinationJournal(context)
     private val events = Channel<Unit>(Channel.CONFLATED)
     @Volatile private var present: Boolean? = null
@@ -65,9 +64,9 @@ internal class DestinationCoordinator(
         nudge()
     }
 
-    /** 거치 설정과 신선한 착석값을 실행 직전에도 다시 검사한다. */
+    /** 수신 설정과 신선한 착석값을 실행 직전에도 다시 검사한다. */
     private fun ready(): Boolean = destinationReady(settings.destinationReceiveEnabled,
-        settings.deviceMode == DeviceMode.MOUNTED, present, presenceAt, SystemClock.elapsedRealtime())
+        present, presenceAt, SystemClock.elapsedRealtime())
 
     /** 인터넷 없는 절전에서는 요청을 보내지 않고 연결 복구 이벤트가 다시 깨운다. */
     private fun online(): Boolean {
@@ -114,7 +113,7 @@ internal class DestinationCoordinator(
                         message.value = error.message ?: "연결 후 목적지를 다시 확인해요"
                     }
                 } else if (settings.destinationReceiveEnabled) {
-                    message.value = if (!active) "탑승 확인 대기" else "인터넷 연결 대기"
+                    message.value = if (!active) "탑승 대기" else "인터넷 연결 필요"
                 }
                 if (active && online()) withTimeoutOrNull(maxOf(5_000L, retryAt - SystemClock.elapsedRealtime())) { events.receive() }
                 else events.receive()

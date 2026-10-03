@@ -49,7 +49,7 @@ enum class ButtonTone { Primary, Secondary, Ghost, Danger }
  */
 val LocalCompactButtons = androidx.compose.runtime.staticCompositionLocalOf { false }
 
-/** 저장만 채운 버튼으로 강조하고 보조·취소는 기본 Material 버튼 계층을 따른다. */
+/** 버튼 면은 작게 유지하되 Material의 최소 48dp 터치 영역과 큰 글씨 확장은 보존한다. */
 @Composable
 fun TButton(
     text: String,
@@ -64,9 +64,9 @@ fun TButton(
 ) {
     val buttonModifier = modifier
         .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
-        .defaultMinSize(minWidth = Space.xxl, minHeight = Space.xxl)
-    val shape = RoundedCornerShape(Radius.pill)
-    val padding = PaddingValues(horizontal = if (small) Space.md else Space.lg, vertical = Space.sm)
+        .defaultMinSize(minWidth = Space.xxl, minHeight = Space.xl + if (small) Space.xs else Space.sm)
+    val shape = RoundedCornerShape(Radius.button)
+    val padding = PaddingValues(horizontal = if (small) Space.sm else Space.md, vertical = Space.xs)
     val label: @Composable RowScope.() -> Unit = {
         if (icon != null) {
             androidx.compose.material3.Icon(

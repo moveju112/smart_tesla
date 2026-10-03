@@ -60,7 +60,7 @@ fun NumberStepper(
             color = T.Ink,
             textAlign = TextAlign.Center,
             modifier = Modifier.weight(1f).clickable(onClickLabel = "값 직접 입력") { editing = true }
-                .heightIn(min = 56.dp).padding(vertical = Space.md),
+                .heightIn(min = Space.xxl).padding(vertical = Space.sm),
         )
         StepButton(DraftMark.Add, "늘리기", enabled = value < max) {
             onChange(snap((value + step).coerceAtMost(max), step).coerceIn(min, max))
@@ -87,7 +87,7 @@ fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.button))
             .border(1.dp, T.Hairline, RoundedCornerShape(Radius.button))
             .clickable(onClickLabel = "시각 입력") { editing = true }
-            .heightIn(min = 56.dp).padding(Space.md),
+            .heightIn(min = Space.xxl).padding(horizontal = Space.md, vertical = Space.sm),
     )
     if (editing) {
         ValueInputSheet(

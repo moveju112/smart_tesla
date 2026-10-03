@@ -43,18 +43,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.role
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/** 실제 모달 창으로 탐색 바까지 가리고 한 작업의 본문과 완료 동작을 묶는다. */
+/** 전체 화면 모달에서 시스템 바·키보드 여백을 한 번 소비해 본문과 저장 영역을 함께 줄인다. */
 @Composable
 fun PickerSheet(
     title: String,
@@ -88,7 +88,7 @@ fun PickerSheet(
                     .semantics { paneTitle = title },
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = Space.lg, end = Space.sm, top = Space.sm),
+                    modifier = Modifier.fillMaxWidth().padding(start = Space.md, end = Space.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(title, style = MaterialTheme.typography.titleLarge, color = T.Ink,
@@ -99,12 +99,12 @@ fun PickerSheet(
                     }
                 }
                 Hairline()
-                Column(Modifier.weight(1f, fill = fillHeight).fillMaxWidth().padding(Space.lg)) {
+                Column(Modifier.weight(1f, fill = fillHeight).fillMaxWidth().padding(Space.md)) {
                     content()
                 }
                 if (footer != null) {
                     Hairline()
-                    Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md)) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)) {
                         footer()
                     }
                 }
@@ -127,8 +127,8 @@ fun PickerRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.button))
             .clickable(role = Role.Button, onClick = onClick)
-            .defaultMinSize(minHeight = 56.dp)
-            .padding(horizontal = Space.sm, vertical = Space.sm + Space.xs),
+            .defaultMinSize(minHeight = Space.xxl)
+            .padding(horizontal = Space.sm, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.md),
     ) {
@@ -189,7 +189,7 @@ fun <T> ChipRow(
     }
 }
 
-/** 편집 선택지는 같은 폭으로 정렬하고 마지막 줄도 앞줄의 열 규격을 유지한다. */
+/** 선택지는 내용 높이만 사용해 스크롤 시트의 남은 높이까지 늘어나지 않게 한다. */
 @Composable
 fun <T> ChoiceGrid(
     options: List<T>,
@@ -203,10 +203,11 @@ fun <T> ChoiceGrid(
     val columnCount = if (LocalDensity.current.fontScale >= 1.3f) columns.coerceAtMost(2) else columns
     Column(modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         options.chunked(columnCount).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalAlignment = Alignment.CenterVertically) {
                 row.forEach { option ->
                     ChoiceChip(label(option), option == selected, compact = true, outlined = outlined,
-                        modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onSelect(option) })
+                        modifier = Modifier.weight(1f), onClick = { onSelect(option) })
                 }
                 repeat(columnCount - row.size) { Spacer(Modifier.weight(1f)) }
             }
@@ -243,7 +244,7 @@ private fun ChoiceChip(text: String, selected: Boolean, modifier: Modifier = Mod
     FilterChip(
         selected = selected,
         onClick = onClick,
-        modifier = modifier.defaultMinSize(minHeight = Space.xxl).semantics { role = Role.RadioButton },
+        modifier = modifier.semantics { role = Role.RadioButton },
         shape = RoundedCornerShape(Radius.button),
         colors = FilterChipDefaults.filterChipColors(
             containerColor = Color.Transparent,

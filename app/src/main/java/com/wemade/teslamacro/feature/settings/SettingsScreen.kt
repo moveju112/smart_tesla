@@ -224,7 +224,7 @@ fun SettingsScreen(
                                 }
                                 SectionHeader("단속 안내",
                                     topPadding = if (FeatureAvailability.NAVIGATOR_SAFE_DRIVE || FeatureAvailability.HUD_OVERLAY) Space.lg else Space.sm)
-                                SafeDrivePanel(settings, navigation)
+                                TCard { SafeDrivePanel(settings, navigation) }
                             }
                         }
 
@@ -533,21 +533,18 @@ private fun TwoColumns(
 @Composable
 private fun BatteryPanel(battery: BatteryControls) {
     TCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "절전 제한 중 · 매크로·위치·업데이트가 지연될 수 있어요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.WarnText,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(Space.md))
-            TButton(
-                text = "제한 없음으로",
-                fillWidth = false,
-                small = true,
-                onClick = battery.onOpenSettings,
-            )
-        }
+        Text(
+            text = "절전 제한 중 · 매크로·위치·업데이트가 지연될 수 있어요.",
+            style = MaterialTheme.typography.bodySmall,
+            color = T.WarnText,
+        )
+        Spacer(Modifier.height(Space.sm))
+        TButton(
+            text = "제한 없음으로",
+            fillWidth = false,
+            small = true,
+            onClick = battery.onOpenSettings,
+        )
     }
 }
 
@@ -564,7 +561,7 @@ private fun UpdatePanel(
         Spacer(Modifier.height(Space.md))
         Hairline()
         Spacer(Modifier.height(Space.md))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Column {
             if (update != null) {
                 Text(
                     text = when (update) {
@@ -584,11 +581,8 @@ private fun UpdatePanel(
                         is UpdateState.Installing -> T.Ink
                         else -> T.InkFaint
                     },
-                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(Space.md))
-            } else {
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(Space.sm))
             }
             when (update) {
                 // 앱이 스스로를 갈아끼운다. 첫 회만 확인 화면이 뜨고 그 뒤로는 조용히 끝난다.
@@ -718,11 +712,9 @@ internal fun SmartThingsPanel(
                     }
                     if (settings.smartThingsEnabled && !controls.notificationAccessGranted) {
                         Spacer(Modifier.height(Space.md))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                             Text("명령 수신에 알림 접근 권한이 필요해요.",
-                                style = MaterialTheme.typography.bodySmall, color = T.Danger,
-                                modifier = Modifier.weight(1f))
-                            Spacer(Modifier.width(Space.sm))
+                                style = MaterialTheme.typography.bodySmall, color = T.Danger)
                             TButton("권한 허용", fillWidth = false, small = true, onClick = controls.onRequestNotificationAccess)
                         }
                     }
@@ -883,20 +875,17 @@ private fun LocationPermissionNotice(controls: NavigationControls) {
     Spacer(Modifier.height(Space.md))
     Hairline()
     Spacer(Modifier.height(Space.md))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "위치 권한이 없어 속도를 읽지 못해요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.Danger,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(Space.md))
-        TButton(
-            text = "권한 허용",
-            fillWidth = false,
-            onClick = controls.onRequestLocationPermission,
-        )
-    }
+    Text(
+        text = "위치 권한이 없어 속도를 읽지 못해요.",
+        style = MaterialTheme.typography.bodySmall,
+        color = T.Danger,
+    )
+    Spacer(Modifier.height(Space.sm))
+    TButton(
+        text = "권한 허용",
+        fillWidth = false,
+        onClick = controls.onRequestLocationPermission,
+    )
 }
 
 /** 길안내를 넘길 내비 앱 하나 */
@@ -992,20 +981,17 @@ private fun OverlayPermissionNotice(controls: NavigationControls) {
     Spacer(Modifier.height(Space.md))
     Hairline()
     Spacer(Modifier.height(Space.md))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "'다른 앱 위에 표시' 권한이 없어 자동으로 열 수 없어요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.Danger,
-            modifier = Modifier.weight(1f),
-        )
-        Spacer(Modifier.width(Space.md))
-        TButton(
-            text = "권한 허용",
-            fillWidth = false,
-            onClick = controls.onRequestOverlayPermission,
-        )
-    }
+    Text(
+        text = "'다른 앱 위에 표시' 권한이 없어 자동으로 열 수 없어요.",
+        style = MaterialTheme.typography.bodySmall,
+        color = T.Danger,
+    )
+    Spacer(Modifier.height(Space.sm))
+    TButton(
+        text = "권한 허용",
+        fillWidth = false,
+        onClick = controls.onRequestOverlayPermission,
+    )
 }
 
 /** 휴대 모드에서 실제 연결 상태와 페어링 차량을 같은 상세 시트에서 고른다. */
@@ -1057,6 +1043,7 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
 }
 
 /** 과속·단속 안내와 그 소리 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) {
     var showLocationTransferPrompt by rememberSaveable { mutableStateOf(false) }
@@ -1090,12 +1077,10 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                     if (settings.safeDrive && settings.safeDriveSound &&
                         settings.deviceMode == DeviceMode.MOUNTED && !controls.activityPermitted) {
                         Spacer(Modifier.height(Space.md))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("활동 인식 권한이 없어 자동 카메라 소리가 보류돼요.",
-                                style = MaterialTheme.typography.bodySmall, color = T.Danger, modifier = Modifier.weight(1f))
-                            Spacer(Modifier.width(Space.md))
-                            TButton("권한 허용", fillWidth = false, onClick = controls.onRequestActivityPermission)
-                        }
+                        Text("활동 인식 권한이 없어 자동 카메라 소리가 보류돼요.",
+                            style = MaterialTheme.typography.bodySmall, color = T.Danger)
+                        Spacer(Modifier.height(Space.sm))
+                        TButton("권한 허용", fillWidth = false, onClick = controls.onRequestActivityPermission)
                     }
                     if (settings.safeDrive && settings.safeDriveSound) {
                         controls.automaticSoundStatus?.let {
@@ -1172,11 +1157,12 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                         modifier = Modifier.padding(top = Space.xs))
                     if (settings.safeDriveVoice || settings.safeDriveStartVoice) {
                         Spacer(Modifier.height(Space.md))
-                        // 짝을 이루는 두 보조 동작이라 세로로 쌓지 않고 한 줄에 나란히 둔다.
-                        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            TButton("음성 점검", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                        // 폭이 좁거나 글자가 크면 보조 동작을 다음 줄로 옮겨 글자를 자르지 않는다.
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                            verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                            TButton("음성 점검", ButtonTone.Secondary, fillWidth = false,
                                 onClick = controls.onTestSafeDriveVoice)
-                            TButton("음성 설정", ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                            TButton("음성 설정", ButtonTone.Secondary, fillWidth = false,
                                 onClick = controls.onOpenSpeechSettings)
                         }
                     }
@@ -1344,7 +1330,8 @@ private fun ChoiceRow(
 /** 드문 설정은 현재 값을 목록에 남기고 입력만 상세 시트에서 바꾼다. */
 @Composable
 private fun SettingsDetails(title: String, summary: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    val expandInitially = LocalExpandSettingsDetails.current
+    var expanded by rememberSaveable { mutableStateOf(expandInitially) }
     com.wemade.teslamacro.ui.component.PickerRow(
         label = title, detail = summary, showChevron = true, onClick = { expanded = true },
     )
@@ -1353,7 +1340,9 @@ private fun SettingsDetails(title: String, summary: String? = null, content: @Co
             title = title,
             onDismiss = { expanded = false },
         ) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { content() }
+            CompositionLocalProvider(LocalExpandSettingsDetails provides false) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { content() }
+            }
         }
     }
 }

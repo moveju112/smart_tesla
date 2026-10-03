@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.feature.macro
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -27,20 +30,15 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Window
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -70,9 +69,12 @@ import com.wemade.teslamacro.domain.macro.describe
 import com.wemade.teslamacro.domain.macro.formatDuration
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftField
+import com.wemade.teslamacro.ui.component.DraftToggle
 import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.layout.LocalPane
+import com.wemade.teslamacro.ui.theme.Radius
+import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlinx.coroutines.delay
@@ -101,19 +103,12 @@ fun MacroListScreen(
     var renamingFolder by remember { mutableStateOf<MacroFolder?>(null) }
     var movingRule by remember { mutableStateOf<MacroRule?>(null) }
     var headerMenuOpen by remember { mutableStateOf(false) }
-    var query by rememberSaveable { mutableStateOf("") }
     val selectedFolder = folders.firstOrNull { it.id == selectedFolderId }
     val folderRules = remember(rules, folders, selectedFolderId) {
         com.wemade.teslamacro.domain.macro.macroRulesInFolder(rules, folders, selectedFolderId)
     }
-    val visibleRules = folderRules.filter { rule ->
-        query.isBlank() || rule.name.contains(query, ignoreCase = true) ||
-            rule.triggers.any { describe(it).contains(query, ignoreCase = true) } ||
-            rule.conditions.any { describe(it).contains(query, ignoreCase = true) } ||
-            rule.summary.contains(query, ignoreCase = true)
-    }
-    val visibleFolders = if (selectedFolder == null) folders.filter { it.name.contains(query, ignoreCase = true) } else emptyList()
-    BackHandler(enabled = selectedFolder != null) { selectedFolderId = null; query = "" }
+    val visibleFolders = if (selectedFolder == null) folders else emptyList()
+    BackHandler(enabled = selectedFolder != null) { selectedFolderId = null }
     if (folderDialog) {
         FolderNameDialog(renamingFolder, folders, onDismiss = { folderDialog = false }) { name ->
             onSaveFolder(renamingFolder?.id, name)
@@ -149,7 +144,7 @@ fun MacroListScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (selectedFolder != null) {
-                IconButton(onClick = { selectedFolderId = null; query = "" }, modifier = Modifier.size(Space.xxl)) {
+                IconButton(onClick = { selectedFolderId = null }, modifier = Modifier.size(Space.xxl)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "보관함으로 돌아가기", tint = T.Ink)
                 }
             }
@@ -183,14 +178,6 @@ fun MacroListScreen(
                 }
             }
         }
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            label = { Text("이름 또는 조건 검색") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
-        )
         folderError?.let { Text(it, color = T.Danger, modifier = Modifier.padding(horizontal = Space.md)) }
 
         if (runningIds.isNotEmpty()) {
@@ -201,11 +188,6 @@ fun MacroListScreen(
                 modifier = Modifier.padding(horizontal = Space.md, vertical = Space.xs),
                 onClick = onStopAll,
             )
-        }
-
-        if (visibleRules.isEmpty() && visibleFolders.isEmpty() && query.isNotBlank()) {
-            Text("일치하는 매크로 또는 폴더가 없어요.", style = MaterialTheme.typography.bodyMedium,
-                color = T.InkMuted, modifier = Modifier.padding(Space.lg))
         }
 
         LazyVerticalGrid(
@@ -223,17 +205,16 @@ fun MacroListScreen(
                 items(visibleFolders, key = { "folder-${it.id}" }, span = { GridItemSpan(columns) }) { folder ->
                     FolderRow(folder, rules.count { it.id in folder.ruleIds }) {
                         selectedFolderId = folder.id
-                        query = ""
                     }
                 }
             }
-            if (visibleRules.isNotEmpty()) {
+            if (folderRules.isNotEmpty()) {
                 item(span = { GridItemSpan(columns) }) {
                     Text("매크로", style = MaterialTheme.typography.titleSmall, color = T.Ink,
                         modifier = Modifier.padding(top = Space.lg, bottom = Space.xs))
                 }
             }
-            items(visibleRules, key = { it.id }) { rule ->
+            items(folderRules, key = { it.id }) { rule ->
                 MacroCard(
                     rule = rule,
                     isRunning = rule.id in runningIds,
@@ -245,7 +226,7 @@ fun MacroListScreen(
                     onMove = { movingRule = rule },
                 )
             }
-            if (visibleRules.isEmpty() && visibleFolders.isEmpty() && query.isBlank()) {
+            if (folderRules.isEmpty() && visibleFolders.isEmpty()) {
                 item(span = { GridItemSpan(columns) }) {
                     EmptyState(
                         title = if (selectedFolder != null) "폴더가 비어 있어요" else "매크로가 없어요",
@@ -264,8 +245,11 @@ fun MacroListScreen(
 private fun FolderRow(folder: MacroFolder, count: Int, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.button))
+            .background(T.Slate)
+            .border(Stroke.thin, T.Hairline, RoundedCornerShape(Radius.button))
             .clickable(onClickLabel = "${folder.name} 폴더 열기", onClick = onClick)
-            .heightIn(min = Space.xxl).padding(horizontal = Space.md, vertical = Space.sm),
+            .heightIn(min = Space.xxl).padding(horizontal = Space.sm, vertical = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
@@ -333,25 +317,33 @@ private fun MacroCard(
     }).joinToString(" · ")
     Column(
         modifier = Modifier.fillMaxWidth()
-            .clickable(onClickLabel = "${rule.name} 편집", onClick = onEdit)
-            .heightIn(min = Space.xxl * 2)
-            .padding(start = Space.sm, end = Space.xs, top = Space.sm, bottom = Space.sm),
+            .background(T.Carbon, RoundedCornerShape(Radius.button))
+            .border(Stroke.thin, T.Hairline, RoundedCornerShape(Radius.button))
+            .padding(horizontal = Space.sm, vertical = Space.xs),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, tint = T.InkMuted, modifier = Modifier.size(Space.lg))
-            Text(
-                rule.name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = T.Ink,
-                modifier = Modifier.weight(1f).padding(start = Space.md),
-            )
+            Row(
+                modifier = Modifier.weight(1f)
+                    .clickable(onClickLabel = "${rule.name} 편집", onClick = onEdit)
+                    .heightIn(min = Space.xxl),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Icon(icon, contentDescription = null, tint = T.InkMuted, modifier = Modifier.size(Space.lg))
+                Text(
+                    rule.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = T.Ink,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             RowActions(rule = rule, onDuplicate = onDuplicate, onDelete = onDelete, onMove = onMove)
         }
         Text(summary, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-            modifier = Modifier.padding(start = Space.lg + Space.md, end = Space.md))
+            modifier = Modifier.padding(start = Space.lg + Space.sm, end = Space.sm))
         Row(
-            Modifier.fillMaxWidth().heightIn(min = Space.xxl).padding(start = Space.lg + Space.md),
+            Modifier.fillMaxWidth().heightIn(min = Space.xxl).padding(start = Space.lg + Space.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -360,21 +352,16 @@ private fun MacroCard(
                 color = if (isRunning) T.Electric else T.InkMuted,
                 modifier = Modifier.weight(1f),
             )
-            Switch(
+            DraftToggle(
                 checked = rule.enabled,
                 onCheckedChange = onToggle,
-                modifier = Modifier.heightIn(min = Space.xxl)
-                    .semantics { contentDescription = "${rule.name} 자동 실행" },
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = T.Electric,
-                ),
+                modifier = Modifier.semantics { contentDescription = "${rule.name} 자동 실행" },
             )
         }
     }
-    HorizontalDivider(color = T.Hairline)
 }
 
-/** 복제·삭제는 더보기 메뉴로 접는다. */
+/** 이동·복제·삭제는 더보기 메뉴로 접는다. */
 @Composable
 private fun RowActions(
     rule: MacroRule,

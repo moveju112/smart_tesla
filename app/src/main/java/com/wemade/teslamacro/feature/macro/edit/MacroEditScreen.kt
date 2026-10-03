@@ -115,7 +115,7 @@ fun MacroEditScreen(
         ) {
             Column(
                 modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(Space.lg),
+                verticalArrangement = Arrangement.spacedBy(Space.md),
             ) {
                 when (detail) {
                     null -> {

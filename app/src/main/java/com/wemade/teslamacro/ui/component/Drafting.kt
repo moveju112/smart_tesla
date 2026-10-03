@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.StrokeCap
@@ -180,7 +181,7 @@ fun TableHeader(
     }
 }
 
-/** 손잡이 위치와 상태어로 켜짐 여부를 함께 전달한다. */
+/** 스위치 그림만 줄이고 행 전체의 48dp 터치 영역과 상태어는 보존한다. */
 @Composable
 fun DraftToggle(
     checked: Boolean,
@@ -198,6 +199,7 @@ fun DraftToggle(
         Switch(
             checked = checked,
             onCheckedChange = null,
+            modifier = Modifier.graphicsLayer { scaleX = 0.85f; scaleY = 0.85f },
             colors = SwitchDefaults.colors(
                 checkedTrackColor = MaterialTheme.colorScheme.primary,
                 checkedThumbColor = MaterialTheme.colorScheme.onPrimary,

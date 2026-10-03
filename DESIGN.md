@@ -1,47 +1,57 @@
 ---
 name: Smart Tesla
-description: 휴대폰 우선 차량 자동화 앱 · 0.9.42
+description: 휴대폰 우선 차량 자동화 앱 · Material 팔레트 리디자인
 colors:
-  light-void: "#F5F6F8"
+  light-void: "#F3F6FA"
   light-carbon: "#FFFFFF"
   light-graphite: "#FFFFFF"
-  light-slate: "#ECEEF2"
-  light-hairline: "#D8DCE3"
-  light-ink: "#20242B"
-  light-inkMuted: "#555E6B"
-  light-inkFaint: "#646D7A"
-  light-electric: "#3569B7"
-  light-electricPressed: "#285393"
-  light-electricFaint: "#E8EFFA"
-  light-cool: "#1F5C8C"
-  light-heat: "#B3411F"
-  light-warn: "#A1601A"
-  light-warnText: "#7E4712"
-  light-warnFaint: "#EDE4D2"
-  light-danger: "#C8321E"
-  light-onDanger: "#F2F0E9"
-  light-ok: "#3569B7"
-  light-okText: "#3569B7"
-  dark-void: "#15171B"
-  dark-carbon: "#202329"
-  dark-graphite: "#202329"
-  dark-slate: "#2C3038"
-  dark-hairline: "#424852"
-  dark-ink: "#EFF1F5"
-  dark-inkMuted: "#BDC3CD"
-  dark-inkFaint: "#AAB2BF"
-  dark-electric: "#91B4E8"
-  dark-electricPressed: "#B1CCF2"
-  dark-electricFaint: "#293A53"
-  dark-cool: "#6FB6E0"
-  dark-heat: "#E08A5A"
-  dark-warn: "#D9A441"
-  dark-warnText: "#D9A441"
-  dark-warnFaint: "#2B2718"
-  dark-danger: "#E8624E"
-  dark-onDanger: "#101619"
-  dark-ok: "#91B4E8"
-  dark-okText: "#91B4E8"
+  light-slate: "#E8EEF5"
+  light-hairline: "#D1DAE5"
+  light-ink: "#1C2B3A"
+  light-inkMuted: "#46596B"
+  light-inkFaint: "#52677B"
+  light-electric: "#1565C0"
+  light-electricPressed: "#0D47A1"
+  light-electricFaint: "#E3F2FD"
+  light-cool: "#0277BD"
+  light-heat: "#BF360C"
+  light-warn: "#8D5700"
+  light-warnText: "#795000"
+  light-warnFaint: "#FFF3E0"
+  light-danger: "#C62828"
+  light-onDanger: "#FFFFFF"
+  light-ok: "#2E7D32"
+  light-okText: "#256629"
+  light-tileBlue: "#1565C0"
+  light-tileTeal: "#00695C"
+  light-tilePurple: "#5E35B1"
+  light-tileAmber: "#5D4037"
+  light-tileRose: "#AD1457"
+  dark-void: "#141C24"
+  dark-carbon: "#1E2935"
+  dark-graphite: "#24313F"
+  dark-slate: "#2C3B4C"
+  dark-hairline: "#43576B"
+  dark-ink: "#EFF5FC"
+  dark-inkMuted: "#C1CFDF"
+  dark-inkFaint: "#AABCD0"
+  dark-electric: "#90CAF9"
+  dark-electricPressed: "#BBDEFB"
+  dark-electricFaint: "#213B55"
+  dark-cool: "#81D4FA"
+  dark-heat: "#FFAB91"
+  dark-warn: "#FFCC80"
+  dark-warnText: "#FFCC80"
+  dark-warnFaint: "#3E3020"
+  dark-danger: "#FFAB91"
+  dark-onDanger: "#29130F"
+  dark-ok: "#A5D6A7"
+  dark-okText: "#A5D6A7"
+  dark-tileBlue: "#0D47A1"
+  dark-tileTeal: "#004D40"
+  dark-tilePurple: "#4527A0"
+  dark-tileAmber: "#4E342E"
+  dark-tileRose: "#880E4F"
 typography:
   headlineLarge:
     fontFamily: "system-ui"
@@ -53,11 +63,16 @@ typography:
     fontSize: "22sp"
     fontWeight: 600
     lineHeight: "30sp"
+  titleLarge:
+    fontFamily: "system-ui"
+    fontSize: "22sp"
+    fontWeight: 600
+    lineHeight: "30sp"
   titleMedium:
     fontFamily: "system-ui"
-    fontSize: "16sp"
+    fontSize: "17sp"
     fontWeight: 600
-    lineHeight: "24sp"
+    lineHeight: "25sp"
   titleSmall:
     fontFamily: "system-ui"
     fontSize: "14sp"
@@ -65,9 +80,9 @@ typography:
     lineHeight: "21sp"
   bodyMedium:
     fontFamily: "system-ui"
-    fontSize: "15sp"
+    fontSize: "16sp"
     fontWeight: 400
-    lineHeight: "23sp"
+    lineHeight: "24sp"
   bodySmall:
     fontFamily: "system-ui"
     fontSize: "13sp"
@@ -130,7 +145,7 @@ spacing:
 components:
   button-primary:
     backgroundColor: "{colors.light-electric}"
-    textColor: "{colors.light-void}"
+    textColor: "{colors.light-carbon}"
     rounded: "{rounded.button}"
     height: "52dp"
   card:
@@ -143,8 +158,8 @@ components:
 ## Overview
 
 휴대폰에서 매크로와 설정을 빠르게 읽고 조작하는 화면이 기준이다.
-밝은 쿨 뉴트럴 바탕, 블루 강조색, 둥근 콘텐츠 카드로 정보 묶음과 다음 동작을 구별한다.
-밤에는 차콜 면과 밝은 블루 강조색을 사용한다.
+Material Blue 강조색, Blue Grey 계열 중립 면, 기능별 색상 타일과 둥근 편집 면으로 정보와 조작을 구별한다.
+밤에는 차콜 면, Blue 200 강조색과 더 깊은 타일 색을 사용한다.
 사용자의 전면 리디자인 요청에 따라 기존 정비 도면·0dp 모서리·카드 금지·Material 금지·태블릿 우선 규칙을 명시적으로 대체한다.
 기존 `Draft*` 이름과 차량 선도 구현은 호환되는 코드 자산이며, 새 화면을 도면처럼 만들라는 지침이 아니다.
 
@@ -153,6 +168,9 @@ components:
 정확한 낮/밤 팔레트는 위 토큰과 `ui/theme/Color.kt`에 기록한다.
 `Void`는 화면 배경, `Carbon/Graphite`는 콘텐츠 면, `Slate`는 보조 면, `Hairline`은 경계다.
 `Electric`은 주요 동작과 선택 상태, `ElectricFaint`는 선택 배경이다.
+강조·타일 색은 [Material 색상표](https://m2.material.io/design/color/the-color-system.html)를 기준으로 선택하고, Compose Material 3의 [색상 역할](https://github.com/material-components/material-components-android/blob/master/docs/theming/Color.md)에 맞춰 배경과 전경을 함께 지정한다.
+`TileBlue/TileTeal/TilePurple/TileAmber/TileRose`는 동작 종류를 구분하며, `TileAmber`는 흰 글자 대비를 위해 Brown 계열을 사용한다. 정상·오류 상태와 타일 분류색을 혼용하지 않는다.
+본문·보조 문구·타일 이름·주요 동작은 낮/밤 모두 4.5:1 대비를 `PaletteContrastTest`로 검증한다.
 `Cool/Heat`는 냉각·난방, `Warn`은 주의, `Danger`는 오류, `Ok`는 정상 상태에 사용한다.
 정상 상태의 강조색과 선택 강조를 허용하며, 예전 적·청 두 색 제한을 적용하지 않는다.
 색만으로 상태를 전달하지 않고 글자·선택 상태·아이콘을 함께 사용한다.
@@ -163,7 +181,7 @@ components:
 ## Typography
 
 시스템 기본 서체로 한국어 제목과 본문을 표시한다.
-제목은 28/36sp 또는 22/30sp, 본문은 15/23sp 또는 13/20sp로 구분한다.
+제목은 28/36sp 또는 22/30sp, 중간 제목은 17/25sp, 본문은 16/24sp 또는 13/20sp로 구분한다.
 계측값에는 고정폭과 `tnum`을 유지한다.
 `HeroValueStyle`의 96/100sp는 기존 계측 화면의 기본값이며 일반 화면 제목 크기가 아니다.
 시스템 글자 확대에서 제목·라벨·버튼이 잘리지 않는지 실제 렌더링으로 확인한다.
@@ -179,16 +197,16 @@ components:
 ## Layout
 
 휴대폰 세로의 본문은 한 열 흐름을 기본으로 설계한다.
-매크로 목록은 이름 중심의 2열 카드로 밀도를 높이며, 글자 배율 1.3 이상에서는 `LocalPane`의 기본 열 수로 돌아가 읽을 폭을 확보한다.
+매크로 목록은 아이콘·이름·조건·자동 실행 상태를 담은 2열 색상 타일이다. 가로 태블릿은 `LocalPane` 열 수를 따르고, 글자 배율 1.3 이상이면 기기와 무관하게 한 열로 전환한다.
 매크로 카드 간격은 8dp다. 상단은 제목·추가·더보기 한 줄이며 폴더 안에서는 뒤로가기와 폴더명을 표시한다. 전체 개수 요약은 표시하지 않는다.
-상단 아이콘 버튼은 배경·테두리 없이 48dp 터치 영역을 유지한다. 폴더 만들기·이름 변경은 더보기 메뉴로 모으고, 폴더 카드에는 블루 윤곽 폴더 아이콘을 붙여 일반 매크로와 구분한다.
+상단 아이콘 버튼은 배경·테두리 없이 48dp 터치 영역을 유지한다. 이름·조건 검색을 제공하며 폴더 만들기·이름 변경은 더보기 메뉴로 모은다. 폴더는 폴더 아이콘과 중립 면으로 매크로 타일과 구분한다.
 목록에는 수동 실행 버튼과 최근 실행 기록을 표시하지 않는다. 자동 실행 토글·편집·복제·삭제와 실행 중단은 유지한다.
 루트가 전달하는 `LocalPane`을 쓰며 세로는 기기 폭과 관계없이 Compact로 분류한다.
 가로에서만 Compact는 600dp 미만, Medium은 600dp 이상 900dp 미만, Expanded는 900dp 이상이다.
 키보드로 줄어든 높이가 아닌 OS 화면 방향을 기준으로 하며, 세로는 하단 탭, 가로는 112dp 좌측 탐색 영역을 사용한다.
 실제 탐색 항목은 매크로와 설정 두 개이며 제어 경로는 호환용으로 남는다.
 매크로 편집은 언제·조건·동작·마무리의 48dp 최소 높이 탭과 하단 고정 저장 동작으로 구성한다. 중복 단계 숫자·탭 부제는 없애고 기존 매크로는 탭 이동과 저장만 제공한다. 신규 생성에만 이전·다음 안내를 둔다.
-편집과 설정 탭은 공용 `SectionTabs`의 텍스트·선택 밑줄로 탐색을 표시한다. 탭 높이는 최소 48dp이고 긴 이름은 줄바꿈한다. 좌석 동작은 `좌석`과 `작동 단계`를 별도 라벨·24dp 구역 간격으로 구분한다. 좌석은 윤곽선 선택, 작동 값은 채움 선택으로 역할을 다르게 보이며 값은 `끄기·1단·2단·3단`으로 명시한다.
+편집과 설정 탭은 공용 `SectionTabs`의 텍스트·선택 밑줄로 탐색을 표시한다. 탭 높이는 최소 48dp이고 긴 이름은 줄바꿈한다. 좌석 동작은 `좌석`과 `작동 단계`를 별도 라벨·24dp 구역 간격으로 구분한다. 좌석은 의자 아이콘·좌석명·선택 체크와 윤곽선을 함께 표시하며 작동 값은 채움 선택과 `끄기·1단·2단·3단` 라벨로 구별한다.
 편집 선택지는 공용 ChoiceGrid로 폭·높이·8dp 간격·가운데 정렬을 통일한다. 좌석·조건·대기·옵션은 기본 2열, 짧은 강도는 4열, 비교는 3열이며 글자 배율 1.3 이상에서는 최대 2열로 펼친다. 마지막 줄의 빈 열도 유지해 버튼 폭이 바뀌지 않는다.
 요일도 4열(큰 글씨 2열)로 나눠 7개 버튼을 한 줄에 압축하지 않는다. 동작 정렬·삭제 아이콘은 24dp 표시·48dp 터치 영역을 공유한다.
 언제·조건·동작 탭은 처음에는 요약 목록으로 보이며, 누른 항목 하나만 펼쳐 상세를 편집한다. 순서·삭제 버튼도 펼친 항목에서만 표시한다. 요약 제목은 긴 이름·값을 줄바꿈하고, 동작 순번과 대기 상한도 보존한다.
@@ -201,7 +219,7 @@ components:
 폴더는 표시 분류만 바꾸며 자동 실행에는 영향을 주지 않는다. 폴더 안에서 추가하거나 복제한 매크로는 저장 후 해당 폴더에 넣는다.
 설정 순서는 `자동화·주행·차량·기기`다. 매크로 자동 실행은 항상 켜져 있어 설정에 스위치가 없다. 자동화는 음성 명령→Fleet API→충전 순서로 한 열에 쌓고 스텔스 충전을 맨 아래에 둔다. 기기 칸만 넓은 화면에서 좌우 2단이다. Fleet 토큰 저장 후 입력칸과 저장 버튼은 숨기고 확인·삭제만 남긴다.
 주행 칸의 네이버 지도 안심운전 자동 실행과 실시간 속도 표시는 재개발 전까지 `FeatureAvailability`로 숨기며, 저장값은 남기되 읽을 때 꺼진 것으로 처리해 몰래 동작하지 않게 한다. 차량 칸의 등록 카드는 `차량 등록`·VIN·등록 해제(등록하기)를 한 줄에 두고 좁으면 VIN만 줄인다.
-설정 화면은 `SettingsTypography`(본문·라벨 1~2sp 축소)와 `LocalCompactButtons`로 버튼을 소형(48dp)으로 통일한다. 최소 터치 높이 48dp와 시스템 글자 배율은 유지한다.
+설정 화면은 `SettingsTypography`(본문 14sp, 보조 문구 13sp, 최소 라벨 12sp)와 `LocalCompactButtons`로 밀도를 맞춘다. 최소 터치 높이 48dp와 시스템 글자 배율은 유지한다.
 단속 안내의 `경고음 종류`는 모달 목록에서 고르며, 누를 때마다 실제 경고음을 들려주고 창은 열어 둔 채 여러 소리를 비교하게 한다. 경고음 크기 선택도 누르면 미리 들려준다.
 스텔스 충전 그래프는 최근 24시간 내 실제 충전 전류가 흐른 기록과 표시할 양수 막대가 있을 때만 표시한다. 0A 관측만 있으면 차트 전체를 숨긴다.
 차량 연결 안전 카드에는 자동 보호 설정만 남기고 수동 연결 끊기 버튼과 설명은 표시하지 않는다.
@@ -228,21 +246,21 @@ Fleet 최초 토큰 등록은 스위치를 켜기 전에 입력할 수 있어야
 ## Components
 
 - `TButton`: 기본 최소 높이 52dp, 소형 48dp, 누를 때 0.97배와 160ms 전환을 사용한다. `LocalCompactButtons`가 켜진 화면(설정)은 소형이 기본이고, 폭을 채우지 않는 줄 끝 버튼(등록 해제·권한 허용·업데이트 확인·대화상자 확인 등)은 보이는 면을 32dp 알약으로 줄이되 누르는 영역은 48dp를 유지한다. 짝을 이루는 보조 동작(음성 점검·음성 설정)은 한 줄에 나란히 둔다.
-  Primary는 `Electric` 면과 `Void` 글자, Secondary는 `Slate` 면과 `Ink` 글자, Danger는 보조 면과 오류색 글자다.
+  Primary는 `Electric` 면과 Material `onPrimary` 글자(낮 흰색·밤 어두운 잉크), Secondary는 `Slate` 면과 `Ink` 글자, Danger는 보조 면과 오류색 글자다.
 - `TCard`: 20dp 반경, `Carbon` 면, 16dp 내부 여백으로 관련 내용을 묶는다.
 - `DraftToggle`: 이름은 유지하되 Material Switch를 사용하고 행의 최소 높이는 48dp다.
-  매크로 목록은 별도 켜짐·꺼짐 문구 없이 스위치로 상태를 표시하고, 접근성 이름은 매크로 이름과 자동 실행 용도를 유지한다.
+  매크로 타일은 `사용 중/사용 안 함` 문구와 스위치를 함께 표시하고, 접근성 이름은 매크로 이름과 자동 실행 용도를 유지한다.
 - 화면 모드: `ChoiceRow`의 자동·라이트·다크 세 선택지로 구성하며 현재 선택을 강조한다.
 - `DraftField`: 라벨과 둥근 `Slate` 입력 면, 포커스 경계로 입력 위치를 구별한다. 입력 라벨과 오류 상태를 접근성 정보로도 전달한다.
 - 선택 칩: 선택 배경과 전경은 현재 팔레트에서 함께 구한다.
   밤의 밝은 블루 면 위에 밝은 흰색 글자를 고정하지 않는다.
-- 탐색: 아이콘과 기능 이름을 함께 표시하며 선택 항목은 `ElectricFaint` 면과 `Electric` 전경이다.
+- 탐색: Material `NavigationBar/NavigationRail`에 아이콘과 기능 이름을 함께 표시하며 선택 항목은 `ElectricFaint` 면과 `Electric` 전경이다.
 - 스마트싱스 명령: 목록에서 선택한 항목을 별도 시트로 편집하며 알림 문구와 차량 동작을 연결한다.
-- `PickerSheet`: 제목을 접근성 창 이름으로 제공하며 시스템 뒤로가기는 현재 시트만 닫는다.
+- `PickerSheet`: 휴대폰은 하단 시트, 가로 태블릿은 폭을 제한한 중앙 편집 면이다. 제목과 닫기 버튼을 제공하고 제목을 접근성 창 이름으로 사용한다. 시스템 뒤로가기는 현재 시트만 닫는다.
 
 ## Do's and Don'ts
 
-- Do use non-image tests, source inspection, and builds for CLI verification. NEVER generate/open screenshots, recommend visual checks, ask image permission, or require snapshots for release unless explicitly requested; only then cover phone day/night and tablet/font-scale cases.
+- Do UI 변경은 `-PallowSnapshots=true`로 실제 휴대폰·태블릿 렌더링을 열어 확인한다. 낮/밤과 필요한 글자 확대를 포함하고 CLI 사용자에게는 텍스트 결과만 보고한다. 일반 `test`는 비렌더링 상태를 유지한다.
 - Do 공용 토큰과 기존 프리미티브를 재사용한다.
 - Do 모든 조작 타깃을 최소 48dp로 제공한다.
 - Do 아직 읽지 못한 값은 `--`로 표시하고 실제 차량 결과와 UI 표시 검증을 구별한다.

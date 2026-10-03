@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.feature.macro.edit
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,9 +10,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import android.provider.Settings
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AirlineSeatReclineNormal
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.wemade.teslamacro.ui.component.DraftField
@@ -23,6 +32,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.command.CommandTemplate
 import com.wemade.teslamacro.domain.command.VehicleCommand
@@ -40,6 +51,7 @@ import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
+import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.T
 
 /**
@@ -183,13 +195,9 @@ private fun parameterEditor(
             // 대상 위치와 실행 값을 같은 버튼 묶음으로 오해하지 않게 구역을 나눈다.
             Text("좌석", style = MaterialTheme.typography.labelMedium, color = T.InkMuted)
             Spacer(Modifier.height(Space.sm))
-            ChipRow(
-                outlined = true,
-                options = template.seats,
-                selected = seat,
-                label = { it.label },
-                onSelect = { onChange(ActionStep.Run(template.build(it, level))) },
-            )
+            SeatChoiceGrid(template.seats, seat) { selected ->
+                onChange(ActionStep.Run(template.build(selected, level)))
+            }
             Spacer(Modifier.height(Space.lg))
             Text("작동 단계", style = MaterialTheme.typography.labelMedium, color = T.InkMuted)
             Spacer(Modifier.height(Space.sm))
@@ -271,6 +279,54 @@ private fun parameterEditor(
     else -> null
 }
 
+
+/** 실제 명령 목록에 있는 좌석만 아이콘과 이름으로 보여주며 선택을 명령에 반영한다. */
+@Composable
+private fun SeatChoiceGrid(
+    seats: List<SeatPosition>,
+    selected: SeatPosition,
+    onSelect: (SeatPosition) -> Unit,
+) {
+    val columns = 2
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        seats.chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                row.forEach { seat ->
+                    val active = seat == selected
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(Radius.button))
+                            .background(if (active) T.ElectricFaint else T.Carbon)
+                            .border(
+                                if (active) Stroke.bold else Stroke.thin,
+                                if (active) T.Electric else T.Hairline,
+                                RoundedCornerShape(Radius.button),
+                            )
+                            .selectable(selected = active, role = Role.RadioButton) { onSelect(seat) }
+                            .defaultMinSize(minHeight = 112.dp)
+                            .padding(Space.sm),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Box(Modifier.fillMaxWidth().height(Space.lg), contentAlignment = Alignment.TopEnd) {
+                            if (active) Icon(Icons.Rounded.Check, contentDescription = null,
+                                tint = T.Electric, modifier = Modifier.size(Space.lg))
+                        }
+                        Icon(Icons.Rounded.AirlineSeatReclineNormal, contentDescription = null,
+                            tint = if (active) T.Electric else T.InkMuted,
+                            modifier = Modifier.size(Space.xxl))
+                        Spacer(Modifier.height(Space.sm))
+                        Text(seat.label, style = MaterialTheme.typography.labelLarge,
+                            color = if (active) T.Electric else T.Ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
 // 명령에서 현재 값을 되읽는다. 편집기가 상태를 따로 들고 있지 않게 하려는 목적
 private fun seatOf(command: VehicleCommand): SeatPosition = when (command) {
     is VehicleCommand.SetSeatCooler -> command.seat

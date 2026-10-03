@@ -24,12 +24,7 @@ import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlin.math.round
 
-/**
- * −/+ 로 숫자를 조절한다.
- *
- * 차 안에서 쓰는 앱이라 키보드 입력을 피한다.
- * 44dp 타겟이라 흔들리는 차에서도 누를 수 있다.
- */
+/** 입력 키보드 없이 값을 조절하며 경계에서는 해당 동작을 비활성화한다. */
 @Composable
 fun NumberStepper(
     value: Double,
@@ -86,7 +81,7 @@ fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
     }
 }
 
-// −/+ 한 칸. 텍스트 글리프 대신 벡터 아이콘 — 폰트 따라 모양이 안 변하고 TalkBack에 의미가 읽힌다
+/** 아이콘의 동작 이름을 터치 영역에 제공한다. */
 @Composable
 private fun StepButton(
     icon: ImageVector,
@@ -100,12 +95,17 @@ private fun StepButton(
             // clip을 먼저 — 리플이 둥근 모서리 밖으로 번지지 않게
             .clip(RoundedCornerShape(Radius.button))
             .background(T.Slate)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(
+                enabled = enabled,
+                role = androidx.compose.ui.semantics.Role.Button,
+                onClickLabel = contentDescription,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = contentDescription,
+            contentDescription = null,
             tint = if (enabled) T.Ink else T.InkFaint,
             modifier = Modifier.size(20.dp),
         )

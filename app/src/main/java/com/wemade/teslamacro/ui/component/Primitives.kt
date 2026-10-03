@@ -1,7 +1,6 @@
 package com.wemade.teslamacro.ui.component
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,13 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Stroke
@@ -51,12 +47,7 @@ enum class ButtonTone { Primary, Secondary, Ghost, Danger }
  */
 val LocalCompactButtons = androidx.compose.runtime.staticCompositionLocalOf { false }
 
-/**
- * 공용 버튼.
- * - Primary: 파랑 단색 채움, 그림자 없음 (토스식 평면 버튼)
- * - Secondary/Ghost: 카드 위에서 한 겹 밝은 면 + 얇은 테두리
- * 누르면 살짝 작아지며(0.97) 즉각적인 촉감을 준다.
- */
+/** 주요 동작은 파란 면으로, 보조 동작은 중립 면으로 구분하는 공용 버튼. */
 @Composable
 fun TButton(
     text: String,
@@ -77,8 +68,7 @@ fun TButton(
         label = "buttonPress",
     )
 
-    // 채움은 Primary만. Danger는 빨간 덩어리 대신 조용한 면에 빨간 글자로 둔다 —
-    // 화면에서 빨간 면은 "지금 봐야 할 상태" 전용이라 버튼이 그 자리를 뺏으면 안 된다
+    // 조작 피드백은 현재 팔레트의 면 색에서만 가져온다.
     val fillColor: Color = when {
         !enabled -> Color.Transparent
         tone == ButtonTone.Primary -> if (pressed) T.ElectricPressed else T.Electric
@@ -93,7 +83,7 @@ fun TButton(
         tone == ButtonTone.Ghost -> T.InkMuted
         tone == ButtonTone.Secondary -> T.Ink
         tone == ButtonTone.Danger -> T.Danger
-        else -> T.Void
+        else -> MaterialTheme.colorScheme.onPrimary
     }
 
     val borderColor = when {
@@ -109,7 +99,7 @@ fun TButton(
     val inline = LocalCompactButtons.current && !fillWidth
     val face = Modifier
         .scale(press)
-        // 토스 버튼은 평평하다. 글로우/그림자를 쓰지 않는다
+        // 면과 터치 영역을 같은 둥근 형태로 유지한다.
         .clip(shape)
         .background(fillColor)
         .border(1.dp, borderColor, shape)
@@ -125,13 +115,13 @@ fun TButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.xs + 2.dp),
         ) {
-            // 이모지 대신 벡터 아이콘. 폰트 따라 모양이 달라지는 이모지는 쓰지 않는다
+            // 아이콘은 라벨을 보조하며 접근성 이름은 버튼 문구가 제공한다.
             if (icon != null) {
                 androidx.compose.material3.Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = content,
-                    modifier = Modifier.size(if (small) 14.dp else 18.dp),
+                    modifier = Modifier.size(if (small) 18.dp else 20.dp),
                 )
             }
             Text(
@@ -157,7 +147,7 @@ fun TButton(
         modifier = modifier
             .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .then(face)
-            // small도 48dp — 안드로이드 최소 타깃이고, 장갑 끼고 흔들리는 차에서는 더 커야 한다
+            // 소형 동작도 최소 48dp 터치 영역을 유지한다.
             .defaultMinSize(minWidth = Space.xxl, minHeight = if (small) Space.xxl else 52.dp)
             .then(clickable)
             .padding(
@@ -184,13 +174,14 @@ fun TCard(
             .clip(shape)
             .background(T.Carbon)
             .then(if (outlined) Modifier.border(Stroke.thin, T.Electric, shape) else Modifier)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.defaultMinSize(minHeight = Space.xxl)
+                .clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(Space.md),
         content = content,
     )
 }
 
-/** 섹션 제목. 작은 대문자식 자간으로 상용 앱의 절제된 헤더 느낌 */
+/** 구역 제목은 크기와 여백으로 계층을 구분한다. */
 @Composable
 fun SectionHeader(
     title: String,
@@ -206,7 +197,7 @@ fun SectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // 토스 섹션 제목은 흐린 소문자가 아니라 또렷한 굵은 진회색이다
+        // 제목은 선택 상태가 아닌 일반 본문색으로 읽힌다.
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -217,10 +208,7 @@ fun SectionHeader(
     }
 }
 
-/**
- * 상태 배지. 옅은 색 면 + 색 점(또는 아이콘) + 라벨. 연결·매크로 상태처럼 한 단어 정보에 쓴다.
- * 테두리는 두지 않는다 — 토스 배지는 면 하나로 끝난다. 이모지 대신 [icon]을 쓴다.
- */
+/** 상태를 색과 텍스트로 함께 설명하는 작은 보조 배지. */
 @Composable
 fun StatusPill(
     text: String,

@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.data.settings.ThemeMode
 import java.util.Calendar
@@ -41,21 +42,13 @@ object Radius {
     val tile = 16.dp
 }
 
-/**
- * 선 굵기 3계층 — 도면 규범.
- *
- * 도면이 읽히는 건 색이 아니라 선 굵기의 계층 덕분이다.
- * 굵기를 마음대로 정하면 그 계층이 무너져 전부 같은 무게로 보인다.
- *
- * 실기기 패널이 값싸서 0.5dp가 사라질 수 있다 — 그래서 치수·격자에만 쓰고
- * 정보를 지고 있는 선은 최소 [thin]으로 올린다.
- */
+/** 구분선과 선택 윤곽을 같은 굵기로 유지한다. */
 object Stroke {
-    /** 치수선 · 격자 · 지시선. 정보를 지지 않는 보조선 */
+    /** 정보가 없는 보조 구분선 */
     val hair = 0.5.dp
-    /** 부품 윤곽 · 판 경계 · 표 괘선 */
+    /** 입력·목록 경계 */
     val thin = 1.dp
-    /** 외곽선 · 주요 부품 · 지금 고른 것 */
+    /** 선택 항목 윤곽 */
     val bold = 2.dp
 }
 
@@ -108,39 +101,57 @@ private fun rememberIsNight(): Boolean {
     return night
 }
 
+/** Material 기본 보라색이 메뉴·선택 표시로 새지 않도록 모든 면 역할을 연결한다. */
 private fun colorSchemeFor(palette: Palette, dark: Boolean) = if (dark) {
     darkColorScheme(
-        primary = palette.electric,
-        onPrimary = palette.void,
-        secondary = palette.inkMuted,
-        onSecondary = Color.White,
-        background = palette.void,
-        onBackground = palette.ink,
-        surface = palette.carbon,
-        onSurface = palette.ink,
-        surfaceVariant = palette.slate,
-        onSurfaceVariant = palette.inkMuted,
-        outline = palette.hairline,
-        error = palette.danger,
-        onError = Color.White,
+        primary = palette.electric, onPrimary = palette.void,
+        primaryContainer = palette.electricFaint, onPrimaryContainer = palette.electric,
+        inversePrimary = LightPalette.electric,
+        secondary = palette.electric, onSecondary = palette.void,
+        secondaryContainer = palette.electricFaint, onSecondaryContainer = palette.electric,
+        tertiary = palette.ok, onTertiary = palette.void,
+        tertiaryContainer = palette.slate, onTertiaryContainer = palette.okText,
+        background = palette.void, onBackground = palette.ink,
+        surface = palette.carbon, onSurface = palette.ink,
+        surfaceVariant = palette.slate, onSurfaceVariant = palette.inkMuted,
+        surfaceTint = palette.electric,
+        surfaceDim = palette.void, surfaceBright = palette.graphite,
+        surfaceContainerLowest = palette.void, surfaceContainerLow = palette.carbon,
+        surfaceContainer = palette.carbon, surfaceContainerHigh = palette.graphite,
+        surfaceContainerHighest = palette.slate,
+        inverseSurface = LightPalette.carbon, inverseOnSurface = LightPalette.ink,
+        outline = palette.inkFaint, outlineVariant = palette.hairline,
+        error = palette.danger, onError = palette.onDanger,
+        errorContainer = palette.danger.copy(alpha = 0.12f).compositeOver(palette.carbon),
+        onErrorContainer = palette.danger,
     )
 } else {
     lightColorScheme(
-        primary = palette.electric,
-        onPrimary = Color.White,
-        secondary = palette.inkMuted,
-        onSecondary = Color.White,
-        background = palette.void,
-        onBackground = palette.ink,
-        surface = palette.carbon,
-        onSurface = palette.ink,
-        surfaceVariant = palette.slate,
-        onSurfaceVariant = palette.inkMuted,
-        outline = palette.hairline,
-        error = palette.danger,
-        onError = Color.White,
+        primary = palette.electric, onPrimary = Color.White,
+        primaryContainer = palette.electricFaint, onPrimaryContainer = palette.electricPressed,
+        inversePrimary = DarkPalette.electric,
+        secondary = palette.electric, onSecondary = Color.White,
+        secondaryContainer = palette.electricFaint, onSecondaryContainer = palette.electric,
+        tertiary = palette.ok, onTertiary = Color.White,
+        tertiaryContainer = palette.slate, onTertiaryContainer = palette.okText,
+        background = palette.void, onBackground = palette.ink,
+        surface = palette.carbon, onSurface = palette.ink,
+        surfaceVariant = palette.slate, onSurfaceVariant = palette.inkMuted,
+        surfaceTint = palette.electric,
+        surfaceDim = palette.slate, surfaceBright = palette.carbon,
+        surfaceContainerLowest = palette.carbon, surfaceContainerLow = palette.void,
+        surfaceContainer = palette.carbon, surfaceContainerHigh = palette.void,
+        surfaceContainerHighest = palette.slate,
+        inverseSurface = DarkPalette.carbon, inverseOnSurface = DarkPalette.ink,
+        outline = palette.inkFaint, outlineVariant = palette.hairline,
+        error = palette.danger, onError = palette.onDanger,
+        errorContainer = palette.danger.copy(alpha = 0.08f).compositeOver(palette.carbon),
+        onErrorContainer = palette.danger,
     )
 }
+
+private val LightScheme = colorSchemeFor(LightPalette, dark = false)
+private val DarkScheme = colorSchemeFor(DarkPalette, dark = true)
 
 /**
  * @param dark null이면 저장된 mode를 따르고, 자동일 때만 시각으로 정한다.
@@ -152,7 +163,7 @@ fun TeslaMacroTheme(dark: Boolean? = null, mode: ThemeMode = ThemeMode.AUTO, con
     val palette = if (isDark) DarkPalette else LightPalette
     CompositionLocalProvider(LocalPalette provides palette) {
         MaterialTheme(
-            colorScheme = colorSchemeFor(palette, isDark),
+            colorScheme = if (isDark) DarkScheme else LightScheme,
             typography = TeslaTypography,
             shapes = TeslaShapes,
             content = content,

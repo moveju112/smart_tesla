@@ -6,14 +6,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-/**
- * 낮/밤 두 벌로 갈리는 색 묶음.
- *
- * 토큰 이름은 예전 `object T`와 똑같이 유지한다 — 화면 코드 253곳을 안 건드리기 위해서다.
- * 값만 팔레트별로 갈리고, 꺼내 쓰는 문법(`T.Ink`)은 그대로다.
- *
- * 기존 토큰 이름을 유지하면서 배경·콘텐츠 면·강조색을 낮과 밤에 맞춘다.
- */
+/** Material 색상표를 역할별로 묶어 낮과 밤의 대비를 함께 관리한다. */
 @Immutable
 data class Palette(
     // 배경과 콘텐츠 면의 계층
@@ -41,61 +34,70 @@ data class Palette(
     val onDanger: Color,
     val ok: Color,
     val okText: Color,
+    // 매크로 타일은 종류를 구별하고 실행·오류 상태는 별도 표시한다.
+    val tileBlue: Color,
+    val tileTeal: Color,
+    val tilePurple: Color,
+    val tileAmber: Color,
+    val tileRose: Color,
 )
 
-/** 휴대폰 낮 화면: 밝은 뉴트럴 바탕과 블루 포인트로 정보 계층을 구분한다. */
+/** 낮에는 Blue Grey 계열의 밝은 면과 Material Blue 800을 기본으로 쓴다. */
 val LightPalette = Palette(
-    void = Color(0xFFF5F6F8),
+    void = Color(0xFFF3F6FA),
     carbon = Color(0xFFFFFFFF),
     graphite = Color(0xFFFFFFFF),
-    slate = Color(0xFFECEEF2),
-    hairline = Color(0xFFD8DCE3),
-    ink = Color(0xFF20242B),
-    inkMuted = Color(0xFF555E6B),
-    // 4.5:1을 넘겨야 한다. 예전 #8F8D84는 2.91:1로, 부품 라벨·표 머리글·치수 이름이
-    // 전부 이 색이었다 — 직사광 아래 11sp로 읽어야 하는 글자들이다
-    inkFaint = Color(0xFF646D7A),
-    // 주요 동작은 블루로 구별한다
-    electric = Color(0xFF3569B7),
-    electricPressed = Color(0xFF285393),
-    electricFaint = Color(0xFFE8EFFA),
-    // 제도 청 — 기준선과 냉각
-    cool = Color(0xFF1F5C8C),
-    // 제도 적 — 정정과 주의. 난방·경보가 같은 계열의 농담으로 갈린다
-    heat = Color(0xFFB3411F),
-    warn = Color(0xFFA1601A),
-    warnText = Color(0xFF7E4712),
-    warnFaint = Color(0xFFEDE4D2),
-    danger = Color(0xFFC8321E),
-    onDanger = Color(0xFFF2F0E9),
-    // 정상 상태는 포인트와 같은 계열로 표시한다
-    ok = Color(0xFF3569B7),
-    okText = Color(0xFF3569B7),
+    slate = Color(0xFFE8EEF5),
+    hairline = Color(0xFFD1DAE5),
+    ink = Color(0xFF1C2B3A),
+    inkMuted = Color(0xFF46596B),
+    inkFaint = Color(0xFF52677B),
+    electric = Color(0xFF1565C0),
+    electricPressed = Color(0xFF0D47A1),
+    electricFaint = Color(0xFFE3F2FD),
+    cool = Color(0xFF0277BD),
+    heat = Color(0xFFBF360C),
+    warn = Color(0xFF8D5700),
+    warnText = Color(0xFF795000),
+    warnFaint = Color(0xFFFFF3E0),
+    danger = Color(0xFFC62828),
+    onDanger = Color(0xFFFFFFFF),
+    ok = Color(0xFF2E7D32),
+    okText = Color(0xFF256629),
+    tileBlue = Color(0xFF1565C0),
+    tileTeal = Color(0xFF00695C),
+    tilePurple = Color(0xFF5E35B1),
+    tileAmber = Color(0xFF5D4037),
+    tileRose = Color(0xFFAD1457),
 )
 
-/** 밤에는 무채색의 어두운 면과 밝은 블루 포인트로 대비를 유지한다. */
+/** 밤에는 차콜 면과 Blue 200을 쓰고 타일은 한 단계 깊게 눌러 눈부심을 줄인다. */
 val DarkPalette = Palette(
-    void = Color(0xFF15171B),
-    carbon = Color(0xFF202329),
-    graphite = Color(0xFF202329),
-    slate = Color(0xFF2C3038),
-    hairline = Color(0xFF424852),
-    ink = Color(0xFFEFF1F5),
-    inkMuted = Color(0xFFBDC3CD),
-    // 밤도 4.13:1로 미달이었다
-    inkFaint = Color(0xFFAAB2BF),
-    electric = Color(0xFF91B4E8),
-    electricPressed = Color(0xFFB1CCF2),
-    electricFaint = Color(0xFF293A53),
-    cool = Color(0xFF6FB6E0),
-    heat = Color(0xFFE08A5A),
-    warn = Color(0xFFD9A441),
-    warnText = Color(0xFFD9A441),
-    warnFaint = Color(0xFF2B2718),
-    danger = Color(0xFFE8624E),
-    onDanger = Color(0xFF101619),
-    ok = Color(0xFF91B4E8),
-    okText = Color(0xFF91B4E8),
+    void = Color(0xFF141C24),
+    carbon = Color(0xFF1E2935),
+    graphite = Color(0xFF24313F),
+    slate = Color(0xFF2C3B4C),
+    hairline = Color(0xFF43576B),
+    ink = Color(0xFFEFF5FC),
+    inkMuted = Color(0xFFC1CFDF),
+    inkFaint = Color(0xFFAABCD0),
+    electric = Color(0xFF90CAF9),
+    electricPressed = Color(0xFFBBDEFB),
+    electricFaint = Color(0xFF213B55),
+    cool = Color(0xFF81D4FA),
+    heat = Color(0xFFFFAB91),
+    warn = Color(0xFFFFCC80),
+    warnText = Color(0xFFFFCC80),
+    warnFaint = Color(0xFF3E3020),
+    danger = Color(0xFFFFAB91),
+    onDanger = Color(0xFF29130F),
+    ok = Color(0xFFA5D6A7),
+    okText = Color(0xFFA5D6A7),
+    tileBlue = Color(0xFF0D47A1),
+    tileTeal = Color(0xFF004D40),
+    tilePurple = Color(0xFF4527A0),
+    tileAmber = Color(0xFF4E342E),
+    tileRose = Color(0xFF880E4F),
 )
 
 /** 지금 팔레트. [TeslaMacroTheme]이 낮/밤에 맞춰 갈아 끼운다 */
@@ -131,6 +133,12 @@ object T {
     val OnDanger: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.onDanger
     val Ok: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.ok
     val OkText: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.okText
+    val TileBlue: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileBlue
+    val TileTeal: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileTeal
+    val TilePurple: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tilePurple
+    val TileAmber: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileAmber
+    val TileRose: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileRose
+    val OnTile: Color = Color.White
 }
 
 /**

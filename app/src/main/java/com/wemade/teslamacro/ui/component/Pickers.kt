@@ -41,7 +41,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
@@ -53,12 +52,7 @@ import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/**
- * 화면을 덮는 선택 패널.
- *
- * Material 바텀시트 대신 직접 만든 이유: 그림자·모서리·색을 전부 눌러야 해서
- * 커스터마이즈 양이 새로 만드는 것보다 많았다.
- */
+/** 현재 화면 위에 짧은 선택 목록을 띄우고 뒤로가기와 바깥 탭은 이 창만 닫는다. */
 @Composable
 fun PickerSheet(
     title: String,
@@ -73,42 +67,54 @@ fun PickerSheet(
         modifier = modifier
             .fillMaxSize()
             .imePadding()
-            // 뒤 배경을 덮어 바깥 탭으로 닫는다
-            .background(Color.Black.copy(alpha = 0.6f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.48f))
             .clickable(indication = null, interactionSource = remembered()) { onDismiss() },
         contentAlignment = if (compact) Alignment.BottomCenter else Alignment.Center,
     ) {
-        // 짧은 목록이 화면 85%를 강제로 채우면 아래가 텅 빈다 — 내용만큼만 차지하게 상한만 건다
         val panelMaxHeight = maxHeight * 0.85f
         Column(
             modifier = Modifier
                 .widthIn(max = 560.dp)
-                .semantics { paneTitle = title }
+                .fillMaxWidth()
                 .heightIn(max = panelMaxHeight)
-                .padding(if (compact) Space.sm else Space.lg)
-                .background(T.Carbon, RoundedCornerShape(Radius.card))
-                // 패널 안 탭이 닫기로 새어나가지 않게 막는다
+                .padding(horizontal = if (compact) Space.sm else Space.lg)
+                .clip(RoundedCornerShape(Radius.card))
+                .background(T.Carbon)
                 .clickable(indication = null, interactionSource = remembered()) { }
+                .semantics { paneTitle = title }
                 .padding(Space.md),
         ) {
+            if (compact) {
+                Box(Modifier.fillMaxWidth().padding(bottom = Space.sm), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(width = 32.dp, height = Space.xs)
+                            .clip(RoundedCornerShape(Radius.pill))
+                            .background(T.Hairline)
+                    )
+                }
+            }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = Space.md),
+                modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink,
                     modifier = Modifier.weight(1f).padding(end = Space.sm))
-                // 아이콘은 24dp지만 패딩으로 터치 타깃을 48dp까지 키운다 — 주행 중 닫기 실패 방지
-                Icon(
-                    imageVector = DraftMark.Close,
-                    contentDescription = "닫기",
-                    tint = T.InkFaint,
+                Box(
                     modifier = Modifier
+                        .size(Space.xxl)
                         .clip(RoundedCornerShape(Radius.pill))
-                        .clickable { onDismiss() }
-                        .padding(Space.sm + Space.xs)
-                        .size(24.dp),
-                )
+                        .clickable(onClick = onDismiss),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = DraftMark.Close,
+                        contentDescription = "닫기",
+                        tint = T.InkMuted,
+                        modifier = Modifier.size(Space.lg),
+                    )
+                }
             }
             content()
         }
@@ -126,13 +132,15 @@ fun PickerRow(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 56.dp)
+            .clip(RoundedCornerShape(Radius.button))
             .clickable(onClick = onClick)
-            .padding(vertical = Space.sm + Space.xs),
+            .defaultMinSize(minHeight = 56.dp)
+            .padding(horizontal = Space.sm, vertical = Space.sm + Space.xs),
+        verticalArrangement = Arrangement.spacedBy(Space.xs),
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         if (detail != null) {
-            Text(detail, style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         }
     }
 }
@@ -144,33 +152,15 @@ fun <T> PickerList(
     modifier: Modifier = Modifier,
     row: @Composable (T) -> Unit,
 ) {
-    val state = rememberLazyListState()
-    Box(modifier = modifier) {
-        LazyColumn(state = state, modifier = Modifier.heightIn(max = 520.dp)) {
-            // 항목 사이 구분선 — 경계가 없으면 단독 항목이 허공에 뜬 장식처럼 보인다
-            itemsIndexed(items) { index, item ->
-                row(item)
-                if (index < items.lastIndex) Hairline()
-            }
-        }
-        // 아래에 더 있는데 잘려 보이지 않으면 스크롤할 생각을 못 한다 — 하단을 흐려서 알린다
-        if (state.canScrollForward) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(
-                        Brush.verticalGradient(listOf(Color.Transparent, T.Carbon))
-                    ),
-                contentAlignment = Alignment.BottomCenter,
-            ) {
-                Icon(
-                    imageVector = DraftMark.Expand,
-                    contentDescription = "아래로 스크롤",
-                    tint = T.InkFaint,
-                )
-            }
+    val maxListHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.5f)
+        .coerceAtMost(520.dp)
+    LazyColumn(
+        state = rememberLazyListState(),
+        modifier = modifier.heightIn(max = maxListHeight),
+    ) {
+        itemsIndexed(items) { index, item ->
+            row(item)
+            if (index < items.lastIndex) Hairline()
         }
     }
 }

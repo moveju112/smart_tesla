@@ -24,16 +24,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.model.Level
-import com.wemade.teslamacro.ui.theme.MetricTextStyle
 import com.wemade.teslamacro.ui.theme.Motion
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/**
- * 통풍/열선 4단계 선택기.
- * 슬라이더 대신 세그먼트를 쓴다 — 주행 중 눈을 안 떼고 누를 수 있는 큰 타겟이 필요해서다.
- */
+/** 통풍·열선 단계는 한눈에 읽히는 네 가지 선택 면으로 표시한다. */
 @Composable
 fun LevelSelector(
     label: String,
@@ -55,7 +51,7 @@ fun LevelSelector(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // 옅은 회색 트랙 위에 선택 칸만 도드라지는 토스식 세그먼트
+                // 중립 트랙과 강조 선택 면으로 단계 차이를 구분한다.
                 .background(T.Slate, RoundedCornerShape(Radius.button))
                 .padding(Space.xs),
             horizontalArrangement = Arrangement.spacedBy(Space.xs),
@@ -65,7 +61,7 @@ fun LevelSelector(
                 val background by animateColorAsState(
                     targetValue = when {
                         !enabled -> Color.Transparent
-                        isSelected && level == Level.OFF -> Color.White
+                        isSelected && level == Level.OFF -> T.Carbon
                         isSelected -> accent
                         else -> Color.Transparent
                     },
@@ -78,7 +74,7 @@ fun LevelSelector(
                         .weight(1f)
                         .height(48.dp)
                         .background(background, cellShape)
-                        // OFF 선택 칸은 흰색 위 흰색이라 테두리 없으면 선택 여부가 안 보인다
+                        // 꺼짐 선택은 중립 면과 테두리로 구분한다.
                         .then(
                             if (enabled && isSelected && level == Level.OFF)
                                 Modifier.border(1.dp, T.Hairline, cellShape)
@@ -93,9 +89,7 @@ fun LevelSelector(
                         color = when {
                             !enabled -> T.InkFaint
                             isSelected && level == Level.OFF -> T.Ink
-                            // 주황(열선) 위 흰 글자는 대비 미달 — 어두운 글자로
-                            isSelected && accent == T.Heat -> T.Ink
-                            isSelected -> Color.White
+                            isSelected -> MaterialTheme.colorScheme.surface
                             else -> T.InkMuted
                         },
                         textAlign = TextAlign.Center,
@@ -135,8 +129,7 @@ fun ToggleRow(
             }
         }
         Spacer(modifier = Modifier.width(Space.md))
-        // 알약형 스위치를 쓰지 않는다 — 켜짐/꺼짐이 색으로만 갈리고, 이 세계의 문법이 아니다.
-        // 채운 사각 = 켜짐, 빈 사각 = 꺼짐. 상태어를 함께 적어 색 없이도 읽힌다
+        // 스위치와 상태어를 함께 사용해 색을 보지 않아도 현재 값을 알 수 있다.
         DraftToggle(
             checked = checked,
             onCheckedChange = onCheckedChange,

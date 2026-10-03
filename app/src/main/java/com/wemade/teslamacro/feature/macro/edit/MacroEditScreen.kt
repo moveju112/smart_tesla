@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -69,15 +70,8 @@ internal fun handleEditorBack(pickerOpen: Boolean, closePicker: () -> Unit, clos
     if (pickerOpen) closePicker() else closeEditor()
 }
 
-/** 위저드 한 페이지의 제목 묶음 */
-private data class WizardStep(val title: String, val subtitle: String)
-
-private val STEPS = listOf(
-    WizardStep("실행 시점", "등록한 시점 중 하나가 되면 시작합니다. 항목을 누르면 수정할 수 있습니다."),
-    WizardStep("실행 조건", "조건을 모두 만족해야 실행합니다. 항목을 누르면 수정할 수 있습니다."),
-    WizardStep("실행 순서", "위에서 아래로 실행합니다. 항목을 누르면 수정할 수 있습니다."),
-    WizardStep("이름을 정하고 저장하세요", "자동 실행 여부와 다시 실행할 수 있는 간격을 설정합니다."),
-)
+/** 단계 이름은 탭과 본문 제목에 같이 사용한다. */
+private val STEPS = listOf("실행 시점", "실행 조건", "실행 순서", "이름과 옵션")
 
 /**
  * 매크로 편집 — 페이지 위저드.
@@ -113,36 +107,37 @@ fun MacroEditScreen(
         handleEditorBack(picker != OpenPicker.NONE, { picker = OpenPicker.NONE }, onCancel)
     }
 
-    // 화면 크기와 관계없이 한 단계씩 편집하고, 이미 만든 매크로는 동작부터 수정한다.
+    // 본문은 키보드 위까지 스크롤되고 저장 동작은 화면 하단에서 계속 접근할 수 있다.
     Column(
         modifier = modifier
             .fillMaxSize()
+            .imePadding()
             .padding(if (compact) Space.md else Space.lg),
     ) {
 
-        // 상단: 닫기(X) + 진행 표시 — 루틴 앱 관례대로 취소는 좌상단 아이콘 하나로
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = DraftMark.Close,
-                contentDescription = "닫기",
-                tint = T.InkMuted,
-                // 흔들리는 차 안에서도 닫히게 패딩으로 터치 타깃 48dp를 확보한다
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier
+                    .size(Space.xxl)
                     .clip(RoundedCornerShape(Radius.pill))
-                    .clickable(onClick = onCancel)
-                    .padding(Space.sm + Space.xs)
-                    .size(Space.lg),
-            )
-            Column(modifier = Modifier.weight(1f).padding(horizontal = Space.sm)) {
-                Text(
-                    text = if (draft.isNew) "매크로 만들기" else draft.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = T.Ink,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    .clickable(onClick = onCancel),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = DraftMark.Close,
+                    contentDescription = "닫기",
+                    tint = T.InkMuted,
+                    modifier = Modifier.size(Space.lg),
                 )
             }
-            // 탭에 현재 위치가 드러나므로 중복 단계 숫자는 표시하지 않는다.
+            Text(
+                text = if (draft.isNew) "매크로 만들기" else draft.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = T.Ink,
+                modifier = Modifier.weight(1f).padding(horizontal = Space.sm),
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
         }
         Spacer(Modifier.height(Space.sm))
         SectionTabs(
@@ -176,14 +171,8 @@ fun MacroEditScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth()) {
-                    Text(STEPS[current].title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
-                    Text(
-                        text = STEPS[current].subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = T.InkFaint,
-                        modifier = Modifier.padding(top = Space.xs),
-                    )
-                    Spacer(Modifier.height(Space.lg))
+                    Text(STEPS[current], style = MaterialTheme.typography.titleMedium, color = T.Ink)
+                    Spacer(Modifier.height(Space.md))
 
                     when (current) {
                         0 -> StepTriggers(draft, onChange, triggerIndex, { triggerIndex = it }) { picker = OpenPicker.TRIGGER }
@@ -217,7 +206,7 @@ fun MacroEditScreen(
             step == 2 -> "실행할 동작을 하나 이상 쌓아야 다음으로 갈 수 있어요"
             else -> draft.blockReason
         }
-        // 하단 고정 CTA 바 — 본문과 구분선으로 나눠 루틴 앱처럼 "항상 여기" 느낌을 준다
+        // 저장·오류·유효성 사유를 본문 밖에 두어 스크롤 중에도 복구할 수 있다.
         Hairline()
         // 힌트·CTA도 본문과 같은 680dp 폭으로 맞춰 넓은 화면에서 좌우 정렬이 어긋나지 않게 한다
         blockHint?.let {
@@ -368,9 +357,9 @@ private fun StepConditions(
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
         if (draft.conditions.isEmpty()) {
             Text(
-                text = "추가 조건 없이 실행합니다. 특정 요일이나 차량 상태일 때만 실행하려면 조건을 추가하세요.",
+                text = "조건 없이 실행",
                 style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
+                color = T.InkMuted,
             )
         }
         draft.conditions.forEachIndexed { index, condition ->
@@ -477,43 +466,29 @@ private fun StepFinish(
     }
 }
 
+/** 시점 후보를 같은 목록 행으로 묶어 모든 선택지를 한 번에 스크롤한다. */
+private data class TriggerChoice(val label: String, val detail: String, val build: () -> Trigger)
+
 /** 트리거는 "사건"만 고를 수 있다. 상태 신호는 여기 안 나온다 */
 @Composable
 private fun TriggerPicker(onDismiss: () -> Unit, onPick: (Trigger) -> Unit) {
-    val eventSignals = Signal.entries.filter { it.kind == SignalKind.BOOLEAN }
-
-    PickerSheet(title = "언제 — 발동 시점", onDismiss = onDismiss) {
-        PickerList(items = eventSignals + listOf(null)) { signal ->
-            if (signal == null) {
-                Column {
-                    PickerRow(
-                        label = "정해진 시각",
-                        detail = "매일 18:00처럼 시간에 맞춰 발동",
-                        onClick = { onPick(Trigger.AtTime(minutesOfDay = 18 * 60)) },
-                    )
-                    PickerRow(
-                        label = "일정 주기",
-                        detail = "30분마다처럼 반복해서 확인",
-                        onClick = { onPick(Trigger.Every(everyMinutes = 60)) },
-                    )
-                    PickerRow(
-                        label = "호출될 때만",
-                        detail = "등록한 바로가기로 실행",
-                        onClick = { onPick(Trigger.Manual) },
-                    )
-                    PickerRow(
-                        label = "조건이 되면 (항상 감시)",
-                        detail = "예: 실내 26~28℃가 \"되는 순간\" 실행.\n조건 페이지와 함께 사용",
-                        onClick = { onPick(Trigger.Always) },
-                    )
-                }
-            } else {
-                PickerRow(
-                    label = signal.label,
-                    detail = "발생 시점과 주행 조건을 추가 후 설정",
-                    onClick = { onPick(Trigger.SignalBecomes(signal, to = true)) },
-                )
-            }
+    val choices = Signal.entries.filter { it.kind == SignalKind.BOOLEAN }.map { signal ->
+        TriggerChoice(signal.label, "발생 시점과 주행 조건은 추가한 뒤 설정") {
+            Trigger.SignalBecomes(signal, to = true)
+        }
+    } + listOf(
+        TriggerChoice("정해진 시각", "매일 18:00처럼 시간에 맞춰 발동") {
+            Trigger.AtTime(minutesOfDay = 18 * 60)
+        },
+        TriggerChoice("일정 주기", "30분마다처럼 반복해서 확인") {
+            Trigger.Every(everyMinutes = 60)
+        },
+        TriggerChoice("호출될 때만", "등록한 바로가기로 실행") { Trigger.Manual },
+        TriggerChoice("조건이 되면 (항상 감시)", "조건을 만족하는 순간 실행") { Trigger.Always },
+    )
+    PickerSheet(title = "발동 시점 추가", onDismiss = onDismiss) {
+        PickerList(items = choices) { choice ->
+            PickerRow(choice.label, detail = choice.detail, onClick = { onPick(choice.build()) })
         }
     }
 }
@@ -587,28 +562,42 @@ private fun ActionPicker(
     onPickWaitUntil: () -> Unit,
 ) {
     var group by remember { mutableStateOf<CommandGroup?>(CommandGroup.CLIMATE) }
+    var choosingGroup by remember { mutableStateOf(false) }
 
     PickerSheet(title = "실행할 동작", onDismiss = onDismiss) {
         Column {
-            ChipRow(
-                options = CommandGroup.entries + listOf(null),
-                selected = group,
-                label = { it?.label ?: "대기 · 기타" },
-                onSelect = { group = it },
-            )
-            Spacer(Modifier.height(Space.md))
-            if (group == null) {
-                PickerList(items = listOf(
-                    "시간 대기" to onPickWait,
-                    "조건 대기" to onPickWaitUntil,
-                    "네이버 지도 안내" to onPickNavigate,
-                    "스텔스 충전 1회" to onPickStealthCharging,
-                )) { (label, onSelect) ->
-                    PickerRow(label = label, onClick = onSelect)
+            if (choosingGroup) {
+                PickerList(items = CommandGroup.entries + listOf(null)) { option ->
+                    PickerRow(
+                        label = option?.label ?: "대기 · 기타",
+                        onClick = {
+                            group = option
+                            choosingGroup = false
+                        },
+                    )
                 }
             } else {
-                PickerList(items = CommandCatalog.byGroup[group].orEmpty()) { template ->
-                    PickerRow(label = template.label, onClick = { onPick(template) })
+                TButton(
+                    text = "${group?.label ?: "대기 · 기타"} · 분류 변경",
+                    tone = ButtonTone.Ghost,
+                    fillWidth = false,
+                    small = true,
+                    onClick = { choosingGroup = true },
+                )
+                Spacer(Modifier.height(Space.sm))
+                if (group == null) {
+                    PickerList(items = listOf(
+                        "시간 대기" to onPickWait,
+                        "조건 대기" to onPickWaitUntil,
+                        "네이버 지도 안내" to onPickNavigate,
+                        "스텔스 충전 1회" to onPickStealthCharging,
+                    )) { (label, onSelect) ->
+                        PickerRow(label = label, onClick = onSelect)
+                    }
+                } else {
+                    PickerList(items = CommandCatalog.byGroup[group].orEmpty()) { template ->
+                        PickerRow(label = template.label, onClick = { onPick(template) })
+                    }
                 }
             }
         }

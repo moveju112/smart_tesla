@@ -26,25 +26,46 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke as DrawStroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AirlineSeatReclineNormal
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.EvStation
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathBuilder
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
 import com.wemade.teslamacro.ui.theme.Space
@@ -52,25 +73,12 @@ import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.T
 
-/**
- * 표제란(title block).
- *
- * 도면에서 "이게 무슨 도면이고 언제 것인가"는 큰 제목이 아니라 시트 하단의
- * 표제란에 작게 적힌다. 이 앱도 그렇게 한다 — 차 이름과 연결 상태가
- * 화면 상단을 먹지 않고 아래 한 줄에 눕는다.
- *
- * 칸 사이는 세로 괘선으로 나눈다. 여백으로 나누면 도면이 아니라 그냥 문단이 된다.
- */
+/** 차량명과 연결 상태를 간결한 보조 정보로 표시한다. */
 @Composable
 fun TitleBlock(
     fields: List<Pair<String, String>>,
     modifier: Modifier = Modifier,
-    /**
-     * 한 줄에 넣을 칸 수. null이면 폭에 맞춰 한 줄로 흘린다.
-     *
-     * 좁은 화면에서는 반드시 지정한다 — 흘려 보내면 줄이 어디서 접힐지 몰라
-     * 새 줄이 괘선으로 시작하거나 앞 줄 끝에 괘선만 남는다.
-     */
+    /** 좁은 화면에서 한 줄에 배치할 항목 수. */
     perRow: Int? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
@@ -86,7 +94,7 @@ fun TitleBlock(
                 row.forEachIndexed { index, (label, value) ->
                     if (index > 0) {
                         Spacer(Modifier.width(Space.md))
-                        // 괘선 — 표제란의 칸 경계. 여백으로 나누면 도면이 아니라 그냥 문단이 된다
+                        // 읽기 순서를 유지하면서 항목 사이만 구분한다.
                         Box(
                             Modifier
                                 .width(Stroke.thin)
@@ -117,14 +125,7 @@ fun TitleBlock(
     }
 }
 
-/**
- * 부품번호 — 도면과 값 표를 잇는 유일한 끈.
- *
- * 도면에서는 지시선 끝에 원을 그리고 그 안에 번호를 적는다.
- * 값 목록의 같은 번호를 보면 그 값이 차의 어디 것인지 곧바로 안다.
- *
- * @param highlighted 이 번호가 지금 봐야 할 것인지. 원이 채워진다
- */
+/** 값 표와 차량 위치를 연결하는 번호. 강조 여부는 면과 글자색으로 함께 표시한다. */
 @Composable
 fun CalloutNumber(
     number: Int,
@@ -151,18 +152,11 @@ fun CalloutNumber(
     }
 }
 
-/** 부품번호의 원형 외곽선. */
+/** 강조 번호의 원형 배경. */
 private val CircleOutline = androidx.compose.foundation.shape.CircleShape
 
 
-/**
- * 표 머리글.
- *
- * 열 비율을 호출부와 나눠 갖는다 — 머리글과 본문이 다른 비율을 쓰면 표가 아니라
- * 두 개의 줄이 된다. 머리글 아래는 굵은 괘선으로 닫는다(도면 표의 관례).
- *
- * @param columns 열 이름과 weight 쌍. 본문 행이 쓰는 값과 같아야 한다
- */
+/** 본문과 동일한 열 비율을 사용하는 표 머리글. */
 @Composable
 fun TableHeader(
     columns: List<Pair<String, Float>>,
@@ -210,8 +204,8 @@ fun DraftToggle(
             checked = checked,
             onCheckedChange = null,
             colors = SwitchDefaults.colors(
-                checkedTrackColor = T.Electric,
-                checkedThumbColor = T.Void,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
                 uncheckedTrackColor = T.Slate,
                 uncheckedThumbColor = T.InkMuted,
                 uncheckedBorderColor = T.Hairline,
@@ -229,14 +223,7 @@ fun DraftToggle(
     }
 }
 
-/**
- * 구획 — 괘선 하나로 나뉜 글 묶음.
- *
- * 채운 면으로 구획하지 않는다. 채움이 쌓이면 판이 카드 목록이 되고,
- * 이 세계의 약속은 "층은 괘선으로만 생긴다"였다.
- *
- * @param tone 괘선 색. 주의 안내는 경보 잉크로, 평상 안내는 잉크로 긋는다
- */
+/** 보조 콘텐츠를 상단 경계로 구분한다. */
 @Composable
 fun Modifier.draftBlock(tone: Color = T.Ink): Modifier {
     val height = Stroke.bold
@@ -263,7 +250,8 @@ fun DraftField(
     placeholder: String? = null,
     visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
 ) {
-    var focused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
     val rule = if (focused) Stroke.bold else Stroke.thin
     val ruleColor = when {
         isError -> T.Danger
@@ -297,11 +285,7 @@ fun DraftField(
                     color = if (enabled) T.Ink else T.InkFaint,
                 ),
                 cursorBrush = SolidColor(T.Electric),
-                interactionSource = remember { MutableInteractionSource() }
-                    .also { source ->
-                        val isFocused by source.collectIsFocusedAsState()
-                        focused = isFocused
-                    },
+                interactionSource = interactionSource,
                 decorationBox = { innerTextField ->
                     Box(
                         modifier = Modifier
@@ -350,141 +334,37 @@ fun DraftField(
     }
 }
 
-/**
- * 익숙한 사물의 윤곽을 같은 선 굵기로 그려 동작을 바로 알아보게 한다.
- */
+/** 앱 전체에서 사용하는 Material Rounded 동작 아이콘. 기존 이름을 유지한다. */
 object DraftMark {
+    val Close: ImageVector = Icons.Rounded.Close
+    val Add: ImageVector = Icons.Rounded.Add
+    val Minus: ImageVector = Icons.Rounded.Remove
+    val Strike: ImageVector = Icons.Rounded.Delete
+    val Edit: ImageVector = Icons.Rounded.Edit
+    val Automation: ImageVector = Icons.Rounded.Bolt
+    val Settings: ImageVector = Icons.Rounded.Settings
+    val ArrowUp: ImageVector = Icons.Rounded.ArrowUpward
+    val ArrowDown: ImageVector = Icons.Rounded.ArrowDownward
+    val ArrowLeft: ImageVector = Icons.Rounded.ArrowBack
+    val Folder: ImageVector = Icons.Rounded.Folder
+    val ArrowRight: ImageVector = Icons.Rounded.ArrowForward
+    val Expand: ImageVector = Icons.Rounded.ExpandMore
+    val Run: ImageVector = Icons.Rounded.PlayArrow
+    val Pointer: ImageVector = Icons.Rounded.DirectionsCar
+    val More: ImageVector = Icons.Rounded.MoreHoriz
 
-    val Close: ImageVector = mark {
-        moveTo(5f, 5f); lineTo(19f, 19f)
-        moveTo(19f, 5f); lineTo(5f, 19f)
-    }
-
-    val Add: ImageVector = mark {
-        moveTo(12f, 4f); lineTo(12f, 20f)
-        moveTo(4f, 12f); lineTo(20f, 12f)
-    }
-
-    val Minus: ImageVector = mark {
-        moveTo(4f, 12f); lineTo(20f, 12f)
-    }
-
-    /** 기존 호출 이름을 유지하고 삭제 표시는 휴지통으로 통일한다. */
-    val Strike: ImageVector = mark {
-        moveTo(4f, 6f); lineTo(20f, 6f)
-        moveTo(9f, 6f); lineTo(9f, 3f); lineTo(15f, 3f); lineTo(15f, 6f)
-        moveTo(6f, 6f); lineTo(7f, 21f); lineTo(17f, 21f); lineTo(18f, 6f)
-        moveTo(10f, 10f); lineTo(10f, 17f)
-        moveTo(14f, 10f); lineTo(14f, 17f)
-    }
-
-    /** 연필의 끝과 몸통으로 수정 동작을 표시한다. */
-    val Edit: ImageVector = mark {
-        moveTo(4f, 20f); lineTo(5f, 15f); lineTo(16f, 4f)
-        lineTo(20f, 8f); lineTo(9f, 19f); lineTo(4f, 20f)
-        moveTo(13f, 7f); lineTo(17f, 11f)
-    }
-
-    /** 연결된 시작점과 동작으로 자동화 흐름을 나타낸다. */
-    val Automation: ImageVector = mark {
-        moveTo(3f, 4f); lineTo(9f, 4f); lineTo(9f, 10f); lineTo(3f, 10f); close()
-        moveTo(15f, 14f); lineTo(21f, 14f); lineTo(21f, 20f); lineTo(15f, 20f); close()
-        moveTo(6f, 10f); lineTo(6f, 17f); lineTo(15f, 17f)
-        moveTo(12f, 14f); lineTo(15f, 17f); lineTo(12f, 20f)
-    }
-
-    /** 조절 손잡이 세 개로 설정 화면의 목적을 나타낸다. */
-    val Settings: ImageVector = mark {
-        moveTo(4f, 6f); lineTo(8f, 6f)
-        moveTo(12f, 6f); lineTo(20f, 6f)
-        moveTo(8f, 3f); lineTo(12f, 3f); lineTo(12f, 9f); lineTo(8f, 9f); close()
-        moveTo(4f, 17f); lineTo(14f, 17f)
-        moveTo(18f, 17f); lineTo(20f, 17f)
-        moveTo(14f, 14f); lineTo(18f, 14f); lineTo(18f, 20f); lineTo(14f, 20f); close()
-    }
-
-    /** 지시선 화살촉 — 위 */
-    val ArrowUp: ImageVector = mark {
-        moveTo(12f, 5f); lineTo(12f, 19f)
-        moveTo(6f, 11f); lineTo(12f, 5f); lineTo(18f, 11f)
-    }
-
-    val ArrowDown: ImageVector = mark {
-        moveTo(12f, 19f); lineTo(12f, 5f)
-        moveTo(6f, 13f); lineTo(12f, 19f); lineTo(18f, 13f)
-    }
-
-    /** 상위 폴더로 돌아가는 탐색을 표시한다. */
-    val ArrowLeft: ImageVector = mark {
-        moveTo(18f, 12f); lineTo(6f, 12f)
-        moveTo(12f, 6f); lineTo(6f, 12f); lineTo(12f, 18f)
-    }
-
-    /** 탭이 있는 폴더 윤곽으로 매크로 카드와 분류 카드를 구분한다. */
-    val Folder: ImageVector = mark {
-        moveTo(3f, 5f); lineTo(9f, 5f); lineTo(12f, 8f)
-        lineTo(21f, 8f); lineTo(21f, 19f); lineTo(3f, 19f); close()
-    }
-
-    val ArrowRight: ImageVector = mark {
-        moveTo(6f, 12f); lineTo(18f, 12f)
-        moveTo(12f, 6f); lineTo(18f, 12f); lineTo(12f, 18f)
-    }
-
-    /** 펼침 — 아래를 향한 화살촉만. 선은 없다 */
-    val Expand: ImageVector = mark {
-        moveTo(6f, 10f); lineTo(12f, 16f); lineTo(18f, 10f)
-    }
-
-    /** 실행 = 도면의 방향 표시. 채운 삼각이 아니라 윤곽 삼각이다 */
-    val Run: ImageVector = mark {
-        moveTo(8f, 5f); lineTo(19f, 12f); lineTo(8f, 19f); lineTo(8f, 5f)
-    }
-
-    /**
-     * 지목 — 목록에서 "이것"을 가리키는 표시.
-     * ★ 글리프를 쓰면 폰트에 따라 모양이 달라지고, 별은 도면 기호가 아니다.
-     * 도면은 지목할 때 삼각 지시자를 쓴다.
-     */
-    val Pointer: ImageVector = mark {
-        moveTo(6f, 6f); lineTo(18f, 12f); lineTo(6f, 18f); lineTo(6f, 6f)
-    }
-
-    val More: ImageVector = mark {
-        moveTo(5f, 12f); lineTo(7f, 12f)
-        moveTo(11f, 12f); lineTo(13f, 12f)
-        moveTo(17f, 12f); lineTo(19f, 12f)
-    }
+    val Seat: ImageVector = Icons.Rounded.AirlineSeatReclineNormal
+    val Climate: ImageVector = Icons.Rounded.Thermostat
+    val Lock: ImageVector = Icons.Rounded.Lock
+    val Charge: ImageVector = Icons.Rounded.EvStation
+    val Search: ImageVector = Icons.Rounded.Search
+    val ChevronRight: ImageVector = Icons.Rounded.ChevronRight
+    val Calendar: ImageVector = Icons.Rounded.CalendarToday
+    val Location: ImageVector = Icons.Rounded.LocationOn
+    val Check: ImageVector = Icons.Rounded.Check
 }
 
-/**
- * 도면 기호 하나를 만든다.
- *
- * 전부 같은 규칙을 강제한다 — 24dp 격자, 1.5dp 단일 굵기, 사각 끝단, 채움 없음.
- * 굵기를 인자로 열지 않은 건 일부러다. 기호가 굵기별로 갈리면 도면이 아니게 된다.
- */
-private fun mark(pathBlock: PathBuilder.() -> Unit): ImageVector =
-    ImageVector.Builder(
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-    ).apply {
-        addPath(
-            pathData = PathBuilder().apply(pathBlock).nodes,
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 1.5f,
-            strokeLineCap = StrokeCap.Square,
-        )
-    }.build()
-
-/**
- * 해칭 — 지금 작동 중인 부위를 채우는 사선 무늬.
- *
- * 색만 바꾸면 흘깃 볼 때 안 걸린다. 도면은 색이 아니라 무늬로 재질과 상태를 말한다.
- * 앱에서 유일하게 움직이는 것이기도 하다 — 사선이 천천히 흐른다.
- */
+/** 차량 상태 그림에서 냉방·난방 구역을 선 패턴으로 구별한다. */
 fun androidx.compose.ui.graphics.drawscope.DrawScope.hatch(
     rect: androidx.compose.ui.geometry.Rect,
     color: Color,

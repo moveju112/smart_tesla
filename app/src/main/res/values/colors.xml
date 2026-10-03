@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Color.kt의 T.Void와 같은 값. 앱 시작 순간 다크 화면 깜빡임을 없앤다 -->
-    <color name="void_background">#F5F6F8</color>
-    <!-- LightPalette의 잉크와 종이색을 런처에도 사용한다. -->
-    <color name="launcher_background">#3569B7</color>
-    <color name="launcher_ink">#F5F6F8</color>
+    <color name="void_background">#F3F6FA</color>
+    <!-- 앱 아이콘도 Material Blue 800과 흰색을 사용한다. -->
+    <color name="launcher_background">#1565C0</color>
+    <color name="launcher_ink">#FFFFFF</color>
 </resources>

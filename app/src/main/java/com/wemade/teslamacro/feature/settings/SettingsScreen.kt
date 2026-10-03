@@ -18,6 +18,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.Restore
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -118,8 +126,13 @@ fun SettingsScreen(
             .fillMaxSize()
             .padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
     ) {
-        Text("설정", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
-        Spacer(Modifier.height(Space.sm))
+        Row(verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Icon(Icons.Rounded.Settings, contentDescription = null, tint = T.Electric,
+                modifier = Modifier.size(Space.lg))
+            Text("설정", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+        }
+        Spacer(Modifier.height(Space.md))
         // 탐색은 밑줄로만 표시해 실제 설정값 선택과 구분한다.
         SectionTabs(
             options = SettingsGroup.entries,
@@ -143,7 +156,9 @@ fun SettingsScreen(
                                 TCard {
                                     Text("휴대폰과 거치 기기를 연결하고 목적지를 전달해요.",
                                         style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-                                    TButton(text = "차로 보내기", tone = ButtonTone.Secondary, onClick = action)
+                                    Spacer(Modifier.height(Space.sm))
+                                    TButton(text = "차로 보내기", tone = ButtonTone.Secondary,
+                                        icon = Icons.Rounded.Place, onClick = action)
                                 }
                             }
                             if (navigation == null) {
@@ -620,7 +635,8 @@ private fun UpdatePanel(
             when (update) {
                 // 앱이 스스로를 갈아끼운다. 첫 회만 확인 화면이 뜨고 그 뒤로는 조용히 끝난다.
                 is UpdateState.Available ->
-                    TButton("설치", fillWidth = false, small = true, onClick = onInstall)
+                    TButton("설치", icon = Icons.Rounded.SystemUpdate,
+                        fillWidth = false, small = true, onClick = onInstall)
                 // 진행 중에는 눌러도 할 일이 없다.
                 is UpdateState.Downloading, is UpdateState.Installing ->
                     TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
@@ -631,6 +647,7 @@ private fun UpdatePanel(
                     TButton(
                         text = "업데이트 확인",
                         tone = ButtonTone.Secondary,
+                        icon = Icons.Rounded.SystemUpdate,
                         fillWidth = false,
                         small = true,
                         enabled = update !is UpdateState.Checking,
@@ -1283,7 +1300,7 @@ internal fun WarningSoundSheet(
     }
 }
 
-/** 자주 보지 않는 등록 정보라 제목·VIN·등록 버튼을 한 줄에 모은다. */
+/** 차량 식별값과 등록 동작을 한 그룹에 두고 좁은 화면에서는 VIN만 줄인다. */
 @Composable
 private fun VehiclePanel(
     settings: AppSettings,
@@ -1292,19 +1309,20 @@ private fun VehiclePanel(
 ) {
     TCard {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("차량 등록", style = MaterialTheme.typography.titleMedium, color = T.Ink)
+            Icon(Icons.Rounded.DirectionsCar, contentDescription = null, tint = T.Electric,
+                modifier = Modifier.size(Space.lg))
             Spacer(Modifier.width(Space.sm))
-            // 좁은 폭·큰 글씨에서는 VIN만 줄여 버튼이 밀려나지 않게 한다.
-            Text(
-                text = if (settings.isPaired) settings.vin else "등록된 차량 없음",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                Text("차량 등록", style = MaterialTheme.typography.titleMedium, color = T.Ink)
+                Text(
+                    text = if (settings.isPaired) settings.vin else "등록된 차량 없음",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = T.InkMuted,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.width(Space.sm))
-            // 등록 해제하면 다시 들어갈 길이 필요하다. 버튼이 상황에 따라 바뀐다
             if (settings.isPaired) {
                 TButton(text = "등록 해제", tone = ButtonTone.Danger, fillWidth = false, onClick = onUnpair)
             } else {
@@ -1332,10 +1350,12 @@ internal fun BackupPanel(backup: BackupControls) {
     TCard {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.sm),
             verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            TButton("백업 내보내기", fillWidth = false, small = true, onClick = backup.onExport)
+            TButton("백업 내보내기", icon = Icons.Rounded.Backup,
+                fillWidth = false, small = true, onClick = backup.onExport)
             TButton(
                 text = "백업 가져오기",
                 tone = ButtonTone.Secondary,
+                icon = Icons.Rounded.Restore,
                 fillWidth = false,
                 small = true,
                 onClick = backup.onImport,

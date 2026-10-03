@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +20,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.Text
@@ -40,7 +46,6 @@ import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DiagLogPanel
-import com.wemade.teslamacro.ui.component.CalloutNumber
 import com.wemade.teslamacro.ui.component.draftBlock
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
@@ -98,22 +103,19 @@ fun PairingScreen(
         form = {
             // VIN 입력을 끝낸 뒤에는 이미 완료한 입력·앱 이동을 다시 보여주지 않는다.
             if (state.step == PairingStep.EnterVin) {
-                // 빈 밑줄만 있으면 입력칸이 아니라 구분선처럼 보인다.
-                // 주 입력만 굵은 괘선으로 떼고 값이 들어갈 자리를 문장으로 가리킨다.
-                TCard(outlined = true) {
-                    DraftField(
-                        value = state.vin,
-                        onValueChange = onVinChange,
-                        label = "차량 식별번호 (VIN)",
-                        placeholder = "여기를 눌러 VIN 17자 입력",
-                        singleLine = true,
-                        isError = state.vin.isNotEmpty() && !state.isVinValid,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                // VIN 입력은 공용 필드에 맡기고 별도의 중첩 카드는 두지 않는다.
+                DraftField(
+                    value = state.vin,
+                    onValueChange = onVinChange,
+                    label = "차량 식별번호 (VIN)",
+                    placeholder = "VIN 17자 입력",
+                    singleLine = true,
+                    isError = state.vin.isNotEmpty() && !state.isVinValid,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 Spacer(Modifier.height(Space.md))
                 OpenTeslaAppButton()
@@ -156,8 +158,6 @@ fun PairingScreen(
                 TButton(
                     text = state.primaryLabel,
                     enabled = state.isPrimaryEnabled,
-                    fillWidth = false,
-                    modifier = Modifier.weight(1f),
                     onClick = {
                         when (state.step) {
                             PairingStep.EnterVin -> onFindVehicle()
@@ -167,12 +167,7 @@ fun PairingScreen(
                         }
                     },
                 )
-                TButton(
-                    text = "나중에",
-                    tone = ButtonTone.Ghost,
-                    fillWidth = false,
-                    onClick = onSkip,
-                )
+                TButton(text = "나중에", tone = ButtonTone.Ghost, onClick = onSkip)
             }
         },
     )
@@ -245,23 +240,17 @@ private fun TwoPaneOrColumn(
  */
 @Composable
 private fun BoardingNotice() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .draftBlock(tone = T.Warn)
-            .padding(horizontal = Space.md, vertical = Space.md),
-    ) {
-        Text(
-            text = "차량에서 진행해 주세요",
-            style = MaterialTheme.typography.titleLarge,
-            color = T.WarnText,
-        )
-        Text(
-            text = "차량 화면과 카드키가 필요합니다",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.Ink,
-            modifier = Modifier.padding(top = Space.xs),
-        )
+    TCard {
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Icon(Icons.Rounded.DirectionsCar, contentDescription = null, tint = T.Electric,
+                modifier = Modifier.size(Space.lg))
+            Column {
+                Text("차량에서 진행해 주세요", style = MaterialTheme.typography.titleLarge, color = T.Ink)
+                Text("차량 화면과 카드키가 필요합니다",
+                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                    modifier = Modifier.padding(top = Space.xs))
+            }
+        }
     }
 }
 
@@ -328,23 +317,14 @@ private fun VinPrivacyNotice() {
     )
 }
 
-/** 주 동작과 나중에를 한 줄에 두어 어느 화면에서도 함께 보이게 한다 */
+/** 큰 글씨에서도 주요 동작과 나중에 버튼을 각각 온전한 너비로 제공한다. */
 @Composable
-private fun PrimaryActions(content: @Composable RowScope.() -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        content()
-    }
+private fun PrimaryActions(content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(Space.xs), content = content)
 }
 
-/**
- * 진행 단계 표시.
- *
- * 넓으면 네 단계를 나란히, 좁으면 점 + 현재 단계 이름만.
- * 좁은 화면에서 칩 4개를 억지로 넣으면 글자가 세로로 쪼개진다.
- */
+/** 현재 단계와 완료 단계를 아이콘과 글자로 함께 표시한다. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StepIndicator(current: PairingStep) {
@@ -359,13 +339,13 @@ private fun StepIndicator(current: PairingStep) {
                         modifier = Modifier
                             .height(6.dp)
                             .weight(1f)
-                            // 각진 눈금. 알약은 도면 문법이 아니다
                             .background(
                                 when {
-                                    step == current -> T.Ink
-                                    step.ordinal < current.ordinal -> T.InkFaint
+                                    step == current -> T.Electric
+                                    step.ordinal < current.ordinal -> T.Electric
                                     else -> T.Slate
-                                }
+                                },
+                                RoundedCornerShape(Radius.pill),
                             ),
                     )
                 }
@@ -389,9 +369,7 @@ private fun StepIndicator(current: PairingStep) {
     }
 
     Column {
-        // 중간 폭 화면에서 칩 4개가 오른쪽으로 넘친다 — 줄바꿈되는 FlowRow로 감싼다
-        // 알약 칩을 쓰지 않는다 — 도면의 절차는 번호가 붙어 나열된다.
-        // 지금 단계는 번호가 채워지고, 지난 단계는 취소선으로 지워진다
+        // 줄바꿈 가능한 단계 목록에서 완료 여부와 현재 단계를 아이콘과 이름으로 구분한다.
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(Space.md),
             verticalArrangement = Arrangement.spacedBy(Space.sm),
@@ -399,16 +377,17 @@ private fun StepIndicator(current: PairingStep) {
             PairingStep.entries.forEach { step ->
                 val isCurrent = step == current
                 val isPast = step.ordinal < current.ordinal
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 지난 단계도 번호를 채운다 — 취소선을 그으면 "완료"가 아니라
-                    // "무효"로 읽힌다. 도면의 취소선은 지워진 항목에 쓰는 기호다
-                    CalloutNumber(number = step.ordinal + 1, highlighted = isCurrent || isPast)
-                    Spacer(Modifier.width(Space.xs + 2.dp))
-                    Text(
-                        text = step.title,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isCurrent) T.Ink else T.InkFaint,
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                    Icon(
+                        if (isPast || (isCurrent && step == PairingStep.Done)) Icons.Rounded.CheckCircle
+                        else Icons.Rounded.RadioButtonUnchecked,
+                        contentDescription = null,
+                        tint = if (isPast || isCurrent) T.Electric else T.InkMuted,
+                        modifier = Modifier.size(Space.lg),
                     )
+                    Text(step.title, style = MaterialTheme.typography.labelLarge,
+                        color = if (isCurrent) T.Ink else T.InkMuted)
                 }
             }
         }
@@ -435,7 +414,7 @@ data class NearbyDevice(val name: String, val rssi: Int, val isTesla: Boolean = 
 private fun DirectConnectPanel(busy: Boolean, onConnect: (String) -> Unit) {
     var address by rememberSaveable { mutableStateOf("") }
 
-    TCard(outlined = true) {
+    TCard {
         Text(
             text = "주소로 직접 연결 (고급)",
             style = MaterialTheme.typography.titleSmall,
@@ -479,7 +458,7 @@ private fun NearbyPanel(
     onScan: () -> Unit,
     onLoadBonded: () -> Unit,
 ) {
-    TCard(outlined = true) {
+    TCard {
         Text(
             text = "차가 안 보이나요",
             style = MaterialTheme.typography.titleSmall,
@@ -528,18 +507,12 @@ private fun NearbyPanel(
                 WarnNotice(body = "한 건도 잡히지 않았어요.\n스캔 자체가 막힌 상태예요.")
             } else {
                 nearby.forEach { device ->
-                    Row(modifier = Modifier.padding(top = Space.xs)) {
-                        // 글리프(★)를 아이콘으로 쓰지 않는다 — 폰트에 따라 모양이 달라지고
-                        // 별은 도면 기호가 아니다. 지목은 삼각 지시자로 한다
+                    Row(modifier = Modifier.padding(top = Space.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                         if (device.isTesla) {
-                            androidx.compose.material3.Icon(
-                                imageVector = com.wemade.teslamacro.ui.component.DraftMark.Pointer,
-                                contentDescription = "테슬라 후보",
-                                tint = T.Ink,
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .padding(end = Space.xs),
-                            )
+                            Icon(Icons.Rounded.Bluetooth, contentDescription = "테슬라 후보",
+                                tint = T.Electric, modifier = Modifier.size(Space.lg))
                         }
                         Text(
                             text = "${device.name}  ·  ${device.rssi}dBm",
@@ -553,11 +526,7 @@ private fun NearbyPanel(
     }
 }
 
-/**
- * 경고 안내 박스.
- * 밝은 앰버(T.Warn) 글자는 흰 카드 위에서 안 읽혀서,
- * 앰버 틴트 면 + 진한 본문(T.Ink)으로 바꿔 보여준다. 라벨만 WarnText.
- */
+/** 경고는 공용 주의색 면과 명확한 안내문으로 표시한다. */
 @Composable
 private fun WarnNotice(body: String, modifier: Modifier = Modifier, label: String? = null) {
     Column(
@@ -567,12 +536,13 @@ private fun WarnNotice(body: String, modifier: Modifier = Modifier, label: Strin
             .padding(Space.md),
     ) {
         if (label != null) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleSmall,
-                color = T.WarnText,
-                modifier = Modifier.padding(bottom = Space.xs),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                Icon(Icons.Rounded.WarningAmber, contentDescription = null,
+                    tint = T.WarnText, modifier = Modifier.size(Space.lg))
+                Text(label, style = MaterialTheme.typography.titleSmall, color = T.WarnText)
+            }
+            Spacer(Modifier.height(Space.xs))
         }
         Text(
             text = body,

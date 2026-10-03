@@ -36,22 +36,10 @@ import com.wemade.teslamacro.ui.theme.T
 import com.wemade.teslamacro.ui.theme.TileValueStyle
 import com.wemade.teslamacro.ui.theme.TileValueStyleLarge
 
-/**
- * 타일의 성격.
- *
- * 이 앱의 색 규칙이 여기 다 들어있다 — 평소엔 [Calm]이라 화면 전체가 무채색이고,
- * 차가 실제로 뭔가 하고 있을 때만 [Cool]/[Warm], 사람이 봐야 할 때만 [Alert]다.
- * 색이 곧 "이걸 봐라"라는 신호라서 아껴 쓴다.
- */
+/** 상태의 의미에 따라 중립·냉각·난방·경고 강조를 선택한다. */
 enum class TileTone { Calm, Cool, Warm, Alert }
 
-/**
- * 앱에서 유일하게 반복 움직이는 것.
- *
- * 공조가 실제로 돌아가는 동안에만 천천히 숨쉰다.
- * 다른 곳에 반복 애니메이션을 넣지 않는 이유 — 움직임 자체가
- * "차가 지금 일하는 중"이라는 뜻이 되어야 해서다.
- */
+/** 실제 공조가 동작 중인 경우 막대의 부드러운 반복으로 상태를 보조한다. */
 @Composable
 fun BreathingBar(color: Color, modifier: Modifier = Modifier) {
     // 기기에서 애니메이션을 껐으면 움직이지 않는다. 다만 막대는 남긴다 —

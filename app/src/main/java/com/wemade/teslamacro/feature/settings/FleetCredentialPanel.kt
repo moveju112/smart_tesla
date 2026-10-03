@@ -49,11 +49,13 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
                 controls.onSave(submitted)
             })
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            TButton(text = "연결 확인", tone = ButtonTone.Ghost, modifier = Modifier.weight(1f),
-                enabled = state.stored && !state.busy, onClick = controls.onCheck)
-            TButton(text = "토큰 삭제", tone = ButtonTone.Ghost, modifier = Modifier.weight(1f),
-                enabled = state.stored && !state.busy, onClick = { token = ""; controls.onDelete() })
+        if (state.stored) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                TButton(text = "연결 확인", tone = ButtonTone.Secondary, modifier = Modifier.weight(1f),
+                    enabled = !state.busy, onClick = controls.onCheck)
+                TButton(text = "토큰 삭제", tone = ButtonTone.Danger, modifier = Modifier.weight(1f),
+                    enabled = !state.busy, onClick = { token = ""; controls.onDelete() })
+            }
         }
     }
 }

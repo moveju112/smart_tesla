@@ -22,7 +22,7 @@ private val Sans = FontFamily.Default
 private val Mono = FontFamily.Monospace
 
 val TeslaTypography = Typography(
-    // 도면 이름 — 표제란 글자다. 크지 않다
+    // 도구 모음과 본문 제목은 크기와 굵기로만 구별한다.
     headlineLarge = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
         fontSize = 28.sp, lineHeight = 36.sp, letterSpacing = (-0.5).sp,
@@ -31,25 +31,28 @@ val TeslaTypography = Typography(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
         fontSize = 22.sp, lineHeight = 30.sp, letterSpacing = (-0.3).sp,
     ),
-    // 절 제목 — 도면의 구역 이름. 넓은 자간으로 눕는다
+    titleLarge = TextStyle(
+        fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
+        fontSize = 22.sp, lineHeight = 30.sp, letterSpacing = 0.sp,
+    ),
     titleMedium = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
-        fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.sp,
+        fontSize = 17.sp, lineHeight = 25.sp, letterSpacing = 0.sp,
     ),
     titleSmall = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
         fontSize = 14.sp, lineHeight = 21.sp, letterSpacing = 0.sp,
     ),
-    // 본문 — 주기(註記). 도면의 설명 글은 작다
+    // 본문은 장식보다 한글 가독성을 우선한다.
     bodyMedium = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400,
-        fontSize = 15.sp, lineHeight = 23.sp, letterSpacing = 0.sp,
+        fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.sp,
     ),
     bodySmall = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W400,
         fontSize = 13.sp, lineHeight = 20.sp, letterSpacing = 0.sp,
     ),
-    // 버튼 라벨 — 도면의 지시. 자간을 벌려 명판처럼 읽힌다
+    // 버튼과 메뉴 라벨은 과한 자간 없이 같은 굵기를 쓴다.
     labelLarge = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
         fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp,
@@ -58,28 +61,22 @@ val TeslaTypography = Typography(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W600,
         fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 0.sp,
     ),
-    // 부품 라벨 — 가장 물러선 글자.
-    // 자간을 1.6sp(0.145em)까지 벌렸더니 한글 자모 덩어리가 흩어졌다.
-    // 라틴 소형 대문자 관례를 한글에 그대로 쓸 수 없다 — 0.055em까지만 벌린다
+    // 보조 문구도 확대 설정과 자연스러운 한글 줄바꿈을 따른다.
     labelSmall = TextStyle(
         fontFamily = Sans, fontFeatureSettings = TABULAR, fontWeight = FontWeight.W500,
         fontSize = 12.sp, lineHeight = 18.sp, letterSpacing = 0.sp,
     ),
 )
 
-/**
- * 설정 화면 전용 한 단계 작은 글자.
- * 설정은 여러 항목을 훑어보고 가끔 바꾸는 화면이라 사용자 요청으로 본문·라벨을 1~2sp 줄여 한 화면에 더 담는다.
- * 시스템 글자 배율은 그대로 곱해지고, 주행 중 보는 화면에는 쓰지 않는다.
- */
+/** 설정은 본문보다 한 단계 조밀하게 유지하되 보조 글자도 12sp 이상으로 쓴다. */
 val SettingsTypography = TeslaTypography.copy(
-    titleMedium = TeslaTypography.titleMedium.copy(fontSize = 14.sp, lineHeight = 21.sp),
-    titleSmall = TeslaTypography.titleSmall.copy(fontSize = 13.sp, lineHeight = 19.sp),
-    bodyMedium = TeslaTypography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
-    bodySmall = TeslaTypography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp),
-    labelLarge = TeslaTypography.labelLarge.copy(fontSize = 13.sp, lineHeight = 18.sp),
-    labelMedium = TeslaTypography.labelMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
-    labelSmall = TeslaTypography.labelSmall.copy(fontSize = 11.sp, lineHeight = 16.sp),
+    titleMedium = TeslaTypography.titleMedium.copy(fontSize = 15.sp, lineHeight = 23.sp),
+    titleSmall = TeslaTypography.titleSmall.copy(fontSize = 14.sp, lineHeight = 21.sp),
+    bodyMedium = TeslaTypography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 22.sp),
+    bodySmall = TeslaTypography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    labelLarge = TeslaTypography.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp),
+    labelMedium = TeslaTypography.labelMedium.copy(fontSize = 13.sp, lineHeight = 18.sp),
+    labelSmall = TeslaTypography.labelSmall.copy(fontSize = 12.sp, lineHeight = 18.sp),
 )
 
 /** 부품번호 — 지시선 끝에 매달리는 두 자리 숫자. 도면과 표를 잇는 유일한 끈 */

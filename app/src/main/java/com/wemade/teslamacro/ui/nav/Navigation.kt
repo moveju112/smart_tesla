@@ -1,37 +1,27 @@
 package com.wemade.teslamacro.ui.nav
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.theme.Space
-import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.T
-import com.wemade.teslamacro.ui.theme.Radius
 
 /**
  * 사용 빈도 순으로 나열한 화면 목록. 번호 대신 기능 이름으로 이동한다.
@@ -52,118 +42,84 @@ enum class Destination(val route: String, val label: String) {
     }
 }
 
-/**
- * 휴대폰에서는 엄지가 닿는 하단에 두 화면의 이동 탭을 둔다.
- */
+/** 루트가 안전 영역을 처리하므로 하단 탭은 콘텐츠 높이만 차지한다. */
 @Composable
 fun NavBar(
     current: Destination,
     onSelect: (Destination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 그리기 람다 안에서는 색 토큰을 못 읽는다 — 바깥에서 꺼내 둔다
-    val barColor = T.Carbon
-    val lineColor = T.Hairline
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .drawBehind {
-                drawRect(barColor)
-                // 본문과 탭을 가르는 괘선
-                drawRect(lineColor, size = size.copy(height = 1f))
-            },
-        verticalAlignment = Alignment.CenterVertically,
+    NavigationBar(
+        modifier = modifier,
+        containerColor = T.Carbon,
+        tonalElevation = 0.dp,
+        windowInsets = WindowInsets(0, 0, 0, 0),
     ) {
         Destination.visible.forEach { destination ->
-            SheetTab(
-                destination = destination,
+            NavigationBarItem(
                 selected = destination == current,
-                vertical = false,
-                modifier = Modifier.weight(1f),
                 onClick = { onSelect(destination) },
+                icon = {
+                    Icon(
+                        if (destination == Destination.Settings) DraftMark.Settings else DraftMark.Automation,
+                        contentDescription = null,
+                        modifier = Modifier.size(Space.lg),
+                    )
+                },
+                label = { Text(destination.label, style = MaterialTheme.typography.labelMedium) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = T.Electric,
+                    selectedTextColor = T.Electric,
+                    indicatorColor = T.ElectricFaint,
+                    unselectedIconColor = T.InkMuted,
+                    unselectedTextColor = T.InkMuted,
+                ),
             )
         }
     }
 }
 
-/**
- * 넓은 화면의 좌측 탐색 영역. 아이콘과 이름을 함께 표시한다.
- */
+/** 태블릿은 같은 두 목적지를 왼쪽 레일로 옮겨 본문 폭을 확보한다. */
 @Composable
 fun NavRail(
     current: Destination,
     onSelect: (Destination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxHeight()
-            .width(112.dp)
-            .background(T.Carbon)
-            .padding(vertical = Space.md),
-        horizontalAlignment = Alignment.Start,
-    ) {
-        Text(
-            text = "Smart Tesla",
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
-            modifier = Modifier.padding(start = Space.md, bottom = Space.sm),
-        )
-        Box(
-            Modifier
-                .padding(horizontal = Space.md)
-                .fillMaxWidth()
-                .height(Stroke.thin)
-                .background(T.Hairline)
-        )
-        Spacer(Modifier.height(Space.sm))
-        Destination.visible.forEach { destination ->
-            SheetTab(
-                destination = destination,
-                selected = destination == current,
-                vertical = true,
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onSelect(destination) },
-            )
-        }
-    }
-}
-
-/**
- * 선택한 화면은 채운 배경과 강조색으로 표시한다.
- */
-@Composable
-private fun SheetTab(
-    destination: Destination,
-    selected: Boolean,
-    vertical: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .padding(horizontal = Space.sm, vertical = Space.xs)
-            .clip(RoundedCornerShape(Radius.tile))
-            .background(if (selected) T.ElectricFaint else Color.Transparent)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .padding(horizontal = Space.md, vertical = Space.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = if (destination == Destination.Settings) DraftMark.Settings else DraftMark.Automation,
-                contentDescription = null,
-                tint = if (selected) T.Electric else T.InkMuted,
-                modifier = Modifier.size(Space.lg),
-            )
-            Spacer(Modifier.height(Space.xs))
+    NavigationRail(
+        modifier = modifier.fillMaxHeight().width(Space.xxl * 2 + Space.md),
+        containerColor = T.Carbon,
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        header = {
             Text(
-                text = destination.label,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (selected) T.Electric else T.InkMuted,
+                "Smart Tesla",
+                style = MaterialTheme.typography.labelMedium,
+                color = T.InkMuted,
+                modifier = Modifier.padding(horizontal = Space.sm, vertical = Space.md),
             )
+        },
+    ) {
+        Destination.visible.forEach { destination ->
+            NavigationRailItem(
+                selected = destination == current,
+                onClick = { onSelect(destination) },
+                icon = {
+                    Icon(
+                        if (destination == Destination.Settings) DraftMark.Settings else DraftMark.Automation,
+                        contentDescription = null,
+                        modifier = Modifier.size(Space.lg),
+                    )
+                },
+                label = { Text(destination.label, style = MaterialTheme.typography.labelMedium) },
+                colors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = T.Electric,
+                    selectedTextColor = T.Electric,
+                    indicatorColor = T.ElectricFaint,
+                    unselectedIconColor = T.InkMuted,
+                    unselectedTextColor = T.InkMuted,
+                ),
+            )
+            Spacer(Modifier.height(Space.sm))
         }
     }
 }

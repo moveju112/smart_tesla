@@ -256,7 +256,7 @@ private fun NearLocationEditor(
         Text(
             text = when {
                 condition.latitude == null ->
-                    "위치를 지정해 주세요.\n그 자리에서 저장하거나 주소로 찍을 수 있어요"
+                    "현재 위치를 저장하거나 주소를 입력해 주세요."
                 savedAddress != null ->
                     "저장 위치: $savedAddress"
                 else ->
@@ -265,13 +265,7 @@ private fun NearLocationEditor(
             style = MaterialTheme.typography.bodySmall,
             color = if (condition.latitude != null) T.InkMuted else T.WarnText,
         )
-        if (condition.latitude != null) {
-            Text(
-                text = "이 근처에서 발동했을 때만 실행해요",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-            )
-        }
+        // 저장 위치의 주소 또는 좌표는 항상 보여 오류 시 다시 지정할 수 있게 한다.
         status?.let {
             Spacer(Modifier.height(Space.xs))
             Text(it, style = MaterialTheme.typography.bodySmall, color = T.WarnText)

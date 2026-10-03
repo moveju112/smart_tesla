@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.ui.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -29,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
@@ -40,10 +41,7 @@ import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/**
- * 진행 중 표시. 스피너 대신 2dp 선을 쓴다.
- * 원형 스피너는 Material 색을 물고 들어와 다크 팔레트를 깨뜨린다.
- */
+/** 진행 중일 때 강조색 막대를 표시하고 동작 제거 설정에서는 정지 상태로 남긴다. */
 @Composable
 fun IndeterminateBar(
     modifier: Modifier = Modifier,
@@ -107,27 +105,29 @@ fun IndeterminateBar(
 
 private const val SEGMENT_FRACTION = 0.35f
 
-/**
- * 아직 값을 못 읽은 자리. 대시(--)만 띄우면 "고장인가"로 읽힌다.
- * 은은하게 숨 쉬게 해서 "읽는 중"임을 보여준다.
- */
+/** 아직 수신되지 않은 값의 자리를 유지한다. */
 @Composable
 fun SkeletonBlock(
     width: Int,
     height: Int,
     modifier: Modifier = Modifier,
 ) {
-    val transition = rememberInfiniteTransition(label = "skeleton")
-    val alpha by transition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(
-            animation = Motion.breathe(900),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "breath",
-    )
-    // alpha 모디파이어는 background 뒤에선 효과가 없다 — 색 알파로 숨쉬게 한다
+    val alpha = if (reducedMotion()) {
+        0.55f
+    } else {
+        val transition = rememberInfiniteTransition(label = "skeleton")
+        val animatedAlpha by transition.animateFloat(
+            initialValue = 0.25f,
+            targetValue = 0.55f,
+            animationSpec = infiniteRepeatable(
+                animation = Motion.breathe(900),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "breath",
+        )
+        animatedAlpha
+    }
+    // 값이 없는 구역과 구별되는 중립 면을 유지한다.
     Box(
         modifier = modifier
             .width(width.dp)
@@ -137,9 +137,7 @@ fun SkeletonBlock(
     )
 }
 
-/**
- * 목록이 비었을 때. 빈 화면을 그냥 두면 로딩 실패인지 원래 없는 건지 알 수 없다.
- */
+/** 비어 있는 목록의 이유와 가능한 동작을 함께 표시한다. */
 @Composable
 fun EmptyState(
     title: String,
@@ -172,10 +170,7 @@ fun EmptyState(
     }
 }
 
-/**
- * 화면 안에 뜨는 알림 줄. 토스트를 안 쓰는 이유는
- * 차량 화면에서 스쳐 지나가면 왜 실패했는지 놓치기 때문이다.
- */
+/** 사용자가 닫을 때까지 결과 메시지를 화면에 유지한다. */
 @Composable
 fun InlineBanner(
     message: String?,
@@ -185,8 +180,8 @@ fun InlineBanner(
 ) {
     AnimatedVisibility(
         visible = message != null,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
+        enter = if (reducedMotion()) EnterTransition.None else fadeIn() + expandVertically(),
+        exit = if (reducedMotion()) ExitTransition.None else fadeOut() + shrinkVertically(),
         modifier = modifier,
     ) {
         val color = when (tone) {
@@ -194,22 +189,12 @@ fun InlineBanner(
             BannerTone.Warning -> T.Warn
             BannerTone.Info -> T.Electric
         }
-        // 도면의 주기(註記)는 색 면이 아니라 두 줄 사이에 놓인다.
-        // 옅은 색 면으로 깔면 잠금 해제 같은 다른 경보와 유채색을 나눠 쓰게 되고,
-        // 그러면 "색이 하나 뜨면 그게 소식"이라는 규칙이 무너진다
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .drawBehind {
-                    val rule = 2.dp.toPx()
-                    drawRect(color, size = size.copy(height = rule))
-                    drawRect(
-                        color,
-                        topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - rule),
-                        size = size.copy(height = rule),
-                    )
-                }
-                .padding(horizontal = Space.md, vertical = Space.sm + Space.xs),
+                .clip(RoundedCornerShape(Radius.button))
+                .background(color.copy(alpha = 0.10f))
+                .padding(horizontal = Space.md, vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -220,7 +205,7 @@ fun InlineBanner(
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(Space.xs))
-            // 시각 크기는 유지하고 터치 타깃만 44dp로 — 차 안 오탭 방지 기준
+            // 닫기 텍스트를 유지하면서 최소 48dp 터치 영역을 제공한다.
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(Radius.pill))

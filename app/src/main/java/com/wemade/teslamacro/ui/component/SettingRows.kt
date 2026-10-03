@@ -31,14 +31,18 @@ fun SettingRow(label: String, value: String? = null, onClick: () -> Unit, modifi
 
 /** 버튼 폭을 제한해 큰 글씨에서도 설정 이름과 조작이 서로 밀어내지 않는다. */
 @Composable
-fun SettingActionRow(label: String, action: @Composable () -> Unit) {
+fun SettingActionRow(label: String, description: String? = null, action: @Composable () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = Space.sm)) {
         val actionWidth = maxWidth * 0.55f
         Row(Modifier.fillMaxWidth().heightIn(min = Space.xxl + Space.sm)
             .padding(vertical = Space.xs), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, color = T.Ink,
-                modifier = Modifier.weight(1f))
+            if (description != null) {
+                HelpTitle(label, description, modifier = Modifier.weight(1f))
+            } else {
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = T.Ink,
+                    modifier = Modifier.weight(1f))
+            }
             Box(Modifier.widthIn(max = actionWidth), contentAlignment = Alignment.CenterEnd) { action() }
         }
     }
@@ -46,8 +50,9 @@ fun SettingActionRow(label: String, action: @Composable () -> Unit) {
 
 /** 오른쪽 스위치에도 항목 이름을 제공해 읽기 도구에서 조작 대상을 구분한다. */
 @Composable
-fun SettingToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    SettingActionRow(label) {
+fun SettingToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit,
+    description: String? = null) {
+    SettingActionRow(label, description) {
         DraftToggle(checked, onCheckedChange, modifier = Modifier.semantics { contentDescription = label })
     }
 }

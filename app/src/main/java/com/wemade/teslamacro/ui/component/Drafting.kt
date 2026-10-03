@@ -58,6 +58,7 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -281,6 +282,7 @@ fun DraftField(
 
 /** 앱 전체에서 사용하는 Material Rounded 동작 아이콘. 기존 이름을 유지한다. */
 object DraftMark {
+    val Info: ImageVector = Icons.Rounded.Info
     val Close: ImageVector = Icons.Rounded.Close
     val Add: ImageVector = Icons.Rounded.Add
     val Minus: ImageVector = Icons.Rounded.Remove

@@ -36,6 +36,8 @@ import com.wemade.teslamacro.feature.settings.SafeDrivePanel
 import com.wemade.teslamacro.feature.settings.SmartThingsControls
 import com.wemade.teslamacro.feature.settings.SmartThingsPanel
 import com.wemade.teslamacro.feature.settings.StealthChargePanel
+import com.wemade.teslamacro.ui.component.HelpTitle
+import com.wemade.teslamacro.ui.component.SettingRow
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.TButton
@@ -105,7 +107,11 @@ fun FeaturesScreen(
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(Space.md),
             verticalArrangement = Arrangement.spacedBy(Space.md)) {
-            Text(selected?.label ?: "기능", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+            if (selected == null) {
+                Text("기능", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+            } else {
+                HelpTitle(selected.label, selected.description, style = MaterialTheme.typography.headlineSmall)
+            }
             if (selected == null) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     AppFeature.entries.forEach { feature ->
@@ -127,7 +133,6 @@ fun FeaturesScreen(
                     }
                 }
             } else {
-                Text(selected.description, style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
                 // 권한이 실행 화면에서 회수돼도 재실행 전에 같은 준비 경로를 거친다. 끄기는 항상 허용한다.
                 val required = requiredFeatureSettings(selected, settings, navigation.locationPermitted,
                     navigation.activityPermitted, smartThings.notificationAccessGranted)
@@ -146,12 +151,13 @@ fun FeaturesScreen(
                         else -> Unit
                     }
                 }
-                TButton("설정 열기", ButtonTone.Secondary, icon = DraftMark.Settings, fillWidth = false,
-                    onClick = { onSettings(when (selected) {
+                TCard {
+                    SettingRow("설정", onClick = { onSettings(when (selected) {
                         AppFeature.SAFE_DRIVE -> FeatureSettings.SAFE_DRIVE
                         AppFeature.STEALTH_CHARGE -> FeatureSettings.STEALTH_CHARGE
                         else -> FeatureSettings.SMARTTHINGS
                     }) })
+                }
                 Spacer(Modifier.height(Space.sm))
             }
         }

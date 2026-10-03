@@ -8,7 +8,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.Text
@@ -20,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import com.wemade.teslamacro.ui.layout.LocalPane
@@ -115,7 +115,8 @@ fun DestinationScreen(
                     if (!setup) {
                         TButton("뒤로", tone = ButtonTone.Ghost, icon = Icons.Rounded.ArrowBack,
                             fillWidth = false, onClick = onBack)
-                        Text("목적지 전송", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+                        HelpTitle("목적지 전송", description = "입력한 검색어를 받는 기기의 네이버지도에서 검색해요. 장소 선택과 길안내 시작은 받는 기기에서 해 주세요.",
+                            style = MaterialTheme.typography.headlineSmall)
                     }
                     if (state.busy) Text("처리 중…", color = T.InkMuted)
                     if (setup) {
@@ -127,48 +128,62 @@ fun DestinationScreen(
                                 min = 1.0, max = 120.0, step = 1.0, unit = "분",
                                 onChange = { onMinutes(it.toInt()) })
                             Hairline()
-                            SettingToggleRow("이 기기 자동 수신", state.receiving, onReceiving)
+                            SettingToggleRow("이 기기 자동 수신", state.receiving, onReceiving,
+                                description = "탑승이 확인되면 받은 목적지를 이 기기의 네이버지도에서 열어요.")
                             if (state.receiving) {
-                                Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall,
-                                    color = T.InkMuted, modifier = Modifier.padding(bottom = Space.sm))
-                                if (!state.overlayAllowed) TButton("다른 앱 위에 표시", tone = ButtonTone.Secondary,
-                                    fillWidth = false, onClick = onOverlay)
+                                SettingActionRow("수신 상태", action = {
+                                    Text(state.receiveMessage, style = MaterialTheme.typography.bodyMedium,
+                                        color = T.InkMuted, textAlign = TextAlign.End)
+                                })
+                                if (!state.overlayAllowed) SettingActionRow("다른 앱 위에 표시", action = {
+                                    TButton("허용", tone = ButtonTone.Secondary,
+                                        fillWidth = false, small = true, onClick = onOverlay)
+                                })
                             }
                             Hairline()
-                            SettingActionRow("연결 코드", action = {
+                            SettingActionRow("연결 코드", description = "보내는 기기에서 이 코드를 입력해 연결하세요. 생성한 코드는 10분 동안 사용할 수 있어요.", action = {
                                 TButton(if (state.receiverCode == null) "생성" else "재생성",
                                     tone = ButtonTone.Secondary, fillWidth = false, small = true,
                                     enabled = !state.busy, onClick = onCreateCode)
                             })
-                            state.receiverCode?.let {
-                                Text(it, style = MaterialTheme.typography.titleLarge, color = T.Ink)
-                                Text("10분 내 사용", style = MaterialTheme.typography.bodySmall,
-                                    color = T.InkMuted, modifier = Modifier.padding(bottom = Space.sm))
+                            state.receiverCode?.let { code ->
+                                SettingActionRow("생성된 코드", action = {
+                                    Text(code, style = MaterialTheme.typography.bodyMedium,
+                                        color = T.Ink, textAlign = TextAlign.End)
+                                })
                             }
                             Hairline()
                             SettingRow("수신 테스트", onClick = { testExpanded = true })
                         }
                     } else {
-                        state.request?.let { request ->
-                            DestinationSection("전송 상태") {
-                                Text(request.destination.name, style = MaterialTheme.typography.bodyLarge, color = T.Ink)
-                                Text((if (request.selfTest) "폰 1대 테스트 · " else "") + destinationStatus(request.status),
-                                    style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-                                if (request.status == "pending") TButton("전송 취소", tone = ButtonTone.Ghost,
-                                    fillWidth = false, enabled = !state.busy, onClick = onCancel)
+                        Column {
+                            DestinationQueryRow(state, onQuery)
+                            Hairline()
+                            SettingRow("받는 기기", state.receiverName ?: if (state.connectionError != null) "확인 필요"
+                                else if (!state.connectionChecked) "확인 중…" else "미연결",
+                                onClick = { if (onOpenSettings != null) onOpenSettings() else setup = true })
+                            Hairline()
+                            SettingActionRow("전송", action = {
+                                TButton("전송", icon = Icons.Rounded.Send, fillWidth = false, small = true,
+                                    enabled = canSend && state.receiverName != null,
+                                    onClick = { onSend(false) })
+                            })
+                            state.request?.let { request ->
+                                Hairline()
+                                SettingActionRow("보낸 검색어", action = {
+                                    Text(request.destination.name, style = MaterialTheme.typography.bodyMedium,
+                                        color = T.InkMuted, textAlign = TextAlign.End)
+                                })
+                                SettingActionRow("전송 상태", description = "네이버지도에 전달된 뒤 장소 선택과 길안내 시작은 받는 기기에서 해 주세요.", action = {
+                                    Text((if (request.selfTest) "이 기기 테스트 · " else "") + destinationStatus(request.status),
+                                        style = MaterialTheme.typography.bodyMedium, color = T.InkMuted,
+                                        textAlign = TextAlign.End)
+                                })
+                                if (request.status == "pending") SettingActionRow("대기 중인 전송", action = {
+                                    TButton("취소", tone = ButtonTone.Ghost, fillWidth = false, small = true,
+                                        enabled = !state.busy, onClick = onCancel)
+                                })
                             }
-                        }
-                        DestinationSection {
-                            DraftField(state.query, onQuery, label = "장소 또는 주소", enabled = !state.busy)
-                            Text("태블릿 네이버지도에서 검색해요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                            TButton("전송", icon = Icons.Rounded.Send,
-                                enabled = canSend && state.receiverName != null,
-                                onClick = { onSend(false) })
-                            Text(state.receiverName ?: if (state.connectionError != null) "연결 확인 필요"
-                                else if (!state.connectionChecked) "연결 확인 중…" else "받는 기기 미연결",
-                                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                            TButton("설정", tone = ButtonTone.Ghost, icon = Icons.Rounded.Settings,
-                                fillWidth = false, onClick = { if (onOpenSettings != null) onOpenSettings() else setup = true })
                         }
                     }
                 }
@@ -236,15 +251,26 @@ internal fun DestinationReceiveTestEditor(
 ) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        DraftField(state.query, onQuery, label = "검색어", enabled = !state.busy)
-        TButton("이 기기로 전송", tone = ButtonTone.Secondary, icon = Icons.Rounded.Send,
-            fillWidth = false, enabled = !state.busy && DestinationPlace(state.query.trim()).valid() &&
-                state.minutes in 1..120, onClick = { onSend(true) })
-        TButton("지도 열기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Place,
-            fillWidth = false, enabled = !state.busy && state.overlayAllowed, onClick = onReceiveTest)
-        if (!state.overlayAllowed) TButton("다른 앱 위에 표시", tone = ButtonTone.Secondary,
-            fillWidth = false, onClick = onOverlay)
-        Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        DestinationQueryRow(state, onQuery)
+        Hairline()
+        SettingActionRow("테스트 전송", description = "입력한 검색어를 이 기기로 보내 수신을 확인해요.", action = {
+            TButton("전송", tone = ButtonTone.Secondary, icon = Icons.Rounded.Send,
+                fillWidth = false, small = true,
+                enabled = !state.busy && DestinationPlace(state.query.trim()).valid() &&
+                    state.minutes in 1..120, onClick = { onSend(true) })
+        })
+        SettingActionRow("네이버지도", description = "대기 중인 목적지를 이 기기의 네이버지도에서 열어요.", action = {
+            TButton("열기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Place,
+                fillWidth = false, small = true, enabled = !state.busy && state.overlayAllowed,
+                onClick = onReceiveTest)
+        })
+        if (!state.overlayAllowed) SettingActionRow("다른 앱 위에 표시", action = {
+            TButton("허용", tone = ButtonTone.Secondary, fillWidth = false, small = true, onClick = onOverlay)
+        })
+        SettingActionRow("수신 상태", action = {
+            Text(state.receiveMessage, style = MaterialTheme.typography.bodyMedium,
+                color = T.InkMuted, textAlign = TextAlign.End)
+        })
         if (state.busy) Text("처리 중…", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         DestinationFeedback(state, onRefresh)
     }
@@ -265,12 +291,34 @@ private fun DestinationFeedback(state: DestinationUiState, onRefresh: () -> Unit
     }
 }
 
-/** 검색·전송·수신을 카드 중첩 없이 제목과 간격으로 구분한다. */
+/** 검색어는 현재 값만 표시하고 편집 시트의 적용 버튼으로만 원본을 바꾼다. */
 @Composable
-private fun DestinationSection(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        if (title != null) Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
-        content()
+private fun DestinationQueryRow(state: DestinationUiState, onQuery: (String) -> Unit) {
+    var editing by rememberSaveable { mutableStateOf(false) }
+    SettingRow("검색어", state.query.ifBlank { "입력" }, onClick = { if (!state.busy) editing = true })
+    if (editing) DestinationQueryEditorSheet(state.query, state.busy,
+        onApply = { onQuery(it); editing = false }, onDismiss = { editing = false })
+}
+
+/** 닫기와 취소는 입력을 버리고 유효한 검색어만 적용한다. */
+@Composable
+internal fun DestinationQueryEditorSheet(
+    query: String,
+    busy: Boolean = false,
+    onApply: (String) -> Unit = {},
+    onDismiss: () -> Unit = {},
+) {
+    var draft by rememberSaveable { mutableStateOf(query) }
+    PickerSheet("검색어", onDismiss = onDismiss, footer = {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TButton("취소", tone = ButtonTone.Ghost, fillWidth = false, onClick = onDismiss)
+            TButton("적용", fillWidth = false, enabled = !busy && DestinationPlace(draft.trim()).valid(),
+                onClick = { onApply(draft.trim()) })
+        }
+    }) {
+        val invalid = draft.isNotEmpty() && !DestinationPlace(draft.trim()).valid()
+        DraftField(draft, { draft = it }, label = "장소 또는 주소", enabled = !busy,
+            isError = invalid, note = if (invalid) "줄바꿈 없이 1~120자로 입력해 주세요" else null)
     }
 }
 

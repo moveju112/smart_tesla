@@ -10,6 +10,7 @@ import com.wemade.teslamacro.data.nav.DestinationRequest
 import com.wemade.teslamacro.feature.destination.DestinationScreen
 import com.wemade.teslamacro.feature.destination.DestinationPairingEditor
 import com.wemade.teslamacro.feature.destination.DestinationReceiveTestEditor
+import com.wemade.teslamacro.feature.destination.DestinationQueryEditorSheet
 import com.wemade.teslamacro.ui.component.PickerSheet
 import com.wemade.teslamacro.feature.destination.DestinationUiState
 import com.wemade.teslamacro.ui.nav.Destination
@@ -35,6 +36,21 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
 
     /** 장소 선택 없이 검색어와 연결 대상만으로 전송할 수 있는 화면을 확인한다. */
     @Test fun readyToSend() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿"))
+
+    /** 전송 완료 정보는 검색어와 상태가 같은 행에서 줄바꿈되어 표시된다. */
+    @Test fun delivered() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿",
+        request = DestinationRequest("test", place, 1, 600001, "delivered", false)))
+
+    /** 검색어 편집은 실제 적용·취소 시트를 휴대폰과 태블릿에서 확인한다. */
+    @Test fun queryEditor() {
+        paparazzi.snapshot {
+            FullScreenFrame(dark = dark) {
+                AppFrame(Destination.Features, dark = dark) {
+                    DestinationQueryEditorSheet(query = place.name)
+                }
+            }
+        }
+    }
 
     /** 휴대 모드에서도 수신 스위치와 연결 코드를 같은 설정에서 표시한다. */
     @Test fun receiving() = snapshot(DestinationUiState(receiving = true, receiverCode = "ABCD234567",
@@ -125,6 +141,18 @@ class DestinationSettingsLargeFontScreenshotTest(private val dark: Boolean) {
     @Test fun settingsRows() = snapshot {
         DestinationScreen(DestinationUiState(receiverName = "차량 뒷좌석 태블릿", minutes = 120,
             receiving = true, overlayAllowed = true), settingsOnly = true)
+    }
+
+    /** 검색어와 전송 결과가 긴 경우에도 공통 행이 서로 겹치지 않는다. */
+    @Test fun sendRows() = snapshot {
+        DestinationScreen(DestinationUiState(query = "서울시청 인근 공영 주차장", receiverName = "차량 뒷좌석 태블릿",
+            request = DestinationRequest("test", DestinationPlace("서울시청 인근 공영 주차장"),
+                1, 600001, "delivered", false)))
+    }
+
+    /** 두 배 글꼴에서 검색어 입력과 적용·취소 조작을 확인한다. */
+    @Test fun queryEditor() = snapshot {
+        DestinationQueryEditorSheet(query = "서울시청 인근 공영 주차장")
     }
 
     /** 큰 글자에서는 코드 입력 폭을 확보하고 연결 버튼을 다음 줄로 보낸다. */

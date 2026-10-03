@@ -27,7 +27,8 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
         orientation = ScreenOrientation.LANDSCAPE, fontScale = scale, softButtons = false)
         else DeviceConfig.PIXEL_6.copy(screenWidth = 720, screenHeight = 1560, density = Density.XHIGH,
             fontScale = scale, softButtons = false), showSystemUi = false)
-    private val navigation = NavigationControls(onAppChange = {}, onHudOverlayChange = {}, locationPermitted = false)
+    private val navigation = NavigationControls(onAppChange = {}, onHudOverlayChange = {}, locationPermitted = false,
+        automaticSoundStatus = "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류")
     private val smartThings = SmartThingsControls(false, {}, { _, _ -> }, {})
 
     /** 미등록·권한 부족 상태를 기능 목록에서 구별한다. */
@@ -41,6 +42,30 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
 
     /** 실행 스위치와 옵션 요약의 줄바꿈을 확인한다. */
     @Test fun safetyExecution() = features(AppFeature.SAFE_DRIVE)
+
+    /** 켜진 안내의 실제 소리 보류 상태는 제목 도움말 뒤로 숨기지 않는다. */
+    @Test fun activeSafetyExecution() = features(AppFeature.SAFE_DRIVE, AppSettings(
+        vin = "5YJS0000000000000", isEnrolled = true, safeDrive = true,
+    ))
+
+    /** 충전과 스마트싱스도 제목 왼쪽·스위치 오른쪽의 실행 행을 공유한다. */
+    @Test fun chargeExecution() = features(AppFeature.STEALTH_CHARGE)
+
+    /** 알림 권한 부족 안내는 도움말로 숨기지 않고 실행 행 아래에 남긴다. */
+    @Test fun smartThingsExecution() = features(AppFeature.SMARTTHINGS)
+
+    /** 제목 도움말은 폰·태블릿과 큰 글씨에서 공통 모달로 읽고 닫는다. */
+    @Test fun featureHelp() {
+        paparazzi.snapshot {
+            FullScreenFrame(dark = dark) {
+                com.wemade.teslamacro.ui.component.HelpSheet(
+                    AppFeature.SAFE_DRIVE.label,
+                    AppFeature.SAFE_DRIVE.description + "\n\n500m 전 안내 · 초과 +0km/h · 소리 띠링",
+                    onDismiss = {},
+                )
+            }
+        }
+    }
 
     /** 기능 목록으로 돌아가는 버튼이 매크로의 생성 동작을 가리지 않는다. */
     @Test fun macros() = features(AppFeature.MACROS)

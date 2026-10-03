@@ -321,7 +321,7 @@ internal fun StealthChargePanel(
 ) {
     Column {
         ExpandableToggle(
-            title = "스텔스 충전 1회 · 전류 자동 조절",
+            title = if (executionOnly) "충전 1회" else "스텔스 충전 1회 · 전류 자동 조절",
             settingsOnly = settingsOnly, executionOnly = executionOnly,
             checked = settings.stealthCharging,
             onCheckedChange = onEnabledChange,
@@ -404,17 +404,7 @@ private fun ExpandableToggle(
     var expanded by rememberSaveable { mutableStateOf(expandInitially) }
     Column(Modifier.fillMaxWidth()) {
         if (executionOnly) {
-            // 실행 화면은 스위치를 아래에 둬 큰 글씨에서도 요약 폭을 빼앗지 않는다.
-            Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
-            summary?.let {
-                Spacer(Modifier.height(Space.sm))
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-            }
-            Spacer(Modifier.height(Space.md))
-            com.wemade.teslamacro.ui.component.DraftToggle(
-                checked = checked, onCheckedChange = onCheckedChange,
-                label = if (checked) "켜짐" else "꺼짐",
-            )
+            SettingToggleRow(title, checked, onCheckedChange, description = summary)
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 SettingRow(
@@ -702,7 +692,7 @@ internal fun SmartThingsPanel(
     val configured = settings.smartThingsCommandTexts.values.count { it.isNotBlank() }
     Column {
             ExpandableToggle(
-                title = "알림으로 차량 명령 실행",
+                title = if (executionOnly) "알림 명령" else "알림으로 차량 명령 실행",
                 settingsOnly = settingsOnly, executionOnly = executionOnly,
                 checked = settings.smartThingsEnabled,
                 onCheckedChange = controls.onEnabledChange,
@@ -1053,7 +1043,7 @@ internal fun SafeDrivePanel(
             }
             val soundLabel = com.wemade.teslamacro.data.safety.WarningSound.of(settings.safeDriveWarningSound).label
             ExpandableToggle(
-                title = "단속 카메라 안내",
+                title = if (executionOnly) "단속 안내" else "단속 카메라 안내",
                 settingsOnly = settingsOnly, executionOnly = executionOnly,
                 checked = settings.safeDrive,
                 onCheckedChange = { enabled ->
@@ -1138,10 +1128,8 @@ internal fun SafeDrivePanel(
                         label = "안내 시작 음성",
                         checked = settings.safeDriveStartVoice,
                         onCheckedChange = controls.onSafeDriveStartVoiceChange,
+                        description = "안내가 시작되면 ‘안전운전하세요’를 한 번 말해요.",
                     )
-                    Text("안내가 시작되면 ‘안전운전하세요’를 한 번 말해요.",
-                        style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-                        modifier = Modifier.padding(top = Space.xs))
                     if (settings.safeDriveVoice || settings.safeDriveStartVoice) {
                         SettingActionRow("음성 점검") {
                             TButton("재생", ButtonTone.Secondary, fillWidth = false,

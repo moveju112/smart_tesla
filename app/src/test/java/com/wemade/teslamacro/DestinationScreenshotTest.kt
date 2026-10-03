@@ -40,7 +40,7 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     @Test fun testButtons() = snapshot(DestinationUiState(query = place.name, overlayAllowed = true,
         minutes = "0", error = "유효시간은 1~120분으로 입력해 주세요"), bottom = true)
 
-    /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 목적지 전송을 찾을 수 있다. */
+    /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 기기 연결·수신 설정을 찾을 수 있다. */
     @Test fun settingsEntry() {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
@@ -59,7 +59,7 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     private fun snapshot(state: DestinationUiState, setup: Boolean = false, bottom: Boolean = false) {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
-                AppFrame(Destination.Settings, dark = dark) { DestinationScreen(state, initialSetup = setup,
+                AppFrame(if (setup) Destination.Settings else Destination.Features, dark = dark) { DestinationScreen(state, initialSetup = setup,
                     scrollState = androidx.compose.foundation.rememberScrollState(if (bottom) Int.MAX_VALUE else 0)) }
             }
         }

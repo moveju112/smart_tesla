@@ -1,5 +1,6 @@
 package com.wemade.teslamacro.feature.settings
 
+import com.wemade.teslamacro.feature.features.FeatureSettings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -86,9 +87,11 @@ fun SettingsScreen(
     fleetCredentials: FleetCredentialControls? = null,
     /**
      * 처음 펼칠 칸. 안 주면 상황이 정한다(미등록이면 차량, 아니면 자동화).
-     * 특정 칸을 곧바로 보여야 할 때 쓴다 — 스냅샷 검증이 지금의 유일한 사용처다.
+     * 기능에서 부족한 준비 항목으로 바로 이동할 때도 사용한다.
      */
     initialGroup: SettingsGroup? = null,
+    focusedFeature: FeatureSettings? = null,
+    onBackToFeature: (() -> Unit)? = null,
 ) {
     val compact = LocalPane.current.isCompact
     // 미등록이면 시뮬레이터가 있는 칸을 먼저 펼친다 — 그게 지금 할 일이다.
@@ -111,10 +114,19 @@ fun SettingsScreen(
             .fillMaxSize()
             .padding(horizontal = if (compact) Space.md else Space.lg, vertical = Space.md),
     ) {
-        Text("설정", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+        onBackToFeature?.let { back ->
+            TButton("기능으로 돌아가기", ButtonTone.Ghost, icon = com.wemade.teslamacro.ui.component.DraftMark.ArrowLeft,
+                fillWidth = false, onClick = back)
+        }
+        Text(focusedFeature?.let { "${it.label} 설정" } ?: "설정", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
         Spacer(Modifier.height(Space.md))
+        if (focusedFeature == FeatureSettings.VEHICLE && !settings.isReady) {
+            Text("이 기능을 사용하려면 차량 등록과 키 등록을 완료해 주세요.",
+                style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
+            Spacer(Modifier.height(Space.md))
+        }
         // 탐색은 밑줄로만 표시해 실제 설정값 선택과 구분한다.
-        SectionTabs(
+        if (focusedFeature == null) SectionTabs(
             options = SettingsGroup.entries,
             selected = group,
             label = { it.label },
@@ -131,11 +143,11 @@ fun SettingsScreen(
                 left = {
                     when (group) {
                         SettingsGroup.DRIVING -> {
-                            onSendDestination?.let { action ->
+                            onSendDestination?.takeIf { focusedFeature == null }?.let { action ->
                                 SectionHeader("목적지 전송", topPadding = Space.sm)
                                 TCard {
                                     com.wemade.teslamacro.ui.component.PickerRow(
-                                        label = "태블릿으로 검색어 보내기",
+                                        label = "기기 연결·수신 설정",
                                         onClick = action,
                                         showChevron = true,
                                     )
@@ -150,11 +162,11 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.AUTOMATION -> {
-                            if (smartThings != null) {
+                            if (smartThings != null && focusedFeature != FeatureSettings.STEALTH_CHARGE) {
                                 SectionHeader("스마트싱스", topPadding = Space.sm)
-                                TCard { SmartThingsPanel(settings, smartThings) }
+                                TCard { SmartThingsPanel(settings, smartThings, settingsOnly = true) }
                             }
-                            if (onFleetApiEnabledChange != null) {
+                            if (onFleetApiEnabledChange != null && focusedFeature == null) {
                                 SectionHeader("명령 전송", topPadding = if (smartThings != null) Space.lg else Space.sm)
                                 TCard { FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials) }
                             }
@@ -224,28 +236,31 @@ fun SettingsScreen(
                                 }
                                 SectionHeader("단속 안내",
                                     topPadding = if (FeatureAvailability.NAVIGATOR_SAFE_DRIVE || FeatureAvailability.HUD_OVERLAY) Space.lg else Space.sm)
-                                TCard { SafeDrivePanel(settings, navigation) }
+                                TCard { SafeDrivePanel(settings, navigation, settingsOnly = true) }
                             }
                         }
 
                         SettingsGroup.AUTOMATION -> {
-                            // 자주 만지지 않는 1회 충전 예약이라 음성 명령·전송 경로 아래 맨 끝에 둔다.
-                            SectionHeader("충전",
-                                topPadding = if (smartThings != null || onFleetApiEnabledChange != null) Space.lg else Space.sm)
-                            TCard {
-                                StealthChargePanel(
-                                    settings = settings,
-                                    secondsUntilNextChange = stealthSecondsUntilNextChange,
-                                    onEnabledChange = onStealthChargingChange,
-                                    onMaxAmpsChange = onStealthMaxAmpsChange,
-                                    onMinAmpsChange = onStealthMinAmpsChange,
-                                    chargeHistory = chargeHistory,
-                                    chargeHistoryNowMillis = chargeHistoryNowMillis,
-                                    onScheduleEnabledChange = onStealthScheduleEnabledChange,
-                                    onStartMinutesChange = onStealthStartMinutesChange,
-                                    onEndMinutesChange = onStealthEndMinutesChange,
-                                )
-                            }
+                            if (focusedFeature != FeatureSettings.SMARTTHINGS) {
+                                // 자주 만지지 않는 1회 충전 예약이라 음성 명령·전송 경로 아래 맨 끝에 둔다.
+                                SectionHeader("충전",
+                                    topPadding = if (smartThings != null || onFleetApiEnabledChange != null) Space.lg else Space.sm)
+                                TCard {
+                                    StealthChargePanel(
+                                        settings = settings,
+                                        settingsOnly = true,
+                                        secondsUntilNextChange = stealthSecondsUntilNextChange,
+                                        onEnabledChange = onStealthChargingChange,
+                                        onMaxAmpsChange = onStealthMaxAmpsChange,
+                                        onMinAmpsChange = onStealthMinAmpsChange,
+                                        chargeHistory = chargeHistory,
+                                        chargeHistoryNowMillis = chargeHistoryNowMillis,
+                                        onScheduleEnabledChange = onStealthScheduleEnabledChange,
+                                        onStartMinutesChange = onStealthStartMinutesChange,
+                                        onEndMinutesChange = onStealthEndMinutesChange,
+                                    )
+                                }
+                                }
                         }
 
                         SettingsGroup.VEHICLE -> {
@@ -287,21 +302,24 @@ fun SettingsScreen(
 
 /** 제어 화면에서 옮긴 다음 1회 스텔스 충전 설정. */
 @Composable
-private fun StealthChargePanel(
+internal fun StealthChargePanel(
     settings: AppSettings,
     secondsUntilNextChange: Int?,
     onEnabledChange: (Boolean) -> Unit,
-    onMaxAmpsChange: (Int) -> Unit,
-    onMinAmpsChange: (Int?) -> Unit,
-    chargeHistory: List<com.wemade.teslamacro.data.charge.ChargeBucket>,
-    chargeHistoryNowMillis: Long,
-    onScheduleEnabledChange: (Boolean) -> Unit,
-    onStartMinutesChange: (Int) -> Unit,
-    onEndMinutesChange: (Int) -> Unit,
+    onMaxAmpsChange: (Int) -> Unit = {},
+    onMinAmpsChange: (Int?) -> Unit = {},
+    chargeHistory: List<com.wemade.teslamacro.data.charge.ChargeBucket> = emptyList(),
+    chargeHistoryNowMillis: Long = System.currentTimeMillis(),
+    onScheduleEnabledChange: (Boolean) -> Unit = {},
+    onStartMinutesChange: (Int) -> Unit = {},
+    onEndMinutesChange: (Int) -> Unit = {},
+    settingsOnly: Boolean = false,
+    executionOnly: Boolean = false,
 ) {
     Column {
         ExpandableToggle(
             title = "스텔스 충전 1회 · 전류 자동 조절",
+            settingsOnly = settingsOnly, executionOnly = executionOnly,
             checked = settings.stealthCharging,
             onCheckedChange = onEnabledChange,
             summary = stealthSettingsSummary(settings),
@@ -374,7 +392,7 @@ internal val LocalExpandSettingsDetails = androidx.compose.runtime.staticComposi
 private val LocalCloseSettingsSheet = androidx.compose.runtime.staticCompositionLocalOf<() -> Unit> { {} }
 
 /**
- * 설정 목록에는 현재 값과 스위치만 남기고 세부 입력은 독립적인 편집 시트에서 보여 준다.
+ * 실행 화면에는 상태 스위치를, 설정 목록에는 옵션 요약과 편집 시트 진입점을 둔다.
  * 변경은 즉시 저장되므로 닫기를 취소나 되돌리기로 표현하지 않는다.
  */
 @Composable
@@ -383,26 +401,40 @@ private fun ExpandableToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     summary: String? = null,
+    settingsOnly: Boolean = false,
+    executionOnly: Boolean = false,
     notices: @Composable ColumnScope.() -> Unit = {},
     details: @Composable ColumnScope.() -> Unit,
 ) {
     val expandInitially = LocalExpandSettingsDetails.current
     var expanded by rememberSaveable { mutableStateOf(expandInitially) }
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            com.wemade.teslamacro.ui.component.PickerRow(
-                label = title,
-                detail = summary,
-                onClick = { expanded = true },
-                modifier = Modifier.weight(1f),
-                showChevron = true,
-            )
-            Spacer(Modifier.width(Space.sm))
+        if (executionOnly) {
+            // 실행 화면은 스위치를 아래에 둬 큰 글씨에서도 요약 폭을 빼앗지 않는다.
+            Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+            summary?.let {
+                Spacer(Modifier.height(Space.sm))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
+            }
+            Spacer(Modifier.height(Space.md))
             com.wemade.teslamacro.ui.component.DraftToggle(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                label = if (checked) "켬" else "끔",
+                checked = checked, onCheckedChange = onCheckedChange,
+                label = if (checked) "켜짐" else "꺼짐",
             )
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                com.wemade.teslamacro.ui.component.PickerRow(
+                    label = title, detail = summary, onClick = { expanded = true },
+                    modifier = Modifier.weight(1f), showChevron = true,
+                )
+                if (!settingsOnly) {
+                    Spacer(Modifier.width(Space.sm))
+                    com.wemade.teslamacro.ui.component.DraftToggle(
+                        checked = checked, onCheckedChange = onCheckedChange,
+                        label = if (checked) "켬" else "끔",
+                    )
+                }
+            }
         }
         notices()
     }
@@ -692,6 +724,8 @@ data class SmartThingsControls(
 internal fun SmartThingsPanel(
     settings: AppSettings,
     controls: SmartThingsControls,
+    settingsOnly: Boolean = false,
+    executionOnly: Boolean = false,
 ) {
     var manageCommands by rememberSaveable { mutableStateOf(false) }
     var selectedAction by rememberSaveable { mutableStateOf<String?>(null) }
@@ -700,6 +734,7 @@ internal fun SmartThingsPanel(
     Column {
             ExpandableToggle(
                 title = "알림으로 차량 명령 실행",
+                settingsOnly = settingsOnly, executionOnly = executionOnly,
                 checked = settings.smartThingsEnabled,
                 onCheckedChange = controls.onEnabledChange,
                 summary = "명령 ${configured}개 · 유효 ${settings.smartThingsValiditySeconds}초",
@@ -710,7 +745,7 @@ internal fun SmartThingsPanel(
                         Text("전달한 알림은 삭제돼요. 이미 전송한 명령은 취소할 수 없어요.",
                             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
-                    if (settings.smartThingsEnabled && !controls.notificationAccessGranted) {
+                    if ((settingsOnly || settings.smartThingsEnabled) && !controls.notificationAccessGranted) {
                         Spacer(Modifier.height(Space.md))
                         Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                             Text("명령 수신에 알림 접근 권한이 필요해요.",
@@ -1045,7 +1080,10 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
 /** 과속·단속 안내와 그 소리 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls) {
+internal fun SafeDrivePanel(
+    settings: AppSettings, controls: NavigationControls,
+    settingsOnly: Boolean = false, executionOnly: Boolean = false,
+) {
     var showLocationTransferPrompt by rememberSaveable { mutableStateOf(false) }
     Column {
             // 목록이 없는 구성에서는 사용할 수 없는 기능을 노출하지 않는다.
@@ -1057,6 +1095,7 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
             val soundLabel = com.wemade.teslamacro.data.safety.WarningSound.of(settings.safeDriveWarningSound).label
             ExpandableToggle(
                 title = "단속 카메라 안내",
+                settingsOnly = settingsOnly, executionOnly = executionOnly,
                 checked = settings.safeDrive,
                 onCheckedChange = { enabled ->
                     // 서버 전송을 수반하는 빌드에서는 기능을 켜기 전에 반드시 확인받는다.
@@ -1071,10 +1110,10 @@ internal fun SafeDrivePanel(settings: AppSettings, controls: NavigationControls)
                 notices = {
                     // 서버 전송 고지는 켤 때 확인 창에서 받으므로 스위치 아래에 상시 표시하지 않는다.
                     // 권한 부족은 접어 둬도 안내가 멈춘 이유라 항상 보인다.
-                    if (settings.safeDrive && !controls.locationPermitted) {
+                    if ((settingsOnly || settings.safeDrive) && !controls.locationPermitted) {
                         LocationPermissionNotice(controls)
                     }
-                    if (settings.safeDrive && settings.safeDriveSound &&
+                    if ((settingsOnly || settings.safeDrive) && settings.safeDriveSound &&
                         settings.deviceMode == DeviceMode.MOUNTED && !controls.activityPermitted) {
                         Spacer(Modifier.height(Space.md))
                         Text("활동 인식 권한이 없어 자동 카메라 소리가 보류돼요.",

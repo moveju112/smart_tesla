@@ -30,6 +30,7 @@ enum class Destination(val route: String, val label: String) {
     // 이전 버전의 저장 상태와 화면 테스트가 읽을 수 있게 값은 남기되 실제 목차에서는 제외한다.
     Dashboard("dashboard", "제어"),
     Macros("macros", "매크로"),
+    Features("features", "기능"),
     Settings("settings", "설정"),
     ;
 
@@ -38,7 +39,7 @@ enum class Destination(val route: String, val label: String) {
 
     companion object {
         /** 제어 화면을 뺀 실제 앱 목차. */
-        val visible = listOf(Macros, Settings)
+        val visible = listOf(Features, Settings)
     }
 }
 

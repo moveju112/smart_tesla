@@ -45,11 +45,22 @@ data class DestinationUiState(
     val overlayAllowed: Boolean = false, val busy: Boolean = false,
     val notice: String? = null, val error: String? = null, val connectionError: String? = null,
     val receiveMessage: String = "탑승하면 목적지를 확인해요",
+    val connectionChecked: Boolean = false,
 )
+
+/** 조회가 끝난 정상 응답만 연결 준비 여부로 판단한다. 통신 오류를 미설정으로 취급하지 않는다. */
+internal fun needsDestinationSetup(state: DestinationUiState): Boolean =
+    state.connectionChecked && state.connectionError == null && state.receiverName == null &&
+        !(state.mounted && state.receiving)
 
 /** 실제 화면 수명에 맞춰 발신 결과 조회를 시작하고 멈춘다. */
 @Composable
-fun DestinationRoute(viewModel: DestinationViewModel, onBack: () -> Unit) {
+fun DestinationRoute(
+    viewModel: DestinationViewModel,
+    settingsOnly: Boolean = false,
+    onOpenSettings: (() -> Unit)? = null,
+    onBack: () -> Unit,
+) {
     val state by viewModel.state.collectAsState()
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner, viewModel) {
@@ -61,10 +72,18 @@ fun DestinationRoute(viewModel: DestinationViewModel, onBack: () -> Unit) {
         if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) viewModel.observe()
         onDispose { owner.lifecycle.removeObserver(observer); viewModel.stopObserving() }
     }
+    var checkedSetup by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(state.connectionChecked, state.connectionError, settingsOnly) {
+        if (!settingsOnly && state.connectionChecked && state.connectionError == null && !checkedSetup && onOpenSettings != null) {
+            checkedSetup = true
+            if (needsDestinationSetup(state)) onOpenSettings()
+        }
+    }
     DestinationScreen(state, onBack, viewModel::queryChanged,
         viewModel::minutesChanged, viewModel::send, viewModel::cancel, viewModel::receiveTest,
         viewModel::refresh, viewModel::pairingCodeChanged, viewModel::pair, viewModel::unlink,
-        viewModel::createPairCode, viewModel::enableReceiver, viewModel::receivingChanged, viewModel::allowOverlay)
+        viewModel::createPairCode, viewModel::enableReceiver, viewModel::receivingChanged, viewModel::allowOverlay,
+        settingsOnly = settingsOnly, onOpenSettings = onOpenSettings)
 }
 
 /** 출발 전 전송을 먼저 보여주고 드문 연결·수신 설정은 한 단계 안으로 둔다. */
@@ -77,11 +96,13 @@ fun DestinationScreen(
     onCreateCode: () -> Unit = {}, onEnableReceiver: () -> Unit = {},
     onReceiving: (Boolean) -> Unit = {}, onOverlay: () -> Unit = {},
     initialSetup: Boolean = false,
+    settingsOnly: Boolean = false,
+    onOpenSettings: (() -> Unit)? = null,
     scrollState: ScrollState = rememberScrollState(),
 ) {
-    var setup by rememberSaveable { mutableStateOf(initialSetup) }
+    var setup by rememberSaveable { mutableStateOf(initialSetup || settingsOnly) }
     var testExpanded by rememberSaveable { mutableStateOf(false) }
-    BackHandler { if (setup) setup = false else onBack() }
+    BackHandler { if (setup && !settingsOnly) setup = false else onBack() }
     val wide = !LocalPane.current.isCompact
     val canSend = !state.busy && DestinationPlace(state.query.trim()).valid() &&
         state.minutes.toIntOrNull() in 1..120
@@ -93,7 +114,7 @@ fun DestinationScreen(
                 verticalArrangement = Arrangement.spacedBy(Space.lg),
             ) {
                 TButton("뒤로", tone = ButtonTone.Ghost, icon = Icons.Rounded.ArrowBack,
-                    fillWidth = false, onClick = { if (setup) setup = false else onBack() })
+                    fillWidth = false, onClick = { if (setup && !settingsOnly) setup = false else onBack() })
                 Text(if (setup) "기기 연결·수신" else "목적지 전송",
                     style = MaterialTheme.typography.headlineSmall, color = T.Ink)
                 if (state.busy) Text("처리 중이에요…", color = T.InkMuted)
@@ -146,7 +167,7 @@ fun DestinationScreen(
                         Text(state.receiverName?.let { "받는 기기 · $it" } ?: "처음에는 받는 기기를 연결해 주세요",
                             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                         TButton("기기 연결·수신 설정", tone = ButtonTone.Ghost, icon = Icons.Rounded.Bluetooth,
-                            fillWidth = false, onClick = { setup = true })
+                            fillWidth = false, onClick = { if (onOpenSettings != null) onOpenSettings() else setup = true })
                     }
                     DestinationSection {
                         com.wemade.teslamacro.ui.component.DisclosureHeader(

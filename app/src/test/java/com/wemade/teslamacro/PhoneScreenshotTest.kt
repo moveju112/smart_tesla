@@ -140,7 +140,7 @@ class PhoneScreenshotTest {
     @Test
     fun `P4 매크로 목록`() {
         paparazzi.snapshot("P4-macro-list") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 MacroListScreen(
                     rules = MacroPresets.defaults(),
                     folders = com.wemade.teslamacro.domain.macro.defaultMacroFolders(MacroPresets.defaults()),
@@ -160,7 +160,7 @@ class PhoneScreenshotTest {
     @Test
     fun `P5 매크로 편집`() {
         paparazzi.snapshot("P5-macro-edit") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 MacroEditScreen(
                     draft = MacroDraft.from(MacroPresets.summerBoarding()),
                     onChange = {},
@@ -283,7 +283,7 @@ class PhoneScreenshotTest {
     @Test
     fun `P15 매크로 편집 밤`() {
         paparazzi.snapshot("P15-macro-edit-night") {
-            AppFrame(Destination.Macros, dark = true) {
+            AppFrame(Destination.Features, dark = true) {
                 MacroEditScreen(
                     draft = MacroDraft.from(MacroPresets.summerBoarding()),
                     onChange = {}, onSave = {}, onDelete = {}, onCancel = {},
@@ -296,7 +296,7 @@ class PhoneScreenshotTest {
     @Test
     fun `P16 새 매크로`() {
         paparazzi.snapshot("P16-macro-new") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 MacroEditScreen(
                     draft = MacroDraft.blank(),
                     onChange = {}, onSave = {}, onDelete = {}, onCancel = {},
@@ -367,7 +367,7 @@ class PhoneScreenshotTest {
     @Test
     fun `P26 매크로 저장 실패`() {
         paparazzi.snapshot("P26-macro-save-error") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 MacroEditScreen(
                     draft = MacroDraft.from(MacroPresets.summerBoarding()),
                     onChange = {}, onSave = {}, onDelete = {}, onCancel = {},

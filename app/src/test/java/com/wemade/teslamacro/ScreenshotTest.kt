@@ -122,7 +122,7 @@ class ScreenshotTest {
 
     @Test
     fun `04 매크로 목록`() {
-        snapshot("04-macro-list", Destination.Macros) {
+        snapshot("04-macro-list", Destination.Features) {
             MacroListScreen(
                 rules = MacroPresets.defaults(),
                 runningIds = setOf("preset-summer-boarding"),
@@ -146,7 +146,7 @@ class ScreenshotTest {
 
     @Test
     fun `05 매크로 목록 - 비어 있음`() {
-        snapshot("05-macro-empty", Destination.Macros) {
+        snapshot("05-macro-empty", Destination.Features) {
             MacroListScreen(
                 rules = emptyList(),
                 runningIds = emptySet(),
@@ -163,7 +163,7 @@ class ScreenshotTest {
 
     @Test
     fun `06 매크로 편집`() {
-        snapshot("06-macro-edit", Destination.Macros) {
+        snapshot("06-macro-edit", Destination.Features) {
             MacroEditScreen(
                 draft = MacroDraft.from(MacroPresets.summerBoarding()),
                 onChange = {},
@@ -176,7 +176,7 @@ class ScreenshotTest {
 
     @Test
     fun `07 매크로 편집 - 새로 만들기`() {
-        snapshot("07-macro-edit-new", Destination.Macros) {
+        snapshot("07-macro-edit-new", Destination.Features) {
             MacroEditScreen(
                 draft = MacroDraft.blank(),
                 onChange = {},
@@ -191,7 +191,7 @@ class ScreenshotTest {
     // 위치 편집기가 권한 런처를 쓰는데 Paparazzi엔 액티비티가 없어 빈 등록기를 끼워 넣는다
     @Test
     fun `11 위치 조건 카드`() {
-        snapshot("11-condition-location", Destination.Macros) {
+        snapshot("11-condition-location", Destination.Features) {
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.activity.compose.LocalActivityResultRegistryOwner provides NoResultRegistry
             ) {

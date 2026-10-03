@@ -135,7 +135,7 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 서버 상태가 정본이며 로컬의 낙관적 완료 표시를 만들지 않는다. */
     private suspend fun refreshState() {
         val reply = client.call("status")
-        mutableState.update { it.copy(receiverName = reply.receiverName, request = reply.request, connectionError = null) }
+        mutableState.update { it.copy(receiverName = reply.receiverName, request = reply.request, connectionError = null, connectionChecked = true) }
     }
 
     /** 중복 탭을 막고 실패 메시지를 남기되 취소는 일반 오류로 바꾸지 않는다. */

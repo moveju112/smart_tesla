@@ -1,5 +1,10 @@
 package com.wemade.teslamacro
 
+import androidx.activity.compose.BackHandler
+import com.wemade.teslamacro.feature.features.AppFeature
+import com.wemade.teslamacro.feature.features.FeatureSettings
+import com.wemade.teslamacro.feature.features.FeaturesScreen
+import com.wemade.teslamacro.feature.settings.SettingsGroup
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
@@ -253,14 +258,31 @@ private fun AppRoot(factory: ViewModelFactory) {
     val chargeHistory by settingsViewModel.chargeHistory.collectAsState()
 
     var skippedPairing by rememberSaveable { mutableStateOf(false) }
-    var current by rememberSaveable { mutableStateOf(Destination.Macros) }
+    var current by rememberSaveable { mutableStateOf(Destination.Features) }
 
+    var selectedFeature by rememberSaveable { mutableStateOf<AppFeature?>(null) }
+    var settingsTarget by rememberSaveable { mutableStateOf<FeatureSettings?>(null) }
+    var returnToFeature by rememberSaveable { mutableStateOf(false) }
+    val featureState = rememberSaveableStateHolder()
+    val settingsState = rememberSaveableStateHolder()
+    val openFeatureSettings: (FeatureSettings) -> Unit = {
+        settingsTarget = it
+        returnToFeature = true
+        current = Destination.Settings
+    }
+    val backFromSettings: () -> Unit = {
+        if (returnToFeature) current = Destination.Features
+        settingsTarget = null
+        returnToFeature = false
+    }
+    BackHandler(enabled = current == Destination.Settings && settingsTarget != null, onBack = backFromSettings)
     val context = LocalContext.current
 
-    // 등록을 해제하면 "나중에" 상태를 풀어 등록 화면으로 되돌린다.
-    // 안 풀면 본 화면에 갇혀 다시 등록할 방법이 없어진다
+    // 실제 등록 해제에만 건너뛰기를 초기화한다. 미등록 기기의 회전·복원은 현재 기능을 유지한다.
+    var wasPaired by rememberSaveable { mutableStateOf(settings.isPaired) }
     LaunchedEffect(settings.isPaired) {
-        if (!settings.isPaired) skippedPairing = false
+        if (wasPaired && !settings.isPaired) skippedPairing = false
+        wasPaired = settings.isPaired
     }
 
     // VIN만 저장된 상태는 "등록 중"이다. 키 등록까지 끝나야 본 화면으로 넘긴다
@@ -295,6 +317,10 @@ private fun AppRoot(factory: ViewModelFactory) {
         current = current,
         onSelect = {
             current = it
+            if (it == Destination.Settings) {
+                settingsTarget = null
+                returnToFeature = false
+            }
             // 탭 전환도 "최신 값을 기대하는 순간" — 자는 폴러를 깨운다 (요구 시점 읽기)
             (context.applicationContext as TeslaMacroApplication).let { app ->
                 if (app.ready.value) app.container.poller.nudge()
@@ -305,51 +331,15 @@ private fun AppRoot(factory: ViewModelFactory) {
             when (current) {
                 Destination.Dashboard -> {
                     // 업데이트 전 저장 상태가 제어 화면이면 첫 번째 실제 화면으로 바로 옮긴다.
-                    LaunchedEffect(Unit) { current = Destination.Macros }
+                    LaunchedEffect(Unit) { current = Destination.Features }
                 }
 
                 Destination.Macros -> {
-                    val vm: MacroViewModel = viewModel(factory = factory)
-                    val draft by vm.draft.collectAsState()
-                    val saveError by vm.saveError.collectAsState()
-
-                    // 목록을 유지한 채 편집 시트를 올려 폴더 위치와 스크롤이 사라지지 않게 한다.
-                    val rules by vm.rules.collectAsState()
-                    val folders by vm.folders.collectAsState()
-                    val folderError by vm.folderError.collectAsState()
-                    val running by vm.running.collectAsState()
-                    val progress by vm.progress.collectAsState()
-                    MacroListScreen(
-                        rules = rules,
-                        runningIds = running,
-                        progress = progress,
-                        onToggle = vm::setEnabled,
-                        onStopAll = vm::stopAll,
-                        onEdit = vm::editMacro,
-                        onDuplicate = vm::duplicate,
-                        onDelete = vm::delete,
-                        onCreate = vm::createMacro,
-                        onCreateInFolder = vm::createMacroInFolder,
-                        folders = folders,
-                        folderError = folderError,
-                        onSaveFolder = vm::saveFolder,
-                        onMoveToFolder = vm::moveToFolder,
-                    )
-                    draft?.let { editing ->
-                        MacroEditScreen(
-                            draft = editing,
-                            onChange = vm::updateDraft,
-                            onSave = vm::saveDraft,
-                            onDelete = vm::deleteDraft,
-                            onCancel = vm::cancelEdit,
-                            saveError = saveError,
-                        )
-                    }
+                    // 이전 버전에서 복원한 매크로 경로도 새 기능 탭에 연결한다.
+                    LaunchedEffect(Unit) { selectedFeature = AppFeature.MACROS; current = Destination.Features }
                 }
 
-                Destination.Settings -> {
-                    var showingDestination by rememberSaveable { mutableStateOf(false) }
-                    val settingsState = rememberSaveableStateHolder()
+                Destination.Features, Destination.Settings -> {
                     val simulated = settingsViewModel.simulatedState?.collectAsState()?.value
                     val update by settingsViewModel.update.collectAsState()
                     val batteryUnrestricted by settingsViewModel.batteryUnrestricted.collectAsState()
@@ -438,15 +428,102 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 .contains(context.packageName)
                         }
 
-                    if (showingDestination) {
+                    val smartThingsControls = com.wemade.teslamacro.feature.settings.SmartThingsControls(
+                        notificationAccessGranted = notificationAccessGranted,
+                        onEnabledChange = settingsViewModel::setSmartThingsEnabled,
+                        onCommandTextChange = settingsViewModel::setSmartThingsCommandText,
+                        onValiditySecondsChange = settingsViewModel::setSmartThingsValiditySeconds,
+                        onRequestNotificationAccess = {
+                            openNotificationListenerSettings(context)
+                        },
+                    )
+                    val navigationControls = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onAppChange = settingsViewModel::setNavigatorApp,
+                        onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
+                        onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
+                        onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
+                        onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
+                        safeDriveTestMessage = safeDriveTestMessage,
+                        onHudOverlayChange = settingsViewModel::setHudOverlay,
+                        onSafeDriveChange = { enabled ->
+                            settingsViewModel.setSafeDrive(enabled)
+                            if (enabled && settings.deviceMode == DeviceMode.MOUNTED &&
+                                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
+                                !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                        },
+                        onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
+                        onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
+                        onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
+                        onSafeDriveStartVoiceChange = settingsViewModel::setSafeDriveStartVoice,
+                        onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
+                        onOpenSpeechSettings = { openSpeechSettings(context) },
+                        safeDriveVoiceStatus = safeDriveVoiceStatus,
+                        automaticSoundStatus = automaticSoundStatus,
+                        vehicleAudioStatus = vehicleAudioStatus,
+                        pairedAudioDevices = pairedAudioDevices,
+                        onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
+                        onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
+                        onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
+                        onSafeDriveWarningSoundChange = { settingsViewModel.setSafeDriveWarningSound(it, settings.safeDriveVolume) },
+                        onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
+                        safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
+                        installed = remember { settingsViewModel.installedNavigators() },
+                        // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
+                        // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
+                        overlayPermitted = overlayPermitted,
+                        locationPermitted = locationPermitted,
+                        activityPermitted = activityPermitted,
+                        onRequestActivityPermission = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
+                                askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                        },
+                        onRequestLocationPermission = {
+                            askLocation.launch(arrayOf(
+                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                            ))
+                        },
+                        onRequestOverlayPermission = {
+                            openOverlayPermissionSettings(context)
+                        },
+                    )
+                    if (current == Destination.Features) {
+                        featureState.SaveableStateProvider(selectedFeature?.name ?: "list") {
+                            FeaturesScreen(
+                                settings = settings, selected = selectedFeature,
+                                navigation = navigationControls, smartThings = smartThingsControls,
+                                onSelect = { selectedFeature = it }, onSettings = openFeatureSettings,
+                                onStealthChange = settingsViewModel::setStealthCharging,
+                                stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
+                                macroContent = { MacroRoute(factory) },
+                                destinationContent = {
+                                    val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
+                                    com.wemade.teslamacro.feature.destination.DestinationRoute(
+                                        destinationViewModel,
+                                        onOpenSettings = { openFeatureSettings(FeatureSettings.DESTINATION) },
+                                        onBack = { selectedFeature = null },
+                                    )
+                                },
+                            )
+                        }
+                    } else if (settingsTarget == FeatureSettings.DESTINATION) {
                         val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
-                        com.wemade.teslamacro.feature.destination.DestinationRoute(destinationViewModel) { showingDestination = false }
+                        com.wemade.teslamacro.feature.destination.DestinationRoute(
+                            destinationViewModel, settingsOnly = true, onBack = backFromSettings,
+                        )
                     } else {
-                        // 목적지 화면에서 돌아오면 선택했던 주행 분류를 복원한다.
-                        settingsState.SaveableStateProvider("settings") {
+                        settingsState.SaveableStateProvider(settingsTarget?.name ?: "settings") {
                             SettingsScreen(
                                 settings = settings,
-                                onSendDestination = { showingDestination = true },
+                                onSendDestination = { settingsTarget = FeatureSettings.DESTINATION },
+                                focusedFeature = settingsTarget,
+                                onBackToFeature = if (returnToFeature) backFromSettings else null,
+                                initialGroup = when (settingsTarget) {
+                                    FeatureSettings.VEHICLE -> SettingsGroup.VEHICLE
+                                    FeatureSettings.SAFE_DRIVE -> SettingsGroup.DRIVING
+                                    FeatureSettings.STEALTH_CHARGE, FeatureSettings.SMARTTHINGS -> SettingsGroup.AUTOMATION
+                                    else -> null
+                                },
                                 onThemeModeChange = settingsViewModel::setThemeMode,
                                 onStealthChargingChange = settingsViewModel::setStealthCharging,
                                 stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
@@ -495,71 +572,56 @@ private fun AppRoot(factory: ViewModelFactory) {
                                     fleetCredentials, settingsViewModel::saveFleetToken,
                                     settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,
                                 ),
-                                smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
-                                    notificationAccessGranted = notificationAccessGranted,
-                                    onEnabledChange = settingsViewModel::setSmartThingsEnabled,
-                                    onCommandTextChange = settingsViewModel::setSmartThingsCommandText,
-                                    onValiditySecondsChange = settingsViewModel::setSmartThingsValiditySeconds,
-                                    onRequestNotificationAccess = {
-                                        openNotificationListenerSettings(context)
-                                    },
-                                ),
-                                navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
-                                    onAppChange = settingsViewModel::setNavigatorApp,
-                                    onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
-                                    onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
-                                    onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
-                                    onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
-                                    safeDriveTestMessage = safeDriveTestMessage,
-                                    onHudOverlayChange = settingsViewModel::setHudOverlay,
-                                    onSafeDriveChange = { enabled ->
-                                        settingsViewModel.setSafeDrive(enabled)
-                                        if (enabled && settings.deviceMode == DeviceMode.MOUNTED &&
-                                            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
-                                            !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                                    },
-                                    onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
-                                    onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
-                                    onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
-                                    onSafeDriveStartVoiceChange = settingsViewModel::setSafeDriveStartVoice,
-                                    onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
-                                    onOpenSpeechSettings = { openSpeechSettings(context) },
-                                    safeDriveVoiceStatus = safeDriveVoiceStatus,
-                                    automaticSoundStatus = automaticSoundStatus,
-                                    vehicleAudioStatus = vehicleAudioStatus,
-                                    pairedAudioDevices = pairedAudioDevices,
-                                    onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
-                                    onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
-                                    onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
-                                    onSafeDriveWarningSoundChange = { settingsViewModel.setSafeDriveWarningSound(it, settings.safeDriveVolume) },
-                                    onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
-                                    safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
-                                    installed = remember { settingsViewModel.installedNavigators() },
-                                    // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
-                                    // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
-                                    overlayPermitted = overlayPermitted,
-                                    locationPermitted = locationPermitted,
-                                    activityPermitted = activityPermitted,
-                                    onRequestActivityPermission = {
-                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q)
-                                            askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                                    },
-                                    onRequestLocationPermission = {
-                                        askLocation.launch(arrayOf(
-                                            Manifest.permission.ACCESS_FINE_LOCATION,
-                                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                                        ))
-                                    },
-                                    onRequestOverlayPermission = {
-                                        openOverlayPermissionSettings(context)
-                                    },
-                                ),
+                                smartThings = smartThingsControls,
+                                navigation = navigationControls,
                             )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+
+/** 매크로 목록·편집은 기존 ViewModel 동작을 유지한 채 기능 안에서 연다. */
+@Composable
+private fun MacroRoute(factory: ViewModelFactory) {
+    val vm: MacroViewModel = viewModel(factory = factory)
+    val draft by vm.draft.collectAsState()
+    val saveError by vm.saveError.collectAsState()
+
+    // 목록을 유지한 채 편집 시트를 올려 폴더 위치와 스크롤이 사라지지 않게 한다.
+    val rules by vm.rules.collectAsState()
+    val folders by vm.folders.collectAsState()
+    val folderError by vm.folderError.collectAsState()
+    val running by vm.running.collectAsState()
+    val progress by vm.progress.collectAsState()
+    MacroListScreen(
+        rules = rules,
+        runningIds = running,
+        progress = progress,
+        onToggle = vm::setEnabled,
+        onStopAll = vm::stopAll,
+        onEdit = vm::editMacro,
+        onDuplicate = vm::duplicate,
+        onDelete = vm::delete,
+        onCreate = vm::createMacro,
+        onCreateInFolder = vm::createMacroInFolder,
+        folders = folders,
+        folderError = folderError,
+        onSaveFolder = vm::saveFolder,
+        onMoveToFolder = vm::moveToFolder,
+    )
+    draft?.let { editing ->
+        MacroEditScreen(
+            draft = editing,
+            onChange = vm::updateDraft,
+            onSave = vm::saveDraft,
+            onDelete = vm::deleteDraft,
+            onCancel = vm::cancelEdit,
+            saveError = saveError,
+        )
     }
 }
 

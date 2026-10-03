@@ -150,7 +150,7 @@ class WideScreenshotTest {
     @Test
     fun `W3 매크로 편집`() {
         paparazzi.snapshot("W3-macro-edit") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 com.wemade.teslamacro.feature.macro.edit.MacroEditScreen(
                     draft = com.wemade.teslamacro.feature.macro.edit.MacroDraft
                         .from(com.wemade.teslamacro.data.macro.MacroPresets.summerBoarding()),
@@ -166,7 +166,7 @@ class WideScreenshotTest {
     @Test
     fun `W3b 매크로 동작 - 스텔스 충전`() {
         paparazzi.snapshot("W3b-macro-edit-stealth-charge") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 com.wemade.teslamacro.feature.macro.edit.ActionCard(
                     index = 0,
                     total = 1,
@@ -186,7 +186,7 @@ class WideScreenshotTest {
     @Test
     fun `W4 매크로 목록`() {
         paparazzi.snapshot("W4-macro-list") {
-            AppFrame(Destination.Macros) {
+            AppFrame(Destination.Features) {
                 com.wemade.teslamacro.feature.macro.MacroListScreen(
                     rules = com.wemade.teslamacro.data.macro.MacroPresets.defaults(),
                     runningIds = emptySet(),

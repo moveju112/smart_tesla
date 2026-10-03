@@ -20,16 +20,6 @@ class PaletteContrastTest {
         }
     }
 
-    /** 매크로 종류별 색이 달라도 흰색 이름·조건을 읽을 수 있어야 한다. */
-    @Test
-    fun taskTilesKeepReadableWhiteLabels() {
-        for (palette in listOf(LightPalette, DarkPalette)) {
-            for (tile in listOf(palette.tileBlue, palette.tileTeal, palette.tilePurple, palette.tileAmber, palette.tileRose)) {
-                assertContrast(Color.White, tile, 4.5f)
-            }
-        }
-    }
-
     /** 주요 버튼과 오류·주의·정상 안내는 밤에도 의미를 읽을 수 있어야 한다. */
     @Test
     fun actionsAndStatusTextKeepContrast() {

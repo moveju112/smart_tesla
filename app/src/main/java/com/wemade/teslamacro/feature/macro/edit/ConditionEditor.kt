@@ -36,7 +36,6 @@ import com.wemade.teslamacro.service.MacroService
 import kotlinx.coroutines.launch
 import com.wemade.teslamacro.domain.macro.Trigger
 import com.wemade.teslamacro.domain.macro.describe
-import com.wemade.teslamacro.domain.macro.formatDuration
 import com.wemade.teslamacro.domain.model.Signal
 import com.wemade.teslamacro.domain.model.SignalKind
 import com.wemade.teslamacro.ui.component.ButtonTone
@@ -44,7 +43,6 @@ import com.wemade.teslamacro.ui.component.ChoiceGrid as ChipRow
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.rememberOnResume
 import com.wemade.teslamacro.ui.component.TButton
-import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
@@ -53,7 +51,7 @@ private val DAY_LABELS = listOf("월", "화", "수", "목", "금", "토", "일")
 /** 위치 권한 거부 안내 — 복귀 시 자동으로 지우기 위해 상수로 비교한다 */
 private const val PERMISSION_MISSING = "위치 권한이 없어 저장할 수 없어요"
 
-/** 트리거 카드 — "언제" */
+/** 사건의 요약 행과 상세 입력을 카드 없이 같은 편집 면에 배치한다. */
 @Composable
 fun TriggerCard(
     trigger: Trigger,
@@ -63,9 +61,9 @@ fun TriggerCard(
     expanded: Boolean = true,
     onToggle: () -> Unit = {},
 ) {
-    TCard(modifier = modifier) {
+    Column(modifier = modifier.fillMaxWidth()) {
         EditorItemHeader(triggerEventSummary(trigger), expanded, onToggle, triggerDrivingSummary(trigger))
-        if (!expanded) return@TCard
+        if (!expanded) return@Column
         Spacer(Modifier.height(Space.md))
 
         when (trigger) {
@@ -100,11 +98,10 @@ fun TriggerCard(
                 }
             }
 
-            is Trigger.Every -> ChipRow(
-                options = listOf(15, 30, 60, 120, 360),
-                selected = trigger.everyMinutes,
-                label = { formatDuration(it * 60) },
-                onSelect = { onChange(trigger.copy(everyMinutes = it)) },
+            is Trigger.Every -> NumberStepper(
+                value = trigger.everyMinutes.toDouble(),
+                min = 15.0, max = 360.0, step = 15.0, unit = "분",
+                onChange = { onChange(trigger.copy(everyMinutes = it.toInt())) },
             )
 
             is Trigger.AtTime -> {
@@ -117,17 +114,15 @@ fun TriggerCard(
             }
 
             is Trigger.Manual -> Text(
-                text = "자동으로 발동하지 않아요.\n" +
-                    "등록한 바로가기로 실행해 주세요.",
+                text = "등록한 바로가기로 실행해요.",
                 style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
+                color = T.InkMuted,
             )
 
             is Trigger.Always -> Text(
-                text = "다음 페이지의 조건이 충족되는 \"순간\"마다 실행해요.\n" +
-                    "조건을 하나 이상 추가해 주세요 (예: 실내 온도 26~28℃ 사이).",
+                text = "추가 조건이 충족될 때 실행해요. 실행 조건을 하나 이상 추가하세요.",
                 style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
+                color = T.InkMuted,
             )
         }
         RemoveEditorItem("실행 시점 삭제", onRemove)
@@ -149,7 +144,7 @@ internal fun drivingRequirementLabel(afterDriving: Boolean?): String = when (aft
     true -> "주행 후 · P단"
 }
 
-/** 조건 카드 — "~라면" */
+/** 추가 조건의 요약 행과 상세 입력을 같은 편집 면에 배치한다. */
 @Composable
 fun ConditionCard(
     condition: Condition,
@@ -159,9 +154,9 @@ fun ConditionCard(
     expanded: Boolean = true,
     onToggle: () -> Unit = {},
 ) {
-    TCard(modifier = modifier) {
+    Column(modifier = modifier.fillMaxWidth()) {
         EditorItemHeader(describe(condition), expanded, onToggle)
-        if (!expanded) return@TCard
+        if (!expanded) return@Column
         Spacer(Modifier.height(Space.md))
 
         when (condition) {
@@ -274,6 +269,7 @@ private fun NearLocationEditor(
         TButton(
             text = if (condition.latitude != null) "현재 위치로 다시 저장" else "현재 위치를 출발지로 저장",
             tone = ButtonTone.Secondary,
+            fillWidth = false,
         ) {
             if (hasLocationPermission || TabletLocation(context).hasPermission()) capture()
             else permission.launch(
@@ -293,7 +289,7 @@ private fun NearLocationEditor(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(Space.sm))
-        TButton("주소 위치로 저장", ButtonTone.Secondary, enabled = address.isNotBlank()) {
+        TButton("주소 위치로 저장", ButtonTone.Secondary, fillWidth = false, enabled = address.isNotBlank()) {
             status = "주소 확인 중…"
             scope.launch {
                 val point = NaverNavigator(context).geocodePoint(address)
@@ -445,10 +441,9 @@ private fun RadiusField(meters: Int, onChange: (Int) -> Unit) {
         )
         Spacer(Modifier.height(Space.xs))
         Text(
-            text = "지하주차장은 GPS가 안 잡혀 마지막 지상 좌표를 써요.\n" +
-                "안 뛰면 진단 로그의 \"거리 ○○m\"를 보고 그보다 넉넉하게 넣어 주세요.",
+            text = "GPS가 닿지 않는 곳에서는 마지막 측위 좌표를 사용해요.",
             style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
+            color = T.InkMuted,
         )
     }
 }
@@ -587,11 +582,13 @@ private fun TimeAndDayEditor(
     onDaysChange: (Set<Int>) -> Unit,
 ) {
     Column {
-        HourMinuteStepper(minutesOfDay, onMinutesChange)
-        Spacer(Modifier.height(Space.md))
-        Text("요일", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+        Text("반복 요일", style = MaterialTheme.typography.labelMedium, color = T.InkMuted)
         Spacer(Modifier.height(Space.sm))
         DayToggles(days, onDaysChange)
+        Spacer(Modifier.height(Space.lg))
+        Text("시작 시각", style = MaterialTheme.typography.labelMedium, color = T.InkMuted)
+        Spacer(Modifier.height(Space.sm))
+        HourMinuteStepper(minutesOfDay, onMinutesChange)
     }
 }
 

@@ -42,4 +42,28 @@ class MacroFolderTest {
         assertTrue(runCatching { moveMacroToFolder(folders, "macro", "missing") }.isFailure)
         assertEquals(setOf("macro"), folders.single().ruleIds)
     }
+
+    /** 폴더에 넣은 매크로는 홈에서 사라지고 소속 폴더에서만 보인다. */
+    @Test fun `home excludes filed rules while folders retain their members`() {
+        val rules = MacroPresets.defaults()
+        val first = rules[0]
+        val second = rules[1]
+        val folders = listOf(MacroFolder("a", "첫 폴더", setOf(first.id)),
+            MacroFolder("b", "둘째 폴더", setOf(second.id, "deleted")))
+        assertEquals(rules.drop(2), macroRulesInFolder(rules, folders, null))
+        assertEquals(listOf(first), macroRulesInFolder(rules, folders, "a"))
+        assertEquals(listOf(second), macroRulesInFolder(rules, folders, "b"))
+        assertEquals(rules.drop(2), macroRulesInFolder(rules, folders, "missing"))
+    }
+
+    /** 폴더 밖 이동은 즉시 홈에 반영하며 빈 폴더가 전체 목록을 노출하지 않는다. */
+    @Test fun `moving out restores home membership and empty folders stay empty`() {
+        val rules = MacroPresets.defaults()
+        val first = rules.first()
+        val folders = listOf(MacroFolder("a", "폴더", setOf(first.id)))
+        val moved = moveMacroToFolder(folders, first.id, null)
+        assertEquals(rules, macroRulesInFolder(rules, moved, null))
+        assertEquals(emptyList<MacroRule>(), macroRulesInFolder(rules, moved, "a"))
+        assertEquals(rules, macroRulesInFolder(rules, emptyList(), null))
+    }
 }

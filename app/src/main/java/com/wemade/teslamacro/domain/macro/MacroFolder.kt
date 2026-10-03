@@ -26,3 +26,13 @@ fun moveMacroToFolder(folders: List<MacroFolder>, ruleId: String, folderId: Stri
     require(folderId == null || folders.any { it.id == folderId }) { "폴더를 찾을 수 없어요." }
     return folders.map { folder -> folder.copy(ruleIds = if (folder.id == folderId) folder.ruleIds + ruleId else folder.ruleIds - ruleId) }
 }
+
+/** 홈에는 미분류만, 폴더 안에는 그 폴더의 항목만 원래 순서대로 표시한다. */
+fun macroRulesInFolder(rules: List<MacroRule>, folders: List<MacroFolder>, folderId: String?): List<MacroRule> {
+    val selected = folders.firstOrNull { it.id == folderId }
+    if (selected != null) return rules.filter { it.id in selected.ruleIds }
+    if (folders.isEmpty()) return rules
+    val filedIds = HashSet<String>()
+    for (folder in folders) filedIds.addAll(folder.ruleIds)
+    return rules.filterNot { it.id in filedIds }
+}

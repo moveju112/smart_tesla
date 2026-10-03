@@ -1,15 +1,13 @@
 package com.wemade.teslamacro.ui.component
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,8 +21,21 @@ import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import kotlin.math.round
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.input.KeyboardType
+import java.util.Locale
 
-/** 입력 키보드 없이 값을 조절하며 경계에서는 해당 동작을 비활성화한다. */
+/** 값은 한 줄 입력 면에 두고 직접 입력 또는 작은 증감 버튼으로 조절한다. */
 @Composable
 fun NumberStepper(
     value: Double,
@@ -35,50 +46,105 @@ fun NumberStepper(
     onChange: (Double) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var editing by rememberSaveable { mutableStateOf(false) }
     Row(
-        modifier = modifier,
+        modifier = modifier.fillMaxWidth().border(1.dp, T.Hairline, RoundedCornerShape(Radius.button)),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
         StepButton(DraftMark.Minus, "줄이기", enabled = value > min) {
-            onChange(snap((value - step).coerceAtLeast(min), step))
+            onChange(snap((value - step).coerceAtLeast(min), step).coerceIn(min, max))
         }
-        // 고정 폭이면 "3600초"나 글꼴 확대 시 잘린다 — 최소 폭만 보장
         Text(
-            text = format(value) + unit,
-            style = MaterialTheme.typography.titleMedium,
+            text = "${format(value)} $unit",
+            style = MaterialTheme.typography.bodyMedium,
             color = T.Ink,
             textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.widthIn(min = 76.dp),
+            modifier = Modifier.weight(1f).clickable(onClickLabel = "값 직접 입력") { editing = true }
+                .heightIn(min = 56.dp).padding(vertical = Space.md),
         )
         StepButton(DraftMark.Add, "늘리기", enabled = value < max) {
-            onChange(snap((value + step).coerceAtMost(max), step))
+            onChange(snap((value + step).coerceAtMost(max), step).coerceIn(min, max))
+        }
+    }
+    if (editing) {
+        ValueInputSheet(
+            title = "값 입력", initial = format(value), label = "$unit · ${format(min)}~${format(max)}",
+            keyboardType = KeyboardType.Decimal,
+            valid = { parseNumberInput(it, min, max, step) != null },
+            onApply = { parseNumberInput(it, min, max, step)?.let(onChange); editing = false },
+            onDismiss = { editing = false },
+        )
+    }
+}
+
+/** 시각은 두 줄 증감판 대신 HH:mm 입력 행으로 표시하고 확인한 값만 반영한다. */
+@Composable
+fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
+    var editing by rememberSaveable { mutableStateOf(false) }
+    val text = String.format(Locale.ROOT, "%02d:%02d", minutesOfDay / 60, minutesOfDay % 60)
+    Text(
+        text = text, color = T.Ink, style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.button))
+            .border(1.dp, T.Hairline, RoundedCornerShape(Radius.button))
+            .clickable(onClickLabel = "시각 입력") { editing = true }
+            .heightIn(min = 56.dp).padding(Space.md),
+    )
+    if (editing) {
+        ValueInputSheet(
+            title = "시각 입력", initial = text, label = "24시간 · HH:mm",
+            keyboardType = KeyboardType.Text,
+            valid = { parseTimeInput(it) != null },
+            onApply = { parseTimeInput(it)?.let(onChange); editing = false },
+            onDismiss = { editing = false },
+        )
+    }
+}
+
+/** 잘못된 입력이나 취소는 원래 값을 바꾸지 않고 적용 버튼으로만 확정한다. */
+@Composable
+private fun ValueInputSheet(
+    title: String,
+    initial: String,
+    label: String,
+    keyboardType: KeyboardType,
+    valid: (String) -> Boolean,
+    onApply: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf(initial) }
+    val accepted = valid(text)
+    PickerSheet(title, onDismiss, footer = {
+        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            TButton("취소", ButtonTone.Ghost, modifier = Modifier.weight(1f), onClick = onDismiss)
+            TButton("적용", modifier = Modifier.weight(1f), enabled = accepted, onClick = { onApply(text) })
+        }
+    }) {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            DraftField(
+                value = text, onValueChange = { text = it }, label = label,
+                singleLine = true, isError = !accepted,
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                note = if (!accepted) "표시된 형식과 범위로 입력해 주세요." else null,
+            )
         }
     }
 }
 
-/** 좁은 화면에서도 잘리지 않게 시·분 스테퍼를 세로로 쌓는다. */
-@Composable
-fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        NumberStepper(
-            value = (minutesOfDay / 60).toDouble(),
-            min = 0.0,
-            max = 23.0,
-            step = 1.0,
-            unit = "시",
-            onChange = { onChange(it.toInt() * 60 + minutesOfDay % 60) },
-        )
-        NumberStepper(
-            value = (minutesOfDay % 60).toDouble(),
-            min = 0.0,
-            max = 55.0,
-            step = 5.0,
-            unit = "분",
-            onChange = { onChange((minutesOfDay / 60) * 60 + it.toInt()) },
-        )
-    }
+/** 직접 입력은 유한한 범위 안의 값만 허용하고 기존 조절 단위에 맞춘다. */
+internal fun parseNumberInput(text: String, min: Double, max: Double, step: Double): Double? {
+    val value = text.trim().replace(',', '.').toDoubleOrNull() ?: return null
+    if (!value.isFinite() || value < min || value > max) return null
+    return snap(value, step).coerceIn(min, max)
+}
+
+/** 시·분 범위를 검사해 저장 가능한 하루 안의 분으로 변환한다. */
+internal fun parseTimeInput(text: String): Int? {
+    val parts = text.trim().split(':')
+    if (parts.size != 2 || parts[0].length !in 1..2 || parts[1].length != 2 ||
+        parts.any { part -> part.any { !it.isDigit() } }) return null
+    val hour = parts[0].toIntOrNull() ?: return null
+    val minute = parts[1].toIntOrNull() ?: return null
+    return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else null
 }
 
 /** 아이콘의 동작 이름을 터치 영역에 제공한다. */
@@ -89,23 +155,14 @@ private fun StepButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            // clip을 먼저 — 리플이 둥근 모서리 밖으로 번지지 않게
-            .clip(RoundedCornerShape(Radius.button))
-            .background(T.Slate)
-            .clickable(
-                enabled = enabled,
-                role = androidx.compose.ui.semantics.Role.Button,
-                onClickLabel = contentDescription,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(Space.xxl),
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
+            contentDescription = contentDescription,
             tint = if (enabled) T.Ink else T.InkFaint,
             modifier = Modifier.size(20.dp),
         )
@@ -115,5 +172,6 @@ private fun StepButton(
 /** 부동소수 누적 오차로 22.499999가 되는 걸 막는다 */
 private fun snap(value: Double, step: Double): Double = round(value / step) * step
 
+/** 소수 구분자를 고정해 값 입력 시트에서도 같은 수치를 다시 읽는다. */
 private fun format(value: Double): String =
-    if (value % 1.0 == 0.0) value.toInt().toString() else "%.1f".format(value)
+    if (value % 1.0 == 0.0) value.toInt().toString() else String.format(Locale.ROOT, "%.1f", value)

@@ -2,17 +2,18 @@ package com.wemade.teslamacro.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.TButton
+import com.wemade.teslamacro.ui.component.Hairline
+import com.wemade.teslamacro.ui.theme.T
 import com.wemade.teslamacro.ui.theme.Space
 
 /** 토큰 원문은 화면 상태에 포함하지 않는다. */
@@ -24,18 +25,18 @@ data class FleetCredentialControls(
     val onCheck: () -> Unit,
 )
 
-/** 기존 카드 안에 입력 영역만 추가한다. 비밀값은 저장 복원하지 않고 제출 즉시 비운다. */
+/** 토큰 입력과 관리 동작은 Fleet 상세 시트에만 놓고 비밀값은 제출 즉시 비운다. */
 @Composable
 internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
     var token by remember { mutableStateOf("") }
     val focus = LocalFocusManager.current
     val state = controls.state
-    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
         if (!state.stored) {
             DraftField(
                 value = token,
                 onValueChange = { if (it.length <= 8192) token = it },
-                label = "사용자 API 토큰",
+                label = "토큰",
                 enabled = !state.busy,
                 placeholder = "API 토큰 붙여넣기",
                 note = "Tesla Client Secret은 입력하지 마세요",
@@ -48,14 +49,18 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
                 focus.clearFocus()
                 controls.onSave(submitted)
             })
+        } else {
+            Text("사용자 API 토큰", style = MaterialTheme.typography.titleMedium, color = T.Ink)
+            Text("암호화해 저장됨", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            TButton(text = "연결 확인", enabled = !state.busy, onClick = controls.onCheck)
+            Hairline()
+            TButton(text = "토큰 삭제", tone = ButtonTone.Danger,
+                enabled = !state.busy, fillWidth = false, onClick = { token = ""; controls.onDelete() })
         }
-        if (state.stored) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                TButton(text = "연결 확인", tone = ButtonTone.Secondary, modifier = Modifier.weight(1f),
-                    enabled = !state.busy, onClick = controls.onCheck)
-                TButton(text = "토큰 삭제", tone = ButtonTone.Danger, modifier = Modifier.weight(1f),
-                    enabled = !state.busy, onClick = { token = ""; controls.onDelete() })
-            }
+        state.message?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodySmall,
+                color = if (message.startsWith("연결 확인 완료") || message.startsWith("토큰을 삭제하고") ||
+                    message.startsWith("토큰을 암호화")) T.InkMuted else T.Danger)
         }
     }
 }

@@ -313,9 +313,29 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val draft by vm.draft.collectAsState()
                     val saveError by vm.saveError.collectAsState()
 
-                    // 편집 중이면 목록 대신 편집 화면이 자리를 차지한다
-                    val editing = draft
-                    if (editing != null) {
+                    // 목록을 유지한 채 편집 시트를 올려 폴더 위치와 스크롤이 사라지지 않게 한다.
+                    val rules by vm.rules.collectAsState()
+                    val folders by vm.folders.collectAsState()
+                    val folderError by vm.folderError.collectAsState()
+                    val running by vm.running.collectAsState()
+                    val progress by vm.progress.collectAsState()
+                    MacroListScreen(
+                        rules = rules,
+                        runningIds = running,
+                        progress = progress,
+                        onToggle = vm::setEnabled,
+                        onStopAll = vm::stopAll,
+                        onEdit = vm::editMacro,
+                        onDuplicate = vm::duplicate,
+                        onDelete = vm::delete,
+                        onCreate = vm::createMacro,
+                        onCreateInFolder = vm::createMacroInFolder,
+                        folders = folders,
+                        folderError = folderError,
+                        onSaveFolder = vm::saveFolder,
+                        onMoveToFolder = vm::moveToFolder,
+                    )
+                    draft?.let { editing ->
                         MacroEditScreen(
                             draft = editing,
                             onChange = vm::updateDraft,
@@ -323,28 +343,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                             onDelete = vm::deleteDraft,
                             onCancel = vm::cancelEdit,
                             saveError = saveError,
-                        )
-                    } else {
-                        val rules by vm.rules.collectAsState()
-                        val folders by vm.folders.collectAsState()
-                        val folderError by vm.folderError.collectAsState()
-                        val running by vm.running.collectAsState()
-                        val progress by vm.progress.collectAsState()
-                        MacroListScreen(
-                            rules = rules,
-                            runningIds = running,
-                            progress = progress,
-                            onToggle = vm::setEnabled,
-                            onStopAll = vm::stopAll,
-                            onEdit = vm::editMacro,
-                            onDuplicate = vm::duplicate,
-                            onDelete = vm::delete,
-                            onCreate = vm::createMacro,
-                            onCreateInFolder = vm::createMacroInFolder,
-                            folders = folders,
-                            folderError = folderError,
-                            onSaveFolder = vm::saveFolder,
-                            onMoveToFolder = vm::moveToFolder,
                         )
                     }
                 }

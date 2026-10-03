@@ -34,12 +34,6 @@ data class Palette(
     val onDanger: Color,
     val ok: Color,
     val okText: Color,
-    // 매크로 타일은 종류를 구별하고 실행·오류 상태는 별도 표시한다.
-    val tileBlue: Color,
-    val tileTeal: Color,
-    val tilePurple: Color,
-    val tileAmber: Color,
-    val tileRose: Color,
 )
 
 /** 낮에는 Blue Grey 계열의 밝은 면과 Material Blue 800을 기본으로 쓴다. */
@@ -64,14 +58,9 @@ val LightPalette = Palette(
     onDanger = Color(0xFFFFFFFF),
     ok = Color(0xFF2E7D32),
     okText = Color(0xFF256629),
-    tileBlue = Color(0xFF1565C0),
-    tileTeal = Color(0xFF00695C),
-    tilePurple = Color(0xFF5E35B1),
-    tileAmber = Color(0xFF5D4037),
-    tileRose = Color(0xFFAD1457),
 )
 
-/** 밤에는 차콜 면과 Blue 200을 쓰고 타일은 한 단계 깊게 눌러 눈부심을 줄인다. */
+/** 밤에는 차콜 면과 Blue 200으로 조작과 콘텐츠를 구분한다. */
 val DarkPalette = Palette(
     void = Color(0xFF141C24),
     carbon = Color(0xFF1E2935),
@@ -93,11 +82,6 @@ val DarkPalette = Palette(
     onDanger = Color(0xFF29130F),
     ok = Color(0xFFA5D6A7),
     okText = Color(0xFFA5D6A7),
-    tileBlue = Color(0xFF0D47A1),
-    tileTeal = Color(0xFF004D40),
-    tilePurple = Color(0xFF4527A0),
-    tileAmber = Color(0xFF4E342E),
-    tileRose = Color(0xFF880E4F),
 )
 
 /** 지금 팔레트. [TeslaMacroTheme]이 낮/밤에 맞춰 갈아 끼운다 */
@@ -133,12 +117,6 @@ object T {
     val OnDanger: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.onDanger
     val Ok: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.ok
     val OkText: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.okText
-    val TileBlue: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileBlue
-    val TileTeal: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileTeal
-    val TilePurple: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tilePurple
-    val TileAmber: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileAmber
-    val TileRose: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.tileRose
-    val OnTile: Color = Color.White
 }
 
 /**

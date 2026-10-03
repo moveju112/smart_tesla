@@ -143,6 +143,7 @@ class PhoneScreenshotTest {
             AppFrame(Destination.Macros) {
                 MacroListScreen(
                     rules = MacroPresets.defaults(),
+                    folders = com.wemade.teslamacro.domain.macro.defaultMacroFolders(MacroPresets.defaults()),
                     runningIds = emptySet(),
                     progress = emptyMap(),
                     onToggle = { _, _ -> },

@@ -2,8 +2,6 @@ package com.wemade.teslamacro.feature.pairing
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,20 +9,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bluetooth
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.DirectionsCar
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,10 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.unit.dp
 import com.wemade.teslable.TeslaBleSpec
 import com.wemade.teslamacro.ui.layout.LocalPane
-import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DiagLogPanel
 import com.wemade.teslamacro.ui.component.draftBlock
@@ -52,7 +40,7 @@ import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/** 등록 절차 4단계. 사용자는 지금 어디쯤인지 항상 알아야 한다 */
+/** 차량 검색 후에도 카드키로 앱 키를 승인해야 등록이 완료된다. */
 enum class PairingStep(val title: String, val hint: String) {
     EnterVin(
         "VIN 입력",
@@ -91,7 +79,10 @@ fun PairingScreen(
         modifier = modifier,
         guide = {
             BoardingNotice()
-
+            if (state.step != PairingStep.EnterVin && state.step != PairingStep.Done) {
+                Text("VIN 저장됨 · 차량 키 등록 전",
+                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            }
             // 페어링 목록에서 차를 찾았으면 알려준다. 별칭이 곧 내 차라는 확인이다
             if (state.detectedName != null && state.step == PairingStep.EnterVin) {
                 DetectedVehicleNotice(state.detectedName)
@@ -167,7 +158,9 @@ fun PairingScreen(
                         }
                     },
                 )
-                TButton(text = "나중에", tone = ButtonTone.Ghost, onClick = onSkip)
+                if (state.step != PairingStep.Done) {
+                    TButton(text = "나중에", tone = ButtonTone.Ghost, onClick = onSkip)
+                }
             }
         },
     )
@@ -206,7 +199,6 @@ private fun TwoPaneOrColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = Space.lg)
-                    .draftBlock()
                     .padding(vertical = Space.sm),
                 content = actions,
             )
@@ -233,33 +225,15 @@ private fun TwoPaneOrColumn(
     }
 }
 
-/**
- * 차에 타서 진행하라는 안내.
- *
- * BLE는 수 미터 안에서만 닿는다. 집에서 VIN만 넣고 "안 된다"고 하는 걸 미리 막는다.
- */
+/** 차량 화면과 카드키 준비를 먼저 안내한다. */
 @Composable
 private fun BoardingNotice() {
-    TCard {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Icon(Icons.Rounded.DirectionsCar, contentDescription = null, tint = T.Electric,
-                modifier = Modifier.size(Space.lg))
-            Column {
-                Text("차량에서 진행해 주세요", style = MaterialTheme.typography.titleLarge, color = T.Ink)
-                Text("차량 화면과 카드키가 필요합니다",
-                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-                    modifier = Modifier.padding(top = Space.xs))
-            }
-        }
-    }
+    Text("차량 등록", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
+    Text("차량 가까이에서 진행하세요. 차량 화면과 카드키가 필요합니다.",
+        style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
 }
 
-/**
- * 페어링 목록에서 감지한 차를 알려주는 카드.
- *
- * 별칭이 곧 "이 폰이 이미 이 차를 안다"는 뜻이다.
- * VIN은 여기서 못 얻으니 여전히 입력이 필요하다는 것도 같이 안내한다.
- */
+/** 감지된 별칭만 알 수 있으므로 VIN 입력은 계속 필요하다. */
 @Composable
 private fun DetectedVehicleNotice(name: String) {
     Text(
@@ -286,6 +260,7 @@ private fun OpenTeslaAppButton() {
         TButton(
             text = if (installed) "테슬라 앱에서 VIN 확인" else "테슬라 앱 설치",
             tone = ButtonTone.Secondary,
+            fillWidth = false,
             onClick = {
                 notice = if (TeslaAppLauncher.open(context)) null
                 else "테슬라 앱을 열 수 없어요.\n차량 화면에서 확인해 주세요"
@@ -324,81 +299,13 @@ private fun PrimaryActions(content: @Composable ColumnScope.() -> Unit) {
         verticalArrangement = Arrangement.spacedBy(Space.xs), content = content)
 }
 
-/** 현재 단계와 완료 단계를 아이콘과 글자로 함께 표시한다. */
-@OptIn(ExperimentalLayoutApi::class)
+/** 현재 절차와 이어지는 안내를 텍스트로 제공한다. */
 @Composable
 private fun StepIndicator(current: PairingStep) {
-    if (LocalPane.current.isCompact) {
-        Column {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PairingStep.entries.forEach { step ->
-                    Box(
-                        modifier = Modifier
-                            .height(6.dp)
-                            .weight(1f)
-                            .background(
-                                when {
-                                    step == current -> T.Electric
-                                    step.ordinal < current.ordinal -> T.Electric
-                                    else -> T.Slate
-                                },
-                                RoundedCornerShape(Radius.pill),
-                            ),
-                    )
-                }
-            }
-            Text(
-                text = "${current.ordinal + 1}/${PairingStep.entries.size} · ${current.title}",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.sm),
-            )
-            if (current.hint.isNotBlank()) {
-                Text(
-                    text = current.hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = T.InkMuted,
-                    modifier = Modifier.padding(top = Space.xs),
-                )
-            }
-        }
-        return
-    }
-
-    Column {
-        // 줄바꿈 가능한 단계 목록에서 완료 여부와 현재 단계를 아이콘과 이름으로 구분한다.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(Space.md),
-            verticalArrangement = Arrangement.spacedBy(Space.sm),
-        ) {
-            PairingStep.entries.forEach { step ->
-                val isCurrent = step == current
-                val isPast = step.ordinal < current.ordinal
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    Icon(
-                        if (isPast || (isCurrent && step == PairingStep.Done)) Icons.Rounded.CheckCircle
-                        else Icons.Rounded.RadioButtonUnchecked,
-                        contentDescription = null,
-                        tint = if (isPast || isCurrent) T.Electric else T.InkMuted,
-                        modifier = Modifier.size(Space.lg),
-                    )
-                    Text(step.title, style = MaterialTheme.typography.labelLarge,
-                        color = if (isCurrent) T.Ink else T.InkMuted)
-                }
-            }
-        }
-        if (current.hint.isNotBlank()) {
-            Text(
-                text = current.hint,
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.sm),
-            )
-        }
+    Text(current.title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+    if (current.hint.isNotBlank()) {
+        Text(current.hint, style = MaterialTheme.typography.bodyMedium,
+            color = T.InkMuted, modifier = Modifier.padding(top = Space.xs))
     }
 }
 
@@ -465,11 +372,8 @@ private fun NearbyPanel(
             color = T.Ink,
         )
         Text(
-            text = "주변 기기를 훑거나, 이미 폰에 페어링된 기기 목록을 봅니다.\n" +
-                "테슬라로 보이는 것은 앞에 표시가 붙습니다.\n" +
-                "페어링 목록은 차가 없어도 읽혀요.",
+            text = "주변 기기를 확인하거나 이미 페어링된 기기 목록을 확인하세요.",
             style = MaterialTheme.typography.bodySmall,
-            // 행동 지시문이라 InkFaint(대비 미달) 대신 InkMuted
             color = T.InkMuted,
             modifier = Modifier.padding(top = Space.xs),
         )
@@ -483,20 +387,19 @@ private fun NearbyPanel(
         )
 
         Spacer(Modifier.height(Space.md))
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            // 좁은 화면에서 두 버튼이 카드 폭을 넘치지 않게 반씩 나눈다
+        Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
             TButton(
                 text = if (busy) "훑는 중…" else "주변 기기 확인",
                 tone = ButtonTone.Secondary,
+                fillWidth = false,
                 enabled = !busy,
-                modifier = Modifier.weight(1f),
                 onClick = onScan,
             )
             TButton(
                 text = "페어링된 기기",
-                tone = ButtonTone.Secondary,
+                tone = ButtonTone.Ghost,
+                fillWidth = false,
                 enabled = !busy,
-                modifier = Modifier.weight(1f),
                 onClick = onLoadBonded,
             )
         }

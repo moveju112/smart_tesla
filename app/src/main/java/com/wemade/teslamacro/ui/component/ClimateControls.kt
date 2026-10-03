@@ -1,35 +1,28 @@
 package com.wemade.teslamacro.ui.component
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.domain.model.Level
-import com.wemade.teslamacro.ui.theme.Motion
-import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 
-/** 통풍·열선 단계는 한눈에 읽히는 네 가지 선택 면으로 표시한다. */
+/** 한 단계만 고르는 제어는 기본 분할 버튼으로 선택 표시·리플·접근성을 공유한다. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LevelSelector(
     label: String,
@@ -48,52 +41,23 @@ fun LevelSelector(
                 modifier = Modifier.padding(bottom = Space.sm),
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                // 중립 트랙과 강조 선택 면으로 단계 차이를 구분한다.
-                .background(T.Slate, RoundedCornerShape(Radius.button))
-                .padding(Space.xs),
-            horizontalArrangement = Arrangement.spacedBy(Space.xs),
-        ) {
-            Level.entries.forEach { level ->
-                val isSelected = level == selected
-                val background by animateColorAsState(
-                    targetValue = when {
-                        !enabled -> Color.Transparent
-                        isSelected && level == Level.OFF -> T.Carbon
-                        isSelected -> accent
-                        else -> Color.Transparent
-                    },
-                    animationSpec = Motion.quick(),
-                    label = "levelBackground",
-                )
-                val cellShape = RoundedCornerShape(Radius.segment)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .background(background, cellShape)
-                        // 꺼짐 선택은 중립 면과 테두리로 구분한다.
-                        .then(
-                            if (enabled && isSelected && level == Level.OFF)
-                                Modifier.border(1.dp, T.Hairline, cellShape)
-                            else Modifier
-                        )
-                        .clickable(enabled = enabled) { onSelect(level) },
-                    contentAlignment = Alignment.Center,
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            Level.entries.forEachIndexed { index, level ->
+                SegmentedButton(
+                    selected = level == selected,
+                    onClick = { onSelect(level) },
+                    enabled = enabled,
+                    shape = SegmentedButtonDefaults.itemShape(index, Level.entries.size),
+                    colors = SegmentedButtonDefaults.colors(
+                        activeContainerColor = accent.copy(alpha = 0.12f),
+                        activeContentColor = T.Ink,
+                        activeBorderColor = accent,
+                        inactiveContainerColor = T.Carbon,
+                        inactiveContentColor = T.InkMuted,
+                        inactiveBorderColor = T.Hairline,
+                    ),
                 ) {
-                    Text(
-                        text = level.label,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = when {
-                            !enabled -> T.InkFaint
-                            isSelected && level == Level.OFF -> T.Ink
-                            isSelected -> MaterialTheme.colorScheme.surface
-                            else -> T.InkMuted
-                        },
-                        textAlign = TextAlign.Center,
-                    )
+                    Text(level.label, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

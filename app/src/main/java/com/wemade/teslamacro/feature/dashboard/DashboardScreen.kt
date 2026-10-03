@@ -1,17 +1,3 @@
-/*
- * THESIS: 차의 상태를 목록이 아니라 차의 모양으로 말한다. 부위 하나가 곧 값이고 곧 조작이다.
- *   카드를 격자에 늘어놓는 대시보드 배치와, 큰 숫자 하나에 라벨을 붙인 히어로 타일을 거부한다.
- * OWN-WORLD: 제도지(#F2F0E9)에 단색 잉크(#1A1A17). 밤엔 같은 도면의 청사진 네거티브(#101619).
- *   모서리 0dp, 선 굵기 0.5·1·2dp 3계층, 유채색은 도면 정정 2색(적 #C8321E · 청 #1F5C8C)뿐.
- *   카드가 없다. 판은 종이와 같은 색이고 층은 괘선으로만 생긴다.
- * STORY: 흘깃 봐서 "색이 없다 = 괜찮다"를 알고, 이상한 부위에 든 잉크를 보고 어디인지 안다.
- *   그 부위를 누르면 옆에 상세도가 펼쳐지고, 조작하고 닫으면 도면으로 돌아온다.
- * FIRST VIEWPORT: 좌측 68%가 작도 영역 — Model Y 평면 선도가 실물 비례 2.47:1로 앉고,
- *   상단 3개·하단 2개 지시선이 부위에서 라벨로 뻗는다. 우측 32%는 치수 기입란이고
- *   실내 온도가 화면 최대 글자로 앉는다. 하단은 표제란 한 줄. 주 조작은 부위 탭이다.
- * FORM: 정비 매뉴얼 분해도. 자체 후보 목록 6번째(굴림 배정). 시드 키 80e949b2.
- * FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
- */
 package com.wemade.teslamacro.feature.dashboard
 
 import androidx.activity.compose.BackHandler
@@ -42,7 +28,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
@@ -57,7 +42,6 @@ import com.wemade.teslamacro.domain.model.SeatMode
 import com.wemade.teslamacro.domain.model.SeatPosition
 import com.wemade.teslamacro.domain.model.TirePosition
 import com.wemade.teslamacro.ui.component.ButtonTone
-import com.wemade.teslamacro.ui.component.CalloutNumber
 import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.HourMinuteStepper
@@ -66,7 +50,6 @@ import com.wemade.teslamacro.ui.component.InlineBanner
 import com.wemade.teslamacro.ui.component.LevelSelector
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.TButton
-import com.wemade.teslamacro.ui.component.TitleBlock
 import com.wemade.teslamacro.ui.component.ToggleRow
 import com.wemade.teslamacro.ui.layout.LocalPane
 import com.wemade.teslamacro.ui.layout.Pane
@@ -75,36 +58,17 @@ import com.wemade.teslamacro.ui.theme.HeroValueStyle
 import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.T
-import com.wemade.teslamacro.ui.theme.TileValueStyle
 
 /** 목표 도달로 볼 여유 폭(℃). 차 온도계가 0.1씩 흔들려 딱 맞을 때만 도달로 보면 색이 깜빡인다 */
 private const val REACHED_MARGIN_C = 1.0
 
-/** 좌우로 나눌 때 작도 영역이 먹는 비율. 나머지가 치수 기입란이다 */
-private const val PLAN_WEIGHT = 0.68f
+/** 넓은 화면에서 차량 그림과 상태 목록의 비율. */
+private const val PLAN_WEIGHT = 0.58f
 
-/**
- * 위아래로 쌓을 때 작도 영역이 먹는 비율.
- *
- * 세로에서는 차가 전폭으로 앉아 높이를 폭의 1/2.47만 쓴다 — 좌우 배치와 같은 0.68을 주면
- * 선도 위아래로 200dp가 그냥 빈다. 남는 높이는 기입란에 주는 게 낫다:
- * 이 기기는 **주로 세로로 쓰이고**, 그러면 기입 치수가 화면의 주인공이다.
- */
-private const val PLAN_WEIGHT_STACKED = 0.46f
+/** 세로 화면에서는 읽을 수 있는 상태·조작 영역에 더 많은 높이를 준다. */
+private const val PLAN_WEIGHT_STACKED = 0.4f
 
-/**
- * 제어 화면 — 시트 1. 계기판이 아니라 **도면**이다.
- *
- * 이 화면은 대부분의 시간 동안 아무도 안 만진다. 매크로가 알아서 다 하기 때문이다.
- * 그래서 목표는 "빨리 누르기"가 아니라 **"안 만지고 알아채기"** 다.
- *
- * 도면을 고른 이유가 그것이다:
- * - **정상이면 전체가 단색 윤곽선이다.** 색이 하나 뜨면 그게 곧 소식이다 —
- *   "정상은 조용해야 한다"가 절제가 아니라 세계의 구조 자체가 된다
- * - **위치가 라벨이다.** "문 열림"을 읽고 어느 문인지 다시 생각하는 단계가 없다
- * - **조작은 옆에 상세도로 펼쳐진다.** 시트가 화면을 덮지 않아 도면이 계속 보인다
- * - 스크롤이 없다. 차에 고정된 화면에서 스크롤은 못 본 정보를 만든다
- */
+/** 차량 부위를 선택하면 상태 목록 자리에서 해당 조작을 연다. */
 @Composable
 fun DashboardScreen(
     state: DashboardUiState,
@@ -130,6 +94,16 @@ fun DashboardScreen(
         // 명령이 오가는 동안 맨 위에 얇은 선이 흐른다. 누른 게 먹었는지 즉시 안다
         IndeterminateBar(active = state.isBusy)
         InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
+        Hairline()
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)) {
+            Text(state.vehicleName, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+            Text("${state.connectionLabel} · ${state.lastUpdatedLabel} · ${state.automationLabel}",
+                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            if (state.link is LinkState.Failed) {
+                TButton(text = "다시 연결", tone = ButtonTone.Secondary,
+                    fillWidth = false, small = true, onClick = onRetryConnect)
+            }
+        }
 
         // 폭에 따라 작도 영역과 기입란을 **좌우로 나눌지 위아래로 쌓을지** 가른다.
         //
@@ -197,29 +171,6 @@ fun DashboardScreen(
             }
         }
 
-        // 표제란 — 차 이름과 연결 상태는 도면 하단에 적힌다. 상단을 먹지 않는다
-        Hairline()
-        TitleBlock(
-            // 좁으면 두 칸씩 접는다. 흘려 보내면 괘선이 줄 경계에 걸린다
-            perRow = if (compact) 2 else null,
-            fields = buildList {
-                add("차량" to state.vehicleName)
-                add("갱신" to state.lastUpdatedLabel)
-                add("자동화" to state.automationLabel)
-                add("연결" to state.connectionLabel)
-            },
-            trailing = {
-                if (state.link is LinkState.Failed) {
-                    TButton(
-                        text = "다시 연결",
-                        tone = ButtonTone.Secondary,
-                        fillWidth = false,
-                        small = true,
-                        onClick = onRetryConnect,
-                    )
-                }
-            },
-        )
     }
 }
 
@@ -356,12 +307,7 @@ private fun CalloutRow(
     }
 }
 
-/**
- * 지시선 끝의 라벨 한 칸.
- *
- * 원번호 · 부품명 · 값 순으로 한 줄이다. 값은 고정폭이라 자릿수가 바뀌어도 안 흔들린다.
- * 이상한 값은 적색 면에 얹는다 — 이 글씨는 작아서 색만 바꾸면 곁눈에 안 걸린다.
- */
+/** 위치별 차량 상태를 누르면 해당 조작을 연다. */
 @Composable
 private fun CalloutLabel(
     callout: Callout,
@@ -372,98 +318,44 @@ private fun CalloutLabel(
     Column(
         modifier = modifier
             .heightIn(min = 48.dp)
+            .background(if (active) T.Electric.copy(alpha = 0.12f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = Space.xs),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Space.xs + 2.dp),
-        ) {
-            CalloutNumber(
-                number = callout.number,
-                highlighted = active || callout.alert,
-                accent = if (callout.alert) T.Danger else T.Ink,
-            )
-            Text(
-                text = callout.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (callout.alert) T.Danger else T.InkFaint,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = callout.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (callout.alert) T.Danger else T.InkMuted,
+        )
         Spacer(Modifier.height(2.dp))
-        if (callout.alert) {
-            Text(
-                text = callout.value,
-                style = TileValueStyle,
-                color = T.OnDanger,
-                maxLines = 1,
-                modifier = Modifier
-                    .background(T.Danger)
-                    .padding(horizontal = Space.xs + 2.dp),
-            )
-        } else {
-            Text(
-                text = callout.value,
-                style = TileValueStyle,
-                color = callout.accent,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = callout.value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (callout.alert) T.Danger else callout.accent,
+        )
     }
 }
 
-/**
- * 치수 기입란 — 도면 우측.
- *
- * 도면에서 제일 큰 글자는 제목이 아니라 **기입된 치수**다. 실내 온도가 그 치수다.
- * 목표와 공조 상태는 그 아래 주기(註記)로 작게 붙는다.
- */
+/** 실내 온도와 차량 상태를 스크롤 가능한 목록에 놓는다. */
 @Composable
 private fun DimensionPanel(
     state: DashboardUiState,
     compact: Boolean,
-    /** 도면 아래에 띠로 눕는가. 세로 화면에서 그렇다 */
+    /** 세로 화면에서 차량 그림 아래에 표시되는가. */
     stacked: Boolean = false,
     onSelect: (CarPart) -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+            .verticalScroll(rememberScrollState())
             .clickable { onSelect(CarPart.CABIN) }
             .padding(Space.lg),
-        // 좁으면 위에서 시작하고, 넓으면 아래(표제란 쪽)로 붙인다.
-        // 가운데 정렬이면 값이 아직 없을 때 화면에서 가장 큰 빈 공간이 우상단에 생긴다
         verticalArrangement = Arrangement.Top,
     ) {
-        // 기입란 머리 — 도면번호·축척·시트. 표제란에 밀어 넣었더니 폰에서 두 줄로 접혔고,
-        // 이 칸의 위쪽이 통째로 비어 화면에서 가장 큰 공백이 되어 있었다.
-        // 도면의 이 정보는 원래 작도 영역 옆에 적힌다
-        // 세로에서는 도면 식별을 표제란이 이미 지고 있고, 띠 높이가 짧아 넣을 자리가 없다
-        if (!compact && !stacked) {
-            SheetStamp(
-                fields = listOf(
-                    "도번" to "ST-01",
-                    "축척" to "NTS",
-                    "개정" to "REV ${com.wemade.teslamacro.BuildConfig.VERSION_NAME}",
-                ),
-            )
-            Spacer(Modifier.weight(1f))
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CalloutNumber(number = 1)
-            Spacer(Modifier.width(Space.sm))
-            Text(
-                text = "실내",
-                style = MaterialTheme.typography.labelSmall,
-                color = T.InkFaint,
-            )
-        }
+        Text("실내 온도", style = MaterialTheme.typography.titleMedium, color = T.Ink)
         Spacer(Modifier.height(Space.xs))
-        // 값과 단위를 갈라 쓴다 — 도면의 치수 기입 방식이고, 단위가 잘려 사라지는 것도 막는다.
-        // 아직 못 읽었으면 큰 대시를 띄우지 않는다 — 96sp 대시 두 개는 굵은 막대로 보여
         // 무슨 값인지도 모르는데 화면에서 가장 큰 것이 되어 버린다
         if (state.hasReading) {
             // 칸 폭을 알아야 크기를 뽑을 수 있다. 상한을 찍는 대신 재서 맞춘다
@@ -490,25 +382,18 @@ private fun DimensionPanel(
             }
         } else {
             Text(
-                text = "치수 미기입",
+                text = "온도 확인 중",
                 style = MaterialTheme.typography.titleMedium,
-                color = T.InkFaint,
+                color = T.InkMuted,
                 modifier = Modifier.padding(vertical = Space.md),
             )
         }
         Spacer(Modifier.height(Space.sm))
-        // 치수 보조선 — 기입값 아래를 받치는 선. 값이 판에 얹혀 있음을 보인다
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(Stroke.thin)
-                .background(T.Ink)
-        )
+        Hairline()
         Spacer(Modifier.height(Space.md))
 
-        // 치수표 — 도면은 주요 치수를 기입하고 나머지를 표로 세운다.
-        // 여기가 비어 있으면 도면이 미완성으로 보인다
-        DimensionRow("외기", "${state.outsideTemp} °C", number = 2)
+        // 차량에서 읽힌 추가 상태를 한 줄씩 보여준다.
+        DimensionRow("외기", "${state.outsideTemp} °C")
         DimensionRow("목표", if (state.hasClimateReading) "${state.targetTemp} °C" else "--")
         DimensionRow(
             label = "공조",
@@ -546,125 +431,39 @@ private fun DimensionPanel(
             DimensionRow(label = "주차", value = it)
         }
 
-        // 부품표. 좁은 화면에서는 선도가 없으니 이것이 유일한 값 목록이고,
-        // 세로에서는 선도 아래 자리가 남아 함께 싣는다 — 도면은 그림과 부품표를
-        // 같은 시트에 싣는 것이 정상이고, 값이 두 번 읽히는 게 흘깃 보기에 유리하다
         if (compact || stacked) {
             Spacer(Modifier.height(Space.md))
             Hairline()
-            val parts = topCallouts(state) + bottomCallouts(state)
-            // 세로는 폭이 넉넉하니 두 열로 접는다 — 한 열로 세우면 다섯 줄이
-            // 기입란을 넘겨 06·07이 잘렸다. 제어 화면은 스크롤 없이 한 화면이 전제다
-            val perRow = if (stacked) 2 else 1
-            parts.chunked(perRow).forEach { row ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    row.forEachIndexed { index, callout ->
-                        if (index > 0) {
-                            // 열 사이 괘선 — 없으면 왼쪽 칸의 값과 오른쪽 칸의 라벨이 붙어
-                            // 어디까지가 한 항목인지 읽히지 않는다
-                            Box(
-                                Modifier
-                                    .width(Stroke.thin)
-                                    .height(24.dp)
-                                    .align(Alignment.CenterVertically)
-                                    .background(T.Hairline)
-                            )
-                            Spacer(Modifier.width(Space.md))
-                        }
-                        CompactRow(
-                            callout = callout,
-                            onSelect = onSelect,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    // 마지막 줄이 한 칸이면 남은 칸을 비워 열을 맞춘다
-                    repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
-                }
+            (topCallouts(state) + bottomCallouts(state)).forEach { callout ->
+                CompactRow(callout = callout, onSelect = onSelect)
             }
         }
     }
 }
 
-/**
- * 기입란 머리의 도면 식별 — 도번 · 축척 · 개정.
- *
- * 도면 옆에 이게 없으면 "무슨 도면의 몇 번째 개정인지"를 아무도 모른다.
- * 값이 도착하기 전 이 칸이 비어 있던 것도 이걸 놓았기 때문이다.
- */
-@Composable
-private fun SheetStamp(fields: List<Pair<String, String>>) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(Stroke.thin).background(T.Hairline))
-        Spacer(Modifier.height(Space.sm))
-        fields.forEach { (label, value) ->
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = T.InkFaint,
-                    modifier = Modifier.width(48.dp),
-                )
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = T.InkMuted,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-/**
- * 치수표 한 행 — 이름 왼쪽, 값 오른쪽, 사이는 점선.
- *
- * 점선으로 이어야 눈이 이름에서 값으로 건너간다. 여백만 두면 두 열이 따로 읽힌다.
- */
+/** 상태 항목의 이름과 값을 한 줄에 보여준다. */
 @Composable
 private fun DimensionRow(
     label: String,
     value: String,
-    number: Int? = null,
-    /** 기본은 무채색. 적색은 지금 봐야 할 값에만 든다 */
+    /** 위험 상태만 경고색으로 구분한다. */
     tone: Color? = null,
 ) {
-    val dotColor = T.Hairline
+    // 상태값과 라벨을 한 줄로 묶어 읽는다.
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 28.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (number != null) {
-            CalloutNumber(number = number)
-            Spacer(Modifier.width(Space.sm))
-        }
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
-        )
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = Space.sm)
-                .height(Stroke.hair)
-                .drawBehind {
-                    drawLine(
-                        color = dotColor,
-                        start = androidx.compose.ui.geometry.Offset(0f, size.height / 2),
-                        end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2),
-                        strokeWidth = size.height,
-                        cap = StrokeCap.Square,
-                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
-                            floatArrayOf(2.dp.toPx(), 3.dp.toPx())
-                        ),
-                    )
-                }
+            style = MaterialTheme.typography.bodyMedium,
+            color = T.InkMuted,
+            modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.headlineMedium,
-            color = tone ?: T.InkMuted,
-            maxLines = 1,
+            style = MaterialTheme.typography.bodyLarge,
+            color = tone ?: T.Ink,
         )
     }
 }
@@ -684,37 +483,17 @@ private fun CompactRow(
             .padding(end = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CalloutNumber(
-            number = callout.number,
-            highlighted = callout.alert,
-            accent = if (callout.alert) T.Danger else T.Ink,
-        )
-        Spacer(Modifier.width(Space.sm))
         Text(
             text = callout.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = T.InkFaint,
+            style = MaterialTheme.typography.bodyMedium,
+            color = T.InkMuted,
             modifier = Modifier.weight(1f),
         )
-        if (callout.alert) {
-            // 색만 바꾸면 곁눈에 안 걸린다 — 면으로 깔아야 안 읽고도 보인다
-            Text(
-                text = callout.value,
-                style = MaterialTheme.typography.headlineMedium,
-                color = T.OnDanger,
-                maxLines = 1,
-                modifier = Modifier
-                    .background(T.Danger)
-                    .padding(horizontal = Space.xs + 2.dp),
-            )
-        } else {
-            Text(
-                text = callout.value,
-                style = MaterialTheme.typography.headlineMedium,
-                color = callout.accent,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = callout.value,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (callout.alert) T.Danger else callout.accent,
+        )
     }
 }
 
@@ -806,15 +585,12 @@ private fun DetailView(
             .padding(Space.lg),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CalloutNumber(number = part.calloutNumber, highlighted = true)
-            Spacer(Modifier.width(Space.sm))
             Text(
                 text = part.title,
                 style = MaterialTheme.typography.titleMedium,
                 color = T.Ink,
                 modifier = Modifier.weight(1f),
             )
-            // 닫기 — 도면의 취소 기호. 대각 두 선뿐이다
             androidx.compose.material3.Icon(
                 imageVector = DraftMark.Close,
                 contentDescription = "상세도 닫기",
@@ -1022,9 +798,8 @@ private fun RowScope.OpeningButton(text: String, enabled: Boolean, onClick: () -
 
 // ---- 지시선에 매달 것들 ----
 
-/** 지시선 하나가 가리키는 것. 번호·이름·값·앵커를 한 묶음으로 든다 */
+/** 표시할 차량 상태와 실제 부위 위치. */
 private data class Callout(
-    val number: Int,
     val label: String,
     val value: String,
     val part: CarPart,
@@ -1033,19 +808,13 @@ private data class Callout(
     val alert: Boolean = false,
 )
 
-/**
- * 화면 위쪽 지시선 — 동승석 · 잠금 · 문·적재함.
- *
- * 평면도는 위에서 내려다본 그림이라 **차량 우측이 화면 위**다. 그래서 동승석이 여기다.
- * 번호는 01 실내 · 02 외기(치수표)를 잇는 연속 번호다 — 도면의 번호에 구멍이 있으면 도면이 아니다.
- */
+/** 차량 우측 좌석·잠금·열린 문 상태. */
 @Composable
 private fun topCallouts(state: DashboardUiState): List<Callout> {
     val right = state.seatClimate[SeatPosition.FRONT_RIGHT] ?: SeatClimate()
     val openings = state.openings
     return listOf(
         Callout(
-            number = 3,
             label = "동승석",
             value = if (right.level != Level.OFF) {
                 "${right.mode.label} ${right.level.label}"
@@ -1055,7 +824,6 @@ private fun topCallouts(state: DashboardUiState): List<Callout> {
             accent = seatAccent(right),
         ),
         Callout(
-            number = 4,
             label = "잠금",
             value = when {
                 !state.hasBodyReading -> "--"
@@ -1069,7 +837,6 @@ private fun topCallouts(state: DashboardUiState): List<Callout> {
             alert = state.hasBodyReading && !state.isLocked && openings.isEmpty(),
         ),
         Callout(
-            number = 5,
             label = "문 · 적재함",
             value = when {
                 !state.hasBodyReading -> "--"
@@ -1091,7 +858,6 @@ private fun bottomCallouts(state: DashboardUiState): List<Callout> {
     val left = state.seatClimate[SeatPosition.FRONT_LEFT] ?: SeatClimate()
     return listOf(
         Callout(
-            number = 6,
             label = "운전석",
             value = if (left.level != Level.OFF) "${left.mode.label} ${left.level.label}" else "끔",
             part = CarPart.SEAT_LEFT,
@@ -1099,7 +865,6 @@ private fun bottomCallouts(state: DashboardUiState): List<Callout> {
             accent = seatAccent(left),
         ),
         Callout(
-            number = 7,
             label = if (state.rangeKm != null) "배터리 · 주행" else "배터리",
             value = if (state.rangeKm != null) {
                 "${state.batteryLabel} ${state.rangeKm}km"
@@ -1160,15 +925,6 @@ private val CarPart.title: String
         CarPart.SEAT_RIGHT -> "동승석"
     }
 
-private val CarPart.calloutNumber: Int
-    get() = when (this) {
-        CarPart.CABIN -> 1
-        CarPart.SEAT_RIGHT -> 3
-        CarPart.BODY -> 4
-        CarPart.FRUNK, CarPart.TRUNK -> 5
-        CarPart.SEAT_LEFT -> 6
-        CarPart.PACK -> 7
-    }
 
 /**
  * 선도가 쓸 부위별 상태.
@@ -1210,7 +966,7 @@ private fun DashboardUiState.planTones(): CarPlanTones {
         // 잠금 해제로 차체 전체를 적색으로 칠하지 않는다.
         // 차 옆에 서 있으면 늘 참인 평상 상태인데 화면에서 가장 큰 잉크가 되어,
         // 정작 봐야 할 경보(열린 문·명령 실패)를 이길 수 없게 만들었다.
-        // 잠금은 04 배지 하나로 말한다 — 유채색은 "지금 봐야 할 것" 하나에만 쓴다
+        // 열린 부위만 강조하고 평상시 잠금 해제는 경보로 보지 않는다.
         if (isCharging == true) put(CarPart.PACK, PartState.Heating)
     }
     return CarPlanTones(

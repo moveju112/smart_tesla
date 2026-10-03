@@ -1,10 +1,9 @@
 package com.wemade.teslamacro.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,14 +24,11 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.material.icons.Icons
@@ -65,7 +61,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.CalloutNumberStyle
 import com.wemade.teslamacro.ui.theme.Space
@@ -231,7 +226,7 @@ fun Modifier.draftBlock(tone: Color = T.Ink): Modifier {
         .padding(top = Space.sm)
 }
 
-/** 라벨과 입력 면을 분리해 휴대폰에서도 입력 위치를 쉽게 찾는다. */
+/** 입력·포커스·라벨·오류 표시를 기본 Material 필드에 맡겨 화면별 차이를 없앤다. */
 @Composable
 fun DraftField(
     value: String,
@@ -242,96 +237,42 @@ fun DraftField(
     isError: Boolean = false,
     singleLine: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    /** 단위는 입력값 오른쪽에 표시한다. */
     suffix: String? = null,
-    /** 입력칸 아래에 표시하는 보조 설명. */
     note: String? = null,
-    /** 빈 기입란이 공백처럼 보이지 않도록 값이 들어갈 자리를 직접 알려준다 */
     placeholder: String? = null,
     visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val rule = if (focused) Stroke.bold else Stroke.thin
-    val ruleColor = when {
-        isError -> T.Danger
-        !enabled -> T.Hairline
-        focused -> T.Electric
-        else -> T.Hairline
-    }
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isError) T.Danger else T.InkFaint,
-        )
-        Spacer(Modifier.height(Space.xs))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(T.Slate, RoundedCornerShape(Radius.button))
-                .border(rule, ruleColor, RoundedCornerShape(Radius.button))
-                .padding(horizontal = Space.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                singleLine = singleLine,
-                keyboardOptions = keyboardOptions,
-                visualTransformation = visualTransformation,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(
-                    color = if (enabled) T.Ink else T.InkFaint,
-                ),
-                cursorBrush = SolidColor(T.Electric),
-                interactionSource = interactionSource,
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = Space.sm),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        if (value.isEmpty() && placeholder != null) {
-                            Text(
-                                text = placeholder,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = T.InkMuted,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = Space.xxl)
-                    // 라벨은 입력칸 밖에 있으므로 빈 필드에서도 TalkBack이 입력 목적과 오류를 읽어야 한다.
-                    .semantics {
-                        contentDescription = label
-                        if (isError) error("$label 입력을 확인해 주세요")
-                    },
-            )
-            if (suffix != null) {
-                Text(
-                    text = suffix,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = T.InkFaint,
-                    modifier = Modifier.padding(start = Space.sm),
-                )
-            }
-        }
-        if (note != null) {
-            Spacer(Modifier.height(Space.xs))
-            Text(
-                text = note,
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-            )
-        }
-    }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth().semantics {
+            if (isError) error("$label 입력을 확인해 주세요")
+        },
+        enabled = enabled,
+        isError = isError,
+        singleLine = singleLine,
+        keyboardOptions = keyboardOptions,
+        visualTransformation = visualTransformation,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        shape = RoundedCornerShape(Radius.button),
+        label = { Text(label) },
+        placeholder = placeholder?.let { { Text(it) } },
+        suffix = suffix?.let { { Text(it) } },
+        supportingText = note?.let { { Text(it) } },
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = T.Ink,
+            unfocusedTextColor = T.Ink,
+            disabledTextColor = T.InkFaint,
+            focusedBorderColor = T.Electric,
+            unfocusedBorderColor = T.InkFaint,
+            focusedLabelColor = T.Electric,
+            unfocusedLabelColor = T.InkMuted,
+            errorTextColor = T.Ink,
+            errorBorderColor = T.Danger,
+            errorLabelColor = T.Danger,
+            cursorColor = T.Electric,
+        ),
+    )
 }
 
 /** 앱 전체에서 사용하는 Material Rounded 동작 아이콘. 기존 이름을 유지한다. */

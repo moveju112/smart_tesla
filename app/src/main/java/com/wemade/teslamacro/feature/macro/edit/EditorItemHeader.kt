@@ -1,6 +1,17 @@
 package com.wemade.teslamacro.feature.macro.edit
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -10,9 +21,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onPlaced
-import com.wemade.teslamacro.ui.component.DisclosureHeader
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import com.wemade.teslamacro.ui.component.DraftMark
+import com.wemade.teslamacro.ui.theme.Space
+import com.wemade.teslamacro.ui.theme.T
 
-/** 요약 행 전체를 눌러 편집하고, 다른 항목이 접혀도 현재 제목을 화면에 유지한다. */
+/** 요약 행은 상세 모달로 이동하므로 펼침 표시 대신 이동 화살표를 사용한다. */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun EditorItemHeader(title: String, expanded: Boolean, onToggle: () -> Unit, subtitle: String? = null) {
@@ -21,13 +36,22 @@ internal fun EditorItemHeader(title: String, expanded: Boolean, onToggle: () -> 
     LaunchedEffect(expanded, placed) {
         if (expanded && placed) requester.bringIntoView()
     }
-    DisclosureHeader(
-        title = title,
-        expanded = expanded,
-        onToggle = onToggle,
-        subtitle = subtitle,
-        modifier = Modifier.bringIntoViewRequester(requester).onPlaced { placed = true },
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester)
+            .onPlaced { placed = true }
+            .heightIn(min = Space.xxl)
+            .clickable(role = Role.Button, onClickLabel = if (expanded) "목록으로 돌아가기" else "상세 편집", onClick = onToggle)
+            .padding(vertical = Space.xs),
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted) }
+        }
+        if (!expanded) Icon(DraftMark.ChevronRight, contentDescription = null, tint = T.InkMuted,
+            modifier = Modifier.size(Space.lg))
+    }
 }
 
 /** 같은 요약을 누르면 닫고 다른 요약을 누르면 편집 대상 하나만 교체한다. */

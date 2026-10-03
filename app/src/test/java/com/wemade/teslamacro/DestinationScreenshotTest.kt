@@ -20,24 +20,27 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
         screenWidth = 1920, screenHeight = 1200, density = Density.XHIGH,
         orientation = ScreenOrientation.LANDSCAPE, fontScale = 1.3f, softButtons = false)
         else DeviceConfig.PIXEL_6.copy(fontScale = 1.3f, softButtons = false), showSystemUi = false)
-    private val place = DestinationPlace("서울시청", "서울특별시 중구 세종대로 110", 37.5663, 126.9779)
+    private val place = DestinationPlace("위메이드 타워")
 
     /** 검색 전 안내와 연결 전 비활성 동작을 큰 글자로 확인한다. */
     @Test fun empty() = snapshot(DestinationUiState())
 
     /** 테스트 요청과 일반 전송을 혼동하지 않는 상태 문구를 확인한다. */
-    @Test fun pending() = snapshot(DestinationUiState(query = "서울시청", selected = place, overlayAllowed = true,
+    @Test fun pending() = snapshot(DestinationUiState(query = place.name, overlayAllowed = true,
         request = DestinationRequest("test", place, 1, 600001, "pending", true)))
+
+    /** 장소 선택 없이 검색어와 연결 대상만으로 전송할 수 있는 화면을 확인한다. */
+    @Test fun readyToSend() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿"))
 
     /** 수신 설정과 오류·코드 표시가 태블릿과 폰에서 읽히는지 확인한다. */
     @Test fun receiving() = snapshot(DestinationUiState(mounted = true, receiving = true, receiverCode = "ABCD234567",
         error = "인터넷 연결 후 다시 확인해 주세요"), true)
 
     /** 스크롤 아래의 임시 수신 버튼도 권한 허용 상태에서 확인한다. */
-    @Test fun testButtons() = snapshot(DestinationUiState(selected = place, overlayAllowed = true,
+    @Test fun testButtons() = snapshot(DestinationUiState(query = place.name, overlayAllowed = true,
         minutes = "0", error = "유효시간은 1~120분으로 입력해 주세요"), bottom = true)
 
-    /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 목적지 전달을 찾을 수 있다. */
+    /** 내비 설치 여부와 무관하게 설정의 주행 분류에서 목적지 전송을 찾을 수 있다. */
     @Test fun settingsEntry() {
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {

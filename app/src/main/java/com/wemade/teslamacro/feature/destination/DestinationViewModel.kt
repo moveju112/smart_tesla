@@ -38,11 +38,8 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { coordinator.message.collect { message -> mutableState.update { it.copy(receiveMessage = message) } } }
     }
 
-    /** 새 검색어를 입력하면 이전 선택을 지워 다른 지점을 실수로 보내지 않게 한다. */
-    fun queryChanged(value: String) { mutableState.update { it.copy(query = value.take(200), selected = null, results = emptyList()) } }
-
-    /** 사용자가 선택한 검색 결과만 전송 대상으로 확정한다. */
-    fun select(place: DestinationPlace) { mutableState.update { it.copy(selected = place, results = emptyList()) } }
+    /** 서버와 같은 길이 제한을 적용하고 검색은 받는 기기의 네이버지도에 맡긴다. */
+    fun queryChanged(value: String) { mutableState.update { it.copy(query = value.take(120)) } }
 
     /** 유효시간 입력 중에는 빈 값도 허용하고 전송할 때 범위를 확인한다. */
     fun minutesChanged(value: String) { mutableState.update { it.copy(minutes = value.filter(Char::isDigit).take(3)) } }
@@ -50,22 +47,15 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 연결 코드는 대문자로 정리하되 장소 입력과 섞지 않는다. */
     fun pairingCodeChanged(value: String) { mutableState.update { it.copy(pairingCode = value.filter(Char::isLetterOrDigit).uppercase().take(10)) } }
 
-    /** 주소와 가게명 후보를 확인하고 결과가 없으면 구체적인 주소 검색을 안내한다. */
-    fun search() = act {
-        val query = state.value.query
-        val results = container.navigator.searchDestinations(query)
-        if (state.value.query == query) mutableState.update { it.copy(results = results, selected = null,
-            notice = if (results.isEmpty()) "찾은 장소가 없어요. 가게의 도로명 주소로 검색해 주세요" else "주소를 확인하고 목적지를 선택해 주세요") }
-    }
-
     /** 폰 한 대 테스트는 서버의 자기 수신함으로 보내며 실제 연결 대상은 바꾸지 않는다. */
     fun send(selfTest: Boolean) = act {
         val value = state.value
-        val place = checkNotNull(value.selected) { "목적지를 먼저 선택해 주세요" }
+        val place = DestinationPlace(value.query.trim())
+        check(place.valid()) { "검색어를 1~120자로 입력해 주세요. 줄바꿈은 사용할 수 없어요" }
         val minutes = value.minutes.toIntOrNull()?.takeIf { it in 1..120 } ?: error("유효시간은 1~120분으로 입력해 주세요")
         container.settingsStore.setDestinationValidityMinutes(minutes)
         val reply = client.send(place, minutes, selfTest)
-        mutableState.update { it.copy(request = reply.request, notice = if (selfTest) "이 폰으로 전송했어요. 아래 수신 테스트를 눌러 주세요" else "전송했어요. 기기가 깨어나면 목적지를 확인해요") }
+        mutableState.update { it.copy(request = reply.request, notice = if (selfTest) "이 폰으로 전송했어요. 아래 수신 테스트를 눌러 주세요" else "검색어를 전송했어요. 태블릿이 수신하면 네이버지도에서 검색해요") }
     }
 
     /** 서버가 취소를 확정한 경우에만 화면을 취소 상태로 바꾼다. */

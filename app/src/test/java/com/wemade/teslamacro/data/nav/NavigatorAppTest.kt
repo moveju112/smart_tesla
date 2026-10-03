@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.nav
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -15,6 +16,27 @@ class NavigatorAppTest {
     private val lat = 37.5665
     private val lng = 126.9780
     private val pkg = "com.wemade.teslamacro"
+
+    /** 검색어의 공백·특수문자가 별도 파라미터나 길안내로 해석되지 않게 인코딩한다. */
+    @Test fun searchDestinationOpensEncodedNaverSearch() {
+        val query = "위메이드 타워 & 주차장/#?"
+        val uri = DestinationPlace(query).naverUri(pkg)
+        assertEquals("nmap", uri.scheme)
+        assertEquals("search", uri.host)
+        assertEquals(query, uri.getQueryParameter("query"))
+        assertEquals(pkg, uri.getQueryParameter("appname"))
+        assertEquals(setOf("query", "appname"), uri.queryParameterNames)
+        assertTrue(uri.toString().contains("%26"))
+    }
+
+    /** 이전 앱의 좌표형 대기 요청은 검색으로 바꾸지 않고 원래 길안내로 연다. */
+    @Test fun legacyDestinationStillOpensNavigation() {
+        val uri = DestinationPlace("회사", "서울 중구", lat, lng).naverUri(pkg)
+        assertEquals("navigation", uri.host)
+        assertEquals(lat.toString(), uri.getQueryParameter("dlat"))
+        assertEquals(lng.toString(), uri.getQueryParameter("dlng"))
+        assertNull(uri.getQueryParameter("query"))
+    }
 
     @Test
     fun `네이버는 dlat이 위도 dlng가 경도다`() {

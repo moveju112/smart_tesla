@@ -7,6 +7,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -15,6 +17,8 @@ class DestinationReceiverTest {
 
     /** 실제 인계 상태 전환과 결과 응답 유실을 주입하는 작은 서버 대역이다. */
     private inner class Scenario {
+        var destination = place
+        var launchedDestination: DestinationPlace? = null
         var elapsed = 1_000L
         var ready = true
         var status = "pending"
@@ -26,7 +30,7 @@ class DestinationReceiverTest {
         var selfTest = false
         var before: () -> Unit = {}
         var launchFailure = false
-        val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", place, 100_000, 160_000, status, selfTest)
+        val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, 100_000, 160_000, status, selfTest)
 
         /** 인계 이후 수신함에서 제거하고 완료 응답 유실도 재현한다. */
         suspend fun call(operation: String, fields: JsonObjectBuilder.() -> Unit): DestinationReply {
@@ -47,14 +51,47 @@ class DestinationReceiverTest {
 
         /** 실제 지도 실행 직전 훅과 영속 기록 순서를 검사한다. */
         fun receiver() = DestinationReceiver(::call, { receipt }, { receipt = it }, { receipt = null }, { elapsed },
-            { _, guard -> runCatching {
+            { destination, guard -> runCatching {
                 before()
                 guard()
                 assertNotNull(receipt)
                 if (launchFailure) error("launch failed")
                 launches++
+                launchedDestination = destination
                 Unit
             } }, {})
+    }
+
+    /** 검색어만 직렬화·복원해도 주소나 가짜 좌표를 만들어 넣지 않는다. */
+    @Test fun searchPayloadRoundTripsWithoutCoordinates() {
+        val destination = DestinationPlace("위메이드 타워")
+        val encoded = Json.encodeToString(destination)
+        assertEquals("""{"name":"위메이드 타워"}""", encoded)
+        assertEquals(destination, Json.decodeFromString<DestinationPlace>(encoded))
+        assertTrue(destination.valid())
+        assertTrue(Json.decodeFromString<DestinationPlace>(Json.encodeToString(place)).valid())
+        assertFalse(place.isSearch)
+    }
+
+    /** 빈 검색어·제어문자·길이 초과와 불완전한 기존 목적지를 차단한다. */
+    @Test fun malformedSearchAndPartialCoordinatesAreRejected() {
+        listOf(DestinationPlace(""), DestinationPlace("   "), DestinationPlace("위메이드\n타워"),
+            DestinationPlace("가".repeat(121)), DestinationPlace("회사", latitude = 37.5),
+            DestinationPlace("회사", address = "주소"), place.copy(latitude = Double.NaN),
+            place.copy(longitude = 0.0), place.copy(address = "")).forEach { assertFalse(it.valid()) }
+        assertTrue(DestinationPlace("집").valid())
+        assertTrue(DestinationPlace("가".repeat(120)).valid())
+    }
+
+    /** 검색어 요청도 기존 인계·완료·중복 차단 경로를 한 번만 통과한다. */
+    @Test fun searchRequestUsesExistingHandoffOnce() = runTest {
+        val scenario = Scenario().apply { destination = DestinationPlace("위메이드 타워") }
+        val receiver = scenario.receiver()
+        assertTrue(receiver.receive(false) { true })
+        assertEquals(scenario.destination, scenario.launchedDestination)
+        assertEquals("delivered", scenario.status)
+        assertFalse(receiver.receive(false) { true })
+        assertEquals(1, scenario.launches)
     }
 
     /** 한 번 인계한 요청은 동시에 수신해도 한 번만 실행한다. */

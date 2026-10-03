@@ -10,12 +10,21 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
-/** 이름만 전달해 동명 지점을 다시 고르지 않도록 확정한 좌표를 함께 보낸다. */
+/** 새 전송은 검색어만 담고, 이전 앱이 보낸 좌표형 목적지도 수신할 수 있게 유지한다. */
 @Serializable
-data class DestinationPlace(val name: String, val address: String, val latitude: Double, val longitude: Double) {
-    /** 네이버 연동 범위와 서버의 문구 제한을 같은 기준으로 검사한다. */
-    fun valid(): Boolean = name.isNotBlank() && name.length <= 120 && address.isNotBlank() && address.length <= 300 &&
-        latitude in 31.43..44.35 && longitude in 122.37..132.0 && (name + address).none { it.code < 32 }
+data class DestinationPlace(
+    val name: String,
+    val address: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+) {
+    val isSearch: Boolean get() = address == null && latitude == null && longitude == null
+
+    /** 검색어와 완전한 좌표형만 허용해 일부 좌표 누락을 검색 요청으로 오인하지 않는다. */
+    fun valid(): Boolean = name.isNotBlank() && name.length <= 120 && name.none { it.code < 32 } &&
+        (isSearch || (address != null && address.isNotBlank() && address.length <= 300 &&
+            address.none { it.code < 32 } && latitude != null && latitude in 31.43..44.35 &&
+            longitude != null && longitude in 122.37..132.0))
 }
 
 /** 전달 중은 실행 확정이 아니므로 화면에서도 별도 상태로 남긴다. */

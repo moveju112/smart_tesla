@@ -132,10 +132,10 @@ fun SettingsScreen(
                     when (group) {
                         SettingsGroup.DRIVING -> {
                             onSendDestination?.let { action ->
-                                SectionHeader("목적지 전달", topPadding = Space.sm)
+                                SectionHeader("목적지 전송", topPadding = Space.sm)
                                 TCard {
                                     com.wemade.teslamacro.ui.component.PickerRow(
-                                        label = "차로 보내기",
+                                        label = "태블릿으로 검색어 보내기",
                                         onClick = action,
                                         showChevron = true,
                                     )

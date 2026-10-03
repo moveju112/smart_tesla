@@ -2,6 +2,17 @@ package com.wemade.teslamacro.data.nav
 
 import android.net.Uri
 
+/** 검색어는 인코딩해 검색 결과를 열고, 기존 좌표형 요청만 길안내로 인계한다. */
+internal fun DestinationPlace.naverUri(appPackage: String): Uri {
+    require(valid()) { "목적지 정보가 유효하지 않아요" }
+    return if (isSearch) {
+        Uri.parse("nmap://search?query=${Uri.encode(name)}&appname=${Uri.encode(appPackage)}")
+    } else {
+        NavigatorApp.NAVER.uris(requireNotNull(latitude), requireNotNull(longitude), name, appPackage)
+            .first { it.host == "navigation" }
+    }
+}
+
 /**
  * 길안내를 넘길 내비 앱.
  *

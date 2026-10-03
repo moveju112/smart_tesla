@@ -13,6 +13,7 @@ import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.Hairline
+import com.wemade.teslamacro.ui.component.SettingActionRow
 import com.wemade.teslamacro.ui.theme.T
 import com.wemade.teslamacro.ui.theme.Space
 
@@ -50,12 +51,15 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
                 controls.onSave(submitted)
             })
         } else {
-            Text("사용자 API 토큰", style = MaterialTheme.typography.titleMedium, color = T.Ink)
-            Text("암호화해 저장됨", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            TButton(text = "연결 확인", enabled = !state.busy, onClick = controls.onCheck)
+            SettingActionRow("연결 확인") {
+                TButton("확인", enabled = !state.busy, fillWidth = false, onClick = controls.onCheck)
+            }
             Hairline()
-            TButton(text = "토큰 삭제", tone = ButtonTone.Danger,
-                enabled = !state.busy, fillWidth = false, onClick = { token = ""; controls.onDelete() })
+            SettingActionRow("저장된 토큰") {
+                TButton("삭제", ButtonTone.Danger, enabled = !state.busy,
+                    fillWidth = false, onClick = { token = ""; controls.onDelete() })
+            }
+            Text("암호화해 저장됨", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         }
         state.message?.let { message ->
             Text(message, style = MaterialTheme.typography.bodySmall,

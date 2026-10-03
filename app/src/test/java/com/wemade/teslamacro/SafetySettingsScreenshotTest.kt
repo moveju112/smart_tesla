@@ -20,12 +20,12 @@ import org.junit.runners.Parameterized
 
 /** 휴대폰 낮·밤과 거치 화면 큰 글자에서 경보 설정·주의 문구를 보존한다. */
 @RunWith(Parameterized::class)
-class SafetySettingsScreenshotTest(private val dark: Boolean, private val wide: Boolean) {
+class SafetySettingsScreenshotTest(private val dark: Boolean, private val wide: Boolean, private val scale: Float) {
     @get:Rule val paparazzi = Paparazzi(
         deviceConfig = if (wide) DeviceConfig.PIXEL_C.copy(
             screenWidth = 1920, screenHeight = 1200, density = Density.XHIGH,
-            orientation = ScreenOrientation.LANDSCAPE, fontScale = 1.3f, softButtons = false,
-        ) else DeviceConfig.PIXEL_6.copy(softButtons = false),
+            orientation = ScreenOrientation.LANDSCAPE, fontScale = scale, softButtons = false,
+        ) else DeviceConfig.PIXEL_6.copy(softButtons = false, fontScale = scale),
         showSystemUi = false,
     )
 
@@ -50,9 +50,11 @@ class SafetySettingsScreenshotTest(private val dark: Boolean, private val wide: 
 
     companion object {
         /** 두 팔레트·두 화면 크기를 고정해 시간과 기기 설정의 영향을 없앤다. */
-        @JvmStatic @Parameterized.Parameters(name = "dark={0},wide={1}")
+        @JvmStatic @Parameterized.Parameters(name = "dark={0},wide={1},scale={2}")
         fun configurations(): List<Array<Any>> = listOf(
-            arrayOf(false, false), arrayOf(true, false), arrayOf(false, true), arrayOf(true, true),
+            arrayOf(false, false, 1f), arrayOf(true, false, 1f),
+            arrayOf(false, true, 1.3f), arrayOf(true, true, 1.3f),
+            arrayOf(false, false, 2f), arrayOf(true, false, 2f),
         )
     }
 }

@@ -9,7 +9,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.Text
@@ -22,6 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
 import com.wemade.teslamacro.ui.layout.LocalPane
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -97,6 +97,7 @@ fun DestinationScreen(
     scrollState: ScrollState = rememberScrollState(),
 ) {
     var setup by rememberSaveable { mutableStateOf(initialSetup || settingsOnly) }
+    var pairingExpanded by rememberSaveable { mutableStateOf(false) }
     var testExpanded by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = !setup) { onBack() }
     val wide = !LocalPane.current.isCompact
@@ -118,39 +119,34 @@ fun DestinationScreen(
                     }
                     if (state.busy) Text("처리 중…", color = T.InkMuted)
                     if (setup) {
-                        DestinationSection("전송 유효시간") {
-                            NumberStepper(state.minutes.toDouble(), min = 1.0, max = 120.0, step = 1.0,
-                                unit = "분", onChange = { onMinutes(it.toInt()) })
-                        }
-                        DestinationSection("보낼 기기") {
-                            state.receiverName?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = T.InkMuted) }
-                            DraftField(state.pairingCode, onPairingCode, label = "받을 기기의 연결 코드", enabled = !state.busy)
-                            TButton("연결", icon = Icons.Rounded.Link, fillWidth = false,
-                                enabled = !state.busy && state.pairingCode.length == 10, onClick = onPair)
-                        }
-                        DestinationSection("이 기기에서 받기") {
-                            DraftToggle(state.receiving, onReceiving, label = "탑승 시 자동 수신")
-                            if (state.receiving) Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                            if (!state.overlayAllowed) TButton("다른 앱 위에 표시", tone = ButtonTone.Secondary,
-                                fillWidth = false, onClick = onOverlay)
-                            TButton("연결 코드 만들기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Link,
-                                fillWidth = false, enabled = !state.busy, onClick = onCreateCode)
+                        Column {
+                            SettingRow("보낼 기기", state.receiverName ?: "미연결",
+                                onClick = { pairingExpanded = true })
+                            Hairline()
+                            NumberSettingRow("전송 유효시간", state.minutes.toDouble(),
+                                min = 1.0, max = 120.0, step = 1.0, unit = "분",
+                                onChange = { onMinutes(it.toInt()) })
+                            Hairline()
+                            SettingToggleRow("이 기기 자동 수신", state.receiving, onReceiving)
+                            if (state.receiving) {
+                                Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall,
+                                    color = T.InkMuted, modifier = Modifier.padding(bottom = Space.sm))
+                                if (!state.overlayAllowed) TButton("다른 앱 위에 표시", tone = ButtonTone.Secondary,
+                                    fillWidth = false, onClick = onOverlay)
+                            }
+                            Hairline()
+                            SettingActionRow("연결 코드", action = {
+                                TButton(if (state.receiverCode == null) "생성" else "재생성",
+                                    tone = ButtonTone.Secondary, fillWidth = false, small = true,
+                                    enabled = !state.busy, onClick = onCreateCode)
+                            })
                             state.receiverCode?.let {
-                                Text(it, style = MaterialTheme.typography.headlineSmall, color = T.Ink)
-                                Text("10분 내 사용", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                                Text(it, style = MaterialTheme.typography.titleLarge, color = T.Ink)
+                                Text("10분 내 사용", style = MaterialTheme.typography.bodySmall,
+                                    color = T.InkMuted, modifier = Modifier.padding(bottom = Space.sm))
                             }
-                        }
-                        DestinationSection {
-                            com.wemade.teslamacro.ui.component.DisclosureHeader(
-                                "수신 테스트", testExpanded, { testExpanded = !testExpanded })
-                            if (testExpanded) {
-                                DraftField(state.query, onQuery, label = "검색어", enabled = !state.busy)
-                                TButton("이 기기로 전송", tone = ButtonTone.Secondary, icon = Icons.Rounded.Send,
-                                    fillWidth = false, enabled = canSend, onClick = { onSend(true) })
-                                TButton("지도 열기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Place,
-                                    fillWidth = false, enabled = !state.busy && state.overlayAllowed, onClick = onReceiveTest)
-                                Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                            }
+                            Hairline()
+                            SettingRow("수신 테스트", onClick = { testExpanded = true })
                         }
                     } else {
                         state.request?.let { request ->
@@ -177,21 +173,96 @@ fun DestinationScreen(
                     }
                 }
             }
-            (state.error ?: state.connectionError ?: state.notice)?.let { message ->
-                Snackbar(
-                    modifier = Modifier.padding(Space.md).semantics { liveRegion = LiveRegionMode.Polite },
-                    action = if (state.error != null || state.connectionError != null) {
-                        { androidx.compose.material3.TextButton(enabled = !state.busy, onClick = onRefresh,
-                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                                contentColor = androidx.compose.material3.SnackbarDefaults.actionColor)) { Text("재확인") } }
-                    } else null,
-                ) { Text(message) }
-            }
+            if (!setup || (!pairingExpanded && !testExpanded)) DestinationFeedback(state, onRefresh)
         }
     }
     if (setup) PickerSheet("목적지 설정",
         onDismiss = { if (settingsOnly) onBack() else setup = false }, content = content)
     else content()
+    if (setup && pairingExpanded) PickerSheet("보낼 기기", onDismiss = { pairingExpanded = false }) {
+        DestinationPairingEditor(state, onPairingCode, onPair, onUnlink, onRefresh)
+    }
+    if (setup && testExpanded) PickerSheet("수신 테스트", onDismiss = { testExpanded = false }) {
+        DestinationReceiveTestEditor(state, onQuery, onSend, onReceiveTest, onOverlay, onRefresh)
+    }
+}
+
+/** 기기 연결은 편집 시트에서만 입력하고 연결 결과와 해제를 함께 표시한다. */
+@Composable
+internal fun DestinationPairingEditor(
+    state: DestinationUiState,
+    onPairingCode: (String) -> Unit = {}, onPair: () -> Unit = {},
+    onUnlink: () -> Unit = {}, onRefresh: () -> Unit = {},
+) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        state.receiverName?.let { name ->
+            SettingActionRow(name, action = {
+                TButton("연결 해제", tone = ButtonTone.Danger, fillWidth = false,
+                    small = true, enabled = !state.busy, onClick = onUnlink)
+            })
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val connectButton: @Composable () -> Unit = {
+                TButton("연결", fillWidth = false, small = true,
+                    enabled = !state.busy && state.pairingCode.length == 10, onClick = onPair)
+            }
+            // 큰 글자로 입력 폭이 부족할 때만 연결 버튼을 다음 줄로 보낸다.
+            if (maxWidth < 240.dp * LocalDensity.current.fontScale) {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    DraftField(state.pairingCode, onPairingCode, label = "연결 코드", enabled = !state.busy)
+                    connectButton()
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    DraftField(state.pairingCode, onPairingCode, label = "연결 코드",
+                        enabled = !state.busy, modifier = Modifier.weight(1f))
+                    connectButton()
+                }
+            }
+        }
+        if (state.busy) Text("처리 중…", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        DestinationFeedback(state, onRefresh)
+    }
+}
+
+/** 수신 테스트 입력과 권한·결과는 전용 시트에 모아 일반 설정 행을 짧게 유지한다. */
+@Composable
+internal fun DestinationReceiveTestEditor(
+    state: DestinationUiState,
+    onQuery: (String) -> Unit = {}, onSend: (Boolean) -> Unit = {},
+    onReceiveTest: () -> Unit = {}, onOverlay: () -> Unit = {}, onRefresh: () -> Unit = {},
+) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        DraftField(state.query, onQuery, label = "검색어", enabled = !state.busy)
+        TButton("이 기기로 전송", tone = ButtonTone.Secondary, icon = Icons.Rounded.Send,
+            fillWidth = false, enabled = !state.busy && DestinationPlace(state.query.trim()).valid() &&
+                state.minutes in 1..120, onClick = { onSend(true) })
+        TButton("지도 열기", tone = ButtonTone.Secondary, icon = Icons.Rounded.Place,
+            fillWidth = false, enabled = !state.busy && state.overlayAllowed, onClick = onReceiveTest)
+        if (!state.overlayAllowed) TButton("다른 앱 위에 표시", tone = ButtonTone.Secondary,
+            fillWidth = false, onClick = onOverlay)
+        Text(state.receiveMessage, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        if (state.busy) Text("처리 중…", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        DestinationFeedback(state, onRefresh)
+    }
+}
+
+/** 결과와 재확인을 현재 열린 화면에 표시해 편집 시트 뒤로 오류가 가려지지 않게 한다. */
+@Composable
+private fun DestinationFeedback(state: DestinationUiState, onRefresh: () -> Unit) {
+    (state.error ?: state.connectionError ?: state.notice)?.let { message ->
+        Snackbar(
+            modifier = Modifier.padding(Space.md).semantics { liveRegion = LiveRegionMode.Polite },
+            action = if (state.error != null || state.connectionError != null) {
+                { androidx.compose.material3.TextButton(enabled = !state.busy, onClick = onRefresh,
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = androidx.compose.material3.SnackbarDefaults.actionColor)) { Text("재확인") } }
+            } else null,
+        ) { Text(message) }
+    }
 }
 
 /** 검색·전송·수신을 카드 중첩 없이 제목과 간격으로 구분한다. */

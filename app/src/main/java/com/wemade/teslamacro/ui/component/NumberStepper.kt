@@ -45,9 +45,12 @@ fun NumberStepper(
     unit: String,
     onChange: (Double) -> Unit,
     modifier: Modifier = Modifier,
+    label: String? = null,
 ) {
     var editing by rememberSaveable { mutableStateOf(false) }
-    Row(
+    if (label != null) {
+        SettingRow(label, "${format(value)} $unit", onClick = { editing = true }, modifier = modifier)
+    } else Row(
         modifier = modifier.fillMaxWidth().border(1.dp, T.Hairline, RoundedCornerShape(Radius.button)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -68,7 +71,7 @@ fun NumberStepper(
     }
     if (editing) {
         ValueInputSheet(
-            title = "값 입력", initial = format(value), label = "$unit · ${format(min)}~${format(max)}",
+            title = label ?: "값 입력", initial = format(value), label = "$unit · ${format(min)}~${format(max)}",
             keyboardType = KeyboardType.Decimal,
             valid = { parseNumberInput(it, min, max, step) != null },
             onApply = { parseNumberInput(it, min, max, step)?.let(onChange); editing = false },
@@ -80,9 +83,17 @@ fun NumberStepper(
 /** 시각은 두 줄 증감판 대신 HH:mm 입력 행으로 표시하고 확인한 값만 반영한다. */
 @Composable
 fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
+    HourMinuteStepper(minutesOfDay, onChange, label = null)
+}
+
+/** 설정 행에서도 기존 시각 입력·검증을 재사용한다. */
+@Composable
+internal fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit, label: String?) {
     var editing by rememberSaveable { mutableStateOf(false) }
     val text = String.format(Locale.ROOT, "%02d:%02d", minutesOfDay / 60, minutesOfDay % 60)
-    Text(
+    if (label != null) {
+        SettingRow(label, text, onClick = { editing = true })
+    } else Text(
         text = text, color = T.Ink, style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.button))
             .border(1.dp, T.Hairline, RoundedCornerShape(Radius.button))
@@ -91,7 +102,7 @@ fun HourMinuteStepper(minutesOfDay: Int, onChange: (Int) -> Unit) {
     )
     if (editing) {
         ValueInputSheet(
-            title = "시각 입력", initial = text, label = "24시간 · HH:mm",
+            title = label ?: "시각 입력", initial = text, label = "24시간 · HH:mm",
             keyboardType = KeyboardType.Text,
             valid = { parseTimeInput(it) != null },
             onApply = { parseTimeInput(it)?.let(onChange); editing = false },

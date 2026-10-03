@@ -129,6 +129,7 @@ fun PickerRow(
     modifier: Modifier = Modifier,
     detail: String? = null,
     showChevron: Boolean = false,
+    value: String? = null,
 ) {
     Row(
         modifier = modifier
@@ -145,6 +146,11 @@ fun PickerRow(
             if (detail != null) {
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
             }
+        }
+        if (value != null) {
+            Text(value, style = MaterialTheme.typography.bodyMedium, color = T.InkMuted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.weight(0.85f))
         }
         if (showChevron) {
             Icon(DraftMark.ChevronRight, contentDescription = null, tint = T.InkMuted,

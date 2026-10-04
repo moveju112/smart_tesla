@@ -8,6 +8,22 @@ import org.junit.Test
 class CameraIndexTest {
     private val index = CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50)))
 
+    /** 검증한 번들 근거를 가상 위치로 옮겨 동행 안내·역방향 제외와 고속도로 소리 보류를 고정한다. */
+    @Test fun verifiedBundleContextRestoresOnlySupportedDirection() {
+        val dataset = Json { ignoreUnknownKeys = true }.decodeFromString<CameraDataset>(
+            java.io.File("src/main/assets/safety_cameras.json").readText())
+        val camera = dataset.cameras.single { it.id == "1320000:G2310" }.copy(latitude = 37.0, longitude = 127.0)
+        val cameras = CameraIndex(listOf(camera))
+        assertEquals(camera.id, cameras.nearest(37.0, 126.997, 90.0, 66.0, 8.0,
+            matchedRoadName = "석성로")?.cameraId)
+        assertTrue(hasCameraAudioEvidence(camera.direction, camera.roadName, "석성로"))
+        assertTrue(hasCameraAudioEvidence(camera.direction, camera.roadName, null))
+        assertNull(cameras.nearest(37.0, 127.003, 270.0, 66.0, 8.0, matchedRoadName = "석성로"))
+        assertNull(cameras.nearest(37.0, 126.997, 90.0, 66.0, 8.0, matchedRoadName = "다른길"))
+        val motorway = dataset.cameras.single { it.id == "1320000:H3410" }
+        assertFalse(hasCameraAudioEvidence(motorway.direction, motorway.roadName, "보라하갈로"))
+    }
+
     /** 방향·동일 도로 근거가 없는 뒤쪽 후보는 화면 검색과 달리 연속 단속 음성에 포함하지 않는다. */
     @Test fun continuousAudioRequiresItsOwnRoadEvidence() {
         val unknown = OfflineCamera("next", 37.006, 127.0, 30, roadName = "중앙로")

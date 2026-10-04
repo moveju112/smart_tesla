@@ -1,0 +1,24 @@
+{
+  "1320000:G2310": {
+    "source": {
+      "latitude": 37.2945058,
+      "longitude": 127.0958207,
+      "speedLimitKph": 60,
+      "section": false,
+      "referenceDate": "2026-04-06",
+      "roadName": "광교호수로"
+    },
+    "installation": "삼막곡제2지하차도 전 200m지점(이의동->구성동)",
+    "roadName": "석성로",
+    "direction": 90,
+    "evidence": {
+      "sourceUrl": "https://www.data.go.kr/data/15028200/standard.do",
+      "checkedAt": "2026-10-05",
+      "osmWayId": 461687694,
+      "approachNodes": [4571585547, 1819930007],
+      "approachBearingDegrees": 90.1,
+      "cameraRoadGapMeters": 3.71,
+      "reason": "원자료의 이의동→구성동 방향과 석성로 동행 선형을 대조. 도로 전체의 이름 동치가 아니라 이 카메라 위치에서만 적용."
+    }
+  }
+}

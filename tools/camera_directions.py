@@ -4,11 +4,12 @@
 사용: python3 camera_directions.py <공공데이터 원본 json> <번들 json> <OSM 이름 json> <osrm 주소> <출력 json>
 - OSM 이름 json: tools/extract_osm_names.py 결과(서버 .data/south-korea.osm.pbf).
 - osrm 주소: 매칭 서버의 개발용 osrm-routed(터널). 외부 지오코더를 쓰지 않는다.
-판정 못 한 카메라는 출력하지 않아 앱이 기존 판정(방향 무관)을 유지한다.
+판정 못 한 카메라는 출력하지 않는다. 앱의 방향 미상 후보·소리 근거 정책을 유지한다.
 """
 import collections
 import json
 import math
+from pathlib import Path
 import re
 import sys
 import urllib.request
@@ -16,6 +17,18 @@ import urllib.request
 R = "http://127.0.0.1:15055"
 names = {}
 arrow = re.compile(r"([^()→]+)→([^()→]+)")
+
+# 단일 진행 화살표의 표기만 통일하고 양방향·경유지 나열은 단속 방향으로 추정하지 않는다.
+def direction_places(text):
+    normalized = text.replace("->", "→")
+    if normalized.count("→") != 1 or any(marker in normalized for marker in ("<", ">", "←", "↔")):
+        return None
+    match = arrow.search(normalized)
+    if match is None:
+        return None
+    places = tuple(part.strip() for part in match.groups())
+    return places if all(places) else None
+
 # 수백 m~수십 km 거리 판정용 평면 근사 거리(m).
 
 def meters(a, b, c, d):
@@ -117,23 +130,23 @@ def direction(cam, a, b):
 def main():
     global R, names
     raw_path, bundle_path, names_path, R, output = sys.argv[1:6]
-    names = json.load(open(names_path, encoding="utf-8"))
-    rows = json.load(open(raw_path, encoding="utf-8"))
+    names = json.loads(Path(names_path).read_text(encoding="utf-8"))
+    rows = json.loads(Path(raw_path).read_text(encoding="utf-8"))
     raw = {str(r.get("INSTT_CODE", "")) + ":" + str(r["MNLSS_REGLT_CAMERA_MANAGE_NO"]): r for r in rows}
-    cameras = json.load(open(bundle_path, encoding="utf-8"))["cameras"]
+    cameras = json.loads(Path(bundle_path).read_text(encoding="utf-8"))["cameras"]
     result, stats = {}, collections.Counter()
     for camera in cameras:
-        match = arrow.search(str(raw.get(camera["id"], {}).get("ITLPC", "")))
-        if not match:
+        places = direction_places(str(raw.get(camera["id"], {}).get("ITLPC", "")))
+        if not places:
             stats["noarrow"] += 1
             continue
         point = (camera["latitude"], camera["longitude"])
-        start, end = find(match.group(1), *point), find(match.group(2), *point)
+        start, end = find(places[0], *point), find(places[1], *point)
         value, reason = direction(point, start, end) if (start or end) else (None, "nogeo")
         stats[reason] += 1
         if value is not None:
             result[camera["id"]] = value
-    json.dump(result, open(output, "w"))
+    Path(output).write_text(json.dumps(result), encoding="utf-8")
     print(dict(stats), f"방향 {len(result)}/{len(cameras)}")
 
 

@@ -12,6 +12,7 @@ import urllib.request
 BASE_URL = "https://www.data.go.kr"
 SOURCE_URL = BASE_URL + "/data/15028200/standard.do"
 OUTPUT = Path(__file__).resolve().parents[1] / "app/src/main/assets/safety_cameras.json"
+VERIFIED_CONTEXT = Path(__file__).with_name("verified_camera_context.json")
 
 
 # 공식 다운로드 화면과 동일한 읽기 요청만 사용한다.
@@ -129,6 +130,35 @@ def apply_road_axes(cameras, axes_path):
     print(f"검증된 도로 축 {applied}건 적용", flush=True)
 
 
+# 원자료 위치·속도·기준일·설치 방향이 그대로인 카메라에만 개별 검증한 지도 이름과 방향을 복원한다.
+def apply_verified_context(cameras, rows, context_path=VERIFIED_CONTEXT):
+    verified = json.loads(Path(context_path).read_text(encoding="utf-8"))
+    sources = {}
+    for row in rows:
+        camera = convert(row)
+        if camera is not None:
+            sources.setdefault(camera["id"], []).append((camera, row.get("ITLPC")))
+    applied = 0
+    for camera in cameras:
+        context = verified.get(camera["id"])
+        records = sources.get(camera["id"], [])
+        if not context or len(records) != 1:
+            continue
+        source, installation = records[0]
+        fingerprint = context["source"]
+        if installation != context["installation"] or any(source.get(key) != value for key, value in fingerprint.items()):
+            continue
+        if any(camera.get(key) != source.get(key) for key in fingerprint if key != "roadName"):
+            continue
+        direction = context["direction"]
+        road_name = context["roadName"]
+        if type(direction) is not int or not 0 <= direction < 360 or comparable_road_name(road_name) is None:
+            raise ValueError("잘못된 카메라 검증 자료: " + camera["id"])
+        camera.update(roadName=road_name, direction=direction)
+        applied += 1
+    return applied
+
+
 # 전체 페이지 수가 맞을 때만 교체하여 부분 다운로드를 전국 데이터로 배포하지 않는다.
 def main():
     parser = argparse.ArgumentParser(description="공공데이터 → 앱 번들")
@@ -156,6 +186,7 @@ def main():
         apply_directions(cameras, arguments.directions)
     if arguments.road_axes:
         apply_road_axes(cameras, arguments.road_axes)
+    print(f"개별 검증한 카메라 근거 {apply_verified_context(cameras, rows)}건 적용")
     data = {
         "schemaVersion": 1,
         "source": SOURCE_URL,

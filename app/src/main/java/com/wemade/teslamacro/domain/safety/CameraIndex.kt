@@ -36,6 +36,13 @@ internal fun comparableRoadName(name: String?): String? =
     name?.replace(ROAD_NAME_PARENS, "")?.replace(ROAD_NAME_SPACES, "")
         ?.takeIf { it.length >= 2 && ROAD_NAME_SUFFIXES.any(it::endsWith) }
 
+/** 방향 미상은 유효한 같은 도로명이 있을 때만 소리 근거로 삼고 도로 축·이름 누락은 추정하지 않는다. */
+internal fun hasCameraAudioEvidence(direction: Int?, cameraRoadName: String?, travelRoadName: String?): Boolean {
+    if (direction != null && direction in 0..359) return true
+    val cameraRoad = comparableRoadName(cameraRoadName) ?: return false
+    return cameraRoad == comparableRoadName(travelRoadName)
+}
+
 private val ROAD_NAME_SUFFIXES = listOf("로", "길", "지하차도", "고가차도")
 private val ROAD_NAME_PARENS = Regex("\\([^)]*\\)")
 private val ROAD_NAME_SPACES = Regex("\\s+")
@@ -148,7 +155,8 @@ class CameraIndex(cameras: List<OfflineCamera>) {
      * 매칭이 끊겨도 판정을 넓히지 않으며, 첫 안내에서 연속 구간을 알려 속도 재상승을 막는다.
      */
     fun hasFollowing(latitude: Double, longitude: Double, bearing: Double, afterMeters: Int,
-                     withinMeters: Int = 1_000, matchedRoadName: String? = null): Boolean {
+                     withinMeters: Int = 1_000, matchedRoadName: String? = null,
+                     requireAudioEvidence: Boolean = false): Boolean {
         if (!latitude.isFinite() || !longitude.isFinite() || !bearing.isFinite()) return false
         val (row, column) = cell(latitude, longitude)
         val travelRoad = comparableRoadName(matchedRoadName)
@@ -158,7 +166,8 @@ class CameraIndex(cameras: List<OfflineCamera>) {
                     // 같은 지점의 중복 레코드(30m 이내)는 다음 카메라로 치지 않는다.
                     meters > afterMeters + 30 && meters <= afterMeters + withinMeters &&
                         onTravelCorridor(latitude, longitude, bearing, camera, meters) && !onOtherRoad(camera, travelRoad) &&
-                        !oppositeDirection(camera, bearing) && !onCrossingRoad(camera, bearing)
+                        !oppositeDirection(camera, bearing) && !onCrossingRoad(camera, bearing) &&
+                        (!requireAudioEvidence || hasCameraAudioEvidence(camera.direction, camera.roadName, travelRoad))
                 }) return true
         }
         return false

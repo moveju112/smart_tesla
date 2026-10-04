@@ -72,9 +72,10 @@ class SafeDriveReplayTest {
                 val mode = if (matching) "Matched" else "Offline"
                 val expected = routeJson.cameraIds("expectedCameraIds") + routeJson.cameraIds("expected${mode}CameraIds")
                 val excluded = routeJson.cameraIds("excludedCameraIds") + routeJson.cameraIds("excluded${mode}CameraIds")
+                val silent = routeJson.cameraIds("expectedSilentCameraIds") + routeJson.cameraIds("expectedSilent${mode}CameraIds")
                 val stats = MatchStats()
                 val report = replay(routeJson, CameraIndex(dataset.cameras),
-                    cache.takeIf { matching }, stats, expected, excluded)
+                    cache.takeIf { matching }, stats, expected, excluded, silent)
                 val name = "report-${route.nameWithoutExtension}-${if (matching) "matched" else "offline"}.txt"
                 File(directory, name).writeText(report.text)
                 summary.append("${route.nameWithoutExtension} ${if (matching) "매칭" else "오프라인"}: ${report.summary}\n")
@@ -98,7 +99,7 @@ class SafeDriveReplayTest {
 
     // 경로 한 개를 1초씩 넣고 후보·음성·경고음 변화만 기록한다.
     private fun TestScope.replay(route: JsonObject, index: CameraIndex, cache: MatchCache?,
-                                 stats: MatchStats, expected: Set<String>, excluded: Set<String>): ReplayResult {
+                                 stats: MatchStats, expected: Set<String>, excluded: Set<String>, silent: Set<String>): ReplayResult {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val samples = route["samples"]!!.jsonArray.map {
             val sample = it.jsonObject
@@ -116,6 +117,7 @@ class SafeDriveReplayTest {
         if (cache != null) field("roadMatcher").set(guide, replayMatcher(cache, stats))
         val lines = mutableListOf<String>()
         val seen = mutableSetOf<String>()
+        val warned = mutableSetOf<String>()
         val cameraBySecond = mutableMapOf<Int, String>()
         var lastCamera: String? = null
         var lastRoadName: String? = null
@@ -160,7 +162,10 @@ class SafeDriveReplayTest {
                     lastCamera = camera
                 }
                 val warning = (field("warningJob").get(guide) as Job?)?.isActive == true
-                if (warning) warningSeconds++
+                if (warning) {
+                    warningSeconds++
+                    alert?.cameraId?.let { warned += it.split("|") }
+                }
                 if (warning && !wasWarning) {
                     warningStarts++
                     lines += "%4ds 경고음 시작 (GPS %.0fkm/h, 제한 %s)".format(second, sample.speedMps * 3.6, alert?.speedLimitKph ?: "?")
@@ -177,23 +182,25 @@ class SafeDriveReplayTest {
         lines.sortBy { it.trim().substringBefore("s ").toIntOrNull() ?: 0 }
         val limits = Regex("시속 (\\d+)킬로미터").findAll(spoken.joinToString(" ") { it.second })
             .groupingBy { it.groupValues[1] }.eachCount().toSortedMap()
-        val missing = expected - seen
+        val missing = (expected + silent) - seen
         val unexpected = excluded intersect seen
         val voiced = spoken.flatMap { cameraBySecond[it.first]?.split("|").orEmpty() }.toSet()
         val voicedExcluded = excluded intersect voiced
         val failures = mutableListOf<String>()
         if (missing.isNotEmpty()) failures += "필수 후보 누락: $missing"
+        val soundedSilent = silent intersect (voiced + warned)
+        if (soundedSilent.isNotEmpty()) failures += "화면 전용 후보 소리 노출: $soundedSilent"
         val missingVoice = expected - voiced
         if (missingVoice.isNotEmpty()) failures += "필수 카메라 음성 누락: $missingVoice"
         if (unexpected.isNotEmpty()) failures += "제외 후보 노출: $unexpected"
         if (voicedExcluded.isNotEmpty()) failures += "제외 후보 음성 노출: $voicedExcluded"
-        if (cache != null && (expected.isNotEmpty() || excluded.isNotEmpty()) && stats.failures > 0)
+        if (cache != null && (expected.isNotEmpty() || excluded.isNotEmpty() || silent.isNotEmpty()) && stats.failures > 0)
             failures += "매칭 서버 실패 ${stats.failures}회"
         if (cache != null && stats.cacheMisses > 0 &&
-            (expected.isNotEmpty() || excluded.isNotEmpty() ||
+            (expected.isNotEmpty() || excluded.isNotEmpty() || silent.isNotEmpty() ||
                 System.getenv("SAFETY_REPLAY_REQUIRE_MATCH") == "true"))
             failures += "서버 없는 캐시 누락 ${stats.cacheMisses}회 (매칭 미실행)"
-        if (cache != null && (expected.isNotEmpty() || excluded.isNotEmpty()) && stats.cacheHits + stats.serverHits == 0)
+        if (cache != null && (expected.isNotEmpty() || excluded.isNotEmpty() || silent.isNotEmpty()) && stats.cacheHits + stats.serverHits == 0)
             failures += "확정 도로 매칭 응답 없음 (HTTP 200 불확실 응답은 확정 아님)"
         val matchingStatus = if (cache == null) "매칭 미사용" else
             "확정 매칭 응답 캐시 ${stats.cacheHits}회/서버 ${stats.serverHits}회, 불확실 ${stats.unmatched}회, " +

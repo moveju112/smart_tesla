@@ -8,6 +8,24 @@ import org.junit.Test
 class CameraIndexTest {
     private val index = CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50)))
 
+    /** 방향·동일 도로 근거가 없는 뒤쪽 후보는 화면 검색과 달리 연속 단속 음성에 포함하지 않는다. */
+    @Test fun continuousAudioRequiresItsOwnRoadEvidence() {
+        val unknown = OfflineCamera("next", 37.006, 127.0, 30, roadName = "중앙로")
+        val cameras = CameraIndex(listOf(unknown))
+        assertTrue(cameras.hasFollowing(37.0, 127.0, 0.0, 332))
+        assertFalse(cameras.hasFollowing(37.0, 127.0, 0.0, 332, requireAudioEvidence = true))
+        assertTrue(cameras.hasFollowing(37.0, 127.0, 0.0, 332,
+            matchedRoadName = "중앙로 (본선)", requireAudioEvidence = true))
+        assertFalse(cameras.hasFollowing(37.0, 127.0, 0.0, 332,
+            matchedRoadName = "중앙로10번길", requireAudioEvidence = true))
+        assertTrue(CameraIndex(listOf(unknown.copy(direction = 0)))
+            .hasFollowing(37.0, 127.0, 0.0, 332, requireAudioEvidence = true))
+        assertFalse(hasCameraAudioEvidence(null, null, null))
+        assertFalse(hasCameraAudioEvidence(null, "1", "1"))
+        assertFalse(hasCameraAudioEvidence(-1, null, null))
+        assertFalse(hasCameraAudioEvidence(360, null, null))
+    }
+
     /** 전방 거리와 후보 제한속도를 함께 반환한다. */
     @Test fun approaching() {
         val alert = index.nearest(37.0, 127.0, 0.0, 60.0, 10.0)

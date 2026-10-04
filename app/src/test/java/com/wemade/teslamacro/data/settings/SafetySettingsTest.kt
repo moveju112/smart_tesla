@@ -36,6 +36,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 class SafetySettingsTest {
+    // 소리 설정 검사는 방향을 아는 카메라로 수행한다. 방향 미상 보류·복구는 RoadNameGuideTest에서 검증한다.
     @get:Rule val paparazzi = Paparazzi()
     @get:Rule val temporaryFolder = TemporaryFolder()
 
@@ -327,8 +328,8 @@ class SafetySettingsTest {
         val guide = SafeDriveGuide(Application()) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
             .set(guide, CameraIndex(listOf(
-                OfflineCamera("first", 37.003, 127.0, 50),
-                OfflineCamera("second", 37.004, 127.0, 50),
+                OfflineCamera("first", 37.003, 127.0, 50, direction = 0),
+                OfflineCamera("second", 37.004, 127.0, 50, direction = 0),
             )))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
         fun approach(latitudeDegrees: Double = 37.0, speedMetersPerSecond: Float = 20f) {
@@ -560,7 +561,7 @@ class SafetySettingsTest {
         val spoken = mutableListOf<String>()
         val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0))))
         try {
             guide.setStartVoice(true)
             guide.setSound(true, 2)
@@ -639,7 +640,7 @@ class SafetySettingsTest {
         val spoken = mutableListOf<String>()
         val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0))))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
         // 출력 권한 변경 직후 같은 위치를 재수신해 예전 대기 음성이 새로 시작되지 않는지 본다.
         fun approach() {
@@ -682,7 +683,7 @@ class SafetySettingsTest {
         var nowNanos = 1_000_000_000L
         val guide = SafeDriveGuide(Application()) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 100))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 100, direction = 0))))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
         fun approach(speedKph: Int) {
             guide.onLocation(Location("gps").apply {
@@ -747,7 +748,7 @@ class SafetySettingsTest {
         val spoken = mutableListOf<String>()
         val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0))))
         val lastSound = SafeDriveGuide::class.java.getDeclaredField("lastSoundMillis").apply { isAccessible = true }
         fun approach(latitudeDegrees: Double) {
             guide.onLocation(Location("gps").apply {
@@ -821,7 +822,7 @@ class SafetySettingsTest {
         val spoken = mutableListOf<String>()
         val guide = SafeDriveGuide(Application(), voiceOutput = spoken::add) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50), OfflineCamera("second", 37.0055, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0), OfflineCamera("second", 37.0055, 127.0, 50, direction = 0))))
         // 제한 50에 초과 설정 +5라 47km/h 정속 주행은 경고음·감속 요청 대상이 아니다.
         fun approach(latitudeDegrees: Double) {
             guide.onLocation(Location("gps").apply {
@@ -860,7 +861,7 @@ class SafetySettingsTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val guide = SafeDriveGuide(Application()) { 1_000_000_000L }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0))))
         val preview = SafeDriveGuide::class.java.getDeclaredField("previewJob").apply { isAccessible = true }
         fun previews() = DiagLog.lines.value.count { it.contains("경고음 미리 듣기") }
         try {
@@ -916,7 +917,7 @@ class SafetySettingsTest {
             spoken.add(text)
         }) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0))))
         fun approach(latitudeDegrees: Double) {
             guide.onLocation(Location("gps").apply {
                 latitude = latitudeDegrees; longitude = 127.0
@@ -958,7 +959,7 @@ class SafetySettingsTest {
         var nowNanos = 1_000_000_000L
         val guide = SafeDriveGuide(Application()) { nowNanos }
         SafeDriveGuide::class.java.getDeclaredField("index").apply { isAccessible = true }
-            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50))))
+            .set(guide, CameraIndex(listOf(OfflineCamera("first", 37.003, 127.0, 50, direction = 0))))
         try {
             guide.setSound(true, 2, 5)
             guide.setAutomaticAlertsAllowed(true)

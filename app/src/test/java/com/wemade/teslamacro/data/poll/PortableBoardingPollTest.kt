@@ -47,6 +47,48 @@ class PortableBoardingPollTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
+    /** 앱을 내린 뒤에도 확인된 주행을 읽고 P단 수신 뒤 연결을 놓는다. */
+    @Test fun historyKeepsDrivingInBackgroundAndReleasesAtPark() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setHistoryEnabled(true)
+        var shift = com.wemade.teslamacro.domain.model.ShiftState.DRIVE
+        fixture.gateway.onRead = {
+            fixture.snapshot(true).map { it.copy(shiftState = shift,
+                categoryReadAt = it.categoryReadAt + (StateCategory.DRIVE to it.timestampMillis)) }
+        }
+        fixture.poller.setAppVisible(true)
+        fixture.start()
+        fixture.poller.setAppVisible(false)
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+        assertTrue(fixture.gateway.reads.size >= 24)
+        assertTrue(fixture.gateway.reads.last().contains(StateCategory.LOCATION))
+        shift = com.wemade.teslamacro.domain.model.ShiftState.PARK
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 차체 응답만 살아 있어도 D/R 수신이 멈추면 기록용 연결은 만료된다. */
+    @Test fun historyReleasesWhenOnlyPartialResponsesRemain() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setHistoryEnabled(true)
+        fixture.gateway.onRead = {
+            fixture.snapshot(true).map { it.copy(shiftState = com.wemade.teslamacro.domain.model.ShiftState.DRIVE,
+                categoryReadAt = it.categoryReadAt + (StateCategory.DRIVE to it.timestampMillis)) }
+        }
+        fixture.poller.setAppVisible(true)
+        fixture.start()
+        fixture.poller.setAppVisible(false)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        advanceTimeBy(105_000)
+        runCurrent()
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
     /** 목적지 수신만 켠 휴대 기기도 탑승을 확인하고 기존 정책대로 BLE를 놓는다. */
     @Test fun portableDestinationConfirmsPresenceWithoutChangingMode() = runTest {
         val fixture = fixture(autoStart = false)
@@ -638,6 +680,7 @@ class PortableBoardingPollTest {
                 GeoPoint(0.0, 0.0)
             },
             forecastReader = { _, _ -> forecastReads++; delay(forecastDelayMillis); forecastResult },
+            historyIsRealVehicle = { true },
         )
 
         init {

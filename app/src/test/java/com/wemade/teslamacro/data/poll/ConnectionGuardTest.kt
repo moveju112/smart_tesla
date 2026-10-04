@@ -164,6 +164,23 @@ class ConnectionGuardTest {
     }
 
     /** 테스트마다 바뀌는 조건만 이름으로 넘겨 연결 판정을 읽기 쉽게 만든다. */
+    /** 기록용 연결도 주차·유효시간·사용자 중지보다 우선할 수 없다. */
+    @Test fun historyConnectionRequiresRecentDriveAndRespectsPause() {
+        val snapshot = com.wemade.teslamacro.domain.model.VehicleSnapshot(1_000,
+            shiftState = com.wemade.teslamacro.domain.model.ShiftState.DRIVE,
+            categoryReadAt = mapOf(com.wemade.teslamacro.domain.model.StateCategory.DRIVE to 1_000))
+        assertTrue(isHistoryDriveFresh(snapshot, 91_000))
+        assertFalse(isHistoryDriveFresh(snapshot, 91_001))
+        assertFalse(isHistoryDriveFresh(snapshot, 999))
+        assertFalse(isHistoryDriveFresh(snapshot.copy(categoryReadAt = emptyMap()), 1_000))
+        assertFalse(isHistoryDriveFresh(snapshot.copy(shiftState = com.wemade.teslamacro.domain.model.ShiftState.PARK), 1_000))
+        assertEquals(VehicleConnectionReason.HISTORY_DRIVING,
+            decision(deviceMode = DeviceMode.PORTABLE, historyDriving = true).reason)
+        assertEquals(VehicleConnectionReason.USER_PAUSED,
+            decision(deviceMode = DeviceMode.PORTABLE, historyDriving = true, manuallyPaused = true).reason)
+    }
+
+    /** 연결 조건을 개별로 바꿔 우선순위와 기본 보호를 검증한다. */
     private fun decision(
         deviceMode: DeviceMode = DeviceMode.MOUNTED,
         protectPhoneKey: Boolean = true,
@@ -176,6 +193,7 @@ class ConnectionGuardTest {
         macroRunning: Boolean = false,
         stealthChargeNeedsConnection: Boolean = false,
         manuallyPaused: Boolean = false,
+        historyDriving: Boolean = false,
     ): VehicleConnectionDecision = decideVehicleConnection(
         deviceMode = deviceMode,
         protectPhoneKey = protectPhoneKey,
@@ -188,5 +206,6 @@ class ConnectionGuardTest {
         macroRunning = macroRunning,
         stealthChargeNeedsConnection = stealthChargeNeedsConnection,
         manuallyPaused = manuallyPaused,
+        historyDriving = historyDriving,
     )
 }

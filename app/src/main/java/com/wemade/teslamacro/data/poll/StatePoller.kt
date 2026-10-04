@@ -101,6 +101,8 @@ class StatePoller(
     /** 빅스비처럼 화면 밖에서 연결을 빌려 쓰는 요청 수 */
     private val commandConnections = java.util.concurrent.atomic.AtomicInteger(0)
 
+    private val historyDriveObservation = java.util.concurrent.atomic.AtomicReference<Pair<String, VehicleSnapshot>?>(null)
+
     private val _snapshot = MutableStateFlow(VehicleSnapshot.Empty)
     val snapshot: StateFlow<VehicleSnapshot> = _snapshot.asStateFlow()
 
@@ -399,7 +401,13 @@ class StatePoller(
             // 3-0. 충전 전류를 15분 칸에 적산한다. 읽은 사이클에서만 센다
             chargeHistory?.record(merged, now())
 
-            // 이번 응답만 기록하고 연결 유지 사유는 늘리지 않아 기존 이탈 보호를 지킨다.
+            // 주행 확인 응답만 연결 유지 근거로 보관하고 부분 응답으로 유효시간을 늘리지 않는다.
+            if (fresh != null && (fresh.shiftState != ShiftState.UNKNOWN ||
+                    fresh.isCharging == true || fresh.isUserPresent == false)) {
+                historyDriveObservation.set(if (historyIsRealVehicle()) settings.vin to fresh else null)
+            }
+
+            // 기록 원본은 병합하지 않아 수신하지 않은 좌표·배터리를 복제하지 않는다.
             if (recordHistory && fresh != null) {
                 val currentSettings = settingsStore.settings.first()
                 if (currentSettings.historyEnabled && currentSettings.isReady && currentSettings.vin == settings.vin && historyIsRealVehicle()) {
@@ -736,6 +744,10 @@ class StatePoller(
                 nowMillis = now(),
             ),
             manuallyPaused = manualConnectionPause.get(),
+            historyDriving = settings.historyEnabled && settings.isReady && historyIsRealVehicle() &&
+                historyDriveObservation.get()?.let { (identity, observation) ->
+                    identity == settings.vin && isHistoryDriveFresh(observation, now())
+                } == true,
         )
 
     /** 연결 사유가 바뀐 순간만 남겨 실차 로그에서 유지 주체를 바로 찾게 한다. */
@@ -997,6 +1009,7 @@ internal class VehiclePowerWakeCheck(startedAtMillis: Long) {
 /** 연결을 유지하거나 놓는 정확한 이유. 진단 로그와 단위 테스트가 같은 판정을 공유한다. */
 internal enum class VehicleConnectionReason(val keep: Boolean, val label: String) {
     USER_PAUSED(false, "사용자가 다음 사용까지 일시정지"),
+    HISTORY_DRIVING(true, "기록 켜짐 · 최근 주행 확인"),
     PORTABLE_IDLE(false, "휴대 모드 백그라운드"),
     MOUNTED_EMPTY(false, "거치 모드 전원은 있으나 빈 차 확인"),
     MOUNTED_UNCONFIRMED(false, "거치 모드 전원은 있으나 탑승 미확인"),
@@ -1037,11 +1050,13 @@ internal fun decideVehicleConnection(
     macroRunning: Boolean,
     stealthChargeNeedsConnection: Boolean,
     manuallyPaused: Boolean,
+    historyDriving: Boolean = false,
 ): VehicleConnectionDecision = VehicleConnectionDecision(
     when {
         manuallyPaused -> VehicleConnectionReason.USER_PAUSED
         commandActive -> VehicleConnectionReason.DIRECT_COMMAND
         appVisible -> VehicleConnectionReason.APP_VISIBLE
+        historyDriving -> VehicleConnectionReason.HISTORY_DRIVING
         deviceMode == DeviceMode.PORTABLE && autoStartNavigatorSafeDrive &&
             vehiclePowerConnected && vehiclePowerWakePending ->
             VehicleConnectionReason.PORTABLE_SAFE_DRIVE_CHECK
@@ -1059,6 +1074,13 @@ internal fun decideVehicleConnection(
         else -> VehicleConnectionReason.NO_ACTIVE_USE
     }
 )
+
+/** 확인된 D/R만 잠시 연결을 유지하고 주차·충전·미수신·시계 역행은 허용하지 않는다. */
+internal fun isHistoryDriveFresh(snapshot: VehicleSnapshot, nowMillis: Long): Boolean =
+    (snapshot.shiftState == ShiftState.DRIVE || snapshot.shiftState == ShiftState.REVERSE) &&
+        snapshot.isCharging != true && snapshot.categoryReadAt[StateCategory.DRIVE]?.let {
+            nowMillis - it in 0..90_000L
+        } == true
 
 /** 전원이 충분히 오래 끊겼다가 돌아왔으면 새 탑승 세션으로 시작한다. */
 internal fun startsNewVehicleSession(

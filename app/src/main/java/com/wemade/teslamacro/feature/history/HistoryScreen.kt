@@ -34,7 +34,6 @@ import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.HelpTitle
 import com.wemade.teslamacro.ui.component.SectionTabs
-import com.wemade.teslamacro.ui.component.NumberSettingRow
 import com.wemade.teslamacro.ui.component.SettingToggleRow
 import com.wemade.teslamacro.ui.component.SettingRow
 import com.wemade.teslamacro.ui.component.PickerSheet
@@ -58,7 +57,6 @@ data class HistoryUiState(
     val enabled: Boolean = false,
     val ready: Boolean = false,
     val mode: DeviceMode = DeviceMode.PORTABLE,
-    val batteryCapacityKwh: Double = 0.0,
     val overview: HistoryOverview = HistoryOverview(),
     val detail: HistoryDetail = HistoryDetail(),
 )
@@ -67,12 +65,12 @@ data class HistoryUiState(
 @Composable
 fun HistoryRoute(viewModel: HistoryViewModel) {
     val state by viewModel.state.collectAsState()
-    HistoryScreen(state, viewModel::setEnabled, viewModel::setCapacity, viewModel::select, viewModel::loadMore)
+    HistoryScreen(state, viewModel::setEnabled, viewModel::select, viewModel::loadMore)
 }
 
 /** 주행 중 조작을 요구하지 않고 정차 후 기록과 수집 상태를 확인한다. */
 @Composable
-internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit, onCapacity: (Double) -> Unit,
+internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
     onSelect: (HistorySession?) -> Unit, onMore: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(HistoryKind.DRIVE) }
     var showOptions by rememberSaveable { mutableStateOf(false) }
@@ -86,7 +84,7 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit, 
         if (state.detail.session != null) {
             item { TButton("기록 목록", ButtonTone.Ghost, icon = DraftMark.ArrowLeft,
                 fillWidth = false, onClick = { onSelect(null) }) }
-            item { HistorySessionSummary(state.detail.session, state.batteryCapacityKwh) }
+            item { HistorySessionSummary(state.detail.session) }
             item {
                 when {
                     state.detail.loading -> Text("기록을 읽고 있어요", color = T.InkMuted)
@@ -95,6 +93,9 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit, 
                         HelpTitle("이동 경로", "배경 지도는 인터넷을 사용하며 지도 제공자에 표시 영역이 전달돼요.\n연결이 끊긴 구간은 선으로 잇지 않아요.",
                             style = MaterialTheme.typography.titleMedium)
                         if (state.detail.samples.any { it.latitude != null && it.longitude != null }) {
+                            if (state.detail.samples.count { it.latitude != null && it.longitude != null } == 1) {
+                                Text("위치가 1개만 기록돼 이동선을 그릴 수 없어요", color = T.InkMuted)
+                            }
                             HistoryMap(state.detail.samples, Modifier.fillMaxWidth().height(Space.xxl * 7))
                         } else Text("차량 위치를 수신하지 못한 주행이에요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
@@ -109,7 +110,7 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit, 
             item { TCard {
                 if (state.ready) SettingToggleRow("기록", state.enabled, onEnabled,
                     description = if (state.mode == DeviceMode.PORTABLE)
-                        "앱 화면·직접 명령으로 차량에 연결된 동안 5초마다 주행과 충전을 기록해요."
+                        "앱에서 연결한 뒤 주행이 확인되면 화면을 꺼도 기록해요. 주차하거나 주행 상태 수신이 끊기면 연결을 놓아요."
                     else "차량에 연결된 동안 5초마다 주행과 충전을 기록해요.")
                 else Text("차량 등록 후 기록을 켤 수 있어요", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
             } }
@@ -141,11 +142,9 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit, 
     }
     if (showOptions) PickerSheet("기록 설정", onDismiss = { showOptions = false }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            NumberSettingRow("사용 가능 배터리 용량", state.batteryCapacityKwh, 0.0, 200.0, 0.5, "kWh", onCapacity)
             Text("${state.overview.sampleCount}개 표본 · 저장공간 ${historyNumber(state.overview.storageBytes / 1_048_576.0)} MB",
                 style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            Text("0은 미설정이에요. 입력하면 배터리 감소율로 소모량·전비를 추정해요. 차량 표시값과 다를 수 있어요.", color = T.InkMuted)
-            Text("기존 BLE 연결 중만 기록해요. 기록 때문에 빈 차를 깨우거나 연결을 유지하지 않아요.", color = T.InkMuted)
+            Text("주행을 확인한 연결은 기록을 위해 유지해요. 빈 차를 깨워 기록을 시작하지 않아요.", color = T.InkMuted)
             Text("응답 지연·연결 해제 구간은 누락될 수 있어요.", color = T.InkMuted)
             Text("기록은 무손실 압축하며 자동 삭제하지 않아요. 지도 캐시는 표시 용량과 별도예요.", color = T.InkMuted)
             Text("이 기기에만 보관돼요. 기존 설정 백업에 포함되지 않으며 앱 삭제 시 사라져요.", color = T.InkMuted)
@@ -153,9 +152,9 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit, 
     }
 }
 
-/** SOC 기반 계산과 전력 적산은 근거가 달라 서로 대체하지 않고 명시한다. */
+/** 용량 입력 없이 실제 배터리 변화와 관측 전력만 표시한다. */
 @Composable
-private fun HistorySessionSummary(session: HistorySession, capacity: Double) {
+private fun HistorySessionSummary(session: HistorySession) {
     TCard {
         Text(historyTime(session.start), style = MaterialTheme.typography.titleMedium, color = T.Ink)
         Text("${session.kind.label} · ${historyNumber((session.end - session.start) / 60_000.0)}분 · ${session.samples}개 표본", color = T.InkMuted)
@@ -163,9 +162,6 @@ private fun HistorySessionSummary(session: HistorySession, capacity: Double) {
         if (session.kind == HistoryKind.DRIVE) {
             Text("주행거리 ${historyNumber(session.distanceKm)} km", color = T.Ink)
             Text("배터리 기준 효율 ${historyNumber(session.kilometersPerPercent)} km/%", color = T.Ink)
-            val energy = session.batteryUsedPercent?.takeIf { it > 0 && capacity > 0 }?.let { capacity * it / 100 }
-            Text("배터리 소모량 추정 ${historyNumber(energy)} kWh", color = T.Ink)
-            Text("전비 추정 ${historyNumber(energy?.let { session.distanceKm?.div(it) })} km/kWh", color = T.Ink)
             if (session.powerCoveredMillis > 0) {
                 Text("전력 적산 추정 ${historyNumber(session.estimatedDriveKwh)} kWh · 관측 ${historyNumber(session.powerCoveredMillis / 60_000.0)}분", color = T.InkMuted)
             }
@@ -174,6 +170,7 @@ private fun HistorySessionSummary(session: HistorySession, capacity: Double) {
             Text("관측 충전량 ${historyNumber(session.chargedKwh)} kWh", style = MaterialTheme.typography.titleLarge, color = T.Ink)
             Text("차량의 충전 추가량 차이예요. 충전기 청구 전력량과 다를 수 있어요.", color = T.InkMuted)
         }
+        if (session.hasGaps) Text("수신이 끊긴 구간이 있어요 · 해당 경로와 전력은 추정하지 않아요", color = T.InkMuted)
         Text(if (session.complete) "상태 전환까지 관측한 구간" else "기록 중이거나 시작·종료를 확인하지 못한 구간", color = T.InkMuted)
     }
 }

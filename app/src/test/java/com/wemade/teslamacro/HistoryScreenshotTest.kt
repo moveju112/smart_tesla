@@ -33,7 +33,7 @@ class HistoryScreenshotTest {
                     onSelect = {}, onSettings = {}, onStealthChange = {},
                     historyContent = {
                         HistoryScreen(HistoryUiState(enabled = true, ready = true,
-                            overview = HistoryOverview(storageBytes = 65_536)), {}, {}, {}, {})
+                            overview = HistoryOverview(storageBytes = 65_536)), {}, {}, {})
                     },
                 )
             }

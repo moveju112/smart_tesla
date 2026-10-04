@@ -58,6 +58,8 @@ data class HistorySession(
     val powerCoveredMillis: Long = 0,
     val distanceInvalid: Boolean = false,
     val complete: Boolean = false,
+    val hasGaps: Boolean = false,
+    val lastStateObservedAt: Long? = null,
 ) {
     val distanceKm: Double? get() = if (!distanceInvalid && firstOdometer != null && lastOdometer != null)
         ((lastOdometer - firstOdometer) * 0.01609344).takeIf { it >= 0 } else null
@@ -73,6 +75,8 @@ object VehicleHistory {
     const val SAMPLE_MILLIS = 5_000L
     const val BLOCK_MILLIS = 5 * 60_000L
     const val MAX_GAP_MILLIS = 15_000L
+    // BLE 순차 조회·재시도 지연은 세션 분리와 경로·전력 적산에서 다르게 취급한다.
+    const val SESSION_GAP_MILLIS = 120_000L
     val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
     /** 병합 스냅샷을 쓰지 않아 오래된 좌표나 배터리가 새 표본으로 복제되지 않게 한다. */
@@ -108,10 +112,14 @@ object VehicleHistory {
     fun kind(sample: HistorySample, previous: HistorySession?): HistoryKind = when {
         sample.shift == ShiftState.DRIVE.name || sample.shift == ShiftState.REVERSE.name -> HistoryKind.DRIVE
         sample.charging == true -> HistoryKind.CHARGE
-        sample.shift == ShiftState.PARK.name || sample.present == false || sample.charging == false && previous?.kind == HistoryKind.CHARGE -> HistoryKind.PARK
-        previous != null && sample.time - previous.end in 0..MAX_GAP_MILLIS -> previous.kind
+        sample.shift == ShiftState.PARK.name || sample.charging == false && previous?.kind == HistoryKind.CHARGE -> HistoryKind.PARK
+        previous != null && sample.time - (previous.lastStateObservedAt ?: previous.end) in 0..SESSION_GAP_MILLIS -> previous.kind
         else -> HistoryKind.PARK
     }
+
+    /** 주행 단위는 조회 지연을 견디되 긴 단절·시계 역행은 별도 기록으로 남긴다. */
+    fun continues(session: HistorySession, sample: HistorySample): Boolean =
+        session.kind == kind(sample, session) && sample.time - session.end in 1..SESSION_GAP_MILLIS
 
     /** 두 신선한 전력 표본 사이만 사다리꼴 적산하며 회생 전력의 부호도 보존한다. */
     fun append(session: HistorySession, previous: HistorySample?, sample: HistorySample): HistorySession {
@@ -121,6 +129,9 @@ object VehicleHistory {
         val energy = if (covered) (previous!!.powerKw!!.toDouble() + sample.powerKw!!.toDouble()) / 2 * span / 3_600_000 else 0.0
         return session.copy(
             end = sample.time, samples = session.samples + 1,
+            lastStateObservedAt = if (sample.shift != ShiftState.UNKNOWN.name || sample.charging == true ||
+                (session.kind == HistoryKind.CHARGE && sample.charging == false)) sample.time else session.lastStateObservedAt ?: session.start,
+            hasGaps = session.hasGaps || (previous != null && !contiguous(previous, sample)),
             firstOdometer = session.firstOdometer ?: sample.odometer,
             lastOdometer = sample.odometer ?: session.lastOdometer,
             firstBattery = session.firstBattery ?: sample.batteryPercent,

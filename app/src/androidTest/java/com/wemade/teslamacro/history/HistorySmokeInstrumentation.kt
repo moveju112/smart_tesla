@@ -58,7 +58,24 @@ class HistorySmokeInstrumentation : Instrumentation() {
                 store.finish(identity)
                 store.record(snapshot(30_000, ShiftState.DRIVE, 140, 78), identity, 30_000)
                 check(store.overview(identity).sessions.size == 3)
-                result.putString("stream", "PASS: SQLite 저장·재조회·5초 중복 방지·종료 경계·차량 분리·명시적 중지")
+                // 같은 슬롯의 P단도 끝점으로 저장하고 BLE 지연은 경로 공백만 남긴다.
+                val delayedIdentity = "delayed-test-vehicle"
+                store.record(snapshot(100_000, ShiftState.DRIVE, 1000, 84), delayedIdentity, 100_000)
+                store.record(snapshot(130_000, ShiftState.DRIVE, 1100, 83), delayedIdentity, 130_000)
+                store.record(snapshot(132_000, ShiftState.PARK, 1120, 83), delayedIdentity, 132_000)
+                val delayedTrip = reopened.overview(delayedIdentity).sessions.single()
+                check(delayedTrip.samples == 3 && delayedTrip.complete && delayedTrip.hasGaps)
+                check(delayedTrip.firstBattery == 84 && delayedTrip.lastBattery == 83)
+                check(delayedTrip.end == 132_000L)
+                check(kotlin.math.abs(delayedTrip.distanceKm!! - 1.9312128) < 0.0000001)
+                check(reopened.samples(delayedIdentity, delayedTrip.id).map { it.time } == listOf(100_000L, 130_000L, 132_000L))
+                val missingIdentity = "missing-gear-test-vehicle"
+                store.record(snapshot(200_000, ShiftState.DRIVE, 1000, 84), missingIdentity, 200_000)
+                for (time in 205_000L..325_000L step 5_000L) {
+                    store.record(VehicleSnapshot(time, categoryReadAt = mapOf(StateCategory.BODY_CONTROLLER to time)), missingIdentity, time)
+                }
+                check(!store.overview(missingIdentity).sessions.single().complete)
+                result.putString("stream", "PASS: SQLite 저장·재조회·5초 중복 방지·종료 경계·차량 분리·명시적 중지·지연 주행 연속성·같은 슬롯 P단")
             }
         } catch (error: Throwable) {
             result.putString("stream", "FAIL: ${error.javaClass.simpleName}: ${error.message}")

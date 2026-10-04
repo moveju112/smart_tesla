@@ -68,7 +68,6 @@ object FeatureAvailability {
 data class AppSettings(
     val vin: String = "",
     val historyEnabled: Boolean = false,
-    val historyBatteryCapacityKwh: Double = 0.0,
     val themeMode: ThemeMode = ThemeMode.AUTO,
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
     val smartThingsEnabled: Boolean = false,
@@ -192,7 +191,6 @@ class SettingsStore(
             vehicleAudioAddress = prefs[KeyVehicleAudioAddress] ?: "",
             stealthCharging = prefs[KeyStealthCharging] ?: false,
             historyEnabled = prefs[KeyHistoryEnabled] ?: false,
-            historyBatteryCapacityKwh = (prefs[KeyHistoryBatteryCapacity] ?: 0.0).takeIf { it.isFinite() }?.coerceIn(0.0, 200.0) ?: 0.0,
             stealthChargeStarted = prefs[KeyStealthChargeStarted] ?: false,
             stealthChargeOriginalAmps = prefs[KeyStealthChargeOriginalAmps],
             stealthChargeModified = prefs[KeyStealthChargeModified] ?: false,
@@ -250,8 +248,7 @@ class SettingsStore(
             prefs.remove(KeyVehicleAddress)
             prefs.remove(KeyVehicleAudioAddress)
             prefs.remove(KeyVehicleName)
-            // 다른 차량의 팩 용량으로 새 차량 전비를 계산하지 않는다.
-            prefs.remove(KeyHistoryBatteryCapacity)
+            // 차량이 바뀌면 새 차량의 위치 기록 동의를 다시 받는다.
             prefs.remove(KeyHistoryEnabled)
         }
         prefs[KeyVin] = vin
@@ -283,10 +280,6 @@ class SettingsStore(
     /** 위치를 포함한 장기 기록은 사용자가 켠 기기에서만 수집한다. */
     suspend fun setHistoryEnabled(enabled: Boolean) = edit { it[KeyHistoryEnabled] = enabled }
 
-    /** 팩 용량을 추측하지 않고 사용자가 입력한 사용 가능 용량으로만 SOC 전비를 추정한다. */
-    suspend fun setHistoryBatteryCapacity(value: Double) = edit {
-        if (value.isFinite()) it[KeyHistoryBatteryCapacity] = value.coerceIn(0.0, 200.0)
-    }
     /** 같은 종류의 기기도 사용 방식이 다를 수 있으므로 이 설치본에만 모드를 저장한다. */
     suspend fun setDeviceMode(mode: DeviceMode) = edit { it[KeyDeviceMode] = mode.name }
 
@@ -568,7 +561,6 @@ class SettingsStore(
         val KeyVehicleAudioAddress = stringPreferencesKey("vehicle_audio_address")
         val KeyStealthCharging = booleanPreferencesKey("stealth_charging")
         val KeyHistoryEnabled = booleanPreferencesKey("history_enabled")
-        val KeyHistoryBatteryCapacity = doublePreferencesKey("history_battery_capacity_kwh")
         val KeyStealthChargeStarted = booleanPreferencesKey("stealth_charge_started")
         val KeyStealthChargeOriginalAmps = intPreferencesKey("stealth_charge_original_amps")
         val KeyStealthChargeModified = booleanPreferencesKey("stealth_charge_modified")

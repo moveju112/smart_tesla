@@ -102,6 +102,36 @@ class VehicleHistoryTest {
         assertEquals(90L, sample.observed["DRIVE"])
     }
 
+    /** 긴 순차 BLE 조회는 같은 주행이지만 누락 경로·전력은 채우지 않는다. */
+    @Test fun `delayed drive stays one session without invented energy`() {
+        val first = fixture(0).copy(batteryPercent = 84)
+        val delayed = fixture(6).copy(batteryPercent = 83, odometer = first.odometer!! + 100)
+        val initial = VehicleHistory.append(session(), null, first)
+        assertTrue(VehicleHistory.continues(initial, delayed))
+        val result = VehicleHistory.append(initial, first, delayed)
+        assertTrue(result.hasGaps)
+        assertEquals(1.609344, result.distanceKm!!, 0.000001)
+        assertEquals(1, result.batteryUsedPercent)
+        assertEquals(0L, result.powerCoveredMillis)
+        assertFalse(VehicleHistory.continues(result, delayed.copy(time = delayed.time + 120_001)))
+        assertFalse(VehicleHistory.continues(result, first))
+        assertFalse(VehicleHistory.continues(result, delayed.copy(time = delayed.time + 5_000, shift = "PARK")))
+    }
+
+    /** 부분 응답이 반복돼도 마지막 실제 기어 관측의 유효시간을 늘리지 않는다. */
+    @Test fun `partial observations preserve drive briefly but cannot renew it forever`() {
+        val first = fixture(0)
+        var summary = VehicleHistory.append(session(), null, first)
+        var previous = first
+        for (index in 1..24) {
+            val partial = HistorySample(time = first.time + index * 5_000, present = false)
+            assertEquals(HistoryKind.DRIVE, VehicleHistory.kind(partial, summary))
+            summary = VehicleHistory.append(summary, previous, partial)
+            previous = partial
+        }
+        assertEquals(HistoryKind.PARK, VehicleHistory.kind(HistorySample(time = first.time + 125_000), summary))
+    }
+
     /** 실제 차량과 관계없는 경로·값으로 반복 패턴을 구성한다. */
     private fun fixture(index: Int) = HistorySample(
         time = 1_700_000_000_000 + index * 5_000L,

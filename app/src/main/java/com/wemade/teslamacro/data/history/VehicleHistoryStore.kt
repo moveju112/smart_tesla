@@ -53,20 +53,24 @@ class VehicleHistoryStore(context: Context) {
                 try {
                     val old = latestSession(database, key)
                     val previous = old?.let { readLastSample(database, it.id) }
-                    if (old != null && previous != null && !isClosed(database, old.id) &&
+                    val kind = VehicleHistory.kind(sample, old?.takeUnless { isClosed(database, it.id) })
+                    if (old != null && old.kind == kind && previous != null && !isClosed(database, old.id) &&
                         previous.time / VehicleHistory.SAMPLE_MILLIS == time / VehicleHistory.SAMPLE_MILLIS) {
                         database.setTransactionSuccessful()
                         return@withLock
                     }
-                    val kind = VehicleHistory.kind(sample, old?.takeUnless { isClosed(database, it.id) })
                     val continuing = old != null && previous != null && !isClosed(database, old.id) &&
-                        old.kind == kind && VehicleHistory.contiguous(previous, sample)
+                        VehicleHistory.continues(old, sample)
                     if (old != null && !continuing && !isClosed(database, old.id)) {
-                        val boundaryObserved = previous != null && VehicleHistory.contiguous(previous, sample)
+                        val boundaryObserved = previous != null &&
+                            sample.time - previous.time in 1..VehicleHistory.SESSION_GAP_MILLIS
                         // P단·충전 종료 응답의 최종 거리와 충전량까지 이전 구간에 포함한다.
                         val ended = if (boundaryObserved) VehicleHistory.append(old, previous, sample) else old
                         if (boundaryObserved) saveSample(database, old.id, sample)
-                        saveSession(database, key, ended.copy(complete = boundaryObserved), closed = true)
+                        // 기어 미수신의 유효시간 만료는 실제 종료를 관측한 것으로 표시하지 않는다.
+                        val transitionObserved = sample.shift in setOf("DRIVE", "REVERSE", "PARK") ||
+                            sample.charging == true || (old.kind == HistoryKind.CHARGE && sample.charging == false)
+                        saveSession(database, key, ended.copy(complete = boundaryObserved && transitionObserved), closed = true)
                     }
                     val base = if (continuing) old!! else HistorySession(UUID.randomUUID().toString(), kind, time, time)
                     val session = VehicleHistory.append(base, previous.takeIf { continuing }, sample)

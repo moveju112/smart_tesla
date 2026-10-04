@@ -29,15 +29,20 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     }.mapLatest { (identity, count) -> container.vehicleHistory.overview(identity, count) }
     val state = combine(settings, overview, detail) { options, history, selection ->
         HistoryUiState(options.historyEnabled, options.isReady, options.deviceMode,
-            options.historyBatteryCapacityKwh, history, selection)
+            history, selection)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
 
     init {
         viewModelScope.launch {
+            var loadedIdentity: String? = null
             combine(selected, settings, container.vehicleHistory.revision) { session, options, _ -> session to options.vin }
                 .collectLatest { (session, identity) ->
                     if (session == null) { detail.value = HistoryDetail(); return@collectLatest }
-                    detail.value = HistoryDetail(session = session, loading = true)
+                    // 같은 기록의 갱신마다 WebView를 제거하면 지도 로딩이 반복돼 흰 화면만 남는다.
+                    if (loadedIdentity != identity || detail.value.session?.id != session.id) {
+                        loadedIdentity = identity
+                        detail.value = HistoryDetail(session = session, loading = true)
+                    }
                     try {
                         val points = container.vehicleHistory.samples(identity, session.id)
                         if (points.isEmpty()) { selected.value = null; detail.value = HistoryDetail(); return@collectLatest }
@@ -55,9 +60,6 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
         if (!enabled) container.vehicleHistory.finish(settings.first().vin)
         container.poller.nudge()
     } }
-
-    /** 용량 변경은 원본을 수정하지 않고 화면 계산에만 적용한다. */
-    fun setCapacity(value: Double) { viewModelScope.launch { container.settingsStore.setHistoryBatteryCapacity(value) } }
 
     /** 선택 변경은 collectLatest가 이전 경로 조회를 취소한다. */
     fun select(session: HistorySession?) { selected.value = session }

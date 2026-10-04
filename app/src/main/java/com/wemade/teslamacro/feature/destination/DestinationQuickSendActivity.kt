@@ -1,10 +1,12 @@
 package com.wemade.teslamacro.feature.destination
 
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -28,7 +30,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.DestinationPlace
-import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.data.settings.ThemeMode
 import com.wemade.teslamacro.ui.ViewModelFactory
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftField
@@ -40,20 +42,43 @@ import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 
 /** 홈 화면 위에서 주소 입력과 전송만 끝내도록 메인 화면과 별도 창을 쓴다. */
 class DestinationQuickSendActivity : ComponentActivity() {
+    private var showAppearance by mutableStateOf(false)
+
+    /** 이미 열린 입력창에서도 위젯의 설정 버튼을 누르면 꾸미기로 전환한다. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        showAppearance = intent.action == DestinationWidget.ACTION_APPEARANCE
+    }
+
+    /** 회전으로 창이 다시 만들어져도 꾸미기 화면을 유지한다. */
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("showAppearance", showAppearance)
+        super.onSaveInstanceState(outState)
+    }
+
     /** 초기화·테마·전송 상태는 앱의 기존 저장소와 ViewModel을 그대로 사용한다. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        showAppearance = savedInstanceState?.getBoolean("showAppearance")
+            ?: (intent.action == DestinationWidget.ACTION_APPEARANCE)
         setFinishOnTouchOutside(false)
         val app = application as TeslaMacroApplication
         setContent {
             val ready by app.ready.collectAsState()
             val initializationError by app.initializationError.collectAsState()
-            val settings by app.container.settingsStore.settings.collectAsState(initial = AppSettings())
-            TeslaMacroTheme(mode = settings.themeMode) {
+            val settings by app.container.settingsStore.settings.collectAsState(initial = null)
+            TeslaMacroTheme(mode = settings?.themeMode ?: ThemeMode.AUTO) {
                 Surface(shape = RoundedCornerShape(Radius.card), color = T.Carbon) {
-                    if (ready) {
+                    if (ready && settings != null) {
                         val model: DestinationViewModel = viewModel(factory = ViewModelFactory(app.container))
-                        DestinationQuickSendRoute(model, onClose = ::finish)
+                        if (showAppearance) {
+                            DestinationWidgetAppearanceScreen(settings!!.destinationWidgetAppearance, app.container.settingsStore) {
+                                showAppearance = false
+                            }
+                        } else {
+                            DestinationQuickSendRoute(model, onClose = ::finish, onAppearance = { showAppearance = true })
+                        }
                     } else {
                         Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                             Text(initializationError ?: "목적지 전송 준비 중…", color = T.Ink)
@@ -69,14 +94,14 @@ class DestinationQuickSendActivity : ComponentActivity() {
 
 /** 연결 설정이 필요할 때도 메인 화면을 거치지 않고 같은 창에서 해결한다. */
 @Composable
-private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -> Unit) {
+private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -> Unit, onAppearance: () -> Unit) {
     val state by model.state.collectAsState()
     var setup by rememberSaveable { mutableStateOf(false) }
     if (setup) {
         DestinationRoute(model, settingsOnly = true, onBack = { setup = false })
     } else {
         ObserveDestination(model)
-        DestinationQuickSendScreen(state, model::queryChanged, { model.send(false) }, { setup = true }, onClose)
+        DestinationQuickSendScreen(state, model::queryChanged, { model.send(false) }, { setup = true }, onClose, onAppearance)
     }
 }
 
@@ -88,6 +113,7 @@ internal fun DestinationQuickSendScreen(
     onSend: () -> Unit,
     onSettings: () -> Unit,
     onClose: () -> Unit,
+    onAppearance: () -> Unit = {},
 ) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -96,7 +122,10 @@ internal fun DestinationQuickSendScreen(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
     ) {
-        Text("목적지 전송", style = MaterialTheme.typography.titleLarge, color = T.Ink)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("목적지 전송", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = T.Ink)
+            TButton("닫기", tone = ButtonTone.Ghost, fillWidth = false, onClick = onClose)
+        }
         DraftField(
             value = state.query, onValueChange = onQuery, label = "주소 또는 장소명",
             modifier = Modifier.focusRequester(focus), enabled = !state.busy,
@@ -116,7 +145,10 @@ internal fun DestinationQuickSendScreen(
         state.notice?.let { Text(it, color = T.Ok, style = MaterialTheme.typography.bodyMedium) }
         state.connectionError?.let { Text(it, color = T.Danger, style = MaterialTheme.typography.bodySmall) }
         Text("받는 기기의 네이버지도에서 검색해요.", color = T.InkMuted, style = MaterialTheme.typography.bodySmall)
-        TButton("기기 연결·설정", tone = ButtonTone.Ghost, enabled = !state.busy, onClick = onSettings)
-        TButton("닫기", tone = ButtonTone.Ghost, onClick = onClose)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            TButton("기기 연결·설정", modifier = Modifier.weight(1f), tone = ButtonTone.Ghost, enabled = !state.busy, onClick = onSettings)
+            TButton("위젯 꾸미기", modifier = Modifier.weight(1f), tone = ButtonTone.Ghost, enabled = !state.busy,
+                onClick = { keyboard?.hide(); onAppearance() })
+        }
     }
 }

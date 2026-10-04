@@ -10,6 +10,14 @@ import android.net.ConnectivityManager
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.compose.ui.graphics.toArgb
+import com.wemade.teslamacro.TeslaMacroApplication
+import com.wemade.teslamacro.data.settings.DestinationWidgetAppearance
+import com.wemade.teslamacro.ui.theme.DarkPalette
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.feature.destination.DestinationQuickSendActivity
 import com.wemade.teslamacro.feature.destination.DestinationWidget
@@ -26,6 +34,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         var host: AppWidgetHost? = null
         var widgetId: Int? = null
         var activity: Activity? = null
+        var originalAppearance: DestinationWidgetAppearance? = null
         try {
             check(targetContext.getSystemService(ConnectivityManager::class.java).activeNetwork == null) {
                 "실제 목적지 전송을 막으려면 테스트 에뮬레이터의 네트워크를 먼저 꺼야 합니다"
@@ -53,6 +62,8 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             activity = waitForMonitorWithTimeout(monitor, 10_000)
             removeMonitor(monitor)
             check(activity != null) { "위젯 클릭으로 입력창이 열리지 않았습니다" }
+            val store = (targetContext.applicationContext as TeslaMacroApplication).container.settingsStore
+            originalAppearance = runBlocking { store.settings.first().destinationWidgetAppearance }
             val field = awaitNode { it.className == "android.widget.EditText" }
             check(field.isFocused) { "주소 입력칸의 자동 초점 누락" }
             awaitButton("전송", enabled = false)
@@ -64,13 +75,46 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             awaitNode { it.text?.toString()?.contains("연결을 확인하지 못했어요") == true }
             check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
             awaitButton("전송", enabled = true)
+            // 홈 위젯의 설정 버튼이 이미 열린 전송창을 꾸미기로 전환하는지도 확인한다.
+            runOnMainSync { view.findViewById<android.view.View>(R.id.destination_widget_settings).performClick() }
+            awaitNode { it.text?.toString() == "위젯 꾸미기" }
+            clickLabel("배경 색상")
+            clickLabel("어둡게")
+            clickLabel("완전 투명")
+            clickLabel("글자 색상")
+            clickLabel("밝은색")
+            clickLabel("저장")
+            awaitNode { it.className == "android.widget.EditText" }
+            val appearance = runBlocking { store.settings.first().destinationWidgetAppearance }
+            check(appearance.transparency == 100 && appearance.theme.name == "DARK" && appearance.text.name == "LIGHT") {
+                "예상한 꾸미기가 저장되지 않았습니다: $appearance"
+            }
+            val appliedDeadline = SystemClock.uptimeMillis() + 5_000
+            var transparent = false
+            while (!transparent && SystemClock.uptimeMillis() < appliedDeadline) {
+                runOnMainSync {
+                    transparent = view.findViewById<ImageView>(R.id.destination_widget_background).imageAlpha == 0 &&
+                        view.findViewById<TextView>(R.id.destination_widget_input).currentTextColor == DarkPalette.ink.toArgb()
+                }
+                if (!transparent) SystemClock.sleep(100)
+            }
+            check(transparent) { "저장한 투명도·글자색이 홈 위젯에 반영되지 않았습니다" }
+            // 입력창은 스타일 저장 뒤에도 작성 중인 주소를 유지해야 한다.
+            check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
             check(awaitButton("기기 연결·설정", enabled = true).performAction(AccessibilityNodeInfo.ACTION_CLICK))
             awaitNode { it.text?.toString() == "목적지 설정" }
-            result.putString("stream", "PASS: 위젯 바인딩·클릭·입력창·자동 초점·빈 입력 차단·전송·오프라인 오류·입력 유지·설정 진입")
+            result.putString("stream", "PASS: 위젯 클릭·자동 초점·입력 검증·오프라인 오류·설정 진입·꾸미기 저장·완전 투명·글자색 실제 반영·주소 유지")
         } catch (error: Throwable) {
             resultCode = Activity.RESULT_CANCELED
-            result.putString("stream", "FAIL: ${error.javaClass.simpleName}: ${error.message}\n${error.stackTrace.take(4).joinToString("\n")}\n${uiAutomation.rootInActiveWindow?.let(::describe)}")
+            val controls = if (activity != null) uiAutomation.rootInActiveWindow?.let(::describe) else "입력창 진입 전"
+            result.putString("stream", "FAIL: ${error.javaClass.simpleName}: ${error.message}\n${error.stackTrace.take(4).joinToString("\n")}\n$controls")
         } finally {
+            originalAppearance?.let { appearance ->
+                runBlocking {
+                    (targetContext.applicationContext as TeslaMacroApplication).container.settingsStore.setDestinationWidgetAppearance(appearance)
+                }
+                DestinationWidget.updateAll(targetContext, appearance)
+            }
             runOnMainSync {
                 activity?.finish()
                 widgetId?.let { host?.deleteAppWidgetId(it) }
@@ -86,6 +130,26 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
         }))
         waitForIdleSync()
+    }
+
+    /** 작은 화면에서는 스크롤로 가려진 설정을 드러낸 뒤 누른다. */
+    private fun clickLabel(label: String) {
+        val deadline = SystemClock.uptimeMillis() + 10_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            val root = uiAutomation.rootInActiveWindow
+            var control = root?.let { find(it) { node -> node.text?.toString() == label } }
+            // 선택 시트의 바깥 닫기 영역 대신 글자에 가장 가까운 조작 행을 누른다.
+            while (control != null && !control.isClickable) control = control.parent
+            if (control != null && control.isVisibleToUser) {
+                check(control.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+                waitForIdleSync()
+                return
+            }
+            root?.let { find(it) { node -> node.isScrollable } }
+                ?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            SystemClock.sleep(100)
+        }
+        error("설정을 찾지 못했습니다: $label")
     }
 
     /** Compose의 글자 노드가 아닌 상위 버튼에서 활성 상태와 클릭을 검사한다. */

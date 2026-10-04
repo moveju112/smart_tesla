@@ -82,6 +82,7 @@ data class AppSettings(
     val deviceMode: DeviceMode = DeviceMode.PORTABLE,
     val destinationReceiveEnabled: Boolean = false,
     val destinationValidityMinutes: Int = 10,
+    val destinationWidgetAppearance: DestinationWidgetAppearance = DestinationWidgetAppearance(),
     /**
      * 키 등록까지 끝났는지.
      *
@@ -174,6 +175,14 @@ class SettingsStore(
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             destinationReceiveEnabled = prefs[KeyDestinationReceiveEnabled] ?: false,
             destinationValidityMinutes = (prefs[KeyDestinationValidityMinutes] ?: 10).coerceIn(1, 120),
+            destinationWidgetAppearance = DestinationWidgetAppearance(
+                theme = DestinationWidgetTheme.entries.firstOrNull { it.name == prefs[KeyDestinationWidgetTheme] }
+                    ?: DestinationWidgetTheme.LIGHT,
+                transparency = (prefs[KeyDestinationWidgetTransparency] ?: 0).coerceIn(0, 100),
+                text = DestinationWidgetText.entries.firstOrNull { it.name == prefs[KeyDestinationWidgetText] }
+                    ?: DestinationWidgetText.AUTO,
+                showTitle = prefs[KeyDestinationWidgetTitle] ?: true,
+            ),
             isEnrolled = prefs[KeyEnrolled] ?: false,
             vehicleAddress = prefs[KeyVehicleAddress] ?: "",
             vehicleName = prefs[KeyVehicleName] ?: "",
@@ -212,6 +221,14 @@ class SettingsStore(
 
     /** 화면 모드를 저장해 앱을 다시 열어도 사용자의 선택을 유지한다. */
     suspend fun setThemeMode(mode: ThemeMode) = edit { it[KeyThemeMode] = mode.name }
+
+    /** 색과 투명도를 한 번에 저장해 위젯 갱신 중 다른 설정이 섞이지 않게 한다. */
+    suspend fun setDestinationWidgetAppearance(appearance: DestinationWidgetAppearance) = edit {
+        it[KeyDestinationWidgetTheme] = appearance.theme.name
+        it[KeyDestinationWidgetTransparency] = appearance.transparency.coerceIn(0, 100)
+        it[KeyDestinationWidgetText] = appearance.text.name
+        it[KeyDestinationWidgetTitle] = appearance.showTitle
+    }
 
     /** 차량 식별자가 바뀌면 이전 차의 등록 승인·BLE 주소·오디오·별칭을 원자적으로 지운다. */
     suspend fun setVin(vin: String) = edit { setVinInPreferences(it, vin) }
@@ -514,6 +531,10 @@ class SettingsStore(
     private companion object {
         val KeyFleetApiEnabled = booleanPreferencesKey("fleet_api_enabled")
         val KeyThemeMode = stringPreferencesKey("theme_mode")
+        val KeyDestinationWidgetTheme = stringPreferencesKey("destination_widget_theme")
+        val KeyDestinationWidgetTransparency = intPreferencesKey("destination_widget_transparency")
+        val KeyDestinationWidgetText = stringPreferencesKey("destination_widget_text")
+        val KeyDestinationWidgetTitle = booleanPreferencesKey("destination_widget_title")
         val KeyVin = stringPreferencesKey("vin")
         val KeyLegacyVoiceAlwaysOn = booleanPreferencesKey("voice_always_on")
         val KeyLegacyIdlePoll = intPreferencesKey("idle_poll_seconds")

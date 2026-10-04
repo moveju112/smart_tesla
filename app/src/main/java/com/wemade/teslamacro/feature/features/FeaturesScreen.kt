@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
@@ -118,14 +121,13 @@ fun FeaturesScreen(
                         if (feature != AppFeature.SAFE_DRIVE || navigation.safeDriveAvailable) {
                             val required = requiredFeatureSettings(feature, settings, navigation.locationPermitted,
                                 navigation.activityPermitted, smartThings.notificationAccessGranted)
-                            val status = when {
-                                required != null -> "${required.label} 설정 필요"
-                                feature == AppFeature.SAFE_DRIVE -> if (settings.safeDrive) "켜짐" else "꺼짐"
-                                feature == AppFeature.STEALTH_CHARGE -> if (settings.stealthCharging) "켜짐" else "꺼짐"
-                                feature == AppFeature.SMARTTHINGS -> if (settings.smartThingsEnabled) "켜짐" else "꺼짐"
+                            val enabled = when (feature) {
+                                AppFeature.SAFE_DRIVE -> settings.safeDrive
+                                AppFeature.STEALTH_CHARGE -> settings.stealthCharging
+                                AppFeature.SMARTTHINGS -> settings.smartThingsEnabled
                                 else -> null
                             }
-                            FeatureRow(feature, status, onClick = {
+                            FeatureRow(feature, enabled, required?.let { "${it.label} 설정 필요" }, onClick = {
                                 onSelect(feature)
                                 if (required != null) onSettings(required)
                             })
@@ -164,16 +166,18 @@ fun FeaturesScreen(
     }
 }
 
-/** 아이콘·이름·짧은 요약을 한 행에 두고, 좁은 큰 글씨에서만 설명을 이름 아래로 옮긴다. */
+/** 켜진 기능은 아이콘 체크로 구별하고 설정이 필요한 상태만 글자로 남긴다. */
 @Composable
-private fun FeatureRow(feature: AppFeature, status: String?, onClick: () -> Unit) {
+private fun FeatureRow(feature: AppFeature, enabled: Boolean?, notice: String?, onClick: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val stacked = maxWidth < Space.xxl * 6 ||
             (maxWidth < Space.xxl * 10 && LocalDensity.current.fontScale >= 1.3f)
+        val accessibilityState = notice ?: enabled?.let { if (it) "켜짐" else "꺼짐" }
         Row(
             modifier = Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(Radius.button))
                 .clickable(role = Role.Button, onClick = onClick)
+                .semantics { accessibilityState?.let { stateDescription = it } }
                 .defaultMinSize(minHeight = Space.xxl + Space.md)
                 .padding(horizontal = Space.sm, vertical = Space.sm),
             verticalAlignment = Alignment.CenterVertically,
@@ -193,13 +197,21 @@ private fun FeatureRow(feature: AppFeature, status: String?, onClick: () -> Unit
                     },
                     contentDescription = null, tint = T.Electric, modifier = Modifier.size(Space.lg),
                 )
+                // 사용 준비가 안 된 기능은 체크를 숨겨 실제로 사용할 수 있다는 오해를 막는다.
+                if (enabled == true && notice == null) {
+                    Icon(DraftMark.Check, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.align(Alignment.BottomEnd).size(Space.md + Space.xs)
+                            .background(T.Carbon, CircleShape).padding(Space.xs / 2)
+                            .background(T.Electric, CircleShape).padding(Space.xs / 2))
+                }
             }
             Spacer(Modifier.width(Space.md))
             if (stacked) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     Text(feature.label, style = MaterialTheme.typography.titleMedium, color = T.Ink)
                     Text(feature.summary, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                    status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted) }
+                    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted) }
                 }
             } else {
                 Text(feature.label, style = MaterialTheme.typography.titleMedium, color = T.Ink,
@@ -208,7 +220,7 @@ private fun FeatureRow(feature: AppFeature, status: String?, onClick: () -> Unit
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Text(feature.summary, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
                         textAlign = TextAlign.End)
-                    status?.let {
+                    notice?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
                             textAlign = TextAlign.End)
                     }

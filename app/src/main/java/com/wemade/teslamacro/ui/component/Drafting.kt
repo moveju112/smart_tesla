@@ -249,6 +249,8 @@ fun DraftField(
     visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(Radius.button),
+    textStyle: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
+    colors: androidx.compose.material3.TextFieldColors? = null,
 ) {
     OutlinedTextField(
         value = value,
@@ -262,13 +264,13 @@ fun DraftField(
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         visualTransformation = visualTransformation,
-        textStyle = MaterialTheme.typography.bodyMedium,
+        textStyle = textStyle,
         shape = shape,
         label = label?.let { { Text(it) } },
-        placeholder = placeholder?.let { { Text(it) } },
+        placeholder = placeholder?.let { { Text(it, modifier = Modifier.fillMaxWidth(), style = textStyle) } },
         suffix = suffix?.let { { Text(it) } },
         supportingText = note?.let { { Text(it) } },
-        colors = OutlinedTextFieldDefaults.colors(
+        colors = colors ?: OutlinedTextFieldDefaults.colors(
             focusedTextColor = T.Ink,
             unfocusedTextColor = T.Ink,
             disabledTextColor = T.InkFaint,

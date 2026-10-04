@@ -5,11 +5,15 @@ import android.view.Gravity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -23,6 +27,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.DestinationPlace
@@ -31,14 +37,16 @@ import com.wemade.teslamacro.ui.ViewModelFactory
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.theme.Radius
 import com.wemade.teslamacro.ui.theme.T
+import com.wemade.teslamacro.ui.theme.Space
+import com.wemade.teslamacro.ui.theme.Stroke
 import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 
-/** 홈 배경을 유지한 채 키보드 바로 위에 입력줄만 표시한다. */
+/** 키보드와 간격을 두고 남은 화면 가운데 반투명 입력 카드만 표시한다. */
 class DestinationQuickSendActivity : ComponentActivity() {
     /** 제목·설정은 두지 않고 키보드 전송, 바깥 터치와 시스템 뒤로가기를 사용한다. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setGravity(Gravity.BOTTOM)
+        window.setGravity(Gravity.CENTER)
         setFinishOnTouchOutside(true)
         val app = application as TeslaMacroApplication
         setContent {
@@ -89,12 +97,25 @@ internal fun DestinationQuickSendScreen(
     LaunchedEffect(state.busy) {
         if (!state.busy) { focus.requestFocus(); keyboard?.show() }
     }
-    Surface(shape = RoundedCornerShape(Radius.pill), color = T.Carbon) {
+    val clear = T.Carbon.copy(alpha = 0f)
+    Surface(
+        shape = RoundedCornerShape(Radius.hero), color = T.Carbon.copy(alpha = 0.88f),
+        border = BorderStroke(Stroke.hair, T.Hairline.copy(alpha = 0.5f)),
+    ) {
         DraftField(
             value = state.query, onValueChange = { if (!state.busy) onQuery(it) }, label = null,
-            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "주소 또는 장소명" },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)
+                .focusRequester(focus).semantics { contentDescription = "주소 또는 장소명" },
             placeholder = "주소·장소 입력",
-            shape = RoundedCornerShape(Radius.pill),
+            shape = RoundedCornerShape(Radius.button),
+            textStyle = MaterialTheme.typography.titleMedium.copy(textAlign = TextAlign.Center, fontWeight = FontWeight.Normal),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = T.Ink, unfocusedTextColor = T.Ink,
+                focusedPlaceholderColor = T.InkMuted, unfocusedPlaceholderColor = T.InkMuted,
+                focusedBorderColor = clear, unfocusedBorderColor = clear,
+                focusedContainerColor = clear, unfocusedContainerColor = clear,
+                cursorColor = T.Electric,
+            ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = {
                 if (!state.busy && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120) onSend()

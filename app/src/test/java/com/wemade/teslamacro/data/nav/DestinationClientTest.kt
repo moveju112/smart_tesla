@@ -76,6 +76,50 @@ class DestinationClientTest {
         assertNotEquals(requests[0]["requestId"], requests[1]["requestId"])
     }
 
+    /** 미연결은 새로고침으로 복구할 수 없으므로 연결 안내 뒤 새 전송의 정상 응답을 확인한다. */
+    @Test fun unpairedThenPairedSendSucceeds() = runBlocking {
+        var paired = false
+        val client = client { body ->
+            assertEquals("send", body.getValue("operation").jsonPrimitive.content)
+            if (!paired) RoadHttpResponse(409, """{"error":"receiver_not_paired"}""")
+            else RoadHttpResponse(200, buildJsonObject {
+                put("serverNow", 1000)
+                putJsonObject("request") {
+                    put("id", body.getValue("requestId"))
+                    put("destination", body.getValue("destination"))
+                    put("createdAt", 1000)
+                    put("expiresAt", 601000)
+                    put("status", "pending")
+                    put("selfTest", false)
+                }
+            }.toString())
+        }
+        val error = runCatching { client.send(DestinationPlace("서울역"), 10, false) }.exceptionOrNull() as DestinationApiException
+        assertEquals(409, error.code)
+        assertTrue(error.message!!.contains("받는 기기 연결"))
+        assertFalse(error.message!!.contains("새로고침"))
+        paired = true
+        val sent = client.send(DestinationPlace("서울역"), 10, false)
+        assertEquals("pending", sent.request?.status)
+        assertEquals("서울역", sent.request?.destination?.name)
+    }
+
+    /** 상태 충돌을 연결 누락으로 오인하거나 서버 원문을 사용자에게 노출하지 않는다. */
+    @Test fun conflictReasonsAreSeparatedAndUnknownBodiesStayPrivate() = runBlocking {
+        for ((body, expected) in listOf(
+            """{"error":"request_conflict"}""" to "충돌",
+            """{"error":"request_not_pending"}""" to "이미 처리",
+            """{"error":"private-server-detail"}""" to "요청 상태",
+            "<html>private-server-detail</html>" to "요청 상태",
+        )) {
+            val client = client { RoadHttpResponse(409, body) }
+            val error = runCatching { client.call("status") }.exceptionOrNull() as DestinationApiException
+            assertTrue(error.message!!.contains(expected))
+            assertFalse(error.message!!.contains("private-server-detail"))
+            assertFalse(error.message!!.contains("받는 기기 연결"))
+        }
+    }
+
     /** 기기 키 실패는 서버 장애와 구분해 기록하되 예외 본문과 비밀값은 남기지 않는다. */
     @Test fun identityFailureIsDiagnosableWithoutSecrets() = runBlocking {
         val identity = RoadDeviceIdentity(AtomicFile(File(temporary.root, "broken.txt"))) {

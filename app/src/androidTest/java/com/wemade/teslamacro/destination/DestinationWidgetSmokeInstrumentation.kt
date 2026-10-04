@@ -47,6 +47,9 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         var configuration: Activity? = null
         var originalAppearance: DestinationWidgetAppearance? = null
         try {
+            uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply {
+                flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            }
             check(targetContext.getSystemService(ConnectivityManager::class.java).activeNetwork == null) {
                 "실제 목적지 전송을 막으려면 테스트 에뮬레이터의 네트워크를 먼저 꺼야 합니다"
             }
@@ -91,8 +94,28 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
                 if (!keyboardVisible) SystemClock.sleep(100)
             }
             check(keyboardVisible) { "입력창을 열었지만 키보드가 나타나지 않았습니다" }
+            // IME의 실제 창 위치를 기다려 입력 카드가 키보드와 충분히 떨어져 있는지 확인한다.
+            val layoutDeadline = SystemClock.uptimeMillis() + 10_000
+            var separated = false
+            while (!separated && SystemClock.uptimeMillis() < layoutDeadline) {
+                val keyboardWindow = uiAutomation.windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+                if (keyboardWindow != null) {
+                    val keyboardBounds = android.graphics.Rect().also { keyboardWindow.getBoundsInScreen(it) }
+                    val inputBounds = android.graphics.Rect().also {
+                        awaitNode { node -> node.className == "android.widget.EditText" }.getBoundsInScreen(it)
+                    }
+                    separated = keyboardBounds.top - inputBounds.bottom >= 24 * targetContext.resources.displayMetrics.density
+                }
+                if (!separated) SystemClock.sleep(100)
+            }
+            check(separated) { "입력 카드가 키보드에 너무 가깝습니다" }
+            runOnMainSync {
+                check(activity!!.window.attributes.gravity and android.view.Gravity.VERTICAL_GRAVITY_MASK == android.view.Gravity.CENTER_VERTICAL)
+                check(activity!!.window.attributes.dimAmount in 0.1f..0.4f)
+            }
             waitForIdleSync()
             if (captureReview) {
+                uiAutomation.waitForIdle(500, 5_000)
                 val screen = checkNotNull(uiAutomation.takeScreenshot())
                 val reduced = android.graphics.Bitmap.createScaledBitmap(screen, screen.width / 2, screen.height / 2, true)
                 java.io.File(targetContext.cacheDir, "destination-input-review.png").outputStream().use {
@@ -168,7 +191,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(transparent) { "저장한 투명도·글자색이 홈 위젯에 반영되지 않았습니다" }
             // 입력창은 스타일 저장 뒤에도 작성 중인 주소를 유지해야 한다.
             check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
-            result.putString("stream", "PASS: 작은 위젯 아이콘·가로 크기 변경·입력창만 표시·자동 초점·키보드 전송·빈 입력 차단·오프라인 오류·주소 유지·런처 꾸미기 저장/취소")
+            result.putString("stream", "PASS: 가운데 입력 카드·반투명 배경·키보드 간격·위젯 크기 변경·자동 초점·IME 전송·빈 입력 차단·실패 후 주소 유지·꾸미기 저장/취소")
         } catch (error: Throwable) {
             resultCode = Activity.RESULT_CANCELED
             val controls = if (activity != null) uiAutomation.rootInActiveWindow?.let(::describe) else "입력창 진입 전"

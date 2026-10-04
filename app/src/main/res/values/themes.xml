@@ -16,9 +16,12 @@
         <item name="android:windowCloseOnTouchOutside">false</item>
         <item name="android:windowSoftInputMode">adjustResize</item>
     </style>
-    <!-- 입력줄만 띄우고 홈 배경은 어둡게 가리지 않는다. 꾸미기 창은 기존 테마를 유지한다. -->
+    <!-- 홈 배경을 은은하게 낮추고 키보드와 떨어진 반투명 카드에 입력을 모은다. -->
     <style name="Theme.TeslaMacro.QuickInput" parent="Theme.TeslaMacro.QuickSend">
-        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.22</item>
+        <item name="android:windowMinWidthMajor">70%</item>
+        <item name="android:windowMinWidthMinor">88%</item>
         <item name="android:windowCloseOnTouchOutside">true</item>
         <item name="android:windowSoftInputMode">adjustResize|stateAlwaysVisible</item>
     </style>

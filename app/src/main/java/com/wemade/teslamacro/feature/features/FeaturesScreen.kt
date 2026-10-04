@@ -51,6 +51,7 @@ import com.wemade.teslamacro.ui.theme.T
 
 /** 실행 화면과 설정의 연결을 한 곳에서 정의한다. */
 enum class AppFeature(val label: String, val description: String, val summary: String) {
+    HISTORY("주행 기록", "이동 경로와 배터리·충전 기록을 모아요", "지도 · 전비 · 충전"),
     MACROS("매크로", "차량 동작을 만들고 자동으로 실행해요", "조건 · 동작"),
     DESTINATION("목적지 전송", "주소나 검색어를 차량 태블릿으로 보내요", "검색어 보내기"),
     SAFE_DRIVE("단속 안내", "주행 중 단속 카메라와 과속을 알려줘요", "카메라 · 과속"),
@@ -66,7 +67,7 @@ internal fun requiredFeatureSettings(
     activityPermitted: Boolean,
     notificationAccessGranted: Boolean,
 ): FeatureSettings? = when {
-    feature in listOf(AppFeature.STEALTH_CHARGE, AppFeature.SMARTTHINGS) && !settings.isReady -> FeatureSettings.VEHICLE
+    feature in listOf(AppFeature.STEALTH_CHARGE, AppFeature.SMARTTHINGS, AppFeature.HISTORY) && !settings.isReady -> FeatureSettings.VEHICLE
     feature == AppFeature.SAFE_DRIVE && (!locationPermitted ||
         (settings.safeDriveSound && settings.deviceMode == DeviceMode.MOUNTED && !activityPermitted)) -> FeatureSettings.SAFE_DRIVE
     feature == AppFeature.SMARTTHINGS && (!notificationAccessGranted ||
@@ -93,6 +94,7 @@ fun FeaturesScreen(
     stealthSecondsUntilNextChange: Int? = null,
     macroContent: @Composable () -> Unit = {},
     destinationContent: @Composable () -> Unit = {},
+    historyContent: @Composable () -> Unit = {},
 ) {
     BackHandler(enabled = selected != null) { onSelect(null) }
     if (selected == AppFeature.DESTINATION) {
@@ -106,6 +108,10 @@ fun FeaturesScreen(
         }
         if (selected == AppFeature.MACROS) {
             macroContent()
+            return@Column
+        }
+        if (selected == AppFeature.HISTORY) {
+            historyContent()
             return@Column
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(Space.md),
@@ -122,6 +128,7 @@ fun FeaturesScreen(
                             val required = requiredFeatureSettings(feature, settings, navigation.locationPermitted,
                                 navigation.activityPermitted, smartThings.notificationAccessGranted)
                             val enabled = when (feature) {
+                                AppFeature.HISTORY -> settings.historyEnabled
                                 AppFeature.SAFE_DRIVE -> settings.safeDrive
                                 AppFeature.STEALTH_CHARGE -> settings.stealthCharging
                                 AppFeature.SMARTTHINGS -> settings.smartThingsEnabled
@@ -189,6 +196,7 @@ private fun FeatureRow(feature: AppFeature, enabled: Boolean?, notice: String?, 
             ) {
                 Icon(
                     imageVector = when (feature) {
+                        AppFeature.HISTORY -> DraftMark.Location
                         AppFeature.MACROS -> DraftMark.Automation
                         AppFeature.DESTINATION -> DraftMark.Location
                         AppFeature.SAFE_DRIVE -> DraftMark.Speed

@@ -72,6 +72,7 @@ object SnapshotDecoder {
 
     private fun VehicleSnapshot.withCharge(charge: Vehicle.ChargeState): VehicleSnapshot = copy(
         batteryLevelPercent = charge.takeIf { it.hasBatteryLevel() }?.batteryLevel,
+        chargeEnergyAddedKwh = charge.takeIf { it.hasChargeEnergyAdded() }?.chargeEnergyAdded,
         // charger_power는 kW 정수라 저전류(5~9A)에서 0으로 내려앉는다. 그걸로만 판정하면
         // 전류를 낮게 흔드는 스텔스 충전이 스스로를 "충전 완료"로 오인한다.
         // 실측 전류가 흐르고 있으면 그것도 충전이다
@@ -101,6 +102,9 @@ object SnapshotDecoder {
                 else -> ShiftState.UNKNOWN
             },
             speedKph = drive.takeIf { it.hasSpeedFloat() }?.let { it.speedFloat * MILES_TO_KM },
+            odometerHundredthsMile = drive.takeIf { it.hasOdometerInHundredthsOfAMile() }
+                ?.odometerInHundredthsOfAMile,
+            drivePowerKw = drive.takeIf { it.hasPower() }?.power,
         )
     }
 

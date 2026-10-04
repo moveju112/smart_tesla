@@ -70,6 +70,8 @@ class StatePoller(
     private val forecastReader: suspend (GeoPoint, Long) -> WeatherForecast? = { _, _ -> null },
     /** 15분 단위 충전 전류 그래프의 원본. 없으면 기록만 안 남고 폴링은 그대로 돈다 */
     private val chargeHistory: com.wemade.teslamacro.data.charge.ChargeHistoryStore? = null,
+    private val vehicleHistory: com.wemade.teslamacro.data.history.VehicleHistoryStore? = null,
+    private val historyIsRealVehicle: () -> Boolean = { false },
 ) {
     private var job: Job? = null
 
@@ -329,6 +331,8 @@ class StatePoller(
             }
             val isActiveWindow = now() < activeUntil
             if (now() >= focusUntil) focusCategories = setOf()
+            val recordHistory = settings.historyEnabled && settings.isReady &&
+                historyIsRealVehicle() && portableCheck == null
             val categories = when {
                 // 안심운전 확인은 탑승값만 필요하다. 위치·다른 매크로 조회로 착석 감지를 늦추지 않는다.
                 portableCheck != null -> setOf(StateCategory.BODY_CONTROLLER)
@@ -361,7 +365,9 @@ class StatePoller(
                 // 빈 차가 본령인 룰이 하차 시점 값(몇 시간 전 46℃)으로 판정되는 걸 막는다.
                 // 인포테인먼트 읽기가 차 수면을 방해하는 비용은 그 룰을 켠 사용자의 선택이다
                 else -> setOf(StateCategory.BODY_CONTROLLER) + requiredCategories(settings)
-            } + if (portableCheck == null) dueSlowCategories() else emptySet()
+            } + (if (portableCheck == null) dueSlowCategories() else emptySet()) +
+                (if (recordHistory) setOf(StateCategory.DRIVE, StateCategory.LOCATION,
+                    StateCategory.CHARGE, StateCategory.CLIMATE) else emptySet())
             if (portableCheck == null && needFullRead) {
                 needFullRead = false
             }
@@ -392,6 +398,14 @@ class StatePoller(
 
             // 3-0. 충전 전류를 15분 칸에 적산한다. 읽은 사이클에서만 센다
             chargeHistory?.record(merged, now())
+
+            // 이번 응답만 기록하고 연결 유지 사유는 늘리지 않아 기존 이탈 보호를 지킨다.
+            if (recordHistory && fresh != null) {
+                val currentSettings = settingsStore.settings.first()
+                if (currentSettings.historyEnabled && currentSettings.isReady && currentSettings.vin == settings.vin && historyIsRealVehicle()) {
+                    vehicleHistory?.record(fresh, settings.vin, now())
+                }
+            }
 
             // 3-1. 좀비 GATT 워치독 — 한 사이클이 통째로 실패하는 게 이어지면 강제 재접속.
             //      하나라도 성공했으면 링크는 산 것이다 (빈 차 사이클도 VCSEC는 항상 응답해야 정상)
@@ -574,7 +588,7 @@ class StatePoller(
                 snapshot = merged,
                 activeSeconds = ACTIVE_POLL_SECONDS,
                 idleSeconds = NORMAL_POLL_SECONDS,
-            )
+            ).let { if (recordHistory) minOf(it, 5) else it }
             // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지.
             // 단 실패가 낀 사이클은 경과를 빼지 않는다 — 타임아웃(8초×N)이 주기를 넘으면
             // 하한 1초로 떨어져 "느린 차일수록 쉼 없이 재시도"가 된다

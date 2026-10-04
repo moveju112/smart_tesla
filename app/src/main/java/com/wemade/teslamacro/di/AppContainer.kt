@@ -114,6 +114,7 @@ class AppContainer(private val context: Context) {
 
     /** 설정 화면의 15분 단위 충전 전류 그래프가 읽는 기록 */
     val chargeHistory = com.wemade.teslamacro.data.charge.ChargeHistoryStore(context)
+    val vehicleHistory = com.wemade.teslamacro.data.history.VehicleHistoryStore(context)
     private val macroShortcutPublisher = MacroShortcutPublisher(context)
 
     /** 예보. 계정도 키도 없는 Open-Meteo를 쓴다 */
@@ -179,6 +180,8 @@ class AppContainer(private val context: Context) {
             locationReader = tabletLocation::read,
             forecastReader = weatherClient::forecast,
             chargeHistory = chargeHistory,
+            vehicleHistory = vehicleHistory,
+            historyIsRealVehicle = { !isSimulated },
         )
         stealthCharge = com.wemade.teslamacro.data.charge.StealthChargeController(
             gateway, poller, settingsStore,

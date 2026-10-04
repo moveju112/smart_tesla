@@ -24,8 +24,9 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 256
-        versionName = "0.9.143"
+        versionCode = 257
+        versionName = "0.9.144"
+        testInstrumentationRunner = "com.wemade.teslamacro.history.HistorySmokeInstrumentation"
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.
@@ -33,7 +34,11 @@ android {
         abi {
             isEnable = true
             reset()
+        if (providers.gradleProperty("historySmokeEmulator").orNull == "true") {
+            include("x86_64")
+        } else {
             include("arm64-v8a", "armeabi-v7a")
+        }
             isUniversalApk = false
         }
     }

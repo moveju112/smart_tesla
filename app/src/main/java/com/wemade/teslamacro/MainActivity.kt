@@ -496,6 +496,10 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 onStealthChange = settingsViewModel::setStealthCharging,
                                 stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
                                 macroContent = { MacroRoute(factory) },
+                                historyContent = {
+                                    val historyViewModel: com.wemade.teslamacro.feature.history.HistoryViewModel = viewModel(factory = factory)
+                                    com.wemade.teslamacro.feature.history.HistoryRoute(historyViewModel)
+                                },
                                 destinationContent = {
                                     val destinationViewModel: com.wemade.teslamacro.feature.destination.DestinationViewModel = viewModel(factory = factory)
                                     com.wemade.teslamacro.feature.destination.DestinationRoute(

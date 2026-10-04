@@ -107,6 +107,12 @@ data class VehicleSnapshot(
     val rangeKm: Float? = null,
     val isChargePortOpen: Boolean? = null,
     val speedKph: Float? = null,
+    /** 원본 마일 정수 단위를 보존해 장기 거리 계산의 반올림 누적을 막는다. */
+    val odometerHundredthsMile: Int? = null,
+    /** 차량 보고값. 실제 수신과 의미 검증 전에는 확정 전비로 표시하지 않는다. */
+    val drivePowerKw: Int? = null,
+    /** 충전 세션마다 초기화될 수 있으므로 누적계처럼 무조건 차감하지 않는다. */
+    val chargeEnergyAddedKwh: Float? = null,
     /** 차가 아니라 폴러가 잰다 — 탑승 중이면 지금까지, 하차 후엔 직전 세션 길이(분) */
     val rideMinutes: Double? = null,
     /** 타이어 공기압(bar). 못 읽은 자리는 아예 빠진다 — 0으로 채우지 않는다 */
@@ -186,6 +192,9 @@ fun VehicleSnapshot.overlay(fresh: VehicleSnapshot): VehicleSnapshot = copy(
     rangeKm = fresh.rangeKm ?: rangeKm,
     isChargePortOpen = fresh.isChargePortOpen ?: isChargePortOpen,
     speedKph = fresh.speedKph ?: speedKph,
+    odometerHundredthsMile = fresh.odometerHundredthsMile ?: odometerHundredthsMile,
+    drivePowerKw = fresh.drivePowerKw ?: drivePowerKw,
+    chargeEnergyAddedKwh = fresh.chargeEnergyAddedKwh ?: chargeEnergyAddedKwh,
     rideMinutes = fresh.rideMinutes ?: rideMinutes,
     tirePressuresBar = tirePressuresBar + fresh.tirePressuresBar,
     vehicleLatitude = fresh.vehicleLatitude ?: vehicleLatitude,

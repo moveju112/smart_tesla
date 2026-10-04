@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https://tile.openstreetmap.org; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>
+html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;font-family:system-ui;background:__BACKGROUND__;color:__INK__}
+#map{position:relative;touch-action:none}#tiles img{position:absolute;width:256px;height:256px;pointer-events:none}
+svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}path{fill:none;stroke:__ROUTE__;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+#controls{position:absolute;left:8px;top:8px;display:flex;gap:6px}button{min-width:48px;min-height:48px;font-size:18px;border:1px solid __INK__;border-radius:8px;background:__BACKGROUND__;color:__INK__}
+#credit{position:absolute;right:0;bottom:0;padding:4px;background:__BACKGROUND__;font-size:12px;color:__INK__}
+#status{position:absolute;left:8px;bottom:30px;background:__BACKGROUND__;padding:4px;font-size:12px;max-width:80%}
+</style></head><body><div id="map" role="img" aria-label="주행 경로 지도"><div id="tiles"></div><svg id="route"><path id="line"></path><circle id="start" r="5" fill="__ROUTE__"/><circle id="end" r="5" fill="__INK__"/></svg>
+<div id="controls"><button id="zoomIn" aria-label="지도 확대">+</button><button id="zoomOut" aria-label="지도 축소">−</button><button id="fit">전체</button></div>
+<div id="status" role="status"></div><a id="credit" href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a></div>
+<script>
+const samples=__POINTS__, map=document.getElementById('map'), tiles=document.getElementById('tiles');
+let zoom=12, centerX=0.5, centerY=0.5, drag=null, tileFailures=0;
+// 경도 날짜변경선에서도 가까운 좌표끼리 이어지도록 펼친다.
+function project(sample) {
+    const latitude=Math.max(-85.05112878,Math.min(85.05112878,sample[0]));
+    let x=(sample[1]+180)/360;
+    if(samples.length){const first=(samples[0][1]+180)/360; x-=Math.round(x-first);}
+    const sine=Math.sin(latitude*Math.PI/180);
+    return [x,0.5-Math.log((1+sine)/(1-sine))/(4*Math.PI),sample[2]];
+}
+const points=samples.map(project);
+// 현재 화면에 보이는 타일만 요청하고 같은 타일 DOM은 유지해 재다운로드를 줄인다.
+function render() {
+    const width=map.clientWidth,height=map.clientHeight,scale=256*Math.pow(2,zoom),count=Math.pow(2,zoom);
+    const left=centerX*scale-width/2,top=centerY*scale-height/2,wanted=new Set();
+    for(let x=Math.floor(left/256);x<=Math.floor((left+width)/256);x++) {
+        for(let y=Math.floor(top/256);y<=Math.floor((top+height)/256);y++) {
+            if(y<0||y>=count)continue;
+            const key=zoom+'_'+x+'_'+y;wanted.add(key);
+            let tile=document.getElementById('tile_'+key);
+            if(!tile){tile=document.createElement('img');tile.id='tile_'+key;tile.alt='';
+                tile.onerror=()=>{tileFailures++;document.getElementById('status').textContent='배경 지도를 읽지 못했어요 · 저장된 경로는 표시돼요';};
+                tile.src='https://tile.openstreetmap.org/'+zoom+'/'+((x%count+count)%count)+'/'+y+'.png';tiles.appendChild(tile);}
+            tile.style.left=(x*256-left)+'px';tile.style.top=(y*256-top)+'px';
+        }
+    }
+    Array.from(tiles.children).forEach(tile=>{if(!wanted.has(tile.id.slice(5)))tile.remove();});
+    let path='';
+    points.forEach((point,index)=>{const gap=index===0||point[2]-points[index-1][2]>15000||point[2]<=points[index-1][2];
+        path+=(gap?'M':'L')+(point[0]*scale-left).toFixed(2)+','+(point[1]*scale-top).toFixed(2)+' ';});
+    document.getElementById('line').setAttribute('d',path);
+    ['start','end'].forEach((id,index)=>{const dot=document.getElementById(id),point=points[index===0?0:points.length-1];
+        dot.style.display=point?'':'none';if(point){dot.setAttribute('cx',point[0]*scale-left);dot.setAttribute('cy',point[1]*scale-top);}});
+    if(!points.length)document.getElementById('status').textContent='이 주행에는 수신된 차량 좌표가 없어요';
+}
+// 전체 경로는 저장된 좌표만으로 맞추고 도로 매칭 서버로 보내지 않는다.
+function fit() {
+    if(!points.length){render();return;}
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    points.forEach(point=>{minX=Math.min(minX,point[0]);maxX=Math.max(maxX,point[0]);minY=Math.min(minY,point[1]);maxY=Math.max(maxY,point[1]);});
+    centerX=(minX+maxX)/2;centerY=(minY+maxY)/2;
+    const scale=Math.min(Math.max(1,map.clientWidth-80)/Math.max(maxX-minX,0.00001),Math.max(1,map.clientHeight-100)/Math.max(maxY-minY,0.00001));
+    zoom=Math.max(1,Math.min(17,Math.floor(Math.log2(scale/256))));render();
+}
+// 확대·축소는 화면 중심을 유지한다.
+function changeZoom(delta){zoom=Math.max(1,Math.min(18,zoom+delta));render();}
+document.getElementById('zoomIn').onclick=()=>changeZoom(1);
+document.getElementById('zoomOut').onclick=()=>changeZoom(-1);
+document.getElementById('fit').onclick=fit;
+map.onpointerdown=event=>{if(event.target.closest('button,a'))return;drag=[event.clientX,event.clientY,centerX,centerY];map.setPointerCapture(event.pointerId);};
+map.onpointermove=event=>{if(!drag)return;const scale=256*Math.pow(2,zoom);centerX=drag[2]-(event.clientX-drag[0])/scale;centerY=Math.max(0,Math.min(1,drag[3]-(event.clientY-drag[1])/scale));render();};
+map.onpointerup=()=>{drag=null;};map.onpointercancel=()=>{drag=null;};
+window.onresize=render;fit();
+</script></body></html>

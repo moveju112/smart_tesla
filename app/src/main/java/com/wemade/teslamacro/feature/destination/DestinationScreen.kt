@@ -42,6 +42,7 @@ data class DestinationUiState(
     val notice: String? = null, val error: String? = null, val connectionError: String? = null,
     val receiveMessage: String = "탑승 대기",
     val connectionChecked: Boolean = false,
+    val sendCompleted: Boolean = false,
 )
 
 /** 조회가 끝난 정상 응답만 연결 준비 여부로 판단한다. 통신 오류를 미설정으로 취급하지 않는다. */

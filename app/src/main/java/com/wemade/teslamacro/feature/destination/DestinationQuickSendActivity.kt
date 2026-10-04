@@ -1,154 +1,104 @@
 package com.wemade.teslamacro.feature.destination
 
 import android.os.Bundle
-import android.content.Intent
+import android.view.Gravity
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.DestinationPlace
 import com.wemade.teslamacro.data.settings.ThemeMode
 import com.wemade.teslamacro.ui.ViewModelFactory
-import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.DraftField
-import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.theme.Radius
-import com.wemade.teslamacro.ui.theme.Space
 import com.wemade.teslamacro.ui.theme.T
 import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 
-/** 홈 화면 위에서 주소 입력과 전송만 끝내도록 메인 화면과 별도 창을 쓴다. */
+/** 홈 배경을 유지한 채 키보드 바로 위에 입력줄만 표시한다. */
 class DestinationQuickSendActivity : ComponentActivity() {
-    private var showAppearance by mutableStateOf(false)
-
-    /** 이미 열린 입력창에서도 위젯의 설정 버튼을 누르면 꾸미기로 전환한다. */
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        showAppearance = intent.action == DestinationWidget.ACTION_APPEARANCE
-    }
-
-    /** 회전으로 창이 다시 만들어져도 꾸미기 화면을 유지한다. */
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean("showAppearance", showAppearance)
-        super.onSaveInstanceState(outState)
-    }
-
-    /** 초기화·테마·전송 상태는 앱의 기존 저장소와 ViewModel을 그대로 사용한다. */
+    /** 제목·설정은 두지 않고 키보드 전송, 바깥 터치와 시스템 뒤로가기를 사용한다. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        showAppearance = savedInstanceState?.getBoolean("showAppearance")
-            ?: (intent.action == DestinationWidget.ACTION_APPEARANCE)
-        setFinishOnTouchOutside(false)
+        window.setGravity(Gravity.BOTTOM)
+        setFinishOnTouchOutside(true)
         val app = application as TeslaMacroApplication
         setContent {
             val ready by app.ready.collectAsState()
             val initializationError by app.initializationError.collectAsState()
             val settings by app.container.settingsStore.settings.collectAsState(initial = null)
+            LaunchedEffect(initializationError) {
+                initializationError?.let {
+                    Toast.makeText(this@DestinationQuickSendActivity, it, Toast.LENGTH_LONG).show()
+                    finish()
+                }
+            }
             TeslaMacroTheme(mode = settings?.themeMode ?: ThemeMode.AUTO) {
-                Surface(shape = RoundedCornerShape(Radius.card), color = T.Carbon) {
-                    if (ready && settings != null) {
-                        val model: DestinationViewModel = viewModel(factory = ViewModelFactory(app.container))
-                        if (showAppearance) {
-                            DestinationWidgetAppearanceScreen(settings!!.destinationWidgetAppearance, app.container.settingsStore) {
-                                showAppearance = false
-                            }
-                        } else {
-                            DestinationQuickSendRoute(model, onClose = ::finish, onAppearance = { showAppearance = true })
-                        }
-                    } else {
-                        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            Text(initializationError ?: "목적지 전송 준비 중…", color = T.Ink)
-                            if (initializationError != null) TButton("다시 시도", onClick = app::retryInitialization)
-                            TButton("닫기", tone = ButtonTone.Ghost, onClick = ::finish)
-                        }
-                    }
+                if (ready && settings != null) {
+                    val model: DestinationViewModel = viewModel(factory = ViewModelFactory(app.container))
+                    DestinationQuickSendRoute(model, onClose = ::finish)
+                } else {
+                    DestinationQuickSendScreen(DestinationUiState(busy = true), {}, {})
                 }
             }
         }
     }
 }
 
-/** 연결 설정이 필요할 때도 메인 화면을 거치지 않고 같은 창에서 해결한다. */
+/** 전송 성공 때만 창을 닫고 실패는 짧게 알린 뒤 입력을 유지한다. */
 @Composable
-private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -> Unit, onAppearance: () -> Unit) {
+private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -> Unit) {
     val state by model.state.collectAsState()
-    var setup by rememberSaveable { mutableStateOf(false) }
-    if (setup) {
-        DestinationRoute(model, settingsOnly = true, onBack = { setup = false })
-    } else {
-        ObserveDestination(model)
-        DestinationQuickSendScreen(state, model::queryChanged, { model.send(false) }, { setup = true }, onClose, onAppearance)
+    val context = LocalContext.current
+    LaunchedEffect(state.sendCompleted, state.error) {
+        if (state.sendCompleted) {
+            Toast.makeText(context, "전송했어요", Toast.LENGTH_SHORT).show()
+            onClose()
+        } else state.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
+    DestinationQuickSendScreen(state, model::queryChanged, { model.send(false) })
 }
 
-/** 입력칸에 바로 초점을 주며 실패 시 입력을 유지해 같은 창에서 다시 보낼 수 있게 한다. */
+/** 버튼 대신 IME 전송 키를 사용하며 전송 중에도 초점을 유지해 입력줄이 튀지 않게 한다. */
 @Composable
 internal fun DestinationQuickSendScreen(
     state: DestinationUiState,
     onQuery: (String) -> Unit,
     onSend: () -> Unit,
-    onSettings: () -> Unit,
-    onClose: () -> Unit,
-    onAppearance: () -> Unit = {},
 ) {
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(Unit) { focus.requestFocus(); keyboard?.show() }
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(Space.lg),
-        verticalArrangement = Arrangement.spacedBy(Space.sm),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("목적지 전송", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = T.Ink)
-            TButton("닫기", tone = ButtonTone.Ghost, fillWidth = false, onClick = onClose)
-        }
+    LaunchedEffect(state.busy) {
+        if (!state.busy) { focus.requestFocus(); keyboard?.show() }
+    }
+    Surface(shape = RoundedCornerShape(Radius.pill), color = T.Carbon) {
         DraftField(
-            value = state.query, onValueChange = onQuery, label = "주소 또는 장소명",
-            modifier = Modifier.focusRequester(focus), enabled = !state.busy,
-            placeholder = "예: 서울시청",
+            value = state.query, onValueChange = { if (!state.busy) onQuery(it) }, label = null,
+            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "주소 또는 장소명" },
+            placeholder = "주소·장소 입력",
+            shape = RoundedCornerShape(Radius.pill),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = {
+                if (!state.busy && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120) onSend()
+            }),
         )
-        Text(
-            state.receiverName?.let { "$it · ${state.minutes}분 동안 전달 대기" }
-                ?: if (state.connectionChecked) "받는 기기를 연결해 주세요" else "받는 기기 확인 중…",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-        )
-        TButton(
-            if (state.busy) "전송 중…" else "전송",
-            enabled = !state.busy && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120,
-            onClick = { keyboard?.hide(); onSend() },
-        )
-        state.error?.let { Text(it, color = T.Danger, style = MaterialTheme.typography.bodyMedium) }
-        state.notice?.let { Text(it, color = T.Ok, style = MaterialTheme.typography.bodyMedium) }
-        state.connectionError?.let { Text(it, color = T.Danger, style = MaterialTheme.typography.bodySmall) }
-        Text("받는 기기의 네이버지도에서 검색해요.", color = T.InkMuted, style = MaterialTheme.typography.bodySmall)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            TButton("기기 연결·설정", modifier = Modifier.weight(1f), tone = ButtonTone.Ghost, enabled = !state.busy, onClick = onSettings)
-            TButton("위젯 꾸미기", modifier = Modifier.weight(1f), tone = ButtonTone.Ghost, enabled = !state.busy,
-                onClick = { keyboard?.hide(); onAppearance() })
-        }
     }
 }

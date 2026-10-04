@@ -51,7 +51,7 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
         val place = DestinationPlace(value.query.trim())
         check(place.valid()) { "검색어를 1~120자로 입력해 주세요. 줄바꿈은 사용할 수 없어요" }
         val reply = client.send(place, value.minutes, selfTest)
-        mutableState.update { it.copy(request = reply.request, notice = if (selfTest) "이 폰으로 전송했어요" else "전송했어요") }
+        mutableState.update { it.copy(request = reply.request, notice = if (selfTest) "이 폰으로 전송했어요" else "전송했어요", sendCompleted = true) }
     }
 
     /** 서버가 취소를 확정한 경우에만 화면을 취소 상태로 바꾼다. */

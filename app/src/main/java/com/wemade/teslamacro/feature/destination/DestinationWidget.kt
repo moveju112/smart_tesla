@@ -6,6 +6,8 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
+import android.view.View
 import android.widget.RemoteViews
 import androidx.compose.ui.graphics.toArgb
 import com.wemade.teslamacro.R
@@ -38,8 +40,12 @@ class DestinationWidget : AppWidgetProvider() {
         }
     }
 
+    /** 런처 크기 변경 즉시 현재 폭에 맞는 아이콘·문구를 다시 그린다. */
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, widgetId: Int, newOptions: Bundle) {
+        onUpdate(context, manager, intArrayOf(widgetId))
+    }
+
     companion object {
-        const val ACTION_APPEARANCE = "com.wemade.teslamacro.DESTINATION_WIDGET_APPEARANCE"
 
         /** 저장 직후 이미 배치한 위젯에도 같은 설정을 적용한다. */
         fun updateAll(context: Context, appearance: DestinationWidgetAppearance) {
@@ -48,7 +54,7 @@ class DestinationWidget : AppWidgetProvider() {
         }
 
         /** 미리보기와 실제 위젯에 같은 뷰를 사용해 투명도·색상이 어긋나지 않게 한다. */
-        internal fun createViews(context: Context, appearance: DestinationWidgetAppearance): RemoteViews {
+        internal fun createViews(context: Context, appearance: DestinationWidgetAppearance, compact: Boolean = false): RemoteViews {
             val background = when (appearance.theme) {
                 DestinationWidgetTheme.LIGHT -> LightPalette.void
                 DestinationWidgetTheme.DARK -> DarkPalette.carbon
@@ -62,6 +68,11 @@ class DestinationWidget : AppWidgetProvider() {
             return RemoteViews(context.packageName, R.layout.destination_widget).apply {
                 setInt(R.id.destination_widget_background, "setColorFilter", background.toArgb())
                 setInt(R.id.destination_widget_background, "setImageAlpha", (100 - appearance.transparency.coerceIn(0, 100)) * 255 / 100)
+                setViewVisibility(R.id.destination_widget_input, if (compact) View.GONE else View.VISIBLE)
+                setViewPadding(R.id.destination_widget_content,
+                    if (compact) 0 else context.resources.getDimensionPixelSize(R.dimen.widget_icon_padding), 0,
+                    if (compact) 0 else context.resources.getDimensionPixelSize(R.dimen.widget_spacing), 0)
+                setContentDescription(R.id.destination_widget_root, context.getString(R.string.destination_widget_title))
                 setTextColor(R.id.destination_widget_input, text)
                 setInt(R.id.destination_widget_search, "setColorFilter", text)
                 setTextViewText(R.id.destination_widget_input, context.getString(
@@ -77,7 +88,8 @@ class DestinationWidget : AppWidgetProvider() {
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             val openInput = PendingIntent.getActivity(context, 0, input, flags)
             widgetIds.forEach { id ->
-                val views = createViews(context, appearance)
+                val width = manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 240)
+                val views = createViews(context, appearance, compact = width < 120)
                 views.setOnClickPendingIntent(R.id.destination_widget_input, openInput)
                 views.setOnClickPendingIntent(R.id.destination_widget_root, openInput)
                 manager.updateAppWidget(id, views)

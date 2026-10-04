@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -236,7 +237,7 @@ fun Modifier.draftBlock(tone: Color = T.Ink): Modifier {
 fun DraftField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
+    label: String?,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     isError: Boolean = false,
@@ -246,21 +247,24 @@ fun DraftField(
     note: String? = null,
     placeholder: String? = null,
     visualTransformation: androidx.compose.ui.text.input.VisualTransformation = androidx.compose.ui.text.input.VisualTransformation.None,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(Radius.button),
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier.fillMaxWidth().semantics {
-            if (isError) error("$label 입력을 확인해 주세요")
+            if (isError) error("${label ?: "주소"} 입력을 확인해 주세요")
         },
         enabled = enabled,
         isError = isError,
         singleLine = singleLine,
         keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         visualTransformation = visualTransformation,
         textStyle = MaterialTheme.typography.bodyMedium,
-        shape = RoundedCornerShape(Radius.button),
-        label = { Text(label) },
+        shape = shape,
+        label = label?.let { { Text(it) } },
         placeholder = placeholder?.let { { Text(it) } },
         suffix = suffix?.let { { Text(it) } },
         supportingText = note?.let { { Text(it) } },

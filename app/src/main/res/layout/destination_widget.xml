@@ -16,10 +16,11 @@
             android:scaleType="fitXY"
             android:src="@drawable/destination_widget_background" />
         <LinearLayout
+            android:id="@+id/destination_widget_content"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="horizontal"
-            android:gravity="center_vertical"
+            android:gravity="center"
             android:paddingStart="@dimen/widget_icon_padding"
             android:paddingEnd="@dimen/widget_spacing">
             <ImageView

@@ -112,7 +112,7 @@
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.destination"
-            android:theme="@style/Theme.TeslaMacro.QuickSend" />
+            android:theme="@style/Theme.TeslaMacro.QuickInput" />
         <activity
             android:name=".feature.destination.DestinationWidgetConfigurationActivity"
             android:exported="true"

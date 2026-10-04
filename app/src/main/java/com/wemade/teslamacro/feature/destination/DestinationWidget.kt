@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.view.View
 import android.widget.RemoteViews
 import androidx.compose.ui.graphics.toArgb
 import com.wemade.teslamacro.R
@@ -63,25 +62,24 @@ class DestinationWidget : AppWidgetProvider() {
             return RemoteViews(context.packageName, R.layout.destination_widget).apply {
                 setInt(R.id.destination_widget_background, "setColorFilter", background.toArgb())
                 setInt(R.id.destination_widget_background, "setImageAlpha", (100 - appearance.transparency.coerceIn(0, 100)) * 255 / 100)
-                setTextColor(R.id.destination_widget_title, text)
                 setTextColor(R.id.destination_widget_input, text)
-                setInt(R.id.destination_widget_settings, "setColorFilter", text)
-                setViewVisibility(R.id.destination_widget_title, if (appearance.showTitle) View.VISIBLE else View.GONE)
+                setInt(R.id.destination_widget_search, "setColorFilter", text)
+                setTextViewText(R.id.destination_widget_input, context.getString(
+                    if (appearance.showTitle) R.string.destination_widget_title else R.string.destination_widget_input,
+                ))
             }
         }
 
-        /** 입력과 꾸미기 인텐트를 분리해 설정 버튼이 전송창으로 바뀌지 않게 한다. */
+        /** 검색창을 누르면 입력창을 열고 꾸미기는 런처의 재설정 메뉴에서 연다. */
         private fun updateWidgets(context: Context, manager: AppWidgetManager, widgetIds: IntArray, appearance: DestinationWidgetAppearance) {
             val input = Intent(context, DestinationQuickSendActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             val openInput = PendingIntent.getActivity(context, 0, input, flags)
-            val openAppearance = PendingIntent.getActivity(context, 1, Intent(input).setAction(ACTION_APPEARANCE), flags)
             widgetIds.forEach { id ->
                 val views = createViews(context, appearance)
                 views.setOnClickPendingIntent(R.id.destination_widget_input, openInput)
                 views.setOnClickPendingIntent(R.id.destination_widget_root, openInput)
-                views.setOnClickPendingIntent(R.id.destination_widget_settings, openAppearance)
                 manager.updateAppWidget(id, views)
             }
         }

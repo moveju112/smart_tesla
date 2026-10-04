@@ -20,6 +20,7 @@ class DestinationReceiverTest {
         var destination = place
         var launchedDestination: DestinationPlace? = null
         var elapsed = 1_000L
+        var createdAt = 100_000L
         var ready = true
         var status = "pending"
         var receipt: DestinationReceipt? = null
@@ -30,7 +31,7 @@ class DestinationReceiverTest {
         var selfTest = false
         var before: () -> Unit = {}
         var launchFailure = false
-        val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, 100_000, 160_000, status, selfTest)
+        val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, createdAt, createdAt + 60_000, status, selfTest)
 
         /** 인계 이후 수신함에서 제거하고 완료 응답 유실도 재현한다. */
         suspend fun call(operation: String, fields: JsonObjectBuilder.() -> Unit): DestinationReply {
@@ -92,6 +93,29 @@ class DestinationReceiverTest {
         assertEquals("delivered", scenario.status)
         assertFalse(receiver.receive(false) { true })
         assertEquals(1, scenario.launches)
+    }
+
+    /** 탑승 중 빈 수신함을 5분 확인한 뒤 도착해도 재탑승 없이 한 번 전달한다. */
+    @Test fun lateDestinationDuringSameRideIsDeliveredOnce() = runTest {
+        val scenario = Scenario().apply { status = "empty"; destination = DestinationPlace("서울시청") }
+        val receiver = scenario.receiver()
+        repeat(60) {
+            assertFalse(receiver.receive(false) {
+                destinationReady(true, true, scenario.elapsed - 1_000, scenario.elapsed)
+            })
+            scenario.elapsed += 5_000
+        }
+        assertEquals(0, scenario.launches)
+        scenario.createdAt = 100_000 + scenario.elapsed - 1_000
+        scenario.status = "pending"
+        assertTrue(receiver.receive(false) {
+            destinationReady(true, true, scenario.elapsed - 1_000, scenario.elapsed)
+        })
+        assertEquals(scenario.destination, scenario.launchedDestination)
+        assertEquals("delivered", scenario.status)
+        assertFalse(receiver.receive(false) { true })
+        assertEquals(1, scenario.launches)
+        assertEquals(1, scenario.claims)
     }
 
     /** 한 번 인계한 요청은 동시에 수신해도 한 번만 실행한다. */

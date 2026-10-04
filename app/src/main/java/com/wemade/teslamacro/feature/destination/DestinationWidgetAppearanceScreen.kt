@@ -44,6 +44,7 @@ import kotlin.math.roundToInt
 internal fun DestinationWidgetAppearanceScreen(
     initial: DestinationWidgetAppearance,
     store: SettingsStore,
+    onSaved: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     var theme by rememberSaveable { mutableStateOf(initial.theme.name) }
@@ -76,7 +77,7 @@ internal fun DestinationWidgetAppearanceScreen(
         Text("0% 불투명 · 100% 완전 투명", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         TButton("완전 투명", tone = ButtonTone.Secondary, enabled = !busy, onClick = { transparency = 100 })
         ChoiceSettingRow("글자 색상", DestinationWidgetText.entries.map { it.name to it.label }, text) { text = it }
-        SettingToggleRow("제목 표시", showTitle, { showTitle = it })
+        SettingToggleRow("기능 이름 표시", showTitle, { showTitle = it })
         error?.let { Text(it, color = T.Danger, style = MaterialTheme.typography.bodySmall) }
         TButton(if (busy) "적용 중…" else "저장", enabled = !busy, onClick = {
             busy = true
@@ -85,7 +86,7 @@ internal fun DestinationWidgetAppearanceScreen(
                 try {
                     store.setDestinationWidgetAppearance(appearance)
                     DestinationWidget.updateAll(context, appearance)
-                    onBack()
+                    (onSaved ?: onBack)()
                 } catch (failure: Exception) {
                     if (failure is CancellationException) throw failure
                     error = "위젯 설정을 적용하지 못했어요. 다시 시도해 주세요."
@@ -104,7 +105,7 @@ private fun DestinationWidgetPreview(appearance: DestinationWidgetAppearance) {
     AndroidView(
         factory = { context -> DestinationWidget.createViews(context, appearance).apply(context, null) },
         update = { view -> DestinationWidget.createViews(view.context, appearance).reapply(view.context, view) },
-        modifier = Modifier.fillMaxWidth().height(Space.xxl * 3).drawBehind {
+        modifier = Modifier.fillMaxWidth().height(Space.xxl + Space.lg).drawBehind {
             val cell = Space.md.toPx()
             for (row in 0..(size.height / cell).toInt()) {
                 for (column in 0..(size.width / cell).toInt()) {

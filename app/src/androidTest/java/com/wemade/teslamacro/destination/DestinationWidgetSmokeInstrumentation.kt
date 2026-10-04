@@ -1,9 +1,11 @@
 package com.wemade.teslamacro.destination
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.app.Instrumentation
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetHostView
+import android.appwidget.AppWidgetProviderInfo
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.net.ConnectivityManager
@@ -21,6 +23,7 @@ import kotlinx.coroutines.runBlocking
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.feature.destination.DestinationQuickSendActivity
 import com.wemade.teslamacro.feature.destination.DestinationWidget
+import com.wemade.teslamacro.feature.destination.DestinationWidgetConfigurationActivity
 
 /** 실제 서버에 보내지 않고 런처 PendingIntent부터 입력·실패 복구까지 확인한다. */
 class DestinationWidgetSmokeInstrumentation : Instrumentation() {
@@ -34,6 +37,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         var host: AppWidgetHost? = null
         var widgetId: Int? = null
         var activity: Activity? = null
+        var configuration: Activity? = null
         var originalAppearance: DestinationWidgetAppearance? = null
         try {
             check(targetContext.getSystemService(ConnectivityManager::class.java).activeNetwork == null) {
@@ -42,6 +46,10 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             val manager = targetContext.getSystemService(AppWidgetManager::class.java)
             val provider = ComponentName(targetContext, DestinationWidget::class.java)
             val info = manager.installedProviders.single { it.provider == provider }
+            check(info.configure == ComponentName(targetContext, DestinationWidgetConfigurationActivity::class.java))
+            check(info.widgetFeatures and AppWidgetProviderInfo.WIDGET_FEATURE_RECONFIGURABLE != 0)
+            check(info.widgetFeatures and AppWidgetProviderInfo.WIDGET_FEATURE_CONFIGURATION_OPTIONAL != 0)
+            check(info.targetCellHeight == 1)
             lateinit var view: AppWidgetHostView
             runOnMainSync {
                 host = AppWidgetHost(targetContext, 146)
@@ -75,8 +83,26 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             awaitNode { it.text?.toString()?.contains("연결을 확인하지 못했어요") == true }
             check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
             awaitButton("전송", enabled = true)
-            // 홈 위젯의 설정 버튼이 이미 열린 전송창을 꾸미기로 전환하는지도 확인한다.
-            runOnMainSync { view.findViewById<android.view.View>(R.id.destination_widget_settings).performClick() }
+            // 런처가 사용하는 표준 위젯 재설정 API로 꾸미기를 열어 취소도 확인한다.
+            // Android 14 이상의 런처 호스트는 시스템 PendingIntent 실행 권한을 명시한다.
+            val configurationOptions = ActivityOptions.makeBasic()
+                .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle()
+            val configurationMonitor = addMonitor(DestinationWidgetConfigurationActivity::class.java.name, null, false)
+            runOnMainSync { host!!.startAppWidgetConfigureActivityForResult(activity!!, widgetId!!, 0, 148, configurationOptions) }
+            configuration = waitForMonitorWithTimeout(configurationMonitor, 10_000)
+            check(configuration != null) { "런처 재설정으로 꾸미기가 열리지 않았습니다" }
+            awaitNode { it.text?.toString() == "위젯 꾸미기" }
+            clickLabel("완전 투명")
+            clickLabel("취소")
+            awaitNode { it.className == "android.widget.EditText" }
+            check(runBlocking { store.settings.first().destinationWidgetAppearance } == originalAppearance) {
+                "꾸미기 취소가 기존 설정을 변경했습니다"
+            }
+            // waitForMonitorWithTimeout은 관찰자를 제거하므로 재진입 전에 새로 등록한다.
+            val saveMonitor = addMonitor(DestinationWidgetConfigurationActivity::class.java.name, null, false)
+            runOnMainSync { host!!.startAppWidgetConfigureActivityForResult(activity!!, widgetId!!, 0, 148, configurationOptions) }
+            configuration = waitForMonitorWithTimeout(saveMonitor, 10_000)
+            check(configuration != null) { "저장 검증을 위한 꾸미기 재진입 실패" }
             awaitNode { it.text?.toString() == "위젯 꾸미기" }
             clickLabel("배경 색상")
             clickLabel("어둡게")
@@ -103,7 +129,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
             check(awaitButton("기기 연결·설정", enabled = true).performAction(AccessibilityNodeInfo.ACTION_CLICK))
             awaitNode { it.text?.toString() == "목적지 설정" }
-            result.putString("stream", "PASS: 위젯 클릭·자동 초점·입력 검증·오프라인 오류·설정 진입·꾸미기 저장·완전 투명·글자색 실제 반영·주소 유지")
+            result.putString("stream", "PASS: 위젯 클릭·자동 초점·입력 검증·오프라인 오류·설정 진입·런처 재설정·취소 복원·꾸미기 저장·완전 투명·글자색 실제 반영·주소 유지")
         } catch (error: Throwable) {
             resultCode = Activity.RESULT_CANCELED
             val controls = if (activity != null) uiAutomation.rootInActiveWindow?.let(::describe) else "입력창 진입 전"
@@ -116,6 +142,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
                 DestinationWidget.updateAll(targetContext, appearance)
             }
             runOnMainSync {
+                configuration?.finish()
                 activity?.finish()
                 widgetId?.let { host?.deleteAppWidgetId(it) }
                 host?.stopListening()

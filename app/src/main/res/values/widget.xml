@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="destination_widget_title">목적지 전송</string>
-    <string name="destination_widget_input">주소·장소 입력 → 전송</string>
+    <string name="destination_widget_input">주소·장소 입력</string>
     <string name="destination_widget_description">주소나 장소를 입력해 연결된 기기로 전송해요.</string>
     <string name="destination_widget_appearance">위젯 꾸미기</string>
-    <!-- 런처 프로세스의 RemoteViews용 Space.md/xxl, Radius.card 대응값 -->
+    <!-- 런처 프로세스의 RemoteViews용 Space.md/xxl, Radius.pill 대응값 -->
     <dimen name="widget_spacing">16dp</dimen>
     <dimen name="widget_touch_target">48dp</dimen>
-    <dimen name="widget_corner">20dp</dimen>
+    <dimen name="widget_corner">999dp</dimen>
     <dimen name="widget_icon_padding">12dp</dimen>
+    <dimen name="widget_height">56dp</dimen>
 </resources>

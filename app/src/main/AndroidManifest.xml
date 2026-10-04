@@ -113,6 +113,15 @@
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.destination"
             android:theme="@style/Theme.TeslaMacro.QuickSend" />
+        <activity
+            android:name=".feature.destination.DestinationWidgetConfigurationActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.TeslaMacro.QuickSend">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <receiver
             android:name=".feature.destination.DestinationWidget"
             android:exported="false"

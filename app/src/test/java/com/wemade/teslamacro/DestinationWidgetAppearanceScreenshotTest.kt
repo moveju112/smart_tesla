@@ -28,7 +28,7 @@ class DestinationWidgetAppearanceScreenshotTest {
             TeslaMacroTheme(dark = false) {
                 Surface {
                     DestinationWidgetAppearanceScreen(
-                        DestinationWidgetAppearance(DestinationWidgetTheme.DARK, transparency = 50), store, {},
+                        DestinationWidgetAppearance(DestinationWidgetTheme.DARK, transparency = 50), store, onBack = {},
                     )
                 }
             }

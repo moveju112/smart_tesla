@@ -110,7 +110,7 @@ fun DestinationScreen(
                     Modifier.widthIn(max = if (wide) 640.dp else androidx.compose.ui.unit.Dp.Infinity)
                         .then(if (setup) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
                         .verticalScroll(scrollState).then(if (setup) Modifier else Modifier.padding(Space.md)),
-                    verticalArrangement = Arrangement.spacedBy(Space.lg),
+                    verticalArrangement = Arrangement.spacedBy(Space.sm + Space.xs),
                 ) {
                     if (!setup) {
                         TButton("뒤로", tone = ButtonTone.Ghost, icon = Icons.Rounded.ArrowBack,

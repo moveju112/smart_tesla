@@ -141,7 +141,7 @@ components:
   card:
     backgroundColor: "{colors.light-carbon}"
     rounded: "{rounded.card}"
-    padding: "{spacing.md}"
+    padding: "vertical {spacing.sm}, horizontal {spacing.md}"
 ---
 # Smart Tesla 디자인 시스템
 
@@ -258,7 +258,8 @@ Fleet 최초 토큰은 스위치를 켜기 전에 상세에서 등록한다. 저
 
 - `TButton`: Material `Button`·`OutlinedButton`·`TextButton`을 사용한다. 시각적 면은 기본 40dp·소형 36dp이고 Material의 48dp 터치 영역은 유지한다. 큰 글씨는 고정 높이로 자르지 않고 내용에 맞춰 늘어난다.
   Primary는 주요 저장/실행의 채운 버튼, Secondary는 대안 동작의 윤곽 버튼, Ghost는 추가·취소 등 텍스트 동작, Danger는 파괴적 동작의 오류색 텍스트다.
-- `TCard`: 20dp 반경, `Carbon` 면, 16dp 내부 여백으로 관련 내용을 묶는다.
+- `TCard`: 20dp 반경, `Carbon` 면, 가로 16dp·세로 8dp 내부 여백으로 관련 내용을 묶는다. 설정·기능·등록·진단 카드에 같은 기본값을 사용한다.
+- 설정 행은 최소 56dp, 터치 영역은 최소 48dp다. 한 줄 카드는 기본 72dp이며 큰 글씨·여러 줄 내용이면 높이를 늘린다. 기능 화면의 인접 카드 간격은 12dp, 설정 섹션 위 간격은 24dp로 유지한다. 행 안팎에 세로 여백을 중복해서 추가하지 않는다.
 - `DraftToggle`: Material Switch의 그림만 0.85배로 줄이며 행 전체의 최소 48dp 터치 영역과 상태어를 유지한다.
   매크로는 상태 문구와 스위치를 함께 표시하고 접근성 이름에 매크로 이름과 자동 실행 용도를 남긴다.
 - 화면 모드: `ChoiceGrid`의 자동·라이트·다크 세 선택지로 구성하며 현재 선택을 강조한다.
@@ -272,7 +273,7 @@ Fleet 최초 토큰은 스위치를 켜기 전에 상세에서 등록한다. 저
 
 ## Do's and Don'ts
 
-- Do UI 변경은 `-PallowSnapshots=true`로 실제 휴대폰·태블릿 렌더링을 열어 확인한다. 낮/밤과 필요한 글자 확대를 포함하고 CLI 사용자에게는 텍스트 결과만 보고한다. 일반 `test`는 비렌더링 상태를 유지한다.
+- Do 스크린샷은 명시적 요청 또는 레이아웃·시각적 UI 변경 후 필요한 최종 검토에만 사용한다. 수정을 마친 뒤 대표 화면을 최소 수량·크기로 한 번 검토하고, 관측된 실패 수정이나 후속 관련 변경이 있을 때만 재검토한다. 검토용 도구 이미지를 사용자 전달 허가로 해석하지 않으며, 명시적 표시·전달 요청이 없으면 텍스트로만 보고한다. 일반 `test`는 비렌더링 상태를 유지한다. 상세 조건은 [CLI snapshot policy](AI_RULES.md)를 따른다.
 - Do 공용 토큰과 기존 프리미티브를 재사용한다.
 - Do 모든 조작 타깃을 최소 48dp로 제공한다.
 - Do 아직 읽지 못한 값은 `--`로 표시하고 실제 차량 결과와 UI 표시 검증을 구별한다.

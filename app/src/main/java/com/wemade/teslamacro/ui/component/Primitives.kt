@@ -125,7 +125,7 @@ fun TButton(
     }
 }
 
-/** 관련 설정과 동작을 하나의 읽기 쉬운 면으로 묶는다. */
+/** 행의 터치 높이와 여백이 중복되지 않도록 카드의 세로 여백만 줄인다. */
 @Composable
 fun TCard(
     modifier: Modifier = Modifier,
@@ -143,7 +143,7 @@ fun TCard(
             .then(if (outlined) Modifier.border(Stroke.thin, T.Electric, shape) else Modifier)
             .then(if (onClick != null) Modifier.defaultMinSize(minHeight = Space.xxl)
                 .clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(Space.md),
+            .padding(horizontal = Space.md, vertical = Space.sm),
         content = content,
     )
 }

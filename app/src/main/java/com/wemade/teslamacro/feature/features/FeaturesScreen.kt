@@ -106,7 +106,7 @@ fun FeaturesScreen(
             return@Column
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(Space.md),
-            verticalArrangement = Arrangement.spacedBy(Space.md)) {
+            verticalArrangement = Arrangement.spacedBy(Space.sm + Space.xs)) {
             if (selected == null) {
                 Text("기능", style = MaterialTheme.typography.headlineSmall, color = T.Ink)
             } else {

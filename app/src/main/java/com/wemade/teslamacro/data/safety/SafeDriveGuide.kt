@@ -327,7 +327,7 @@ class SafeDriveGuide(
                 maxDistanceMeters = alertDistanceMeters, matchedRoadName = travelRoadName,
             )
         }
-        val candidate = rawAlert?.takeUnless { waitingForRoadName(it, travelRoadName, nowMillis, speed) }
+        val candidate = if (waitingForRoadName(rawAlert, travelRoadName, nowMillis, speed)) null else rawAlert
         // 실제 측정 시각으로 접근을 확인해 같은 GPS 측정의 재전달을 새 접근 근거로 세지 않는다.
         val alert = cameraTracker.observe(candidate, location.elapsedRealtimeNanos / 1_000_000)
         mutableState.value = SafetyState(ready = true, alert = alert, speedKph = speed, dataWarning = dataWarning)
@@ -429,10 +429,11 @@ class SafeDriveGuide(
      * 매칭이 꺼졌거나 인증이 거절됐거나 6초 안에 이름을 못 받으면 기존 판정대로 안내해 실제 카메라를 놓치지 않는다.
      * 바로 앞 후보는 GPS 오차 30m와 접근 확인 3초를 남기고 대기를 끝내, 이름을 기다리다 지나치지 않는다.
      * 이미 안내 중인 카메라는 도로명이 잠깐 끊겨도 멈추지 않는다.
+     * 도로 대조 등으로 후보가 사라지면 대기도 초기화해, 매칭 공백 뒤 재등장할 때 옛 만료 시간을 쓰지 않는다.
      */
-    private fun waitingForRoadName(alert: com.wemade.teslamacro.domain.safety.SafetyAlert, travelRoadName: String?,
+    private fun waitingForRoadName(alert: com.wemade.teslamacro.domain.safety.SafetyAlert?, travelRoadName: String?,
                                    nowMillis: Long, speedKph: Double): Boolean {
-        if (travelRoadName != null || !roadMatchEnabled || tokenRejected || comparableRoadName(alert.cameraRoadName) == null) {
+        if (alert == null || travelRoadName != null || !roadMatchEnabled || tokenRejected || comparableRoadName(alert.cameraRoadName) == null) {
             roadNameWaitKey = null
             return false
         }

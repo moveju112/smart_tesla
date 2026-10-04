@@ -36,6 +36,23 @@ class RoadNameGuideTest {
         assertTrue("옆 골목 카메라를 읽으면 안 된다: $spoken", spoken.isEmpty())
     }
 
+    /** 다른 도로로 제외한 후보는 매칭 공백 뒤 돌아와도 이전 대기 만료를 재사용하지 않는다. */
+    @Test fun rejectedSideStreetWaitsAgainDuringMatchingGap() = runTest {
+        val spoken = drive(roadName = "중앙로", roadNameAtSecond = { second ->
+            "중앙로".takeIf { second == 4 || second >= 13 }
+        })
+        assertTrue("도로명이 복구되기 전 옆 골목을 성급히 안내하면 안 된다: $spoken", spoken.isEmpty())
+    }
+
+    /** 재등장 후보도 도로명을 계속 못 받으면 새 대기 시작부터 6초 뒤 기존 안내로 복귀한다. */
+    @Test fun rejectedCameraStillFallsBackWhenMatchingDoesNotRecover() = runTest {
+        val spoken = drive(roadName = "중앙로", roadNameAtSecond = { second ->
+            "중앙로".takeIf { second == 4 }
+        })
+        assertTrue("10초에 다시 나타난 후보는 6초 대기와 접근 확인 뒤 안내: $spoken",
+            spoken.firstOrNull()?.second == 17)
+    }
+
     /** 같은 도로 카메라는 매칭 좌표가 3초마다만 갱신돼도 접근 확인을 통과해 제때 안내한다. */
     @Test fun sameRoadCameraIsAnnouncedWhileMatched() = runTest {
         val spoken = drive(roadName = "중앙로", cameraRoadName = "중앙로")
@@ -90,7 +107,8 @@ class RoadNameGuideTest {
     // 1초마다 북쪽으로 14m씩 가며 매칭은 요청마다 같은 도로명을 돌려준다(null이면 불확실 응답).
     private fun TestScope.drive(roadName: String?, cameraRoadName: String = "중앙로10번길",
                                cameraRoadAxis: Int? = null, reverseMatchedHeading: Boolean = false,
-                               cameraLatitude: Double = 37.004): List<Pair<String, Int>> {
+                               cameraLatitude: Double = 37.004,
+                               roadNameAtSecond: (Int) -> String? = { roadName }): List<Pair<String, Int>> {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         var second = 0
         val spoken = mutableListOf<Pair<String, Int>>()
@@ -101,12 +119,13 @@ class RoadNameGuideTest {
         val key = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
         val identity = RoadDeviceIdentity(AtomicFile(File(temporary.root, "device.txt"))) { key }
         field("roadMatcher").set(guide, RoadMatcher(Application(), bootstrapToken = "test", identityOverride = identity) { path, _, _ ->
+            val currentRoadName = roadNameAtSecond(second)
             when (path) {
                 "/v1/devices" -> RoadHttpResponse(200, """{"certificate":"dc1.test"}""")
                 "/v1/session" -> RoadHttpResponse(200, """{"accessToken":"rm1.test.token","expiresInSeconds":1800}""")
                 // 매칭 끝점은 현재 GPS와 같게 두고, 도로명 유무만 바꾼다.
-                else -> RoadHttpResponse(200, if (roadName == null) """{"status":"uncertain","matchings":[],"unmatchedCount":0}"""
-                else """{"status":"matched","roadName":"$roadName","matchings":[{"confidence":0.95,"geometry":{"type":"LineString",""" +
+                else -> RoadHttpResponse(200, if (currentRoadName == null) """{"status":"uncertain","matchings":[],"unmatchedCount":0}"""
+                else """{"status":"matched","roadName":"$currentRoadName","matchings":[{"confidence":0.95,"geometry":{"type":"LineString",""" +
                     """"coordinates":[[127.0,${37.0 + (second + if (reverseMatchedHeading) 1 else -1) * 0.000126}],[127.0,${37.0 + second * 0.000126}]]}}],"unmatchedCount":0}""")
             }
         })

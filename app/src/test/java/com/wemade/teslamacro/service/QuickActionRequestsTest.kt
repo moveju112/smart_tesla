@@ -18,6 +18,63 @@ class QuickActionRequestsTest {
     /** 순수 JVM 테스트에서는 Android 네이티브 로그 대신 메모리 상태만 검증한다. */
     private fun QuickActionRequests() = com.wemade.teslamacro.service.QuickActionRequests(diagnosticLogger = {})
 
+    /** 성공 자동 닫기는 대기·전송 중 카드를 유지하고 해당 요청의 차량 성공 확인 뒤에만 제거한다. */
+    @Test
+    fun `confirmed request disappears without removing other history`() = runTest {
+        val requests = QuickActionRequests()
+        requests.track("다른 요청") { it() }
+        val dispatch = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        var confirmed = false
+        val job = launch {
+            requests.trackWithFleetProgress("스마트싱스", dismissFinished = { confirmed }) { before, _, _ ->
+                dispatch.await()
+                before()
+                finish.await()
+                confirmed = true
+            }
+        }
+        runCurrent()
+        assertEquals(QuickActionRequests.Status.Waiting, requests.requests.value.last().status)
+        dispatch.complete(Unit)
+        runCurrent()
+        assertEquals(QuickActionRequests.Status.Sending, requests.requests.value.last().status)
+        finish.complete(Unit)
+        job.join()
+        assertEquals(listOf("다른 요청"), requests.requests.value.map { it.label })
+        assertEquals(QuickActionRequests.Status.Finished, requests.requests.value.single().status)
+    }
+
+    /** 정상 반환도 차량 성공 근거가 없으면 보존하고 예외·만료는 성공 자동 닫기 대상이 아니다. */
+    @Test
+    fun `unconfirmed failed and expired requests remain visible`() = runTest {
+        val requests = QuickActionRequests()
+        requests.trackWithFleetProgress("결과 미확인", dismissFinished = { false }) { before, _, _ -> before() }
+        requests.trackWithFleetProgress("실패", dismissFinished = { true }) { _, _, _ -> error("rejected") }
+        requests.trackWithFleetProgress("만료", dismissFinished = { true }) { _, _, _ ->
+            CommandDeadline(100) { 100 }.check()
+        }
+        assertEquals(listOf(QuickActionRequests.Status.Finished, QuickActionRequests.Status.Failed,
+            QuickActionRequests.Status.Expired), requests.requests.value.map { it.status })
+    }
+
+    /** 먼저 취소된 요청은 늦은 완료 콜백이 돌아와도 성공으로 숨기지 않는다. */
+    @Test
+    fun `cancelled request survives late completion with automatic dismissal`() = runTest {
+        val requests = QuickActionRequests()
+        val finish = CompletableDeferred<Unit>()
+        val job = launch {
+            requests.trackWithFleetProgress("취소", dismissFinished = { true }) { _, _, _ ->
+                withContext(NonCancellable) { finish.await() }
+            }
+        }
+        runCurrent()
+        assertTrue(requests.cancel(requests.requests.value.single().id))
+        finish.complete(Unit)
+        job.join()
+        assertEquals(QuickActionRequests.Status.Cancelled, requests.requests.value.single().status)
+    }
+
     /** 연결이 늦게 성공해도 취소된 요청은 전송 경계에서 차단한다. */
     @Test
     fun `cancel while connecting prevents late send`() = runTest {

@@ -663,9 +663,13 @@ class MacroService : LifecycleService() {
                 val label = app.container.ruleStore.rules.value.firstOrNull { it.id == macroId }?.name
                     ?: QuickActionActivity.ACTIONS[action]?.label ?: "빠른 명령"
                 lifecycleScope.launch {
-                    app.container.quickActionRequests.trackWithFleetProgress(label) { beforeDispatch, _, onSubmitted ->
+                    var confirmed = false
+                    val dismissOnSuccess = intent.getBooleanExtra(EXTRA_DISMISS_ON_SUCCESS, false)
+                    app.container.quickActionRequests.trackWithFleetProgress(label,
+                        dismissFinished = { dismissOnSuccess && confirmed }) { beforeDispatch, _, onSubmitted ->
                         handleTimedQuickAction(action, macroId, receivedAt,
-                            intent.getIntExtra(EXTRA_VALIDITY_SECONDS, 120).coerceIn(10, 600), beforeDispatch, onSubmitted)
+                            intent.getIntExtra(EXTRA_VALIDITY_SECONDS, 120).coerceIn(10, 600), beforeDispatch, onSubmitted,
+                            onConfirmed = { confirmed = true })
                     }
                 }
             }
@@ -745,7 +749,7 @@ class MacroService : LifecycleService() {
     /** 수신 당시 유효시간을 연결·깨우기·전송 전체에 적용한다. */
     private suspend fun handleTimedQuickAction(
         action: String?, macroId: String?, receivedAt: Long, validitySeconds: Int,
-        beforeDispatch: () -> Unit, onSubmitted: (String) -> Unit,
+        beforeDispatch: () -> Unit, onSubmitted: (String) -> Unit, onConfirmed: () -> Unit,
     ) {
         val label = QuickActionActivity.ACTIONS[action]?.label ?: "매크로"
         val deadline = com.wemade.teslable.CommandDeadline(receivedAt + validitySeconds * 1000L) {
@@ -759,7 +763,7 @@ class MacroService : LifecycleService() {
             com.wemade.teslable.DiagLog.add("$label 요청 대기 — 수신부터 최대 ${validitySeconds}초 · 만료 후 전송 취소")
             val completed = kotlinx.coroutines.withTimeoutOrNull(deadline.remainingMillis()) {
                 kotlinx.coroutines.withContext(deadline + com.wemade.teslamacro.data.gateway.ExternalQuickActionSound) {
-                    handleQuickAction(action, macroId, beforeDispatch, onSubmitted)
+                    handleQuickAction(action, macroId, beforeDispatch, onSubmitted, onConfirmed)
                 }
                 true
             }
@@ -773,7 +777,8 @@ class MacroService : LifecycleService() {
     }
 
     /** 빅스비·런처 요청을 서비스 수명 안에서 연결부터 실제 전송까지 처리한다. */
-    private suspend fun handleQuickAction(action: String?, macroId: String?, beforeDispatch: () -> Unit, onSubmitted: (String) -> Unit) {
+    private suspend fun handleQuickAction(action: String?, macroId: String?, beforeDispatch: () -> Unit,
+                                         onSubmitted: (String) -> Unit, onConfirmed: () -> Unit) {
         val app = application as TeslaMacroApplication
         app.ready.first { it }
 
@@ -814,6 +819,7 @@ class MacroService : LifecycleService() {
                     com.wemade.teslable.DiagLog.add("Fleet [$fleetLabel] 차량 성공 응답 확인 · 물리 상태 확인 아님")
                     app.container.commandFeedback.quickActionConfirmed(command)
                     showQuickActionToast("$fleetLabel · 차량 성공 응답")
+                    onConfirmed()
                 }
                 com.wemade.teslamacro.data.fleet.FleetQueueStatus.Failed ->
                     quickActionFailed(fleetLabel, if (result.result in listOf("http_401", "http_403", "vehicle_access_denied"))
@@ -885,6 +891,7 @@ class MacroService : LifecycleService() {
                 app.container.poller.focusOn(command.confirmCategory())
                 com.wemade.teslable.DiagLog.add("빅스비 명령 [${command.label}] 완료")
                 showQuickActionToast("${command.label} 완료")
+                onConfirmed()
             } else {
                 quickActionFailed(
                     command.label,
@@ -1108,12 +1115,15 @@ class MacroService : LifecycleService() {
 
         private const val EXTRA_VALIDITY_SECONDS = "quick_action_validity_seconds"
         private const val EXTRA_RECEIVED_AT = "quick_action_received_at"
+        private const val EXTRA_DISMISS_ON_SUCCESS = "quick_action_dismiss_on_success"
 
         /** 서비스 시작 지연도 요청 유효 시간에 포함한다. */
-        fun runQuickAction(context: Context, action: String?, macroId: String?, validitySeconds: Int? = null, receivedAt: Long = android.os.SystemClock.elapsedRealtime()) {
+        fun runQuickAction(context: Context, action: String?, macroId: String?, validitySeconds: Int? = null,
+                           receivedAt: Long = android.os.SystemClock.elapsedRealtime(), dismissOnSuccess: Boolean = false) {
             val intent = Intent(context, MacroService::class.java)
                 .setAction(ACTION_RUN_QUICK_ACTION)
                 .putExtra(EXTRA_RECEIVED_AT, receivedAt)
+                .putExtra(EXTRA_DISMISS_ON_SUCCESS, dismissOnSuccess)
                 .putExtra(QuickActionActivity.EXTRA_ACTION, action)
                 .putExtra(QuickActionActivity.EXTRA_MACRO_ID, macroId)
             validitySeconds?.let { intent.putExtra(EXTRA_VALIDITY_SECONDS, it.coerceIn(10, 600)) }

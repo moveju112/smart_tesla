@@ -45,7 +45,8 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
         trackWithFleetProgress(label) { beforeDispatch, onWaking, _ -> execute(beforeDispatch, onWaking) }
 
     /** 기존 BLE 취소 경계는 유지하고 서버 접수 뒤에는 결과 관찰만 중단할 수 있게 한다. */
-    suspend fun trackWithFleetProgress(label: String, execute: suspend (beforeDispatch: () -> Unit, onWaking: () -> Unit, onSubmitted: (String) -> Unit) -> Unit) {
+    suspend fun trackWithFleetProgress(label: String, dismissFinished: () -> Boolean = { false },
+                                      execute: suspend (beforeDispatch: () -> Unit, onWaking: () -> Unit, onSubmitted: (String) -> Unit) -> Unit) {
         val job = currentCoroutineContext().job
         val id = synchronized(lock) {
             val id = ++nextId
@@ -75,7 +76,13 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
                     setStatus(id, Status.Observing)
                 }
             })
-            synchronized(lock) { if (mutableRequests.value.any { it.id == id && it.active }) setStatus(id, Status.Finished) }
+            synchronized(lock) {
+                if (mutableRequests.value.any { it.id == id && it.active }) {
+                    // 실행 함수 반환만으로 성공을 추정하지 않고, 호출자가 차량 성공을 확인한 요청만 숨긴다.
+                    if (dismissFinished()) mutableRequests.value = mutableRequests.value.filterNot { it.id == id }
+                    else setStatus(id, Status.Finished)
+                }
+            }
         } catch (expired: CommandExpiredException) {
             synchronized(lock) { if (mutableRequests.value.any { it.id == id && it.active }) setStatus(id, Status.Expired) }
         } catch (cancelled: CancellationException) {

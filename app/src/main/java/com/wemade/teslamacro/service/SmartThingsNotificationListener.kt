@@ -42,7 +42,10 @@ class SmartThingsNotificationListener : NotificationListenerService() {
             }
 
             // 알림 수신 시각을 전달해 설정 조회와 서비스 시작 지연도 유효시간에 포함한다.
-            runCatching { MacroService.runQuickAction(this@SmartThingsNotificationListener, action, null, settings.smartThingsValiditySeconds, receivedAt) }
+            runCatching {
+                MacroService.runQuickAction(this@SmartThingsNotificationListener, action, null,
+                    settings.smartThingsValiditySeconds, receivedAt, dismissOnSuccess = true)
+            }
                 .onSuccess {
                     cancelNotification(sbn.key)
                     DiagLog.add("스마트싱스 $label 알림 수신 — 명령 전달 후 알림 삭제")

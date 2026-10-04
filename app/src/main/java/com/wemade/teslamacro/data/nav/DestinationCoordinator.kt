@@ -99,7 +99,7 @@ internal class DestinationCoordinator(
                 val active = ready()
                 if (active && online() && SystemClock.elapsedRealtime() >= retryAt) {
                     try {
-                        val handled = receiver.receive(false) { ready() && online() }
+                        val handled = receiver.receive { ready() && online() }
                         if (handled) destinationSeen = true
                         val emptyAction = fallback
                         fallback = null
@@ -127,10 +127,4 @@ internal class DestinationCoordinator(
         }
     }
 
-    /** 임시 버튼은 자기 폰으로 보낸 테스트 요청만 한 번 받으며 거치·차량 설정은 바꾸지 않는다. */
-    suspend fun receiveTest() {
-        check(online()) { "인터넷 연결 후 다시 눌러 주세요" }
-        val found = receiver.receive(true) { online() }
-        if (!found) message.value = "이 폰으로 보낸 유효한 테스트 목적지가 없어요"
-    }
 }

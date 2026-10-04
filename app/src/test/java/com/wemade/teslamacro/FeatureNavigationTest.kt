@@ -57,8 +57,27 @@ class FeatureNavigationTest {
         assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked))
         assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(connectionError = "연결 실패")))
         assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiverName = "차량 태블릿")))
-        assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = true)))
+        assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = true)))
         assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = false)))
+    }
+
+    /** 미연결·통신 실패·처리 중을 차단하고 기기 역할별 설정만 허용한다. */
+    @org.junit.Test fun destinationSettingsFollowConfirmedRole() {
+        val state = com.wemade.teslamacro.feature.destination.DestinationUiState(connectionChecked = true)
+        assertTrue(state.canConfigure)
+        assertFalse(state.canSend)
+        assertFalse(state.canReceive)
+        val sender = state.copy(receiverName = "차량 태블릿")
+        assertTrue(sender.connected)
+        assertTrue(sender.canSend)
+        assertFalse(sender.canReceive)
+        val receiver = state.copy(senderCount = 1)
+        assertTrue(receiver.connected)
+        assertTrue(receiver.canReceive)
+        assertFalse(receiver.canSend)
+        assertFalse(sender.copy(busy = true).canSend)
+        assertFalse(receiver.copy(connectionError = "오프라인").canReceive)
+        assertFalse(sender.copy(connectionChecked = false).canConfigure)
     }
 
 }

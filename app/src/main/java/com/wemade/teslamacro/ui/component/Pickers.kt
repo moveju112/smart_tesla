@@ -130,12 +130,13 @@ fun PickerRow(
     detail: String? = null,
     showChevron: Boolean = false,
     value: String? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(Radius.button))
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .defaultMinSize(minHeight = Space.xxl)
             .padding(horizontal = Space.sm, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,

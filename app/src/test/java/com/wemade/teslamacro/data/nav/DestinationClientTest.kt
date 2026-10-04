@@ -59,6 +59,18 @@ class DestinationClientTest {
         assertEquals(listOf("status", "status", "status"), operations)
     }
 
+    /** 양방향 연결 상태와 해제 동작을 기존 인증 경로에서 읽는다. */
+    @Test fun readsIncomingLinksAndDisconnects() = runBlocking {
+        val operations = mutableListOf<String>()
+        val client = client { body ->
+            operations += body.getValue("operation").jsonPrimitive.content
+            RoadHttpResponse(200, """{"serverNow":1000,"senderCount":2}""")
+        }
+        assertEquals(2, client.call("status").senderCount)
+        client.call("disconnect")
+        assertEquals(listOf("status", "disconnect"), operations)
+    }
+
     /** 설정의 최소·최대 유효시간과 검색어만 전송하고 인증 만료시간과 섞지 않는다. */
     @Test fun sendsConfiguredMinutesWithSearchOnly() = runBlocking {
         val requests = mutableListOf<JsonObject>()
@@ -66,12 +78,13 @@ class DestinationClientTest {
             requests += body
             RoadHttpResponse(200, """{"serverNow":1000}""")
         }
-        client.send(DestinationPlace("서울역"), 1, false)
-        client.send(DestinationPlace("서울역"), 120, false)
+        client.send(DestinationPlace("서울역"), 1)
+        client.send(DestinationPlace("서울역"), 120)
         assertEquals(listOf(1, 120), requests.map { it.getValue("validityMinutes").jsonPrimitive.int })
         requests.forEach {
             assertEquals(buildJsonObject { put("name", "서울역") }, it["destination"])
             assertEquals("send", it.getValue("operation").jsonPrimitive.content)
+            assertFalse(it.containsKey("selfTest"))
         }
         assertNotEquals(requests[0]["requestId"], requests[1]["requestId"])
     }
@@ -94,12 +107,12 @@ class DestinationClientTest {
                 }
             }.toString())
         }
-        val error = runCatching { client.send(DestinationPlace("서울역"), 10, false) }.exceptionOrNull() as DestinationApiException
+        val error = runCatching { client.send(DestinationPlace("서울역"), 10) }.exceptionOrNull() as DestinationApiException
         assertEquals(409, error.code)
         assertTrue(error.message!!.contains("받는 기기 연결"))
         assertFalse(error.message!!.contains("새로고침"))
         paired = true
-        val sent = client.send(DestinationPlace("서울역"), 10, false)
+        val sent = client.send(DestinationPlace("서울역"), 10)
         assertEquals("pending", sent.request?.status)
         assertEquals("서울역", sent.request?.destination?.name)
     }

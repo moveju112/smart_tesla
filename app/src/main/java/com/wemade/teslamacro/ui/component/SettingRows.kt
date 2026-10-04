@@ -17,6 +17,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.wemade.teslamacro.ui.theme.Space
@@ -24,9 +25,9 @@ import com.wemade.teslamacro.ui.theme.T
 
 /** 설정 이름과 현재 값을 같은 행에 두고 편집은 공통 시트로 연결한다. */
 @Composable
-fun SettingRow(label: String, value: String? = null, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SettingRow(label: String, value: String? = null, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     PickerRow(label = label, value = value, onClick = onClick, showChevron = true,
-        modifier = modifier.heightIn(min = Space.xxl + Space.sm))
+        modifier = modifier.heightIn(min = Space.xxl + Space.sm).alpha(if (enabled) 1f else 0.38f), enabled = enabled)
 }
 
 /** 버튼 폭을 제한해 큰 글씨에서도 설정 이름과 조작이 서로 밀어내지 않는다. */
@@ -51,17 +52,17 @@ fun SettingActionRow(label: String, description: String? = null, action: @Compos
 /** 오른쪽 스위치에도 항목 이름을 제공해 읽기 도구에서 조작 대상을 구분한다. */
 @Composable
 fun SettingToggleRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit,
-    description: String? = null) {
+    description: String? = null, enabled: Boolean = true) {
     SettingActionRow(label, description) {
-        DraftToggle(checked, onCheckedChange, modifier = Modifier.semantics { contentDescription = label })
+        DraftToggle(checked, onCheckedChange, enabled = enabled, modifier = Modifier.semantics { contentDescription = label })
     }
 }
 
 /** 수치 편집은 기존 범위 검사와 적용·취소 동작을 그대로 사용한다. */
 @Composable
 fun NumberSettingRow(label: String, value: Double, min: Double, max: Double, step: Double,
-    unit: String, onChange: (Double) -> Unit) {
-    NumberStepper(value, min, max, step, unit, onChange, label = label)
+    unit: String, onChange: (Double) -> Unit, enabled: Boolean = true) {
+    NumberStepper(value, min, max, step, unit, onChange, label = label, enabled = enabled)
 }
 
 /** 시각도 현재 값 행에서 기존 24시간 입력 시트로 이동한다. */

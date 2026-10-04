@@ -192,16 +192,18 @@ fun DraftToggle(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     label: String? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .toggleable(value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onCheckedChange)
+            .toggleable(enabled = enabled, value = checked, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onCheckedChange)
             .padding(end = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Switch(
             checked = checked,
+            enabled = enabled,
             onCheckedChange = null,
             modifier = Modifier.graphicsLayer { scaleX = 0.85f; scaleY = 0.85f },
             colors = SwitchDefaults.colors(

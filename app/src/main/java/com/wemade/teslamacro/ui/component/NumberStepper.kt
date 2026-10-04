@@ -46,15 +46,16 @@ fun NumberStepper(
     onChange: (Double) -> Unit,
     modifier: Modifier = Modifier,
     label: String? = null,
+    enabled: Boolean = true,
 ) {
     var editing by rememberSaveable { mutableStateOf(false) }
     if (label != null) {
-        SettingRow(label, "${format(value)} $unit", onClick = { editing = true }, modifier = modifier)
+        SettingRow(label, "${format(value)} $unit", onClick = { editing = true }, modifier = modifier, enabled = enabled)
     } else Row(
         modifier = modifier.fillMaxWidth().border(1.dp, T.Hairline, RoundedCornerShape(Radius.button)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StepButton(DraftMark.Minus, "줄이기", enabled = value > min) {
+        StepButton(DraftMark.Minus, "줄이기", enabled = enabled && value > min) {
             onChange(snap((value - step).coerceAtLeast(min), step).coerceIn(min, max))
         }
         Text(
@@ -62,14 +63,14 @@ fun NumberStepper(
             style = MaterialTheme.typography.bodyMedium,
             color = T.Ink,
             textAlign = TextAlign.Center,
-            modifier = Modifier.weight(1f).clickable(onClickLabel = "값 직접 입력") { editing = true }
+            modifier = Modifier.weight(1f).clickable(enabled = enabled, onClickLabel = "값 직접 입력") { editing = true }
                 .heightIn(min = Space.xxl).padding(vertical = Space.sm),
         )
-        StepButton(DraftMark.Add, "늘리기", enabled = value < max) {
+        StepButton(DraftMark.Add, "늘리기", enabled = enabled && value < max) {
             onChange(snap((value + step).coerceAtMost(max), step).coerceIn(min, max))
         }
     }
-    if (editing) {
+    if (editing && enabled) {
         ValueInputSheet(
             title = label ?: "값 입력", initial = format(value), label = "$unit · ${format(min)}~${format(max)}",
             keyboardType = KeyboardType.Decimal,

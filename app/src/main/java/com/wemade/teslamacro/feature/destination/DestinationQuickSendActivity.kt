@@ -6,6 +6,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material3.Text
+import com.wemade.teslamacro.ui.component.TButton
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,13 +80,40 @@ class DestinationQuickSendActivity : ComponentActivity() {
 private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -> Unit) {
     val state by model.state.collectAsState()
     val context = LocalContext.current
+    ObserveDestination(model)
     LaunchedEffect(state.sendCompleted, state.error) {
         if (state.sendCompleted) {
             Toast.makeText(context, "전송했어요", Toast.LENGTH_SHORT).show()
             onClose()
         } else state.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
-    DestinationQuickSendScreen(state, model::queryChanged, { model.send(false) })
+    DestinationQuickSendContent(state, model::queryChanged, model::send, model::refresh) {
+        DestinationScreen(state, onBack = onClose, onMinutes = model::minutesChanged,
+            onRefresh = model::refresh, onPairingCode = model::pairingCodeChanged,
+            onPair = model::pair, onUnlink = model::unlink, onCreateCode = model::createPairCode,
+            onReceiving = model::receivingChanged, onOverlay = model::allowOverlay, settingsOnly = true)
+    }
+}
+
+/** 정상 조회 뒤에만 입력·연결 설정을 고르고 통신 실패를 미연결로 오인하지 않는다. */
+@Composable
+internal fun DestinationQuickSendContent(
+    state: DestinationUiState, onQuery: (String) -> Unit, onSend: () -> Unit,
+    onRefresh: () -> Unit, setup: @Composable () -> Unit,
+) {
+    when {
+        state.connectionError != null || !state.connectionChecked -> Surface(
+            shape = RoundedCornerShape(Radius.hero), color = T.Carbon.copy(alpha = 0.88f),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                Text(state.connectionError ?: "연결 확인 중…", color = T.Ink,
+                    modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                if (state.connectionError != null) TButton("재확인", enabled = !state.busy, onClick = onRefresh)
+            }
+        }
+        needsDestinationSetup(state) -> setup()
+        else -> DestinationQuickSendScreen(state, onQuery, onSend)
+    }
 }
 
 /** 버튼 대신 IME 전송 키를 사용하며 전송 중에도 초점을 유지해 입력줄이 튀지 않게 한다. */
@@ -118,7 +149,7 @@ internal fun DestinationQuickSendScreen(
             ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = {
-                if (!state.busy && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120) onSend()
+                if (state.canSend && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120) onSend()
             }),
         )
     }

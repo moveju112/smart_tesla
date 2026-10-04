@@ -9,7 +9,6 @@ import com.wemade.teslamacro.data.nav.DestinationPlace
 import com.wemade.teslamacro.data.nav.DestinationRequest
 import com.wemade.teslamacro.feature.destination.DestinationScreen
 import com.wemade.teslamacro.feature.destination.DestinationPairingEditor
-import com.wemade.teslamacro.feature.destination.DestinationReceiveTestEditor
 import com.wemade.teslamacro.feature.destination.DestinationQueryEditorSheet
 import com.wemade.teslamacro.ui.component.PickerSheet
 import com.wemade.teslamacro.feature.destination.DestinationUiState
@@ -30,9 +29,9 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     /** 검색 전 안내와 연결 전 비활성 동작을 큰 글자로 확인한다. */
     @Test fun empty() = snapshot(DestinationUiState())
 
-    /** 테스트 요청과 일반 전송을 혼동하지 않는 상태 문구를 확인한다. */
+    /** 일반 전송의 대기 상태 문구를 확인한다. */
     @Test fun pending() = snapshot(DestinationUiState(query = place.name, overlayAllowed = true,
-        request = DestinationRequest("test", place, 1, 600001, "pending", true)))
+        request = DestinationRequest("test", place, 1, 600001, "pending", false)))
 
     /** 장소 선택 없이 검색어와 연결 대상만으로 전송할 수 있는 화면을 확인한다. */
     @Test fun readyToSend() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿"))
@@ -63,7 +62,7 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     @Test fun testButtons() = snapshot(DestinationUiState(query = place.name,
         connectionError = "연결을 확인하지 못했어요"))
 
-    /** 설정 아래의 테스트 항목이 큰 글자에서도 잘리지 않는지 확인한다. */
+    /** 설정 아래의 수신 항목이 큰 글자에서도 잘리지 않는지 확인한다. */
     @Test fun settingsBottom() = snapshot(DestinationUiState(receiving = true,
         overlayAllowed = true, minutes = 120), setup = true, bottom = true)
 
@@ -71,12 +70,6 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     @Test fun pairingEditor() = editorSnapshot("보낼 기기") {
         DestinationPairingEditor(DestinationUiState(receiverName = "차량 태블릿", pairingCode = "ABCD234567",
             error = "연결 코드를 확인해 주세요"))
-    }
-
-    /** 테스트 입력은 별도 시트에서 권한 해결과 수신 결과를 함께 표시한다. */
-    @Test fun receiveTestEditor() = editorSnapshot("수신 테스트") {
-        DestinationReceiveTestEditor(DestinationUiState(query = place.name,
-            receiveMessage = "탑승 대기"))
     }
 
     /** 실제 편집 시트 본문을 공통 모달 안에서 렌더링한다. */
@@ -160,13 +153,6 @@ class DestinationSettingsLargeFontScreenshotTest(private val dark: Boolean) {
         PickerSheet("보낼 기기", onDismiss = {}) {
             DestinationPairingEditor(DestinationUiState(receiverName = "차량 태블릿",
                 pairingCode = "ABCD234567", error = "연결 코드를 확인해 주세요"))
-        }
-    }
-
-    /** 수신 테스트의 긴 버튼과 권한 해결도 두 배 글꼴로 확인한다. */
-    @Test fun receiveTestEditor() = snapshot {
-        PickerSheet("수신 테스트", onDismiss = {}) {
-            DestinationReceiveTestEditor(DestinationUiState(query = "서울시청"))
         }
     }
 

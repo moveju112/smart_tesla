@@ -31,23 +31,23 @@ internal class DestinationReceiver(
     }
 
     /** false는 서버에서 대기 목적지가 없음을 확인한 경우에만 반환한다. */
-    suspend fun receive(selfTest: Boolean, ready: () -> Boolean): Boolean = mutex.withLock {
+    suspend fun receive(ready: () -> Boolean): Boolean = mutex.withLock {
         reconcileReceipt()
         if (!ready()) return@withLock true
         val started = elapsed()
-        val inbox = call("inbox") { put("selfTest", selfTest) }
+        val inbox = call("inbox") {}
         val request = inbox.request ?: return@withLock false
-        if (request.selfTest != selfTest || request.status != "pending") return@withLock true
+        if (request.legacyTestRequest || request.status != "pending") return@withLock true
         val deadline = destinationDeadline(inbox.serverNow, request.expiresAt, started) ?: return@withLock true
         var claimed = false
         var launchDeadline = deadline
-        report(if (selfTest) "폰 1대 테스트 · 네이버지도 전달 준비" else "목적지 수신 · 네이버지도 전달 준비")
+        report("목적지 수신 · 네이버지도 전달 준비")
         try {
             val result = launch(request.destination) {
                 // 잠금 해제 대기 동안 하차·취소·교체·만료될 수 있어 실제 실행 직전에 인계한다.
                 check(ready() && elapsed() < launchDeadline) { "실행 조건이 바뀌었거나 유효시간이 지났어요" }
                 val claimStarted = elapsed()
-                val reply = call("claim") { put("requestId", request.id); put("selfTest", selfTest) }
+                val reply = call("claim") { put("requestId", request.id) }
                 check(reply.request?.id == request.id && reply.request.status == "claimed")
                 claimed = true
                 launchDeadline = destinationDeadline(reply.serverNow, request.expiresAt, claimStarted) ?: 0

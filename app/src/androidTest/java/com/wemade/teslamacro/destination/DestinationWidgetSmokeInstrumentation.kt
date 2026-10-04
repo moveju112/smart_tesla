@@ -14,8 +14,12 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.lifecycle.ViewModelProvider
-import com.wemade.teslamacro.feature.destination.DestinationViewModel
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.mutableStateOf
+import com.wemade.teslamacro.feature.destination.DestinationQuickSendContent
+import com.wemade.teslamacro.feature.destination.DestinationScreen
+import com.wemade.teslamacro.feature.destination.DestinationUiState
+import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 import androidx.compose.ui.graphics.toArgb
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.settings.DestinationWidgetAppearance
@@ -84,6 +88,68 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(activity != null) { "위젯 클릭으로 입력창이 열리지 않았습니다" }
             val store = (targetContext.applicationContext as TeslaMacroApplication).container.settingsStore
             originalAppearance = runBlocking { store.settings.first().destinationWidgetAppearance }
+            // 실제 위젯 경로의 오프라인 오류를 먼저 확인하고 합성 연결 상태로 UI만 검사한다.
+            awaitNode { it.text?.toString() == "연결을 확인하지 못했어요" }
+            check(find(uiAutomation.rootInActiveWindow) { it.className == "android.widget.EditText" } == null)
+            check(find(uiAutomation.rootInActiveWindow) { it.text?.toString() == "연결코드생성" } == null)
+            val fixture = mutableStateOf(DestinationUiState(connectionChecked = true))
+            var sends = 0
+            var disconnects = 0
+            var receiveChanges = 0
+            runOnMainSync {
+                (activity as DestinationQuickSendActivity).setContent {
+                    TeslaMacroTheme(dark = false) {
+                        DestinationQuickSendContent(fixture.value,
+                            onQuery = { fixture.value = fixture.value.copy(query = it) },
+                            onSend = { sends++; fixture.value = fixture.value.copy(error = "오프라인") },
+                            onRefresh = {}, setup = {
+                                DestinationScreen(fixture.value, settingsOnly = true,
+                                    onCreateCode = { fixture.value = fixture.value.copy(receiverCode = "ABCD234567") },
+                                    onUnlink = { disconnects++; fixture.value = DestinationUiState(connectionChecked = true) },
+                                    onReceiving = { receiveChanges++; fixture.value = fixture.value.copy(receiving = it) })
+                            })
+                    }
+                }
+            }
+            awaitNode { it.text?.toString() == "연결코드생성" }
+            checkDisabled("전송 유효시간")
+            checkDisabled("이 기기 자동 수신")
+            check(find(uiAutomation.rootInActiveWindow) { it.text?.toString() == "수신 테스트" } == null)
+            clickLabel("생성")
+            val code = awaitNode { it.text?.toString() == "ABCD234567" }
+            waitForIdleSync()
+            uiAutomation.waitForIdle(500, 5_000)
+            val bounds = android.graphics.Rect().also { awaitNode { node -> node.text?.toString() == "ABCD234567" }.getBoundsInScreen(it) }
+            val down = SystemClock.uptimeMillis()
+            sendPointerSync(android.view.MotionEvent.obtain(down, down, android.view.MotionEvent.ACTION_DOWN,
+                bounds.exactCenterX(), bounds.exactCenterY(), 0))
+            SystemClock.sleep(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 150)
+            sendPointerSync(android.view.MotionEvent.obtain(down, SystemClock.uptimeMillis(), android.view.MotionEvent.ACTION_UP,
+                bounds.exactCenterX(), bounds.exactCenterY(), 0))
+            val copy = awaitNode { it.text?.toString() in listOf("Copy", "복사") }
+            clickLabel(copy.text.toString())
+            runOnMainSync {
+                val clipboard = targetContext.getSystemService(android.content.ClipboardManager::class.java)
+                check(clipboard.primaryClip?.getItemAt(0)?.text?.toString() == "ABCD234567")
+                clipboard.clearPrimaryClip()
+            }
+            clickLabel("코드 복사")
+            runOnMainSync {
+                val clipboard = targetContext.getSystemService(android.content.ClipboardManager::class.java)
+                check(clipboard.primaryClip?.getItemAt(0)?.text?.toString() == "ABCD234567")
+                fixture.value = DestinationUiState(connectionChecked = true, senderCount = 1)
+            }
+            awaitNode { it.text?.toString() == "보내는 기기 1대" }
+            checkDisabled("생성")
+            checkDisabled("전송 유효시간")
+            check(awaitNode { it.contentDescription?.toString() == "이 기기 자동 수신" }.performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            waitForIdleSync()
+            check(receiveChanges == 1)
+            clickLabel("연결 해제")
+            check(disconnects == 1)
+            awaitNode { it.text?.toString() == "미연결" }
+            checkDisabled("이 기기 자동 수신")
+            runOnMainSync { fixture.value = DestinationUiState(connectionChecked = true, receiverName = "차량 태블릿") }
             val field = awaitNode { it.className == "android.widget.EditText" && it.isFocused }
             check(field.isFocused) { "주소 입력칸의 자동 초점 누락" }
             val keyboardDeadline = SystemClock.uptimeMillis() + 10_000
@@ -124,27 +190,21 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
                 reduced.recycle()
                 screen.recycle()
             }
-            lateinit var model: DestinationViewModel
-            runOnMainSync { model = ViewModelProvider(activity as DestinationQuickSendActivity)[DestinationViewModel::class.java] }
-            check(find(uiAutomation.rootInActiveWindow) { it.className == "android.widget.Button" } == null) {
-                "간편 입력창에 불필요한 버튼이 남아 있습니다"
-            }
+            check(find(uiAutomation.rootInActiveWindow) { it.className == "android.widget.Button" } == null)
             check(field.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id))
             waitForIdleSync()
-            check(!model.state.value.busy && model.state.value.error == null)
+            check(sends == 0)
             enter(field, "   ")
             check(awaitNode { it.className == "android.widget.EditText" }
                 .performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id))
             waitForIdleSync()
-            check(!model.state.value.busy && model.state.value.error == null)
+            check(sends == 0)
             enter(awaitNode { it.className == "android.widget.EditText" }, "서울시청")
             check(awaitNode { it.className == "android.widget.EditText" }
                 .performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id))
-            val errorDeadline = SystemClock.uptimeMillis() + 15_000
-            while ((model.state.value.error == null || model.state.value.busy) && SystemClock.uptimeMillis() < errorDeadline) SystemClock.sleep(100)
-            check(model.state.value.error?.contains("연결을 확인하지 못했어요") == true) { "키보드 전송 실패 복구가 확인되지 않았습니다" }
+            waitForIdleSync()
+            check(sends == 1 && fixture.value.error == "오프라인")
             check(awaitNode { it.className == "android.widget.EditText" && it.text.toString() == "서울시청" }.isFocused)
-            check(!model.state.value.sendCompleted)
             resizeWidget(view, 240, compact = false)
             resizeWidget(view, 640, compact = false)
             // 런처가 사용하는 표준 위젯 재설정 API로 꾸미기를 열어 취소도 확인한다.
@@ -191,7 +251,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(transparent) { "저장한 투명도·글자색이 홈 위젯에 반영되지 않았습니다" }
             // 입력창은 스타일 저장 뒤에도 작성 중인 주소를 유지해야 한다.
             check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
-            result.putString("stream", "PASS: 가운데 입력 카드·반투명 배경·키보드 간격·위젯 크기 변경·자동 초점·IME 전송·빈 입력 차단·실패 후 주소 유지·꾸미기 저장/취소")
+            result.putString("stream", "PASS: 실제 위젯 오프라인 분기·합성 연결 상태별 설정/입력 전환·비활성화·코드 복사/롱터치 제공·연결 해제·가운데 입력·IME 전송·빈 입력 차단·위젯 크기/꾸미기")
         } catch (error: Throwable) {
             resultCode = Activity.RESULT_CANCELED
             val controls = if (activity != null) uiAutomation.rootInActiveWindow?.let(::describe) else "입력창 진입 전"
@@ -213,6 +273,18 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         finish(resultCode, result)
     }
 
+    /** 접근성 부모에 합쳐진 비활성 의미까지 검사한다. */
+    private fun checkDisabled(label: String) {
+        var node: AccessibilityNodeInfo? = if (label == "이 기기 자동 수신") {
+            awaitNode { it.contentDescription?.toString() == label }
+        } else awaitNode { it.text?.toString() == label }
+        while (node != null) {
+            if (!node.isEnabled) return
+            node = node.parent
+        }
+        error("비활성화되어야 하는 항목: $label")
+    }
+
     /** 사용자 입력과 같은 접근성 동작으로 주소를 편집한다. */
     private fun enter(node: AccessibilityNodeInfo, value: String) {
         check(node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
@@ -228,6 +300,9 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         while (SystemClock.uptimeMillis() < deadline) {
             val root = uiAutomation.rootInActiveWindow
             var control = root?.let { find(it) { node -> node.text?.toString() == label } }
+                ?: uiAutomation.windows.firstNotNullOfOrNull { window ->
+                    window.root?.let { find(it) { node -> node.text?.toString() == label } }
+                }
             // 선택 시트의 바깥 닫기 영역 대신 글자에 가장 가까운 조작 행을 누른다.
             while (control != null && !control.isClickable) control = control.parent
             if (control != null && control.isVisibleToUser) {
@@ -274,6 +349,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         val deadline = SystemClock.uptimeMillis() + 30_000
         while (SystemClock.uptimeMillis() < deadline) {
             uiAutomation.rootInActiveWindow?.let { root -> find(root, predicate)?.let { return it } }
+            uiAutomation.windows.forEach { window -> window.root?.let { root -> find(root, predicate)?.let { return it } } }
             SystemClock.sleep(100)
         }
         error("30초 안에 기대한 화면 상태가 나타나지 않았습니다")

@@ -6,6 +6,7 @@ import android.util.AtomicFile
 import com.wemade.teslamacro.data.safety.DeviceApiClient
 import java.io.File
 import java.util.UUID
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -35,7 +36,7 @@ data class DestinationRequest(
     val createdAt: Long,
     val expiresAt: Long,
     val status: String,
-    val selfTest: Boolean,
+    @SerialName("selfTest") val legacyTestRequest: Boolean = false,
 )
 
 @Serializable
@@ -43,6 +44,7 @@ internal data class DestinationReply(
     val serverNow: Long,
     val request: DestinationRequest? = null,
     val receiverName: String? = null,
+    val senderCount: Int = 0,
     val code: String? = null,
     val expiresAt: Long? = null,
 )
@@ -92,7 +94,7 @@ internal class DestinationClient(private val api: DeviceApiClient) {
         }
         val reply = runCatching { json.decodeFromString<DestinationReply>(response.body) }.getOrNull()
             ?: throw DestinationApiException(0, "서버 응답을 읽지 못했어요")
-        require(reply.serverNow > 0)
+        require(reply.serverNow > 0 && reply.senderCount >= 0)
         reply.request?.let {
             require(it.destination.valid() && runCatching { UUID.fromString(it.id) }.isSuccess)
             require(it.expiresAt - it.createdAt in 60_000..7_200_000)
@@ -102,14 +104,13 @@ internal class DestinationClient(private val api: DeviceApiClient) {
     }
 
     /** 재인증 재시도에서도 요청 ID와 목적지·유효시간을 바꾸지 않는다. */
-    suspend fun send(place: DestinationPlace, minutes: Int, selfTest: Boolean): DestinationReply {
+    suspend fun send(place: DestinationPlace, minutes: Int): DestinationReply {
         require(place.valid() && minutes in 1..120)
         val requestId = UUID.randomUUID().toString()
         return call("send") {
             put("requestId", requestId)
             put("destination", json.encodeToJsonElement(place))
             put("validityMinutes", minutes)
-            put("selfTest", selfTest)
         }
     }
 }

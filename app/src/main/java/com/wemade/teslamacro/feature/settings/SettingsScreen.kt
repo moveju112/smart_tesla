@@ -30,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.wemade.teslamacro.data.charge.StealthChargePlan
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.FeatureAvailability
@@ -321,7 +323,7 @@ internal fun StealthChargePanel(
 ) {
     Column {
         ExpandableToggle(
-            title = if (executionOnly) "충전 1회" else "스텔스 충전 1회 · 전류 자동 조절",
+            title = if (executionOnly) "충전 1회" else "스텔스 충전",
             settingsOnly = settingsOnly, executionOnly = executionOnly,
             checked = settings.stealthCharging,
             onCheckedChange = onEnabledChange,
@@ -386,7 +388,7 @@ internal val LocalExpandSettingsDetails = androidx.compose.runtime.staticComposi
 private val LocalCloseSettingsSheet = androidx.compose.runtime.staticCompositionLocalOf<() -> Unit> { {} }
 
 /**
- * 실행 화면에는 상태 스위치를, 설정 목록에는 옵션 요약과 편집 시트 진입점을 둔다.
+ * 실행 화면에는 상태 스위치를, 설정 목록에는 짧은 제목과 편집 시트 진입점만 둔다.
  * 변경은 즉시 저장되므로 닫기를 취소나 되돌리기로 표현하지 않는다.
  */
 @Composable
@@ -408,14 +410,14 @@ private fun ExpandableToggle(
         } else {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 SettingRow(
-                    label = title, value = summary, onClick = { expanded = true },
+                    label = title, onClick = { expanded = true },
                     modifier = Modifier.weight(1f),
                 )
                 if (!settingsOnly) {
                     Spacer(Modifier.width(Space.sm))
                     com.wemade.teslamacro.ui.component.DraftToggle(
                         checked = checked, onCheckedChange = onCheckedChange,
-                        label = if (checked) "켬" else "끔",
+                        modifier = Modifier.semantics { contentDescription = title },
                     )
                 }
             }
@@ -439,7 +441,7 @@ private fun ExpandableToggle(
     }
 }
 
-/** 접어도 실제 전류 범위와 자정을 넘는 설정 시간대를 확인할 수 있게 한다. */
+/** 실행 제목 도움말에서 실제 전류 범위와 자정을 넘는 시간대를 확인한다. */
 internal fun stealthSettingsSummary(settings: AppSettings): String {
     val minimum = settings.stealthMinAmps ?: StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps)
     val schedule = when {
@@ -646,10 +648,9 @@ data class BatteryControls(
 internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit, credentials: FleetCredentialControls? = null) {
     Column {
         ExpandableToggle(
-            title = "Fleet API로 명령 전송",
+            title = "Fleet API",
             checked = enabled,
             onCheckedChange = onEnabledChange,
-            summary = credentials?.let { if (it.state.stored) "토큰 저장됨" else "토큰 미등록" },
             notices = {
                 credentials?.state?.message?.let { message ->
                     Spacer(Modifier.height(Space.sm))
@@ -658,7 +659,7 @@ internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit,
                             message.startsWith("토큰을 암호화")) T.InkMuted else T.Danger)
                 }
                 if (credentials != null && !credentials.state.stored) {
-                    Text("Tesla Client Secret은 입력하지 마세요.",
+                    Text("토큰 등록 필요",
                         style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
                         modifier = Modifier.padding(top = Space.xs))
                 }
@@ -692,18 +693,13 @@ internal fun SmartThingsPanel(
     val configured = settings.smartThingsCommandTexts.values.count { it.isNotBlank() }
     Column {
             ExpandableToggle(
-                title = if (executionOnly) "알림 명령" else "알림으로 차량 명령 실행",
+                title = "알림 명령",
                 settingsOnly = settingsOnly, executionOnly = executionOnly,
                 checked = settings.smartThingsEnabled,
                 onCheckedChange = controls.onEnabledChange,
-                summary = "명령 ${configured}개 · 유효 ${settings.smartThingsValiditySeconds}초",
+                summary = "스마트싱스 알림으로 차량 명령을 실행해요. 전달한 알림은 삭제되며 이미 전송한 명령은 취소할 수 없어요.",
                 notices = {
-                    // 알림 삭제와 명령 취소 불가 조건, 권한 부족은 접어 둬도 바로 확인할 수 있게 남긴다.
-                    if (settings.smartThingsEnabled) {
-                        Spacer(Modifier.height(Space.sm))
-                        Text("전달한 알림은 삭제돼요. 이미 전송한 명령은 취소할 수 없어요.",
-                            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-                    }
+                    // 실행이 막히는 권한 부족은 목록에서도 바로 해결할 수 있게 남긴다.
                     if ((settingsOnly || settings.smartThingsEnabled) && !controls.notificationAccessGranted) {
                         Spacer(Modifier.height(Space.md))
                         Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -730,6 +726,9 @@ internal fun SmartThingsPanel(
                     min = 10.0, max = 600.0, step = 10.0, unit = "초",
                     onChange = { controls.onValiditySecondsChange(it.toInt()) },
                 )
+                Text("전달한 알림은 삭제돼요. 이미 전송한 명령은 취소할 수 없어요.",
+                    style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
+                    modifier = Modifier.padding(top = Space.sm))
             }
     }
     if (manageCommands) {

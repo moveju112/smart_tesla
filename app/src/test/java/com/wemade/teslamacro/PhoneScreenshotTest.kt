@@ -174,7 +174,7 @@ class PhoneScreenshotTest {
 
     @Test
     fun `P6 설정`() {
-        settingsAutomationSnapshot("P6-settings", dark = false)
+        settingsAutomationSnapshot("P6-settings", dark = false, readyAutomation = true)
     }
 
     @Test
@@ -204,7 +204,7 @@ class PhoneScreenshotTest {
     private fun settingsAutomationSnapshot(name: String, dark: Boolean,
         group: com.wemade.teslamacro.feature.settings.SettingsGroup =
             com.wemade.teslamacro.feature.settings.SettingsGroup.AUTOMATION,
-        simulatorVisible: Boolean = false) {
+        simulatorVisible: Boolean = false, readyAutomation: Boolean = false) {
         paparazzi.snapshot(name) {
             AppFrame(Destination.Settings, dark = dark) {
                 SettingsScreen(
@@ -217,6 +217,7 @@ class PhoneScreenshotTest {
                         safeDrive = group == com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
                         autoStartNavigatorSafeDrive = group == com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,
                         smartThingsEnabled = true,
+                        fleetApiEnabled = readyAutomation,
                         stealthCharging = true,
                         stealthMaxAmps = 13,
                         stealthScheduleEnabled = true,
@@ -228,8 +229,12 @@ class PhoneScreenshotTest {
                         unrestricted = false,
                         onOpenSettings = {},
                     ),
+                    onFleetApiEnabledChange = if (readyAutomation) { _ -> } else null,
+                    fleetCredentials = if (readyAutomation) com.wemade.teslamacro.feature.settings.FleetCredentialControls(
+                        com.wemade.teslamacro.feature.settings.FleetCredentialState(stored = true), {}, {}, {},
+                    ) else null,
                     smartThings = com.wemade.teslamacro.feature.settings.SmartThingsControls(
-                        notificationAccessGranted = false,
+                        notificationAccessGranted = readyAutomation,
                         onEnabledChange = {},
                         onCommandTextChange = { _, _ -> },
                         onRequestNotificationAccess = {},

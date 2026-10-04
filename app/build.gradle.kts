@@ -24,8 +24,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 257
-        versionName = "0.9.144"
+        versionCode = 258
+        versionName = "0.9.145"
         testInstrumentationRunner = "com.wemade.teslamacro.history.HistorySmokeInstrumentation"
     }
 

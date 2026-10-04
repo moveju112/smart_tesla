@@ -105,6 +105,24 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- 위젯의 명시적 PendingIntent로만 입력창을 열며 외부 앱의 호출은 막는다. -->
+        <activity
+            android:name=".feature.destination.DestinationQuickSendActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.destination"
+            android:theme="@style/Theme.TeslaMacro.QuickSend" />
+        <receiver
+            android:name=".feature.destination.DestinationWidget"
+            android:exported="false"
+            android:label="@string/destination_widget_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/destination_widget_info" />
+        </receiver>
+
         <!-- 보안 잠금 인증 중 화면을 유지하며 다른 앱은 이 진입점을 호출할 수 없다 -->
         <activity
             android:name=".data.nav.SafeDriveUnlockActivity"

@@ -24,9 +24,10 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 258
-        versionName = "0.9.145"
-        testInstrumentationRunner = "com.wemade.teslamacro.history.HistorySmokeInstrumentation"
+        versionCode = 259
+        versionName = "0.9.146"
+        testInstrumentationRunner = providers.gradleProperty("smokeRunner")
+            .orElse("com.wemade.teslamacro.history.HistorySmokeInstrumentation").get()
     }
 
     // 실기기 배포는 ARM 태블릿만 대상으로 하므로 두 ARM ABI를 따로 뽑는다.

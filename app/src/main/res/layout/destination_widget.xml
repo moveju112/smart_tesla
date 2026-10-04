@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RemoteViews는 Compose 토큰을 읽지 못하므로 Space.md/xxl와 Radius.card를 리소스로 맞춘다. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/destination_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="@dimen/widget_spacing"
+    android:background="@drawable/destination_widget_background">
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/destination_widget_title"
+        android:textColor="@color/launcher_background"
+        android:textStyle="bold"
+        android:textSize="17sp" />
+    <TextView
+        android:id="@+id/destination_widget_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="@dimen/widget_touch_target"
+        android:gravity="center_vertical"
+        android:text="@string/destination_widget_input"
+        android:textColor="@color/launcher_background"
+        android:textSize="16sp" />
+</LinearLayout>

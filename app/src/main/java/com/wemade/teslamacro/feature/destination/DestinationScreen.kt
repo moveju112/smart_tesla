@@ -58,16 +58,7 @@ fun DestinationRoute(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsState()
-    val owner = LocalLifecycleOwner.current
-    DisposableEffect(owner, viewModel) {
-        val observer = LifecycleEventObserver { _, _ ->
-            if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) viewModel.observe()
-            else viewModel.stopObserving()
-        }
-        owner.lifecycle.addObserver(observer)
-        if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) viewModel.observe()
-        onDispose { owner.lifecycle.removeObserver(observer); viewModel.stopObserving() }
-    }
+    ObserveDestination(viewModel)
     var checkedSetup by rememberSaveable { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(state.connectionChecked, state.connectionError, settingsOnly) {
         if (!settingsOnly && state.connectionChecked && state.connectionError == null && !checkedSetup && onOpenSettings != null) {
@@ -80,6 +71,21 @@ fun DestinationRoute(
         viewModel::refresh, viewModel::pairingCodeChanged, viewModel::pair, viewModel::unlink,
         viewModel::createPairCode, viewModel::receivingChanged, viewModel::allowOverlay,
         settingsOnly = settingsOnly, onOpenSettings = onOpenSettings)
+}
+
+/** 위젯 입력창도 기존 화면과 같은 수명 동안만 전송 결과를 조회한다. */
+@Composable
+internal fun ObserveDestination(viewModel: DestinationViewModel) {
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner, viewModel) {
+        val observer = LifecycleEventObserver { _, _ ->
+            if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) viewModel.observe()
+            else viewModel.stopObserving()
+        }
+        owner.lifecycle.addObserver(observer)
+        if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) viewModel.observe()
+        onDispose { owner.lifecycle.removeObserver(observer); viewModel.stopObserving() }
+    }
 }
 
 /** 출발 전 전송을 먼저 보여주고 드문 연결·수신 설정은 한 단계 안으로 둔다. */

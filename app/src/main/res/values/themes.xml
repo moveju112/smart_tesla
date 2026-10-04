@@ -8,4 +8,12 @@
         <!-- 밝은 배경이라 상태바 아이콘은 어둡게 -->
         <item name="android:windowLightStatusBar">true</item>
     </style>
+    <!-- 홈 화면에서 전송만 끝내고 돌아가며 키보드는 창 크기에 맞춰 올린다. -->
+    <style name="Theme.TeslaMacro.QuickSend" parent="android:Theme.Material.Dialog.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowMinWidthMajor">90%</item>
+        <item name="android:windowMinWidthMinor">95%</item>
+        <item name="android:windowCloseOnTouchOutside">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
 </resources>

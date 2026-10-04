@@ -17,16 +17,17 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** 기록 목록은 화면을 보는 동안만 조회하고 선택한 경로만 압축 해제한다. */
+/** 화면을 보는 동안 목록과 기간 요약을 조회하고 선택한 기록의 상세를 갱신한다. */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class HistoryViewModel(private val container: AppContainer) : ViewModel() {
     private val limit = MutableStateFlow(50)
+    private val periodDays = MutableStateFlow(30)
     private val selected = MutableStateFlow<HistorySession?>(null)
     private val detail = MutableStateFlow(HistoryDetail())
     private val settings = container.settingsStore.settings
-    private val overview = combine(settings, container.vehicleHistory.revision, limit) { options, _, count ->
-        options.vin to count
-    }.mapLatest { (identity, count) -> container.vehicleHistory.overview(identity, count) }
+    private val overview = combine(settings, container.vehicleHistory.revision, limit, periodDays) { options, _, count, days ->
+        Triple(options.vin, count, days)
+    }.mapLatest { (identity, count, days) -> container.vehicleHistory.overview(identity, count, days) }
     val state = combine(settings, overview, detail) { options, history, selection ->
         HistoryUiState(options.historyEnabled, options.isReady, options.deviceMode,
             history, selection)
@@ -46,7 +47,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
                     try {
                         val points = container.vehicleHistory.samples(identity, session.id)
                         if (points.isEmpty()) { selected.value = null; detail.value = HistoryDetail(); return@collectLatest }
-                        val updated = container.vehicleHistory.overview(identity, limit.value).sessions.firstOrNull { it.id == session.id }
+                        val updated = container.vehicleHistory.overview(identity, limit.value, periodDays.value).sessions.firstOrNull { it.id == session.id }
                         detail.value = HistoryDetail(updated ?: session, points)
                     } catch (error: CancellationException) { throw error
                     } catch (_: Exception) { detail.value = HistoryDetail(session, error = "경로 기록을 읽지 못했어요") }
@@ -66,4 +67,7 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 오래된 기록은 요청할 때만 목록에 추가한다. */
     fun loadMore() { limit.update { it + 50 } }
+
+    /** 지원 기간만 선택하고 기존 전체 기록 목록은 유지한다. */
+    fun setPeriod(days: Int) { if (days in setOf(7, 30, 90)) periodDays.value = days }
 }

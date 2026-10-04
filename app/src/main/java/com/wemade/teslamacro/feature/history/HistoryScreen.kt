@@ -35,7 +35,6 @@ import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.HelpTitle
 import com.wemade.teslamacro.ui.component.SectionTabs
-import com.wemade.teslamacro.ui.component.SettingToggleRow
 import com.wemade.teslamacro.ui.component.SettingActionRow
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
@@ -65,25 +64,30 @@ data class HistoryUiState(
 @Composable
 fun HistoryRoute(viewModel: HistoryViewModel) {
     val state by viewModel.state.collectAsState()
-    HistoryScreen(state, viewModel::setEnabled, viewModel::select, viewModel::loadMore)
+    HistoryScreen(state, viewModel::setEnabled, viewModel::select, viewModel::loadMore, viewModel::setPeriod)
 }
 
 /** 주행 중 조작을 요구하지 않고 정차 후 기록과 수집 상태를 확인한다. */
 @Composable
 internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
-    onSelect: (HistorySession?) -> Unit, onMore: () -> Unit) {
+    onSelect: (HistorySession?) -> Unit, onMore: () -> Unit, onPeriod: (Int) -> Unit = {}) {
     var tab by rememberSaveable { mutableStateOf(HistoryKind.DRIVE) }
+    var showAll by rememberSaveable { mutableStateOf(false) }
     BackHandler(state.detail.session != null) { onSelect(null) }
     LazyColumn(contentPadding = PaddingValues(Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm + Space.xs)) {
         item {
-            HelpTitle("주행 기록", "이 기기에 저장된 이동 경로와 배터리·충전 기록이에요.\n앱 삭제 시 기록도 삭제되며 설정 백업에는 포함되지 않아요.\n수신하지 못한 값은 --로 표시해요.",
-                style = MaterialTheme.typography.headlineSmall)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                HelpTitle("주행 기록", "이 기기에 저장된 이동 경로와 배터리·충전 기록이에요.\n앱 삭제 시 기록도 삭제되며 설정 백업에는 포함되지 않아요.\n오른쪽 스위치로 기록을 켜고 꺼요. 앱에서 연결한 뒤 주행이 확인되면 화면 밖에서도 기록해요.",
+                    modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                if (state.ready && state.detail.session == null) com.wemade.teslamacro.ui.component.DraftToggle(
+                    state.enabled, onEnabled, modifier = Modifier.semantics { contentDescription = "주행·충전 기록" })
+            }
         }
         if (state.detail.session != null) {
             item { TButton("기록 목록", ButtonTone.Ghost, icon = DraftMark.ArrowLeft,
                 fillWidth = false, onClick = { onSelect(null) }) }
-            item { HistorySessionSummary(state.detail.session) }
+            item { HistorySessionSummary(state.detail.session, state.overview.insights.trips[state.detail.session.id]?.efficiency) }
             item {
                 when {
                     state.detail.loading -> Text("기록을 읽고 있어요", color = T.InkMuted)
@@ -105,20 +109,22 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
                 }
             }
         } else {
-            item { TCard {
-                if (state.ready) SettingToggleRow("기록", state.enabled, onEnabled,
-                    description = if (state.mode == DeviceMode.PORTABLE)
-                        "앱에서 연결한 뒤 주행이 확인되면 화면을 꺼도 기록해요. 주차하거나 주행 상태 수신이 끊기면 연결을 놓아요."
-                    else "차량에 연결된 동안 5초마다 주행과 충전을 기록해요.")
-                else Text("차량 등록 후 기록을 켤 수 있어요", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
-            } }
-            state.overview.latest?.let { latest -> item {
-                HelpTitle("마지막 배터리 ${latest.batteryPercent?.let { "$it%" } ?: "--"}",
-                    "${historyTime(latest.time)}에 확인한 값이에요. 현재 차량 상태와 다를 수 있어요.")
-            } }
+            if (!state.ready) item { Text("차량 등록 후 기록을 켤 수 있어요", color = T.InkMuted) }
             state.overview.error?.let { error -> item { Text(error, style = MaterialTheme.typography.bodySmall, color = T.Danger) } }
             item { SectionTabs(listOf(HistoryKind.DRIVE, HistoryKind.CHARGE), tab,
                 label = { if (it == HistoryKind.DRIVE) "주행일지" else "충전 기록" }, onSelect = { tab = it }) }
+            val insights = state.overview.insights
+            if (tab == HistoryKind.DRIVE) {
+                item { HistoryOverviewCard(insights, onPeriod) }
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(if (showAll) "주행일지" else "최근 주행", modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleLarge, color = T.Ink)
+                        TButton(if (showAll) "최근만 보기" else "전체 보기", ButtonTone.Ghost,
+                            fillWidth = false, icon = DraftMark.ChevronRight, onClick = { showAll = !showAll })
+                    }
+                }
+            }
             val sessions = state.overview.sessions.filter { it.kind == tab }
             if (sessions.isEmpty()) item { EmptyState("아직 ${tab.label} 기록이 없어요",
                 when {
@@ -126,22 +132,24 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
                     !state.enabled -> "기록을 켜면 차량 연결 중 자동으로 모아요."
                     else -> "차량 연결 중 ${tab.label}하면 여기에 표시돼요."
                 }) }
-            items(sessions, key = { it.id }) { session ->
-                TCard(onClick = { onSelect(session) }) {
+            val visible = if (tab == HistoryKind.DRIVE && !showAll) sessions.take(3) else sessions
+            items(visible, key = { it.id }) { session ->
+                if (tab == HistoryKind.DRIVE) HistoryTripCard(session, insights, onClick = { onSelect(session) })
+                else TCard(onClick = { onSelect(session) }) {
                     Text(historyTime(session.start), style = MaterialTheme.typography.titleMedium, color = T.Ink)
-                    Text(if (tab == HistoryKind.DRIVE) "${historyNumber(session.distanceKm)} km · ${historyDuration(session.end - session.start)}"
-                        else "관측 충전량 ${historyNumber(session.chargedKwh)} kWh", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+                    Text("관측 충전량 ${historyNumber(session.chargedKwh)} kWh", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                     Text("배터리 ${session.firstBattery ?: "--"}% → ${session.lastBattery ?: "--"}%", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                 }
             }
-            if (state.overview.hasMore) item { TButton("이전 기록 더 보기", ButtonTone.Ghost, onClick = onMore) }
+            if (state.overview.hasMore && (showAll || tab == HistoryKind.CHARGE || sessions.size < 3))
+                item { TButton("이전 기록 더 보기", ButtonTone.Ghost, onClick = onMore) }
         }
     }
 }
 
 /** 거리·시간을 먼저 읽고 세부 수치는 정렬하며 측정 한계는 도움말에서만 보여준다. */
 @Composable
-private fun HistorySessionSummary(session: HistorySession) {
+private fun HistorySessionSummary(session: HistorySession, efficiency: Double? = null) {
     val drive = session.kind == HistoryKind.DRIVE
     val help = buildString {
         append("${session.kind.label} 표본 ${session.samples}개")
@@ -170,6 +178,11 @@ private fun HistorySessionSummary(session: HistorySession) {
                         style = MaterialTheme.typography.titleMedium, color = T.Ink, textAlign = TextAlign.End)
                 }
                 if (drive) {
+                    efficiency?.let { value ->
+                        SettingActionRow("평균전비") {
+                            Text("${historyNumber(value)} km/kWh", color = T.Ink, textAlign = TextAlign.End)
+                        }
+                    }
                     session.kilometersPerPercent?.let { efficiency ->
                         SettingActionRow("배터리 효율") {
                             Text("${historyNumber(efficiency)} km/%", color = T.Ink, textAlign = TextAlign.End)

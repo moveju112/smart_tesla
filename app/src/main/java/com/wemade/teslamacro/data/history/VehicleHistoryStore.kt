@@ -25,6 +25,7 @@ data class HistoryOverview(
     val storageBytes: Long = 0,
     val hasMore: Boolean = false,
     val error: String? = null,
+    val insights: HistoryInsights = HistoryInsights(),
 )
 
 /** SQLite 트랜잭션에 압축 표본과 요약을 함께 저장해 종료 직전에도 두 값이 어긋나지 않는다. */
@@ -35,6 +36,9 @@ class VehicleHistoryStore(context: Context) {
     private val _revision = MutableStateFlow(0L)
     val revision = _revision.asStateFlow()
     private var lastError: String? = null
+    private var insightVehicle: String? = null
+    private val energyCache = mutableMapOf<String, Pair<HistorySession, HistoryEnergy>>()
+    private var previewCache: Pair<HistorySession, List<HistorySample>>? = null
 
     /** 차량 식별 원문은 DB에 담지 않고 차량별 분리 키만 만든다. */
     private fun vehicleKey(identity: String): String = MessageDigest.getInstance("SHA-256")
@@ -105,8 +109,8 @@ class VehicleHistoryStore(context: Context) {
         }
     }
 
-    /** 목록은 요약만 읽고 경로 압축 해제는 선택한 주행에 한정한다. */
-    suspend fun overview(identity: String, limit: Int = 50): HistoryOverview = withContext(Dispatchers.IO) {
+    /** 목록은 요약을 읽고 전비에 필요한 원본 계산은 세션별 캐시를 재사용한다. */
+    suspend fun overview(identity: String, limit: Int = 50, days: Int = 30): HistoryOverview = withContext(Dispatchers.IO) {
         mutex.withLock {
             try {
                 val database = helper.readableDatabase
@@ -120,7 +124,8 @@ class VehicleHistoryStore(context: Context) {
                     .use { it.moveToFirst(); it.getLong(0) }
                 HistoryOverview(sessions.take(limit), latestSession(database, key)?.let { readLastSample(database, it.id) },
                     count, databaseFile.length() + java.io.File(databaseFile.path + "-wal").length() +
-                        java.io.File(databaseFile.path + "-shm").length(), sessions.size > limit, lastError)
+                        java.io.File(databaseFile.path + "-shm").length(), sessions.size > limit, lastError,
+                    readInsights(database, key, sessions.take(limit), days))
             } catch (error: CancellationException) { throw error
             } catch (_: Exception) { HistoryOverview(error = "기록을 읽지 못했어요. 기존 데이터는 유지돼요.") }
         }
@@ -129,13 +134,55 @@ class VehicleHistoryStore(context: Context) {
     /** 차량 소유권을 함께 검사해 등록 차량을 바꿔도 이전 차량의 경로를 섞지 않는다. */
     suspend fun samples(identity: String, sessionId: String): List<HistorySample> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            val result = mutableListOf<HistorySample>()
-            helper.readableDatabase.rawQuery(
-                "SELECT b.payload FROM blocks b JOIN sessions s ON s.id=b.session_id WHERE s.vehicle=? AND s.id=? ORDER BY b.bucket",
-                arrayOf(vehicleKey(identity), sessionId),
-            ).use { cursor -> while (cursor.moveToNext()) result += VehicleHistory.decode(cursor.getBlob(0)) }
-            result
+            readSamples(helper.readableDatabase, vehicleKey(identity), sessionId)
         }
+    }
+
+    /** 기간 전체를 목록 페이지와 독립적으로 읽고 바뀌지 않은 원본은 다시 압축 해제하지 않는다. */
+    private fun readInsights(database: SQLiteDatabase, key: String, visible: List<HistorySession>, days: Int): HistoryInsights {
+        val today = java.time.LocalDate.now()
+        val zone = java.time.ZoneId.systemDefault()
+        if (insightVehicle != key) {
+            insightVehicle = key
+            energyCache.clear()
+            previewCache = null
+        }
+        return try {
+            val since = today.minusDays(days.toLong() * 2 - 1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val sessions = linkedMapOf<String, HistorySession>()
+            database.rawQuery("SELECT summary FROM sessions WHERE vehicle=? AND kind=? AND end>=? ORDER BY end DESC",
+                arrayOf(key, HistoryKind.DRIVE.name, since.toString())).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val session = VehicleHistory.json.decodeFromString<HistorySession>(cursor.getString(0))
+                    sessions[session.id] = session
+                }
+            }
+            visible.filter { it.kind == HistoryKind.DRIVE }.forEach { sessions[it.id] = it }
+            energyCache.keys.retainAll(sessions.keys)
+            val preview = visible.firstOrNull { it.kind == HistoryKind.DRIVE }
+            if (preview == null) previewCache = null
+            sessions.values.forEach { session ->
+                val cached = energyCache[session.id]
+                if (cached?.first != session || (session == preview && previewCache?.first != session)) {
+                    val points = readSamples(database, key, session.id)
+                    energyCache[session.id] = session to historyEnergy(points)
+                    if (session == preview) previewCache = session to points
+                }
+            }
+            historyInsights(sessions.values.toList(), energyCache.mapValues { it.value.second }, days, today, zone)
+                .copy(previewSessionId = previewCache?.first?.id, previewSamples = previewCache?.second.orEmpty())
+        } catch (error: CancellationException) { throw error
+        } catch (_: Exception) { HistoryInsights(days = days, error = "주행 요약을 읽지 못했어요") }
+    }
+
+    /** 상세와 요약 모두 차량 소유권을 확인한 동일 원본 조회를 사용한다. */
+    private fun readSamples(database: SQLiteDatabase, key: String, sessionId: String): List<HistorySample> {
+        val result = mutableListOf<HistorySample>()
+        database.rawQuery(
+            "SELECT b.payload FROM blocks b JOIN sessions s ON s.id=b.session_id WHERE s.vehicle=? AND s.id=? ORDER BY b.bucket",
+            arrayOf(key, sessionId),
+        ).use { cursor -> while (cursor.moveToNext()) result += VehicleHistory.decode(cursor.getBlob(0)) }
+        return result
     }
 
     /** 시계가 바뀌어도 마지막으로 기록한 세션을 재개 후보로 사용한다. */

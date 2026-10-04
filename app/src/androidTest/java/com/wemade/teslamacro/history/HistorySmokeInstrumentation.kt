@@ -75,7 +75,32 @@ class HistorySmokeInstrumentation : Instrumentation() {
                     store.record(VehicleSnapshot(time, categoryReadAt = mapOf(StateCategory.BODY_CONTROLLER to time)), missingIdentity, time)
                 }
                 check(!store.overview(missingIdentity).sessions.single().complete)
-                result.putString("stream", "PASS: SQLite 저장·재조회·5초 중복 방지·종료 경계·차량 분리·명시적 중지·지연 주행 연속성·같은 슬롯 P단")
+                // 목록 한 페이지 밖의 주행도 합산하고 새 표본에서 캐시가 갱신되는지 확인한다.
+                val metricIdentity = "insights-test-vehicle"
+                val baseTime = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                repeat(55) { index ->
+                    val start = baseTime + index * 120_000L
+                    for (offset in 0..12) {
+                        val time = start + offset * 5_000
+                        store.record(snapshot(time, ShiftState.DRIVE, 1000 + index * 200 + offset * 10, 80)
+                            .copy(drivePowerKw = 36), metricIdentity, time)
+                    }
+                    store.finish(metricIdentity)
+                }
+                val metrics = reopened.overview(metricIdentity, limit = 2)
+                check(metrics.error == null && metrics.insights.error == null)
+                check(metrics.sessions.size == 2 && metrics.hasMore)
+                check(kotlin.math.abs(metrics.insights.energy.distanceKm - 55 * 120 * 0.01609344) < 0.000001)
+                check(kotlin.math.abs(metrics.insights.energy.energyKwh - 33.0) < 0.000001)
+                check(metrics.insights.energy.efficiency != null)
+                check(reopened.overview("no-metric-vehicle").insights.energy.efficiency == null)
+                check(reopened.overview(metricIdentity, days = 7).insights.days == 7)
+                val extraTime = baseTime + 55 * 120_000L
+                store.record(snapshot(extraTime, ShiftState.DRIVE, 13000, 80).copy(drivePowerKw = 36), metricIdentity, extraTime)
+                reopened.overview(metricIdentity)
+                store.record(snapshot(extraTime + 5_000, ShiftState.DRIVE, 13010, 80).copy(drivePowerKw = 36), metricIdentity, extraTime + 5_000)
+                check(kotlin.math.abs(reopened.overview(metricIdentity).insights.energy.energyKwh - 33.05) < 0.000001)
+                result.putString("stream", "PASS: SQLite 기록·종료 경계·차량 분리·기간 집계·페이지 밖 55개 주행·요약 캐시 갱신")
             }
         } catch (error: Throwable) {
             result.putString("stream", "FAIL: ${error.javaClass.simpleName}: ${error.message}")

@@ -39,4 +39,19 @@ class HistoryScreenshotTest {
             }
         }
     }
+    /** 제보된 짧은 주행도 표본·설명 문단 없이 큰 글씨에서 핵심 값만 읽혀야 한다. */
+    @Test fun phoneSummaryLargeText() {
+        val session = com.wemade.teslamacro.data.history.HistorySession(
+            id = "summary-review", kind = com.wemade.teslamacro.data.history.HistoryKind.DRIVE,
+            start = 1_759_622_400_000, end = 1_759_622_412_000, samples = 3,
+            firstOdometer = 1000, lastOdometer = 1006, firstBattery = 76, lastBattery = 76,
+            estimatedDriveKwh = -0.001, powerCoveredMillis = 6_000)
+        paparazzi.snapshot {
+            AppFrame(Destination.Features, dark = false) {
+                HistoryScreen(HistoryUiState(enabled = true, ready = true,
+                    detail = com.wemade.teslamacro.feature.history.HistoryDetail(session)), {}, {}, {})
+            }
+        }
+    }
+
 }

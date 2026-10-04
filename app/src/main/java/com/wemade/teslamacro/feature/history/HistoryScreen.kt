@@ -4,13 +4,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.wemade.teslamacro.data.history.HistoryKind
@@ -35,8 +36,7 @@ import com.wemade.teslamacro.ui.component.EmptyState
 import com.wemade.teslamacro.ui.component.HelpTitle
 import com.wemade.teslamacro.ui.component.SectionTabs
 import com.wemade.teslamacro.ui.component.SettingToggleRow
-import com.wemade.teslamacro.ui.component.SettingRow
-import com.wemade.teslamacro.ui.component.PickerSheet
+import com.wemade.teslamacro.ui.component.SettingActionRow
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.theme.Space
@@ -73,12 +73,11 @@ fun HistoryRoute(viewModel: HistoryViewModel) {
 internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
     onSelect: (HistorySession?) -> Unit, onMore: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(HistoryKind.DRIVE) }
-    var showOptions by rememberSaveable { mutableStateOf(false) }
     BackHandler(state.detail.session != null) { onSelect(null) }
     LazyColumn(contentPadding = PaddingValues(Space.md),
         verticalArrangement = Arrangement.spacedBy(Space.sm + Space.xs)) {
         item {
-            HelpTitle("주행 기록", "이 기기에 저장된 이동 경로와 배터리·충전 기록을 확인해요.\n수신하지 못한 값은 --로 표시해요.",
+            HelpTitle("주행 기록", "이 기기에 저장된 이동 경로와 배터리·충전 기록이에요.\n앱 삭제 시 기록도 삭제되며 설정 백업에는 포함되지 않아요.\n수신하지 못한 값은 --로 표시해요.",
                 style = MaterialTheme.typography.headlineSmall)
         }
         if (state.detail.session != null) {
@@ -94,15 +93,14 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
                             style = MaterialTheme.typography.titleMedium)
                         if (state.detail.samples.any { it.latitude != null && it.longitude != null }) {
                             if (state.detail.samples.count { it.latitude != null && it.longitude != null } == 1) {
-                                Text("위치가 1개만 기록돼 이동선을 그릴 수 없어요", color = T.InkMuted)
+                                Text("위치 1곳", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                             }
                             HistoryMap(state.detail.samples, Modifier.fillMaxWidth().height(Space.xxl * 7))
-                        } else Text("차량 위치를 수신하지 못한 주행이에요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                        } else Text("위치 기록 없음", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
                     else -> TCard {
                         Text("충전 전력 변화", style = MaterialTheme.typography.titleMedium, color = T.Ink)
                         HistoryChargeChart(state.detail.samples)
-                        Text("차량이 보고한 충전 전력 · 연결 중 관측한 구간", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                     }
                 }
             }
@@ -114,7 +112,6 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
                     else "차량에 연결된 동안 5초마다 주행과 충전을 기록해요.")
                 else Text("차량 등록 후 기록을 켤 수 있어요", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
             } }
-            item { TCard { SettingRow("설정", onClick = { showOptions = true }) } }
             state.overview.latest?.let { latest -> item {
                 HelpTitle("마지막 배터리 ${latest.batteryPercent?.let { "$it%" } ?: "--"}",
                     "${historyTime(latest.time)}에 확인한 값이에요. 현재 차량 상태와 다를 수 있어요.")
@@ -132,7 +129,7 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
             items(sessions, key = { it.id }) { session ->
                 TCard(onClick = { onSelect(session) }) {
                     Text(historyTime(session.start), style = MaterialTheme.typography.titleMedium, color = T.Ink)
-                    Text(if (tab == HistoryKind.DRIVE) "${historyNumber(session.distanceKm)} km · ${historyNumber((session.end - session.start) / 60_000.0)}분"
+                    Text(if (tab == HistoryKind.DRIVE) "${historyNumber(session.distanceKm)} km · ${historyDuration(session.end - session.start)}"
                         else "관측 충전량 ${historyNumber(session.chargedKwh)} kWh", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                     Text("배터리 ${session.firstBattery ?: "--"}% → ${session.lastBattery ?: "--"}%", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
                 }
@@ -140,38 +137,61 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
             if (state.overview.hasMore) item { TButton("이전 기록 더 보기", ButtonTone.Ghost, onClick = onMore) }
         }
     }
-    if (showOptions) PickerSheet("기록 설정", onDismiss = { showOptions = false }) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            Text("${state.overview.sampleCount}개 표본 · 저장공간 ${historyNumber(state.overview.storageBytes / 1_048_576.0)} MB",
-                style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-            Text("주행을 확인한 연결은 기록을 위해 유지해요. 빈 차를 깨워 기록을 시작하지 않아요.", color = T.InkMuted)
-            Text("응답 지연·연결 해제 구간은 누락될 수 있어요.", color = T.InkMuted)
-            Text("기록은 무손실 압축하며 자동 삭제하지 않아요. 지도 캐시는 표시 용량과 별도예요.", color = T.InkMuted)
-            Text("이 기기에만 보관돼요. 기존 설정 백업에 포함되지 않으며 앱 삭제 시 사라져요.", color = T.InkMuted)
+}
+
+/** 거리·시간을 먼저 읽고 세부 수치는 정렬하며 측정 한계는 도움말에서만 보여준다. */
+@Composable
+private fun HistorySessionSummary(session: HistorySession) {
+    val drive = session.kind == HistoryKind.DRIVE
+    val help = buildString {
+        append("${session.kind.label} 표본 ${session.samples}개")
+        if (drive) {
+            append("\n효율은 주행거리 ÷ 배터리 감소율이에요. 정수 %를 사용해 짧은 주행은 오차가 커요.")
+            append("\n추정 전력량은 수신한 주행 전력을 적산한 값이며 음수는 회생을 뜻해요.")
+            append("\n전력 관측 시간 ${historyDuration(session.powerCoveredMillis)}")
+        } else append("\n충전량은 차량이 보고한 추가량의 차이로, 충전기 청구량과 다를 수 있어요.")
+        if (session.hasGaps) append("\n수신 공백이 있어 해당 경로와 전력은 추정하지 않았어요.")
+        append(if (session.complete) "\n상태 전환까지 관측한 구간이에요." else "\n기록 중이거나 시작·종료를 확인하지 못한 구간이에요.")
+    }
+    TCard {
+        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            HelpTitle(historyTime(session.start), help, style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
+                HistoryMetric(if (drive) "주행거리" else "충전량",
+                    if (drive) "${historyNumber(session.distanceKm)} km" else "${historyNumber(session.chargedKwh)} kWh",
+                    Modifier.weight(1f))
+                HistoryMetric(if (drive) "주행시간" else "충전시간",
+                    historyDuration(session.end - session.start), Modifier.weight(1f))
+            }
+            HorizontalDivider(color = T.Hairline, thickness = Stroke.thin)
+            Column {
+                SettingActionRow("배터리") {
+                    Text("${session.firstBattery?.let { "$it%" } ?: "--"} → ${session.lastBattery?.let { "$it%" } ?: "--"}",
+                        style = MaterialTheme.typography.titleMedium, color = T.Ink, textAlign = TextAlign.End)
+                }
+                if (drive) {
+                    session.kilometersPerPercent?.let { efficiency ->
+                        SettingActionRow("배터리 효율") {
+                            Text("${historyNumber(efficiency)} km/%", color = T.Ink, textAlign = TextAlign.End)
+                        }
+                    }
+                    if (session.powerCoveredMillis > 0) {
+                        SettingActionRow("추정 전력량") {
+                            Text("${historyNumber(session.estimatedDriveKwh)} kWh", color = T.Ink, textAlign = TextAlign.End)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/** 용량 입력 없이 실제 배터리 변화와 관측 전력만 표시한다. */
+/** 핵심 수치를 같은 폭에 놓고 큰 글씨에서는 값의 줄바꿈을 허용한다. */
 @Composable
-private fun HistorySessionSummary(session: HistorySession) {
-    TCard {
-        Text(historyTime(session.start), style = MaterialTheme.typography.titleMedium, color = T.Ink)
-        Text("${session.kind.label} · ${historyNumber((session.end - session.start) / 60_000.0)}분 · ${session.samples}개 표본", color = T.InkMuted)
-        Text("배터리 ${session.firstBattery ?: "--"}% → ${session.lastBattery ?: "--"}%", color = T.Ink)
-        if (session.kind == HistoryKind.DRIVE) {
-            Text("주행거리 ${historyNumber(session.distanceKm)} km", color = T.Ink)
-            Text("배터리 기준 효율 ${historyNumber(session.kilometersPerPercent)} km/%", color = T.Ink)
-            if (session.powerCoveredMillis > 0) {
-                Text("전력 적산 추정 ${historyNumber(session.estimatedDriveKwh)} kWh · 관측 ${historyNumber(session.powerCoveredMillis / 60_000.0)}분", color = T.InkMuted)
-            }
-            Text("배터리 잔량은 정수 %라 짧은 주행의 전비 오차가 커요.", color = T.InkMuted)
-        } else {
-            Text("관측 충전량 ${historyNumber(session.chargedKwh)} kWh", style = MaterialTheme.typography.titleLarge, color = T.Ink)
-            Text("차량의 충전 추가량 차이예요. 충전기 청구 전력량과 다를 수 있어요.", color = T.InkMuted)
-        }
-        if (session.hasGaps) Text("수신이 끊긴 구간이 있어요 · 해당 경로와 전력은 추정하지 않아요", color = T.InkMuted)
-        Text(if (session.complete) "상태 전환까지 관측한 구간" else "기록 중이거나 시작·종료를 확인하지 못한 구간", color = T.InkMuted)
+private fun HistoryMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+        Text(value, style = MaterialTheme.typography.headlineMedium, color = T.Ink)
     }
 }
 
@@ -179,7 +199,7 @@ private fun HistorySessionSummary(session: HistorySession) {
 @Composable
 private fun HistoryChargeChart(samples: List<HistorySample>) {
     val points = samples.filter { it.chargerPowerKw != null }
-    if (points.size < 2) { Text("그래프를 그릴 충전 전력이 부족해요", color = T.InkMuted); return }
+    if (points.size < 2) { Text("충전 전력 기록 부족", color = T.InkMuted); return }
     val observedMaximum = points.maxOf { it.chargerPowerKw!! }
     val maximum = observedMaximum.coerceAtLeast(1)
     val minimumTime = points.first().time
@@ -199,7 +219,20 @@ private fun HistoryChargeChart(samples: List<HistorySample>) {
 
 /** 표시만 반올림하고 저장된 원본은 보존한다. */
 internal fun historyNumber(value: Double?): String = value?.takeIf { it.isFinite() }
-    ?.let { String.format(Locale.KOREA, "%.1f", it) } ?: "--"
+    ?.let {
+        val rounded = String.format(Locale.KOREA, "%.1f", it)
+        if (rounded == "-0.0") "0.0" else rounded
+    } ?: "--"
+
+/** 짧은 주행은 초, 긴 주행은 분·시간으로 보여 소수 분을 해석할 필요를 없앤다. */
+internal fun historyDuration(millis: Long): String {
+    val seconds = millis.coerceAtLeast(0L) / 1_000
+    return when {
+        seconds < 60 -> "${seconds}초"
+        seconds < 3_600 -> "${seconds / 60}분" + if (seconds % 60 > 0) " ${seconds % 60}초" else ""
+        else -> "${seconds / 3_600}시간" + if (seconds % 3_600 / 60 > 0) " ${seconds % 3_600 / 60}분" else ""
+    }
+}
 
 /** 기록 시각은 기기 시간대에 맞춰 보여준다. */
 internal fun historyTime(value: Long): String = SimpleDateFormat("yyyy.MM.dd HH:mm:ss", Locale.KOREA).format(Date(value))

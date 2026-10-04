@@ -67,8 +67,6 @@ class DestinationQuickSendActivity : ComponentActivity() {
                 if (ready && settings != null) {
                     val model: DestinationViewModel = viewModel(factory = ViewModelFactory(app.container))
                     DestinationQuickSendRoute(model, onClose = ::finish)
-                } else {
-                    DestinationQuickSendScreen(DestinationUiState(busy = true), {}, {})
                 }
             }
         }
@@ -95,13 +93,15 @@ private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -
     }
 }
 
-/** 정상 조회 뒤에만 입력·연결 설정을 고르고 통신 실패를 미연결로 오인하지 않는다. */
+/** 로컬 설정 이력을 먼저 읽어 첫 사용을 네트워크 대기 화면에 가두지 않는다. */
 @Composable
 internal fun DestinationQuickSendContent(
     state: DestinationUiState, onQuery: (String) -> Unit, onSend: () -> Unit,
     onRefresh: () -> Unit, setup: @Composable () -> Unit,
 ) {
     when {
+        needsDestinationSetup(state) -> setup()
+        state.setupStarted == null && !state.connectionChecked -> Unit
         state.connectionError != null || !state.connectionChecked -> Surface(
             shape = RoundedCornerShape(Radius.hero), color = T.Carbon.copy(alpha = 0.88f),
         ) {
@@ -111,7 +111,6 @@ internal fun DestinationQuickSendContent(
                 if (state.connectionError != null) TButton("재확인", enabled = !state.busy, onClick = onRefresh)
             }
         }
-        needsDestinationSetup(state) -> setup()
         else -> DestinationQuickSendScreen(state, onQuery, onSend)
     }
 }

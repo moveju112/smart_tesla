@@ -14,6 +14,9 @@ import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.lifecycle.ViewModelProvider
+import com.wemade.teslamacro.feature.destination.DestinationViewModel
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import com.wemade.teslamacro.feature.destination.DestinationQuickSendContent
@@ -50,6 +53,8 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         var activity: Activity? = null
         var configuration: Activity? = null
         var originalAppearance: DestinationWidgetAppearance? = null
+        var originalSetup: Boolean? = null
+        var originalReceiving = false
         try {
             uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply {
                 flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -57,6 +62,14 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(targetContext.getSystemService(ConnectivityManager::class.java).activeNetwork == null) {
                 "실제 목적지 전송을 막으려면 테스트 에뮬레이터의 네트워크를 먼저 꺼야 합니다"
             }
+            val app = targetContext.applicationContext as TeslaMacroApplication
+            runBlocking { kotlinx.coroutines.withTimeout(10_000) { app.ready.first { it } } }
+            val store = app.container.settingsStore
+            val original = runBlocking { store.settings.first() }
+            originalAppearance = original.destinationWidgetAppearance
+            originalSetup = original.destinationSetupStarted
+            originalReceiving = original.destinationReceiveEnabled
+            runBlocking { store.setDestinationSetupStarted(false) }
             val manager = targetContext.getSystemService(AppWidgetManager::class.java)
             val provider = ComponentName(targetContext, DestinationWidget::class.java)
             val info = manager.installedProviders.single { it.provider == provider }
@@ -86,12 +99,27 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             activity = waitForMonitorWithTimeout(monitor, 10_000)
             removeMonitor(monitor)
             check(activity != null) { "위젯 클릭으로 입력창이 열리지 않았습니다" }
-            val store = (targetContext.applicationContext as TeslaMacroApplication).container.settingsStore
-            originalAppearance = runBlocking { store.settings.first().destinationWidgetAppearance }
-            // 실제 위젯 경로의 오프라인 오류를 먼저 확인하고 합성 연결 상태로 UI만 검사한다.
+            // 설정 이력이 없는 실제 위젯은 오프라인에서도 즉시 설정을 열고 조회 주기가 지나도 오류가 없어야 한다.
+            awaitNode { it.text?.toString() == "전송받을 기기" }
+            awaitNode { it.text?.toString() == "연결코드생성" }
+            check(find(uiAutomation.rootInActiveWindow) { it.text?.toString() == "연결 확인 중…" } == null)
+            lateinit var model: DestinationViewModel
+            runOnMainSync { model = ViewModelProvider(activity as DestinationQuickSendActivity)[DestinationViewModel::class.java] }
+            check(model.state.value.setupStarted == false && model.state.value.canConfigure)
+            check(runBlocking { withTimeoutOrNull(5_500) { model.state.first { it.connectionError != null } } } == null)
+            // 설정 이력이 있는 설치본은 새 화면에서 실제 통신 실패를 표시한다.
+            runOnMainSync { activity!!.finish() }
+            runBlocking { store.setDestinationSetupStarted(true) }
+            val configuredMonitor = addMonitor(DestinationQuickSendActivity::class.java.name, null, false)
+            runOnMainSync { view.findViewById<android.view.View>(R.id.destination_widget_root).performClick() }
+            activity = waitForMonitorWithTimeout(configuredMonitor, 10_000)
+            check(activity != null)
             awaitNode { it.text?.toString() == "연결을 확인하지 못했어요" }
             check(find(uiAutomation.rootInActiveWindow) { it.className == "android.widget.EditText" } == null)
             check(find(uiAutomation.rootInActiveWindow) { it.text?.toString() == "연결코드생성" } == null)
+            // 명시적 해제 기록을 읽으면 오류 화면에서도 설정으로 돌아간다.
+            runBlocking { store.setDestinationSetupStarted(false) }
+            awaitNode { it.text?.toString() == "전송받을 기기" }
             val fixture = mutableStateOf(DestinationUiState(connectionChecked = true))
             var sends = 0
             var disconnects = 0
@@ -251,7 +279,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(transparent) { "저장한 투명도·글자색이 홈 위젯에 반영되지 않았습니다" }
             // 입력창은 스타일 저장 뒤에도 작성 중인 주소를 유지해야 한다.
             check(awaitNode { it.className == "android.widget.EditText" }.text.toString() == "서울시청")
-            result.putString("stream", "PASS: 실제 위젯 오프라인 분기·합성 연결 상태별 설정/입력 전환·비활성화·코드 복사/롱터치 제공·연결 해제·가운데 입력·IME 전송·빈 입력 차단·위젯 크기/꾸미기")
+            result.putString("stream", "PASS: 미설정 위젯 즉시 설정/조회 생략·설정 이력 재실행/해제 분기·전송받을 기기 문구·실제 위젯 오프라인 분기·합성 연결 상태별 설정/입력 전환·비활성화·코드 복사/롱터치 제공·연결 해제·가운데 입력·IME 전송·빈 입력 차단·위젯 크기/꾸미기")
         } catch (error: Throwable) {
             resultCode = Activity.RESULT_CANCELED
             val controls = if (activity != null) uiAutomation.rootInActiveWindow?.let(::describe) else "입력창 진입 전"
@@ -259,7 +287,10 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
         } finally {
             originalAppearance?.let { appearance ->
                 runBlocking {
-                    (targetContext.applicationContext as TeslaMacroApplication).container.settingsStore.setDestinationWidgetAppearance(appearance)
+                    val store = (targetContext.applicationContext as TeslaMacroApplication).container.settingsStore
+                    store.setDestinationWidgetAppearance(appearance)
+                    originalSetup?.let { store.setDestinationSetupStarted(it) }
+                    store.setDestinationReceiveEnabled(originalReceiving)
                 }
                 DestinationWidget.updateAll(targetContext, appearance)
             }

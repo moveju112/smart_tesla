@@ -44,17 +44,18 @@ data class DestinationUiState(
     val notice: String? = null, val error: String? = null, val connectionError: String? = null,
     val receiveMessage: String = "탑승 대기",
     val connectionChecked: Boolean = false,
+    val setupStarted: Boolean? = null,
     val sendCompleted: Boolean = false,
 ) {
     val connected: Boolean get() = receiverName != null || senderCount > 0
-    val canConfigure: Boolean get() = connectionChecked && connectionError == null && !busy
+    val canConfigure: Boolean get() = !busy && (setupStarted == false || (connectionChecked && connectionError == null))
     val canSend: Boolean get() = canConfigure && receiverName != null
     val canReceive: Boolean get() = canConfigure && senderCount > 0
 }
 
-/** 조회가 끝난 정상 응답만 연결 준비 여부로 판단한다. 통신 오류를 미설정으로 취급하지 않는다. */
+/** 처음 설정하는 기기는 조회 없이 진입하고, 확인된 미연결도 통신 오류로 가리지 않는다. */
 internal fun needsDestinationSetup(state: DestinationUiState): Boolean =
-    state.connectionChecked && state.connectionError == null && state.receiverName == null
+    state.setupStarted == false || (state.connectionChecked && state.receiverName == null)
 
 /** 실제 화면 수명에 맞춰 발신 결과 조회를 시작하고 멈춘다. */
 @Composable
@@ -160,8 +161,12 @@ fun DestinationScreen(
                                         small = true, enabled = state.canConfigure, onClick = onUnlink)
                                 })
                             } else {
-                                SettingRow("보낼 기기", if (state.connectionChecked) "미연결" else "확인 중…",
+                                SettingRow("전송받을 기기", if (state.setupStarted == false || state.connectionChecked) "미연결" else "확인 중…",
                                     enabled = state.canConfigure, onClick = { pairingExpanded = true })
+                            }
+                            if (state.setupStarted == false) {
+                                TButton("기존 연결 불러오기", tone = ButtonTone.Ghost,
+                                    enabled = !state.busy, onClick = onRefresh)
                             }
                             Hairline()
                             NumberSettingRow("전송 유효시간", state.minutes.toDouble(),
@@ -186,7 +191,7 @@ fun DestinationScreen(
                         Column {
                             DestinationQueryRow(state, onQuery)
                             Hairline()
-                            SettingRow("받는 기기", state.receiverName ?: if (state.connectionError != null) "확인 필요"
+                            SettingRow("전송받을 기기", state.receiverName ?: if (state.connectionError != null) "확인 필요"
                                 else if (!state.connectionChecked) "확인 중…" else "미연결",
                                 onClick = { if (onOpenSettings != null) onOpenSettings() else setup = true })
                             Hairline()
@@ -221,7 +226,7 @@ fun DestinationScreen(
     if (setup) PickerSheet("목적지 설정",
         onDismiss = { if (settingsOnly) onBack() else setup = false }, content = content)
     else content()
-    if (setup && pairingExpanded) PickerSheet("보낼 기기", onDismiss = { pairingExpanded = false }) {
+    if (setup && pairingExpanded) PickerSheet("전송받을 기기", onDismiss = { pairingExpanded = false }) {
         DestinationPairingEditor(state, onPairingCode, onPair, onUnlink, onRefresh)
     }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -30,7 +31,12 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     init {
         viewModelScope.launch {
             container.settingsStore.settings.collect { settings ->
-                mutableState.update { it.copy(receiving = settings.destinationReceiveEnabled, minutes = settings.destinationValidityMinutes) }
+                mutableState.update { it.copy(receiving = settings.destinationReceiveEnabled, minutes = settings.destinationValidityMinutes,
+                    setupStarted = settings.destinationSetupStarted,
+                    connectionChecked = !settings.destinationSetupStarted || it.connectionChecked,
+                    receiverName = if (settings.destinationSetupStarted) it.receiverName else null,
+                    senderCount = if (settings.destinationSetupStarted) it.senderCount else 0,
+                    connectionError = if (settings.destinationSetupStarted) it.connectionError else null) }
             }
         }
         viewModelScope.launch { coordinator.message.collect { message -> mutableState.update { it.copy(receiveMessage = message) } } }
@@ -67,6 +73,7 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 코드가 일치한 서버 응답 뒤에만 연결된 기기 이름을 표시한다. */
     fun pair() = act {
         check(!state.value.connected) { "기존 연결을 먼저 해제해 주세요" }
+        markSetupStarted()
         val reply = client.call("pair") { put("code", state.value.pairingCode) }
         mutableState.update { it.copy(receiverName = reply.receiverName, pairingCode = "", notice = "받는 기기를 연결했어요") }
         refreshState()
@@ -75,17 +82,18 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 기기 연결을 끊을 때 아직 인계되지 않은 목적지도 함께 취소된다. */
     fun unlink() = act {
         client.call("disconnect")
-        container.settingsStore.setDestinationReceiveEnabled(false)
-        mutableState.update { it.copy(receiverName = null, senderCount = 0, receiverCode = null,
-            pairingCode = "", receiving = false, notice = "연결을 해제했어요") }
+        container.settingsStore.setDestinationSetupStarted(false)
+        mutableState.update { it.copy(receiverName = null, senderCount = 0, receiverCode = null, request = null,
+            pairingCode = "", receiving = false, setupStarted = false, connectionChecked = true,
+            connectionError = null, notice = "연결을 해제했어요") }
         coordinator.nudge()
         container.poller.nudge()
-        refreshState()
     }
 
     /** 새 코드 발급은 이전 코드를 무효화하며 연결할 폰에서만 입력한다. */
     fun createPairCode() = act {
         check(!state.value.connected) { "기존 연결을 먼저 해제해 주세요" }
+        markSetupStarted()
         val reply = client.call("pairCode") { put("name", "차량 태블릿") }
         mutableState.update { it.copy(receiverCode = reply.code, notice = "연결 코드 생성됨") }
     }
@@ -105,9 +113,10 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     fun observe() {
         if (observation?.isActive == true) return
         observation = viewModelScope.launch {
+            state.first { it.setupStarted != null }
             while (isActive) {
                 mutableState.update { it.copy(overlayAllowed = container.navigator.hasOverlayPermission) }
-                if (operation?.isActive != true) {
+                if (state.value.setupStarted == true && operation?.isActive != true) {
                     try { requestMutex.withLock { refreshState() } }
                     catch (error: Exception) {
                         if (error is CancellationException) throw error
@@ -123,7 +132,15 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     fun stopObserving() { observation?.cancel(); observation = null }
 
     /** 수동 새로고침은 통신 오류 후 전달 여부를 확인하는 복구 동작이다. */
-    fun refresh() = act { refreshState() }
+    fun refresh() = act { markSetupStarted(); refreshState() }
+
+    /** 요청 성공 직후 앱이 종료돼도 다음 실행에서 기존 연결을 다시 확인한다. */
+    private suspend fun markSetupStarted() {
+        if (state.value.setupStarted != true) {
+            container.settingsStore.setDestinationSetupStarted(true)
+            mutableState.update { it.copy(setupStarted = true) }
+        }
+    }
 
     /** 서버 상태가 정본이며 로컬의 낙관적 완료 표시를 만들지 않는다. */
     private suspend fun refreshState() {

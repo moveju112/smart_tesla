@@ -67,7 +67,7 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
         overlayAllowed = true, minutes = 120), setup = true, bottom = true)
 
     /** 코드 입력과 연결 버튼이 한 행에 놓이고 연결 해제와 실패 복구가 보이는지 확인한다. */
-    @Test fun pairingEditor() = editorSnapshot("보낼 기기") {
+    @Test fun pairingEditor() = editorSnapshot("전송받을 기기") {
         DestinationPairingEditor(DestinationUiState(receiverName = "차량 태블릿", pairingCode = "ABCD234567",
             error = "연결 코드를 확인해 주세요"))
     }
@@ -150,7 +150,7 @@ class DestinationSettingsLargeFontScreenshotTest(private val dark: Boolean) {
 
     /** 큰 글자에서는 코드 입력 폭을 확보하고 연결 버튼을 다음 줄로 보낸다. */
     @Test fun pairingEditor() = snapshot {
-        PickerSheet("보낼 기기", onDismiss = {}) {
+        PickerSheet("전송받을 기기", onDismiss = {}) {
             DestinationPairingEditor(DestinationUiState(receiverName = "차량 태블릿",
                 pairingCode = "ABCD234567", error = "연결 코드를 확인해 주세요"))
         }

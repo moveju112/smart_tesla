@@ -55,7 +55,7 @@ class FeatureNavigationTest {
         val checked = unknown.copy(connectionChecked = true)
         assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(unknown))
         assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked))
-        assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(connectionError = "연결 실패")))
+        assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(connectionError = "연결 실패")))
         assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiverName = "차량 태블릿")))
         assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = true)))
         assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(checked.copy(receiving = false)))
@@ -78,6 +78,19 @@ class FeatureNavigationTest {
         assertFalse(sender.copy(busy = true).canSend)
         assertFalse(receiver.copy(connectionError = "오프라인").canReceive)
         assertFalse(sender.copy(connectionChecked = false).canConfigure)
+    }
+    /** 첫 사용과 명시적 해제는 서버 확인 없이 설정을 조작할 수 있다. */
+    @Test fun firstDestinationSetupDoesNotWaitForServer() {
+        val fresh = com.wemade.teslamacro.feature.destination.DestinationUiState(setupStarted = false)
+        assertTrue(com.wemade.teslamacro.feature.destination.needsDestinationSetup(fresh))
+        assertTrue(fresh.canConfigure)
+        assertFalse(fresh.canSend)
+        assertFalse(fresh.canReceive)
+        assertFalse(fresh.copy(busy = true).canConfigure)
+        val configured = fresh.copy(setupStarted = true)
+        assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(configured))
+        assertFalse(configured.canConfigure)
+        assertFalse(com.wemade.teslamacro.feature.destination.needsDestinationSetup(configured.copy(connectionError = "오프라인")))
     }
 
 }

@@ -79,7 +79,7 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         "처음 Wi-Fi 허용 창에서 ‘이 네트워크에서 항상 허용’을 선택하면 다음 준비 때 확인을 줄일 수 있어요. 프로세스가 종료되면 Wi-Fi에서 다시 준비해 주세요.\n\n" +
         "실행 전 네이버지도 초기 설정·위치·음량 설정을 마쳐 주세요. 기존 네이버지도 실행이 있으면 실험을 시작하지 않아요. " +
         "테스트 버튼을 누른 뒤 화면을 잠가 음성을 확인해 주세요.\n\n" +
-        "자동 실행은 아래에서 직접 선택한 차량 오디오 연결을 사용해요. 연결 해제 30초 뒤 실험을 종료해요. " +
+        "자동 실행은 ‘설정 → 차량 → 탑승 감지 블루투스’에서 직접 선택한 기기 연결을 사용해요. 연결 해제 30초 뒤 실험을 종료해요. " +
         "종료 시 네이버지도를 강제 종료하므로 실험 도중 직접 시작한 길안내도 함께 종료돼요. " +
         "이 실험은 이 휴대폰의 네이버지도에만 명령을 보내요.")
     Spacer(Modifier.height(Space.sm))
@@ -102,9 +102,8 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
             Spacer(Modifier.height(Space.md))
             SettingToggleRow("차량 오디오 연결 시 자동 실행", checked = state.enabled,
                 onCheckedChange = controls.onWirelessEnabled)
-            SettingsDetails("차량 오디오 선택") { VehicleAudioPicker(settings, controls) }
             if (state.enabled && settings.vehicleAudioAddress.isBlank()) {
-                Text("자동 실행할 차량 오디오를 직접 선택해 주세요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                Text("설정 → 차량 → 탑승 감지 블루투스에서 기기를 선택해 주세요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
             }
             SettingsDetails("연결 관리", if (state.prepared) "연결됨" else "준비 필요") {
                 TButton("다시 연결 설정", ButtonTone.Secondary, enabled = !checkingSetup && !state.busy && !state.running) {

@@ -181,7 +181,7 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.VEHICLE -> {
-                            // 차량 등록 전에도 휴대 모드의 탑승 감지 기기를 고를 수 있어야 한다.
+                            // 차량 등록·기기 모드와 무관하게 공통 탑승 감지 기기를 고를 수 있어야 한다.
                             SectionHeader("사용 방식", topPadding = Space.sm)
                             TCard {
                                 PhoneKeyProtectionPanel(
@@ -486,7 +486,9 @@ private fun PhoneKeyProtectionPanel(
                 checked = settings.protectPhoneKey,
                 onCheckedChange = onProtectPhoneKeyChange,
             )
-        } else if (settings.deviceMode == DeviceMode.PORTABLE && navigation != null) {
+        }
+        // 안심주행도 같은 선택을 쓰므로 거치 모드에서도 이곳에서 관리한다.
+        if (navigation != null) {
             Hairline()
             val selectedAudioName = if (settings.vehicleAudioAddress.isBlank()) "자동 선택" else {
                 navigation.pairedAudioDevices.firstOrNull {
@@ -969,7 +971,7 @@ private fun OverlayPermissionNotice(controls: NavigationControls) {
     )
 }
 
-/** 휴대 모드에서 실제 연결 상태와 페어링 차량을 같은 상세 시트에서 고른다. */
+/** 탑승 감지와 안심주행이 공유하는 페어링 차량을 한 상세 시트에서 고른다. */
 @Composable
 internal fun VehicleAudioPicker(settings: AppSettings, controls: NavigationControls) {
     if (controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED) {

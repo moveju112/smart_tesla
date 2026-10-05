@@ -299,6 +299,10 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 }
             }
             awaitPanelText("연결 관리", true)
+            awaitPanelText("차량 오디오 선택", false)
+            runOnMainSync { panelState.value = panelState.value.copy(enabled = true) }
+            awaitPanelText("설정 → 차량 → 탑승 감지 블루투스에서 기기를 선택해 주세요", true)
+            runOnMainSync { panelState.value = panelState.value.copy(enabled = false) }
             for (text in listOf("연결 설정", "연결 준비 / 복구", "수동 페어링 / 연결 포트", "10초 뒤 테스트", "종료")) {
                 awaitPanelText(text, false)
             }

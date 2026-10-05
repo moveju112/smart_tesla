@@ -164,7 +164,7 @@ fun FeaturesScreen(
     }
 }
 
-/** 켜진 기능은 아이콘 체크로 구별하고 설정이 필요한 상태만 글자로 남긴다. */
+/** 꺼졌거나 준비가 부족한 기능은 회색, 켜진 기능은 강조색과 체크로 구별한다. */
 @Composable
 private fun FeatureRow(feature: AppFeature, enabled: Boolean?, notice: String?, onClick: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -193,7 +193,9 @@ private fun FeatureRow(feature: AppFeature, enabled: Boolean?, notice: String?, 
                         AppFeature.STEALTH_CHARGE -> DraftMark.Charge
                         AppFeature.SMARTTHINGS -> DraftMark.Notifications
                     },
-                    contentDescription = null, tint = T.Electric, modifier = Modifier.size(Space.lg),
+                    contentDescription = null,
+                    tint = if (enabled == false || notice != null) T.InkMuted else T.Electric,
+                    modifier = Modifier.size(Space.lg),
                 )
                 // 사용 준비가 안 된 기능은 체크를 숨겨 실제로 사용할 수 있다는 오해를 막는다.
                 if (enabled == true && notice == null) {

@@ -31,6 +31,7 @@ class DestinationReceiverTest {
         var selfTest = false
         var before: () -> Unit = {}
         var launchFailure = false
+        var uncertainLaunch = false
         val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, createdAt, createdAt + 60_000, status, selfTest)
 
         /** 인계 이후 수신함에서 제거하고 완료 응답 유실도 재현한다. */
@@ -57,10 +58,23 @@ class DestinationReceiverTest {
                 guard()
                 assertNotNull(receipt)
                 if (launchFailure) error("launch failed")
+                if (uncertainLaunch) throw DestinationLaunchException("unknown", uncertain = true)
                 launches++
                 launchedDestination = destination
                 Unit
-            } }, {})
+            }.onFailure { if (it is DestinationLaunchException && it.uncertain) throw it } }, {})
+    }
+
+    /** ADB 응답 유실은 실패로 확정하거나 다음 수신에서 다시 실행하지 않는다. */
+    @Test fun uncertainShellDeliveryKeepsClaimedReceipt() = runTest {
+        val scenario = Scenario().apply { uncertainLaunch = true }
+        val receiver = scenario.receiver()
+        receiver.receive { true }
+        receiver.receive { true }
+        assertEquals("claimed", scenario.status)
+        assertNotNull(scenario.receipt)
+        assertNull(scenario.receipt?.delivered)
+        assertEquals(1, scenario.claims)
     }
 
     /** 검색어만 직렬화·복원해도 주소나 가짜 좌표를 만들어 넣지 않는다. */

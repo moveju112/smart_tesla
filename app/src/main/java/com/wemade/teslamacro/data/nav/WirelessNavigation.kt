@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.nav
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import com.wemade.teslable.DiagLog
@@ -15,6 +16,7 @@ import java.io.File
 import java.security.PrivateKey
 import java.security.cert.Certificate
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +31,9 @@ data class WirelessNavigationState(
     val message: String = "무선 페어링 필요",
 )
 
+/** 전송 이후의 실패는 다른 실행 통로·URI로 반복하지 않고 사용자에게 돌린다. */
+internal class DestinationLaunchException(message: String, cause: Throwable? = null, val uncertain: Boolean = false) : IllegalStateException(message, cause)
+
 /** ADB는 준비 때만 쓰고 지도 제어는 같은 휴대폰의 Binder로 연결한다. */
 class WirelessNavigation(private val context: Context) {
     private val preferences = context.getSharedPreferences("wireless_navigation", Context.MODE_PRIVATE)
@@ -42,6 +47,7 @@ class WirelessNavigation(private val context: Context) {
     private var connected = false
     @Volatile private var keepWirelessDebugging = false
     @Volatile private var navigationSessionActive = false
+    private val destinationCommands = AtomicInteger()
 
     init {
         val networks = context.getSystemService(ConnectivityManager::class.java)
@@ -127,6 +133,7 @@ class WirelessNavigation(private val context: Context) {
     }
 
     /** 명령 직전 꺼진 디버깅을 복구하고 권한이 없으면 설정 안내로 돌린다. */
+    @Synchronized
     private fun enableWirelessDebugging() {
         if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1) return
         check(context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED) { WIRELESS_DEBUGGING_REQUIRED }
@@ -135,12 +142,49 @@ class WirelessNavigation(private val context: Context) {
     }
 
     /** 탑승·재연결 유예·실행 중에는 유지하고 하차 후 명령 정리까지 끝나면 닫는다. */
+    @Synchronized
     internal fun closeWirelessDebugging() {
-        if (keepWirelessDebugging || navigationSessionActive) return
+        if (keepWirelessDebugging || navigationSessionActive || destinationCommands.get() > 0) return
         if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) return
         if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) return
         runCatching { check(Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 0)) }
             .onFailure { DiagLog.add("네이버 안심주행 · 무선 디버깅 종료 실패 ${it.javaClass.simpleName}") }
+    }
+
+    /** 준비된 권한 서버가 없으면 즉시 기존 방식으로 돌리고 전송 이후에는 중복 실행하지 않는다. */
+    internal suspend fun tryLaunchDestination(intent: Intent, beforeLaunch: suspend () -> Unit): Boolean = withContext(Dispatchers.IO) {
+        val packageName = intent.`package` ?: return@withContext false
+        val uri = intent.data ?: return@withContext false
+        if (!NavigatorApp.acceptsDestination(packageName, uri)) return@withContext false
+        val channel = runCatching { NavigationChannel().connect() }.getOrNull() ?: return@withContext false
+        channel.use {
+            // 안심주행 종료가 새 목적지까지 강제 종료하지 않도록 같은 네이버 세션은 겹치지 않는다.
+            if (packageName in NavigatorApp.NAVER.packages && runCatching { channel.status() }.getOrNull() == "ACTIVE") {
+                throw DestinationLaunchException("네이버 안심주행 실험을 종료한 뒤 목적지를 다시 실행해 주세요")
+            }
+            if (!runCatching { channel.canLaunchDestination(packageName, uri.toString()) }.getOrDefault(false)) return@withContext false
+            destinationCommands.incrementAndGet()
+            try {
+                if (runCatching { enableWirelessDebugging() }.isFailure) return@withContext false
+                try { beforeLaunch() } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    throw DestinationLaunchException(error.message ?: "목적지를 다시 확인해 주세요", error)
+                }
+                currentCoroutineContext().ensureActive()
+                try {
+                    val result = runInterruptible { channel.launchDestination(packageName, uri.toString()) }
+                    if (result == "NOT_STARTED") throw DestinationLaunchException("실행 조건이 바뀌었어요 · 목적지를 다시 확인해 주세요")
+                    if (result != "DELIVERED") throw DestinationLaunchException("지도 실행 결과를 확인하지 못했어요 · 지도 상태를 확인해 주세요", uncertain = true)
+                } catch (error: Exception) {
+                    if (error is CancellationException || error is DestinationLaunchException) throw error
+                    throw DestinationLaunchException("지도 실행을 완료하지 못했어요 · 목적지 상태를 확인해 주세요", error, uncertain = true)
+                }
+                true
+            } finally {
+                destinationCommands.decrementAndGet()
+                closeWirelessDebugging()
+            }
+        }
     }
 
     /** ADB 전용 RSA 키는 기존 목적지용 EC 인증 계약과 달라 독립적으로 제공한다. */

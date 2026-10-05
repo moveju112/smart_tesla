@@ -13,6 +13,27 @@ import org.junit.Test
  */
 class NavigatorAppTest {
 
+    /** 생성하는 목적지 URI만 해당 지도 패키지의 셸 실행 대상으로 허용한다. */
+    @Test fun shellDestinationsMatchExistingCandidates() {
+        NavigatorApp.entries.forEach { app ->
+            app.packages.forEach { installed ->
+                app.uris(37.5665, 126.978, "회사 & 주차장", "test.app").forEach {
+                    assertTrue("$installed $it", NavigatorApp.acceptsDestination(installed, it))
+                }
+            }
+        }
+        assertTrue(NavigatorApp.acceptsDestination("com.nhn.android.nmap", DestinationPlace("회사").naverUri("test.app")))
+    }
+
+    /** 임의 앱·웹·인텐트 스킴과 다른 지도 URI를 권한 서버에 전달하지 않는다. */
+    @Test fun shellRejectsUnrelatedDestinations() {
+        listOf("https://example.com", "intent://route#Intent;end", "nmap://settings", "tmap://route", "nmap://search#fragment").forEach {
+            org.junit.Assert.assertFalse(NavigatorApp.acceptsDestination("com.nhn.android.nmap", android.net.Uri.parse(it)))
+        }
+        org.junit.Assert.assertFalse(NavigatorApp.acceptsDestination("com.android.settings", android.net.Uri.parse("nmap://search")))
+        org.junit.Assert.assertFalse(NavigatorApp.acceptsDestination(null, null))
+    }
+
     private val lat = 37.5665
     private val lng = 126.9780
     private val pkg = "com.wemade.teslamacro"

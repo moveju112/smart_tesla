@@ -1,6 +1,9 @@
 package com.wemade.teslamacro.data.nav;
 
 import android.content.Context;
+import android.content.Intent;
+import android.app.KeyguardManager;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
@@ -39,6 +42,15 @@ public final class NaverControlServer {
                         reply.writeNoException();
                         reply.writeParcelable(pair[1], android.os.Parcelable.PARCELABLE_WRITE_RETURN_VALUE);
                         pair[1].close();
+                    } else if (code == 3 || code == 4) {
+                        String packageName = data.readString();
+                        String address = data.readString();
+                        Intent intent = destinationIntent(packageName, address);
+                        boolean available = intent != null && !active.get() && destinationUnlocked(context) &&
+                            context.getPackageManager().resolveActivity(intent, 0) != null;
+                        reply.writeNoException();
+                        if (code == 3) reply.writeInt(available ? 1 : 0);
+                        else reply.writeString(available ? launchDestination(context, uid / 100000, packageName, address) : "NOT_STARTED");
                     } else { return false; }
                     return true;
                 } catch (Exception error) { reply.writeException(error); return true; }
@@ -63,6 +75,34 @@ public final class NaverControlServer {
             }
         });
         android.os.Looper.loop();
+    }
+
+    /** 수신 문자열은 셸 문법으로 해석하지 않고 허용된 지도 인텐트만 구성한다. */
+    private static Intent destinationIntent(String packageName, String address) {
+        if (address == null) return null;
+        Uri uri = Uri.parse(address);
+        if (!NavigatorApp.Companion.acceptsDestination(packageName, uri)) return null;
+        return new Intent(Intent.ACTION_VIEW, uri).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    }
+
+    /** 일반 목적지는 잠금 인증을 통과한 기본 화면에서만 실행한다. */
+    private static boolean destinationUnlocked(Context context) {
+        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+        return !keyguard.isKeyguardLocked() && !keyguard.isDeviceLocked();
+    }
+
+    /** 기본 화면에 한 번 전달하고 종료 명령은 보내지 않아 기존 길안내를 보존한다. */
+    private static String launchDestination(Context context, int user, String packageName, String address) {
+        if (!active.compareAndSet(false, true)) return "NOT_STARTED";
+        try {
+            if (!destinationUnlocked(context)) return "NOT_STARTED";
+            String result = NaverDisplaySession.command("am", "start", "--user", Integer.toString(user),
+                "--display", "0", "-W", "-a", Intent.ACTION_VIEW, "-d", address, "-p", packageName);
+            return result.contains("Status: ok") && !result.contains("Error") ? "DELIVERED" : "UNKNOWN";
+        } catch (Exception error) {
+            // 명령이 전달됐을 수 있으므로 응답 유실을 재실행 허가로 취급하지 않는다.
+            return "UNKNOWN";
+        } finally { active.set(false); }
     }
 
     /** 시작과 앱 재접속 때만 Binder를 고정 공급자에 전달하며 비밀값은 출력하지 않는다. */

@@ -239,13 +239,13 @@ private fun parameterEditor(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            // 백그라운드에서 지도를 띄우려면 이 권한이 필수다. 여기서 바로 받는다.
+            // ADB를 쓸 수 없는 경우에도 백그라운드 실행을 유지할 권한을 안내한다.
             // 설정에서 허용하고 돌아오면 경고가 바로 사라지도록 복귀 때마다 다시 읽는다
             val hasOverlay = rememberOnResume { Settings.canDrawOverlays(context) }
             if (!hasOverlay) {
                 Spacer(Modifier.height(Space.sm))
                 Text(
-                    text = "자동으로 지도를 띄우려면 \"다른 앱 위에 표시\" 권한이 필요해요.",
+                    text = "ADB를 사용할 수 없을 때는 \"다른 앱 위에 표시\" 권한이 필요해요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = T.WarnText,
                 )

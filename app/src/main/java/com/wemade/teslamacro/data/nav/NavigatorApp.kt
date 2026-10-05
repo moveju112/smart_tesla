@@ -75,6 +75,19 @@ enum class NavigatorApp(
     }?.let(Uri::parse)
 
     companion object {
+        /** 셸에는 기존 목적지 스킴과 내비 패키지만 허용해 임의 앱·명령 실행을 막는다. */
+        fun acceptsDestination(packageName: String?, uri: Uri?): Boolean {
+            if (uri == null || uri.toString().length > 8192 || uri.fragment != null) return false
+            val app = entries.firstOrNull { packageName in it.packages } ?: return false
+            return when (app) {
+                NAVER -> uri.scheme == "nmap" &&
+                    (uri.host == "search" || uri.host == "route" || uri.host == "navigation")
+                KAKAO -> uri.scheme in setOf("kakaonavi", "kakaomap") && uri.host in setOf("navigate", "route")
+                TMAP -> uri.scheme == "tmap" && uri.host == "route"
+                GOOGLE -> uri.scheme in setOf("google.navigation", "geo")
+            }
+        }
+
         /** 저장된 값이 깨졌거나 처음이면 네이버. 이 기기에 이미 깔려 있던 기본값이다 */
         val Default = NAVER
 

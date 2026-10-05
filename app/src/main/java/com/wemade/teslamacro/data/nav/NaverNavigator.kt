@@ -30,7 +30,7 @@ import java.util.Locale
  * 네이버 지도 길안내를 시작한다.
  *
  * 주소 → 좌표는 안드로이드 내장 지오코더로 푼다 — 네이버 API 키가 필요 없다.
- * 백그라운드에서 다른 앱(지도)을 띄우려면 "다른 앱 위에 표시" 권한이 필수다 (안드로이드 제약).
+ * 목적지 실행은 준비된 셸 권한을 우선하고, 사용할 수 없으면 기존 오버레이 실행으로 돌린다.
  */
 /** 시스템이 실제 보이는 오버레이로 인식할 때까지 기다리는 시간 */
 private const val WINDOW_ATTACH_MILLIS = 500L
@@ -91,7 +91,7 @@ private const val KAKAO_DEEP_LINK_ACTIVITY = "com.locnall.KimGiSa.Engine.SMS.Cre
 /** 진단 실행 사이에 네이버 지도가 전면으로 올 시간을 남긴다. */
 private const val DIAGNOSTIC_ATTEMPT_GAP_MILLIS = 2_000L
 
-class NaverNavigator(private val context: Context) {
+class NaverNavigator(private val context: Context, private val wirelessNavigation: WirelessNavigation? = null) {
 
     // 전체 진단 중 자동 탑승 요청이 끼어들면 성공 통로를 구분할 수 없다.
     private val safeDriveLaunchMutex = Mutex()
@@ -106,23 +106,26 @@ class NaverNavigator(private val context: Context) {
             try {
                 runCatching {
                     require(place.valid()) { "목적지 정보가 유효하지 않아요" }
-                    check(hasOverlayPermission) { "다른 앱 위에 표시 권한을 허용해 주세요" }
                     val app = NavigatorApp.NAVER
                     val installed = installedPackage(app) ?: error("네이버 지도 앱을 설치해 주세요")
                     val uri = place.naverUri(context.packageName)
                     val intent = Intent(Intent.ACTION_VIEW, uri).setPackage(installed).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     val launch: suspend (Activity?) -> Unit = { activity ->
                         launchFirst(app.label, listOf(intent),
-                            backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(), activity, beforeLaunch)
+                            backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(), activity, beforeLaunch,
+                            allowShell = true)
                     }
                     val keyguard = context.getSystemService(KeyguardManager::class.java)
                     if (!isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
+                        check(hasOverlayPermission) { "잠금 인증 화면을 열려면 다른 앱 위에 표시 권한을 허용해 주세요" }
                         check(SafeDriveUnlockActivity.runWhenUnlocked(context, app.label,
                             openActivity = { launchFromBackground(it, "목적지 잠금 해제", BackgroundLaunchMethod.DIRECT_ACTIVITY) },
                             launch = { launch(it) })) { "잠금 해제 대기가 끝났어요. 목적지 상태를 확인해 주세요" }
                     } else launch(null)
                     com.wemade.teslable.DiagLog.add("목적지 전송 — 네이버 지도 실행 요청")
-                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                }.onFailure {
+                    if (it is kotlinx.coroutines.CancellationException || it is DestinationLaunchException && it.uncertain) throw it
+                }
             } finally { safeDriveLaunchMutex.unlock() }
         }
 
@@ -133,9 +136,6 @@ class NaverNavigator(private val context: Context) {
         app: NavigatorApp = NavigatorApp.Default,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            if (!hasOverlayPermission) {
-                error("'다른 앱 위에 표시' 권한이 없어요.\n매크로 편집에서 허용해 주세요")
-            }
             if (address.isBlank()) error("주소가 비어 있어요")
 
             // 좌표는 캐시를 먼저 본다. 지오코딩은 인터넷을 타서 실측 400~500ms가 걸리고,
@@ -264,6 +264,7 @@ class NaverNavigator(private val context: Context) {
             app.label,
             candidates,
             backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(),
+            allowShell = true,
         )
     }
 
@@ -306,12 +307,18 @@ class NaverNavigator(private val context: Context) {
         method: BackgroundLaunchMethod,
         foregroundActivity: Activity? = null,
         beforeLaunch: suspend () -> Unit = {},
+        allowShell: Boolean = false,
     ) {
         var lastFailure: Throwable? = null
         candidates.forEach { intent ->
             val handled = runCatching {
                 if (foregroundActivity == null) {
-                    launchFromBackground(intent, appLabel, method, beforeLaunch)
+                    if (allowShell && wirelessNavigation?.tryLaunchDestination(intent, beforeLaunch) == true) {
+                        com.wemade.teslable.DiagLog.add("$appLabel 실행 요청 전달 — ADB 권한 사용")
+                    } else {
+                        if (allowShell) com.wemade.teslable.DiagLog.add("$appLabel 실행 — ADB 사용 불가 · 기존 방식")
+                        launchFromBackground(intent, appLabel, method, beforeLaunch)
+                    }
                 } else {
                     withContext(Dispatchers.Main) {
                         beforeLaunch()
@@ -321,7 +328,7 @@ class NaverNavigator(private val context: Context) {
                 }
             }
                 .onFailure {
-                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    if (it is kotlinx.coroutines.CancellationException || it is DestinationLaunchException) throw it
                     lastFailure = it
                 }
                 .isSuccess
@@ -393,6 +400,7 @@ class NaverNavigator(private val context: Context) {
         beforeLaunch: suspend () -> Unit = {},
     ) =
         withContext(Dispatchers.Main) {
+            check(hasOverlayPermission) { "다른 앱 위에 표시 권한을 허용해 주세요" }
             val manager = context.getSystemService(WindowManager::class.java)
             val anchor = createLaunchAnchor(appLabel)
             val params = WindowManager.LayoutParams(

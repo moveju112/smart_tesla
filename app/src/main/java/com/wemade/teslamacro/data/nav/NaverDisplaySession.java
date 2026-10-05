@@ -122,7 +122,7 @@ public final class NaverDisplaySession {
     }
 
     /** 고정된 Android 명령을 셸 문자열 결합 없이 실행하고 응답 대기는 제한한다. */
-    private static String command(String... arguments) throws Exception {
+    static String command(String... arguments) throws Exception {
         java.lang.Process child = new ProcessBuilder(arguments).redirectErrorStream(true).start();
         if (!child.waitFor(10, TimeUnit.SECONDS)) {
             child.destroyForcibly();

@@ -34,12 +34,21 @@ internal class NavigationChannel : Closeable {
     /** 상태 조회는 지도 실행 없이 준비된 프로세스만 확인한다. */
     fun status(): String = transact(1) { it.readString().orEmpty() }
 
+    /** 구형 서버·잠금·다른 지도 세션은 명령을 보내기 전에 기존 실행 경로로 돌린다. */
+    fun canLaunchDestination(packageName: String, uri: String): Boolean =
+        transact(3, { it.writeString(packageName); it.writeString(uri) }) { it.readInt() == 1 }
+
+    /** 목적지 실행은 가상 화면 세션과 분리해 채널 종료가 길안내를 종료하지 않게 한다. */
+    fun launchDestination(packageName: String, uri: String): String =
+        transact(4, { it.writeString(packageName); it.writeString(uri) }) { it.readString().orEmpty() }
+
     /** 같은 프로토콜의 고정 명령만 전달하고 오류는 호출자에게 반환한다. */
-    private fun <T> transact(code: Int, read: (Parcel) -> T): T {
+    private fun <T> transact(code: Int, write: (Parcel) -> Unit = {}, read: (Parcel) -> T): T {
         val data = Parcel.obtain()
         val reply = Parcel.obtain()
         try {
             data.writeInterfaceToken(NavigationBridgeProvider.DESCRIPTOR)
+            write(data)
             check(bridge.transact(code, data, reply, 0))
             reply.readException()
             return read(reply)

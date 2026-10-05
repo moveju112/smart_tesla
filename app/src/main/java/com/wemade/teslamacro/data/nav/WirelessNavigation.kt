@@ -57,6 +57,7 @@ class WirelessNavigation(private val context: Context) {
         if (operation?.isCompleted == false) return null
         return scope.launch {
             mutableState.value = state.value.copy(busy = true)
+            report("저장된 인증으로 연결 준비 중")
             try {
                 withContext(Dispatchers.IO) { ensurePrepared() }
                 report("준비 완료 · Wi-Fi 없이 실행할 수 있어요")

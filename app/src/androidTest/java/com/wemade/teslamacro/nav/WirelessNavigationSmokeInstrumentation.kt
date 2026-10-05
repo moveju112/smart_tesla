@@ -1,5 +1,11 @@
 package com.wemade.teslamacro.nav
 
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import com.wemade.teslamacro.data.nav.NavigationSetup
 import android.app.Activity
 import android.app.Instrumentation
 import android.os.Build
@@ -12,6 +18,7 @@ import kotlinx.coroutines.flow.first
 
 /** 로컬 에뮬레이터와 지도 대체 앱으로 연결·잠금 실행·오디오 해제 종료를 검사한다. */
 class WirelessNavigationSmokeInstrumentation : Instrumentation() {
+    private var setupOnly = false
     private var prepareOnly = false
     private var pairOnly = false
     private var recoveryOnly = false
@@ -19,6 +26,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
     /** 별도 계측 실행기로만 테스트를 시작하며 일반 앱 실행에는 포함하지 않는다. */
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        setupOnly = arguments?.getString("setupOnly") == "true"
         prepareOnly = arguments?.getString("prepareOnly") == "true"
         pairOnly = arguments?.getString("pairOnly") == "true"
         recoveryOnly = arguments?.getString("recoveryOnly") == "true"
@@ -39,9 +47,10 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
             restored.second.verify(restored.second.publicKey)
             runBlocking {
                 val navigation = withContext(Dispatchers.Main) {
-                    (if (pairOnly) (targetContext.applicationContext as com.wemade.teslamacro.TeslaMacroApplication)
+                    (if (pairOnly || setupOnly) (targetContext.applicationContext as com.wemade.teslamacro.TeslaMacroApplication)
                         .container.wirelessNavigation else WirelessNavigation(targetContext)).also { controller = it }
                 }
+                if (setupOnly) { verifySetup(navigation); return@runBlocking }
                 if (pairOnly) {
                     val automation = getUiAutomation()
                     shell("settings delete secure enabled_accessibility_services")
@@ -99,9 +108,11 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     reply(action, "000000")
                     delay(500)
                     check(!navigation.state.value.busy && navigation.state.value.prepared)
-                    withContext(Dispatchers.Main) { com.wemade.teslamacro.data.nav.NavigationPairingService.begin(targetContext) }
-                    withTimeout(10_000) {
-                        while (manager.activeNotifications.none { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() == "연결 준비 완료" }) delay(100)
+                    withContext(Dispatchers.Main) {
+                        val preparation = navigation.prepare()
+                        check(navigation.state.value.busy)
+                        check(NavigationSetup.resolve(targetContext) == NavigationSetup.Step.READY)
+                        preparation?.join()
                     }
                     return@runBlocking
                 }
@@ -152,7 +163,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     check(navigation.state.value.message == "실험 종료 완료") { navigation.state.value.message }
                 }
             }
-            result.putString("result", if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
+            result.putString("result", if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
                 else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper and saved-auth reuse"
                 else if (prepareOnly) "PASS: detached helper prepared" else "PASS: Wi-Fi and wireless debugging off, unusable ADB port, key persistence, reconnect grace, automatic stop, repeated start/stop")
         } catch (error: Throwable) {
@@ -164,6 +175,77 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         }
         finish(status, result)
     }
+    /** 실제 설정 버튼과 화면 복귀를 사용해 권한 거부·부족한 설정·다음 단계 이동을 검사한다. */
+    private suspend fun verifySetup(navigation: WirelessNavigation) {
+        withTimeout(20000) { while (!NavigationSetup.read(targetContext).wifi) delay(100) }
+        check(NavigationSetup.read(targetContext).let { it.developer && it.usb && !it.notifications }) { "Setup prerequisites: ${NavigationSetup.read(targetContext)}" }
+        targetContext.getSharedPreferences("wireless_navigation", 0).edit().putBoolean("configured", false).commit()
+        val activity = startActivitySync(android.content.Intent(targetContext, com.wemade.teslamacro.MainActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) as com.wemade.teslamacro.MainActivity
+        runOnMainSync {
+            activity.setContent {
+                com.wemade.teslamacro.ui.theme.TeslaMacroTheme(dark = false) {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        com.wemade.teslamacro.feature.settings.WirelessNavigationPanel(
+                            com.wemade.teslamacro.data.settings.AppSettings(),
+                            com.wemade.teslamacro.feature.settings.NavigationControls(onAppChange = {}, onHudOverlayChange = {}))
+                    }
+                }
+            }
+        }
+        clickSetup()
+        awaitSettings("AppNotificationSettings")
+        uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+        withTimeout(5000) { while (uiAutomation.rootInActiveWindow?.packageName?.toString() != targetContext.packageName) delay(100) }
+        delay(800)
+        check(resumedActivity().contains(targetContext.packageName)) { "Unchanged settings reopened: ${resumedActivity()}; notifications=${NavigationSetup.read(targetContext).notifications}" }
+        clickSetup()
+        awaitSettings("AppNotificationSettings")
+        uiAutomation.grantRuntimePermission(targetContext.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+        uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+        awaitSettings("DevelopmentSettingsDashboardActivity")
+        // 알림 입력은 별도 TLS 검사에서 검증하며 여기서는 다음 설정으로의 실제 이동만 확인한다.
+        targetContext.stopService(android.content.Intent(targetContext, com.wemade.teslamacro.data.nav.NavigationPairingService::class.java))
+        shell("svc wifi disable")
+        withTimeout(10000) { while (NavigationSetup.read(targetContext).wifi) delay(100) }
+        uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+        clickSetup()
+        awaitSettings("WifiSettings")
+        shell("svc wifi enable")
+        withTimeout(20000) { while (!NavigationSetup.read(targetContext).wifi) delay(100) }
+        uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+        awaitSettings("DevelopmentSettingsDashboardActivity")
+        targetContext.stopService(android.content.Intent(targetContext, com.wemade.teslamacro.data.nav.NavigationPairingService::class.java))
+        runOnMainSync { activity.finish(); navigation.setEnabled(false) }
+    }
+
+    /** 제품 버튼을 실제 접근성 노드로 눌러 클릭 콜백과 설정 이동까지 검사한다. */
+    private suspend fun clickSetup() = withTimeout(10000) {
+        while (true) {
+            val nodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+            uiAutomation.rootInActiveWindow?.let { collect(it, nodes) }
+            val button = nodes.firstOrNull { it.text?.toString() == "연결 설정" && it.isEnabled && it.isVisibleToUser }
+            if (button != null) { click(button); return@withTimeout }
+            delay(100)
+        }
+    }
+
+    /** 설정 화면 종류만 읽고 화면의 코드나 사용자 입력 내용은 출력하지 않는다. */
+    private suspend fun awaitSettings(name: String) {
+        sendStatus(0, Bundle().apply { putString("phase", "Waiting for $name") })
+        val reached = withTimeoutOrNull(12000) {
+            while (true) {
+                if (resumedActivity().contains(name)) return@withTimeoutOrNull true
+                delay(100)
+            }
+        }
+        check(reached == true) { "Settings timeout: $name; actual=${resumedActivity()}" }
+    }
+
+    /** 토스트 창과 실제 화면 이동을 혼동하지 않도록 재개된 Activity만 확인한다. */
+    private fun resumedActivity(): String = android.os.ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand("dumpsys activity activities"))
+        .bufferedReader().use { it.readText() }.lineSequence().firstOrNull { it.contains("topResumedActivity=") }.orEmpty()
+
     /** 테스트 셸은 로컬 에뮬레이터 준비에만 사용한다. */
     private fun shell(command: String) {
         android.os.ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand(command)).use { it.readBytes() }

@@ -35,13 +35,6 @@ class NavigationPairingService : Service() {
             notifications.createNotificationChannel(NotificationChannel(CHANNEL, "네이버 안심주행 연결", NotificationManager.IMPORTANCE_DEFAULT))
             startForeground(ID, notification("무선 디버깅에서 ‘페어링 코드로 기기 페어링’을 열어 주세요", input = true))
             scope.launch { delay(180_000); finish("설정 시간이 지났어요 · 앱에서 연결 설정을 다시 눌러 주세요") }
-            if (navigation.hasPairing) work = scope.launch {
-                update("저장된 인증으로 연결 준비 중", input = false)
-                navigationWork = navigation.prepare()
-                navigationWork?.join()
-                if (navigation.state.value.prepared) finish("연결 준비 완료")
-                else update("설정 열기 → 무선 디버깅 → 페어링 코드로 기기 페어링", input = true)
-            }
         } else if (session != null && intent != null && intent.data?.lastPathSegment == session) {
             if (intent.action == CANCEL) finish(null)
             else if (intent.action == REPLY && work?.isActive != true) {
@@ -109,7 +102,7 @@ class NavigationPairingService : Service() {
     }
 
     companion object {
-        private const val CHANNEL = "navigation_pairing"
+        internal const val CHANNEL = "navigation_pairing"
         private const val ID = 1047
         private const val BEGIN = "nav.pair.begin"
         private const val REPLY = "nav.pair.reply"
@@ -122,7 +115,7 @@ class NavigationPairingService : Service() {
             return manager.areNotificationsEnabled() && manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
         }
 
-        /** 사용자가 화면에서 시작하며 저장된 인증이 없을 때만 시스템 설정을 함께 연다. */
+        /** 필수 설정과 인증 복구를 확인한 화면에서 새 코드 입력을 시작한다. */
         fun begin(context: Context) {
             if (!notificationsEnabled(context)) {
                 context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -130,14 +123,13 @@ class NavigationPairingService : Service() {
                 return
             }
             context.startForegroundService(Intent(context, NavigationPairingService::class.java).setAction(BEGIN))
-            val navigation = (context.applicationContext as TeslaMacroApplication).container.wirelessNavigation
-            if (!navigation.hasPairing) context.startActivity(settingsIntent())
+            context.startActivity(settingsIntent())
         }
 
         /** 제조사별 위치는 설정 앱에 맡기고 무선 디버깅 항목을 강조한다. */
-        private fun settingsIntent() = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        internal fun settingsIntent(key: String = "toggle_adb_wireless") = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
             .putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
-                putString(":settings:fragment_args_key", "toggle_adb_wireless")
+                putString(":settings:fragment_args_key", key)
             }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }

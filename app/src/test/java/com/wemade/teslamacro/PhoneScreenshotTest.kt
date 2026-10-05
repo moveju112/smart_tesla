@@ -257,23 +257,6 @@ class PhoneScreenshotTest {
         }
     }
 
-    /** 경고음 종류 모달이 휴대폰 세로에서 목록·선택 표시·닫기를 한 화면에 담는지 낮·밤으로 확인한다. */
-    @Test
-    fun `P23 경고음 종류 선택`() {
-        for (dark in listOf(false, true)) {
-            paparazzi.snapshot("P23-warning-sound-${if (dark) "dark" else "light"}") {
-                AppFrame(Destination.Settings, dark = dark) {
-                    androidx.compose.material3.MaterialTheme(typography = com.wemade.teslamacro.ui.theme.SettingsTypography) {
-                        com.wemade.teslamacro.feature.settings.WarningSoundSheet(
-                            selected = com.wemade.teslamacro.data.safety.WarningSound.DING_DONG,
-                            onSelect = {}, onDismiss = {},
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     /** 인증 안내와 취소 버튼이 휴대폰 세로 화면 안에 들어오는지 확인한다. */
     @Test
     fun `P8 안심운전 인증`() {

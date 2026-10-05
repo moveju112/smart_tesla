@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextAlign
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.feature.settings.NavigationControls
-import com.wemade.teslamacro.feature.settings.SafeDrivePanel
 import com.wemade.teslamacro.feature.settings.SmartThingsControls
 import com.wemade.teslamacro.feature.settings.SmartThingsPanel
 import com.wemade.teslamacro.feature.settings.StealthChargePanel
@@ -54,7 +53,6 @@ enum class AppFeature(val label: String, val description: String, val summary: S
     HISTORY("주행 기록", "이동 경로와 배터리·충전 기록을 모아요", "지도 · 전비 · 충전"),
     MACROS("매크로", "차량 동작을 만들고 자동으로 실행해요", "조건 · 동작"),
     DESTINATION("목적지 전송", "주소나 검색어를 차량 태블릿으로 보내요", "검색어 보내기"),
-    SAFE_DRIVE("단속 안내", "주행 중 단속 카메라와 과속을 알려줘요", "카메라 · 과속"),
     STEALTH_CHARGE("스텔스 충전", "한 번의 충전 동안 전류를 자동으로 조절해요", "전류 자동 조절"),
     SMARTTHINGS("스마트싱스", "스마트싱스 알림으로 차량 명령을 실행해요", "알림으로 명령"),
 }
@@ -68,8 +66,6 @@ internal fun requiredFeatureSettings(
     notificationAccessGranted: Boolean,
 ): FeatureSettings? = when {
     feature in listOf(AppFeature.STEALTH_CHARGE, AppFeature.SMARTTHINGS, AppFeature.HISTORY) && !settings.isReady -> FeatureSettings.VEHICLE
-    feature == AppFeature.SAFE_DRIVE && (!locationPermitted ||
-        (settings.safeDriveSound && settings.deviceMode == DeviceMode.MOUNTED && !activityPermitted)) -> FeatureSettings.SAFE_DRIVE
     feature == AppFeature.SMARTTHINGS && (!notificationAccessGranted ||
         settings.smartThingsCommandTexts.values.none { it.isNotBlank() }) -> FeatureSettings.SMARTTHINGS
     else -> null
@@ -77,7 +73,7 @@ internal fun requiredFeatureSettings(
 
 /** 기능에서 넘어온 설정은 필요한 항목에 바로 진입한다. */
 enum class FeatureSettings(val label: String) {
-    VEHICLE("차량"), DESTINATION("목적지 전송"), SAFE_DRIVE("단속 안내"),
+    VEHICLE("차량"), DESTINATION("목적지 전송"),
     STEALTH_CHARGE("스텔스 충전"), SMARTTHINGS("스마트싱스"),
 }
 
@@ -124,12 +120,11 @@ fun FeaturesScreen(
             if (selected == null) {
                 Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                     AppFeature.entries.forEach { feature ->
-                        if (feature != AppFeature.SAFE_DRIVE || navigation.safeDriveAvailable) {
+                        run {
                             val required = requiredFeatureSettings(feature, settings, navigation.locationPermitted,
                                 navigation.activityPermitted, smartThings.notificationAccessGranted)
                             val enabled = when (feature) {
                                 AppFeature.HISTORY -> settings.historyEnabled
-                                AppFeature.SAFE_DRIVE -> settings.safeDrive
                                 AppFeature.STEALTH_CHARGE -> settings.stealthCharging
                                 AppFeature.SMARTTHINGS -> settings.smartThingsEnabled
                                 else -> null
@@ -147,9 +142,6 @@ fun FeaturesScreen(
                     navigation.activityPermitted, smartThings.notificationAccessGranted)
                 TCard {
                     when (selected) {
-                        AppFeature.SAFE_DRIVE -> SafeDrivePanel(settings, navigation.copy(onSafeDriveChange = { enabled ->
-                            if (enabled && required != null) onSettings(required) else navigation.onSafeDriveChange(enabled)
-                        }), executionOnly = true)
                         AppFeature.SMARTTHINGS -> SmartThingsPanel(settings, smartThings.copy(onEnabledChange = { enabled ->
                             if (enabled && required != null) onSettings(required) else smartThings.onEnabledChange(enabled)
                         }), executionOnly = true)
@@ -162,7 +154,6 @@ fun FeaturesScreen(
                 }
                 TCard {
                     SettingRow("설정", onClick = { onSettings(when (selected) {
-                        AppFeature.SAFE_DRIVE -> FeatureSettings.SAFE_DRIVE
                         AppFeature.STEALTH_CHARGE -> FeatureSettings.STEALTH_CHARGE
                         else -> FeatureSettings.SMARTTHINGS
                     }) })
@@ -199,7 +190,6 @@ private fun FeatureRow(feature: AppFeature, enabled: Boolean?, notice: String?, 
                         AppFeature.HISTORY -> DraftMark.Location
                         AppFeature.MACROS -> DraftMark.Automation
                         AppFeature.DESTINATION -> DraftMark.Location
-                        AppFeature.SAFE_DRIVE -> DraftMark.Speed
                         AppFeature.STEALTH_CHARGE -> DraftMark.Charge
                         AppFeature.SMARTTHINGS -> DraftMark.Notifications
                     },

@@ -24,8 +24,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 273
-        versionName = "0.9.160"
+        versionCode = 274
+        versionName = "0.9.161"
         testInstrumentationRunner = providers.gradleProperty("smokeRunner")
             .orElse("com.wemade.teslamacro.history.HistorySmokeInstrumentation").get()
     }
@@ -79,6 +79,9 @@ tasks.withType<Test>().configureEach {
 
 dependencies {
     implementation(project(":tesla-ble"))
+    // 무선 디버깅 페어링·TLS는 기존 프로토콜 라이브러리를 사용한다.
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

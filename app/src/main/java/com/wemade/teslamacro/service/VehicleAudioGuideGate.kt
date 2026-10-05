@@ -56,8 +56,8 @@ enum class VehicleAudioStatus(val label: String) {
     SELECTED_UNPAIRED("선택한 차량이 페어링 목록에서 사라졌어요"),
     MULTIPLE_VEHICLES("테슬라 여러 대가 페어링됨 · 감지할 차량 선택 필요"),
     NO_MATCH("등록 차량을 찾지 못했어요 · 감지할 차량을 선택하세요"),
-    DISCONNECTED("감지용 Bluetooth 연결 대기 · 속도·단속 안내 중지"),
-    CONNECTED("감지용 Bluetooth 연결됨 · 속도·단속 안내 가능"),
+    DISCONNECTED("감지용 Bluetooth 연결 대기"),
+    CONNECTED("감지용 Bluetooth 연결됨"),
     READ_FAILED("Bluetooth 상태 확인 실패 · 탑승 감지 대기"),
 }
 

@@ -120,18 +120,6 @@ class MainActivity : ComponentActivity() {
                 if (!activityVisible) return@launch
                 app.container.poller.setAppVisible(true)
 
-                // 부팅 직후 시작된 서비스는 앱이 앞에 나오기 전까지 위치를 못 받는다 —
-                // 백그라운드에서 시작된 포그라운드 서비스에는 while-in-use 권한이 없다.
-                // 백그라운드 위치 권한을 더 받는 대신, 앞에 나온 지금 다시 세운다
-                if (app.container.safeDrive.state.value.stalled) {
-                    com.wemade.teslable.DiagLog.add("앱이 앞으로 나와 안전운전 안내를 다시 세웁니다")
-                    app.container.notifyLocationPermissionChanged()
-                }
-                // 거치 기기만 활동 인식을 사용한다. 휴대폰은 오디오 연결로 안내를 제어한다.
-                val settings = app.container.settingsStore.settings.first()
-                if (hasBlePermission() && settings.safeDrive && settings.deviceMode == DeviceMode.MOUNTED) {
-                    runCatching { MacroService.refreshActivityPermission(this@MainActivity) }
-                }
             }
         }
     }
@@ -365,8 +353,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                     ) { uri -> uri?.let(settingsViewModel::importBackup) }
                     val backupMessage by settingsViewModel.backupMessage.collectAsState()
                     val safeDriveTestMessage by settingsViewModel.safeDriveTestMessage.collectAsState()
-                    val safeDriveVoiceStatus by settingsViewModel.safeDriveVoiceStatus.collectAsState()
-                    val automaticSoundStatus by settingsViewModel.safeDriveAutomaticSoundStatus.collectAsState()
                     val vehicleAudioStatus by settingsViewModel.vehicleAudioStatus.collectAsState()
                     val pairedAudioDevices by settingsViewModel.pairedAudioDevices.collectAsState()
 
@@ -437,7 +423,14 @@ private fun AppRoot(factory: ViewModelFactory) {
                             openNotificationListenerSettings(context)
                         },
                     )
+                    val wirelessNavigationState by settingsViewModel.wirelessNavigation.state.collectAsState()
                     val navigationControls = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        wirelessState = wirelessNavigationState,
+                        onWirelessEnabled = settingsViewModel.wirelessNavigation::setEnabled,
+                        onWirelessPort = settingsViewModel.wirelessNavigation::setPort,
+                        onWirelessPair = settingsViewModel.wirelessNavigation::pair,
+                        onWirelessTest = { settingsViewModel.wirelessNavigation.start() },
+                        onWirelessStop = settingsViewModel.wirelessNavigation::stop,
                         onAppChange = settingsViewModel::setNavigatorApp,
                         onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
                         onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
@@ -445,28 +438,9 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
                         safeDriveTestMessage = safeDriveTestMessage,
                         onHudOverlayChange = settingsViewModel::setHudOverlay,
-                        onSafeDriveChange = { enabled ->
-                            settingsViewModel.setSafeDrive(enabled)
-                            if (enabled && settings.deviceMode == DeviceMode.MOUNTED &&
-                                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q &&
-                                !activityPermitted) askActivity.launch(Manifest.permission.ACTIVITY_RECOGNITION)
-                        },
-                        onSafeDriveSoundChange = settingsViewModel::setSafeDriveSound,
-                        onSafeDriveAlertDistanceChange = settingsViewModel::setSafeDriveAlertDistanceMeters,
-                        onSafeDriveVoiceChange = settingsViewModel::setSafeDriveVoice,
-                        onSafeDriveStartVoiceChange = settingsViewModel::setSafeDriveStartVoice,
-                        onTestSafeDriveVoice = settingsViewModel::testSafeDriveVoice,
-                        onOpenSpeechSettings = { openSpeechSettings(context) },
-                        safeDriveVoiceStatus = safeDriveVoiceStatus,
-                        automaticSoundStatus = automaticSoundStatus,
                         vehicleAudioStatus = vehicleAudioStatus,
                         pairedAudioDevices = pairedAudioDevices,
                         onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
-                        onSafeDriveProgressiveSoundChange = settingsViewModel::setSafeDriveProgressiveSound,
-                        onSafeDriveVolumeChange = settingsViewModel::setSafeDriveVolume,
-                        onSafeDriveWarningSoundChange = { settingsViewModel.setSafeDriveWarningSound(it, settings.safeDriveVolume) },
-                        onSafeDriveToleranceChange = settingsViewModel::setSafeDriveToleranceKph,
-                        safeDriveAvailable = remember { settingsViewModel.safeDriveAvailable() },
                         installed = remember { settingsViewModel.installedNavigators() },
                         // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
                         // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
@@ -520,7 +494,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 onBackToFeature = if (returnToFeature) backFromSettings else null,
                                 initialGroup = when (settingsTarget) {
                                     FeatureSettings.VEHICLE -> SettingsGroup.VEHICLE
-                                    FeatureSettings.SAFE_DRIVE, FeatureSettings.DESTINATION -> SettingsGroup.DRIVING
+                                    FeatureSettings.DESTINATION -> SettingsGroup.DRIVING
                                     FeatureSettings.STEALTH_CHARGE, FeatureSettings.SMARTTHINGS -> SettingsGroup.AUTOMATION
                                     else -> null
                                 },

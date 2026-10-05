@@ -66,8 +66,6 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
         val seats: Map<SeatPosition, SeatClimate>,
         /** 주차 시작 시각과 그때 배터리. 타고 있으면 null */
         val parkStart: Pair<Long, Int?>?,
-        /** 다가오는 단속·보호구역. 안내가 꺼져 있으면 빈 상태 */
-        val safety: com.wemade.teslamacro.domain.safety.SafetyState,
     )
 
     init {
@@ -111,9 +109,8 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             error,
             container.seatStore.state,
             container.poller.parkStart,
-            container.safeDrive.state,
-        ) { p, e, s, park, safety ->
-            Aux(p, e, s, park, safety)
+        ) { p, e, s, park ->
+            Aux(p, e, s, park)
         },
     ) { link, snapshot, settings, overlay, aux ->
         val effective = overlay.applyTo(snapshot)
@@ -132,17 +129,7 @@ class DashboardViewModel(private val container: AppContainer) : ViewModel() {
             tireWarning = tireWarningOf(effective),
             vehicleSoftware = vehicleSoftwareOf(effective),
             parkSummary = parkSummaryOf(aux.parkStart, effective.batteryLevelPercent),
-            // 안내 중에는 표시·소리 모두 같은 GPS 속도를 쓴다. 안내가 꺼져 있으면
-            // 이미 읽고 있는 차량 속도를 재사용해 화면 때문에 GPS를 켜지 않는다.
-            speedKph = (if (settings.safeDrive) aux.safety.speedKph else effective.speedKph?.toDouble())
-                ?.toInt()?.takeIf { it > 0 },
-            // 오버레이는 다른 앱 위에만 뜬다 — 우리 화면을 보고 있을 때도
-            // 경보가 보여야 해서 기입란에 같은 값을 적는다
-            safetyLabel = safetyLabelOf(aux.safety),
-            safetyValue = safetyValueOf(aux.safety),
-            safetyAlarming = aux.safety.stalled || aux.safety.alert?.limitConflict == true || aux.safety.isOverSpeed(
-                toleranceKph = settings.safeDriveToleranceKph,
-            ),
+            speedKph = effective.speedKph?.toInt()?.takeIf { it > 0 },
             // 상태를 한 번도 못 읽었으면 "0"이 아니라 "읽는 중"으로 보여야 한다.
             // 전역 타임스탬프는 아무 카테고리 하나만 성공해도 갱신되므로,
             // 잠금(VCSEC)·공조(CLIMATE)는 해당 카테고리를 실제로 읽었는지로 따로 가린다
@@ -461,31 +448,4 @@ internal fun parkSummaryOf(
         drop == null || drop <= 0 -> elapsed
         else -> "$elapsed · -$drop%"
     }
-}
-
-/**
- * 기입란에 적을 안전 경보의 **값**. 안내할 게 없으면 null.
- *
- * 종류는 라벨 자리로 간다 — 한 칸에 "과속 단속 80 · 320m"를 다 넣었더니
- * 기입란 폭에서 거리가 잘렸다. 도면의 기입란은 원래 "이름 ┈┈ 값" 문법이다.
- *
- * 정상일 때 "안내 없음"을 적지 않는다 — 상시 켜진 화면에서 늘 있는 줄은
- * 읽히지 않는 배경이 되고, 정작 경보가 떴을 때 눈에 안 들어온다.
- */
-private fun safetyLabelOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? = when {
-    // 못 하는 걸 침묵으로 감추면 사용자가 안내를 믿어버린다
-    state.stalled -> "안전 안내"
-    state.alert == null && state.dataWarning != null -> "안전 안내"
-    else -> state.alert?.kind?.label
-}
-
-private fun safetyValueOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {
-    if (state.stalled) return state.unavailableReason ?: "위치 없음"
-    val alert = state.alert ?: return state.dataWarning
-    val parts = listOfNotNull(
-        if (alert.limitConflict) "제한 확인 필요" else alert.speedLimitKph?.let { "$it" },
-        alert.distanceMeters?.let { "${it}m" },
-        alert.dateWarning ?: state.dataWarning,
-    )
-    return if (parts.isEmpty()) "안내 중" else parts.joinToString(" · ")
 }

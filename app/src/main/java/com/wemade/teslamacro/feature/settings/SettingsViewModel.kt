@@ -52,6 +52,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** 15분 단위 충전 전류 그래프의 원본 */
     val chargeHistory = container.chargeHistory.buckets
 
+    /** 설정 화면과 서비스가 같은 무선 실행 세션을 공유한다. */
+    val wirelessNavigation get() = container.wirelessNavigation
+
     val settings: StateFlow<AppSettings> = container.settingsStore.settings.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
@@ -288,64 +291,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun setHudOverlay(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setHudOverlay(enabled) }
     }
-
-    fun setSafeDrive(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSafeDrive(enabled) }
-    }
-
-    /** 경보를 소리로도 알릴지 */
-    fun setSafeDriveSound(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveSound(enabled) }
-    }
-
-    /** 안내·과속음 시작 거리를 한 설정으로 묶어 서로 어긋나지 않게 한다. */
-    fun setSafeDriveAlertDistanceMeters(meters: Int) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveAlertDistanceMeters(meters) }
-    }
-
-    /** 음성 안내만 별도로 끄되 과속 경고음 설정은 유지한다. */
-    fun setSafeDriveVoice(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveVoice(enabled) }
-    }
-
-    /** 안내 시작 음성만 바꾸고 진행 중인 안내를 재시작하지 않는다. */
-    fun setSafeDriveStartVoice(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveStartVoice(enabled) }
-    }
-
-    val safeDriveVoiceStatus = container.safeDrive.speechStatus
-    val safeDriveAutomaticSoundStatus = container.safeDrive.automaticSoundStatus
-
-    /** 앱과 동일한 한국어 음성 경로로 엔진·미디어 음량을 직접 점검한다. */
-    fun testSafeDriveVoice() {
-        container.safeDrive.testSpeech()
-    }
-
-    /** 후보 제한속도 대비 과속 정도에 맞춰 경고음 간격을 바꾼다. */
-    fun setSafeDriveProgressiveSound(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveProgressiveSound(enabled) }
-    }
-
-    /** 경보 음량 1~3. 고르는 즉시 실제 경고음을 들려줘 크기를 귀로 맞추게 한다 */
-    fun setSafeDriveVolume(level: Int) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveVolume(level) }
-        container.safeDrive.previewWarning(level)
-    }
-
-    /** 경고음 종류. 고르는 즉시 현재 크기로 들려줘 여러 종류를 바로 비교하게 한다 */
-    fun setSafeDriveWarningSound(value: String, volumeLevel: Int) {
-        val sound = com.wemade.teslamacro.data.safety.WarningSound.of(value)
-        viewModelScope.launch { container.settingsStore.setSafeDriveWarningSound(sound.settingValue) }
-        container.safeDrive.previewWarning(volumeLevel, sound)
-    }
-
-    /** 화면·경고음의 기준을 같은 저장값으로 갱신한다. */
-    fun setSafeDriveToleranceKph(value: Int) {
-        viewModelScope.launch { container.settingsStore.setSafeDriveToleranceKph(value) }
-    }
-
-    /** 오프라인 목록은 앱에 포함되어 별도 키가 필요 없다. */
-    fun safeDriveAvailable(): Boolean = true
 
     /** 이 기기에 실제로 깔린 내비 앱. 안 깔린 걸 고르면 매크로가 실행 순간에 실패한다 */
     fun installedNavigators(): Set<String> =

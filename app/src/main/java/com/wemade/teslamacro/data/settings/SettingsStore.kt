@@ -136,7 +136,7 @@ data class AppSettings(
     val safeDriveSound: Boolean = true,
     /** 경보 음량 1~3. 내비 음성과 겹쳐 들리므로 사람이 균형을 맞출 수 있어야 한다 */
     val safeDriveVolume: Int = 2,
-    /** 과속 경고음 종류. [com.wemade.teslamacro.data.safety.WarningSound]의 저장값이다 */
+    /** 구버전 백업 호환용 값이며 실행에 사용하지 않는다. */
     val safeDriveWarningSound: String = "chime",
     /** 후보 제한속도 대비 초과분에 따라 경고음 간격을 줄일지. */
     val safeDriveProgressiveSound: Boolean = true,
@@ -208,10 +208,10 @@ class SettingsStore(
                 ?: if (prefs[KeyNavigatorSafeDriveDiagnostics] == true) "ALL" else "DEFAULT",
             hudOverlay = FeatureAvailability.HUD_OVERLAY && (prefs[KeyHudOverlay] ?: false),
             // 무료 오프라인 안내도 사용자가 선택한 경우에만 GPS를 사용한다.
-            safeDrive = prefs[KeySafeDrive] ?: false,
+            safeDrive = false, // 제거된 안내는 이전 설정·백업으로 다시 켜지지 않는다.
             safeDriveSound = prefs[KeySafeDriveSound] ?: true,
             safeDriveVolume = prefs[KeySafeDriveVolume] ?: 2,
-            safeDriveWarningSound = com.wemade.teslamacro.data.safety.WarningSound.of(prefs[KeySafeDriveWarningSound]).settingValue,
+            safeDriveWarningSound = prefs[KeySafeDriveWarningSound] ?: "chime",
             safeDriveProgressiveSound = prefs[KeySafeDriveProgressiveSound] ?: true,
             safeDriveAlertDistanceMeters = (prefs[KeySafeDriveAlertDistanceMeters] ?: 500).takeIf { it in listOf(300, 500, 700) } ?: 500,
             safeDriveVoice = prefs[KeySafeDriveVoice] ?: true,
@@ -381,7 +381,7 @@ class SettingsStore(
         it[KeyNavigatorSafeDriveLaunchMode] = mode
     }
     suspend fun setHudOverlay(enabled: Boolean) = edit { it[KeyHudOverlay] = enabled }
-    suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = enabled }
+    suspend fun setSafeDrive(enabled: Boolean) = edit { it[KeySafeDrive] = false }
     suspend fun setSafeDriveSound(enabled: Boolean) = edit { it[KeySafeDriveSound] = enabled }
     /** 허용된 거리만 저장해 백업·이전 설정값이 후보 범위를 넓히지 않게 한다. */
     suspend fun setSafeDriveAlertDistanceMeters(meters: Int) = edit {
@@ -399,7 +399,7 @@ class SettingsStore(
     suspend fun setSafeDriveVolume(level: Int) = edit { it[KeySafeDriveVolume] = level.coerceIn(1, 3) }
     /** 알 수 없는 값은 기본 경고음으로 바꿔 저장한다. */
     suspend fun setSafeDriveWarningSound(value: String) = edit {
-        it[KeySafeDriveWarningSound] = com.wemade.teslamacro.data.safety.WarningSound.of(value).settingValue
+        it[KeySafeDriveWarningSound] = value
     }
 
     /** 제한속도에 더할 경보 여유를 1km/h 단위로 저장한다. */
@@ -443,10 +443,10 @@ class SettingsStore(
         // 옛 백업(version 1)엔 아래 값이 없다 — 그때는 BackupSettings의 기본값이 들어온다.
         // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
         it[KeyHudOverlay] = backup.hudOverlay
-        it[KeySafeDrive] = backup.safeDrive
+        it[KeySafeDrive] = false
         it[KeySafeDriveSound] = backup.safeDriveSound
         it[KeySafeDriveVolume] = backup.safeDriveVolume.coerceIn(1, 3)
-        it[KeySafeDriveWarningSound] = com.wemade.teslamacro.data.safety.WarningSound.of(backup.safeDriveWarningSound).settingValue
+        it[KeySafeDriveWarningSound] = backup.safeDriveWarningSound
         it[KeySafeDriveProgressiveSound] = backup.safeDriveProgressiveSound
         it[KeySafeDriveAlertDistanceMeters] = backup.safeDriveAlertDistanceMeters.takeIf { value -> value in listOf(300, 500, 700) } ?: 500
         it[KeySafeDriveVoice] = backup.safeDriveVoice

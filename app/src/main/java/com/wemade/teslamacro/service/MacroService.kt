@@ -30,7 +30,6 @@ import com.wemade.teslamacro.MainActivity
 import com.wemade.teslamacro.R
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.update.AppUpdater
-import com.wemade.teslamacro.data.safety.DriveAlertGate
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionResult
 import com.google.android.gms.location.DetectedActivity
@@ -56,20 +55,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 
-/** 주행 안내만 다시 적용해 무관한 설정 변경으로 GPS 감시를 흔들지 않는다. */
-private data class SafeDriveOptions(
-    val enabled: Boolean,
-    val sound: Boolean,
-    val volume: Int,
-    val toleranceKph: Int,
-    val progressiveSound: Boolean,
-    val distanceMeters: Int,
-    val voice: Boolean,
-    val startVoice: Boolean,
-    val deviceMode: DeviceMode,
-    val warningSound: String,
-)
-
 /**
  * 매크로 감시를 화면 밖에서도 계속 돌리는 포그라운드 서비스.
  *
@@ -80,11 +65,7 @@ class MacroService : LifecycleService() {
 
     private var safeDriveTestJob: Job? = null
     private var stealthChargeWakeLock: PowerManager.WakeLock? = null
-    private val driveAlertGate = DriveAlertGate()
     private var activityUpdates: PendingIntent? = null
-    private var activityUpdatesReady = false
-    private var activityFailure: String? = null
-    private var activityCleanupCompleted = false
     private val carAudioConnected = MutableStateFlow(false)
     private val portableGuidanceActive = MutableStateFlow(false)
     private var carAudioProfile: BluetoothProfile? = null
@@ -93,8 +74,6 @@ class MacroService : LifecycleService() {
     private var carAudioSelectedAddress: String = ""
     private var carAudioWatcherActive = false
     private var carAudioProxyRequested = false
-    private var currentDeviceMode = DeviceMode.PORTABLE
-    private var currentSafeDriveEnabled = false
 
     /** 시스템이 마지막으로 받아들인 포그라운드 형식. 백그라운드 재승격이 위치 형식을 지우지 않게 기억한다 */
     private var foregroundType: Int? = null
@@ -128,7 +107,7 @@ class MacroService : LifecycleService() {
         watchVehiclePower()
         watchCarAudio()
         watchSpeedOverlay()
-        watchSafeDrive()
+        stopActivityUpdates()
         watchConfirmedPresence()
         watchNavigatorSafeDrive()
         lifecycleScope.launch {
@@ -266,13 +245,13 @@ class MacroService : LifecycleService() {
             carAudioConnected.value = connected
             com.wemade.teslable.DiagLog.add("차량 오디오 Bluetooth ${if (connected) "연결" else "해제"}")
         }
+        container.wirelessNavigation.vehicleChanged(connected && carAudioSelectedAddress.isNotBlank())
         syncPortableGuidance()
     }
 
-    // 1. 실제 차량 오디오 연결에만 휴대 모드의 GPS·오프라인 안내·소리를 연다.
+    // 휴대 모드 GPS 표시도 실제 차량 오디오 연결을 기준으로 한다.
     private fun syncPortableGuidance() {
         portableGuidanceActive.value = carAudioConnected.value
-        refreshAutomaticAlerts()
     }
 
     // 1. Android 12+에서 연결 권한이 없으면 프로필을 열지 않고 안내를 보류한다.
@@ -281,8 +260,6 @@ class MacroService : LifecycleService() {
 
     private val overlay by lazy { SpeedOverlay(this) }
 
-    /** 직전에 로그로 남긴 과속 여부. 상태가 바뀔 때만 한 줄 찍기 위한 기준 */
-    private var overSpeedLogged = false
 
     /**
      * 주행 중 속도를 좇는다.
@@ -302,7 +279,7 @@ class MacroService : LifecycleService() {
             // 권한 신호를 함께 묶는다 — 허용하고 돌아온 순간 스트림을 다시 연다.
             // 휴대 모드는 오디오 연결이 끊기면 위치 구독 자체를 취소한다.
             combine(
-                container.settingsStore.settings.map { Triple(it.hudOverlay, it.safeDrive, it.deviceMode) },
+                container.settingsStore.settings.map { Triple(it.hudOverlay, false, it.deviceMode) },
                 container.locationPermissionRevision,
                 portableGuidanceActive,
             ) { toggles, revision, connected ->
@@ -312,13 +289,12 @@ class MacroService : LifecycleService() {
                 .collectLatest { (toggles, active) ->
                     val (showOverlay, safeDrive, mode) = toggles.first
                     overlay.hide()
-                    overSpeedLogged = false
                     if (!active) return@collectLatest
 
                     // 위성을 못 잡거나 권한이 없으면 스트림이 곧바로 닫힌다 —
                     // 그때 화면에 아무것도 안 뜨는 이유를 여기서 알 수 있어야 한다
                     com.wemade.teslable.DiagLog.add(
-                        "속도 감시 시작 (창=$showOverlay · 과속안내=$safeDrive" +
+                        "속도 감시 시작 (창=$showOverlay" +
                             " · 위치권한=${container.speedMeter.hasPermission()}" +
                             " · 오버레이권한=${overlay.canDraw})"
                     )
@@ -326,103 +302,32 @@ class MacroService : LifecycleService() {
                         val locations = MutableStateFlow<android.location.Location?>(null)
                         launch {
                             container.speedMeter.locations().collect { location ->
-                                refreshAutomaticAlerts()
                                 if (mode == DeviceMode.PORTABLE && !portableGuidanceActive.value) return@collect
-                                container.safeDrive.onLocation(location)
                                 locations.value = location
                             }
                         }
                         // GPS 콜백이 끊겨도 이전 속도를 지우고 안내 상태 변경을 바로 반영한다.
-                        combine(locations, container.safeDrive.state, flow {
+                        combine(locations, flow {
                             while (true) {
                                 emit(Unit)
                                 delay(1_000)
                             }
-                        }) { location, safety, _ -> location to safety }.collect { (location, safety) ->
-                            refreshAutomaticAlerts()
+                        }) { location, _ -> location }.collect { location ->
                             val kph = location?.let { com.wemade.teslamacro.data.location.freshSpeedKph(it) }
                             if (kph == null || kph < MOVING_KPH) {
                                 overlay.hide()
-                                // 정차·위치 만료 뒤 첫 주행에서 거짓 "과속 해제" 로그를 남기지 않는다.
-                                overSpeedLogged = false
                                 return@collect
-                            }
-                            val over = safety.isOverSpeed(toleranceKph = container.safeDrive.toleranceKph)
-                            // 매 초 찍으면 로그가 이거로만 찬다 — 넘어간 순간과 돌아온 순간만
-                            if (over != overSpeedLogged) {
-                                overSpeedLogged = over
-                                val limit = safety.alert?.speedLimitKph
-                                com.wemade.teslable.DiagLog.add(
-                                    if (over) "과속 ${kph.toInt()}km/h (제한 ${limit ?: "?"})"
-                                    else "과속 해제 ${kph.toInt()}km/h"
-                                )
                             }
                             if (showOverlay) {
                                 overlay.show(
                                     speedKph = kph,
-                                    warning = warningTextOf(safety),
-                                    over = over || safety.alert?.limitConflict == true,
+                                    warning = null,
+                                    over = false,
                                 )
                             }
                         }
                     }
                 }
-        }
-    }
-
-    /**
-     * 설정이 켜져 있을 때만 안전운전 안내를 돌린다.
-     * GPS를 쓰는 기능이라, 꺼져 있으면 오프라인 안내를 시작하지 않는다.
-     */
-    private fun watchSafeDrive() {
-        val app = application as TeslaMacroApplication
-        lifecycleScope.launch {
-            app.ready.first { it }
-            app.container.settingsStore.settings
-                .map { SafeDriveOptions(it.safeDrive, it.safeDriveSound, it.safeDriveVolume,
-                    it.safeDriveToleranceKph, it.safeDriveProgressiveSound,
-                    it.safeDriveAlertDistanceMeters, it.safeDriveVoice, it.safeDriveStartVoice,
-                    it.deviceMode, it.safeDriveWarningSound) }
-                .combine(portableGuidanceActive) { options, connected ->
-                    options to shouldMonitorGuidance(options.deviceMode, options.enabled, connected)
-                }.distinctUntilChanged()
-                .collect { (options, active) ->
-                    // 안내 종료·기기 모드 전환 때 이전 차량 오디오 승인을 새 설정에 재사용하지 않는다.
-                    val modeChanged = currentDeviceMode != options.deviceMode
-                    if (!active || modeChanged) {
-                        app.container.safeDrive.setAutomaticAlertsAllowed(false)
-                    }
-                    currentDeviceMode = options.deviceMode
-                    currentSafeDriveEnabled = options.enabled
-                    // 새 설정을 먼저 적용해 GPS 첫 갱신이 이전 거리·음성을 사용하지 않게 한다.
-                    if (!options.startVoice) app.container.safeDrive.setStartVoice(false)
-                    app.container.safeDrive.setAlertOptions(options.distanceMeters, options.voice)
-                    app.container.safeDrive.setSound(options.sound, options.volume,
-                        options.toleranceKph, options.progressiveSound,
-                        com.wemade.teslamacro.data.safety.WarningSound.of(options.warningSound))
-                    if (options.startVoice) app.container.safeDrive.setStartVoice(true)
-                    // 거치 기기의 기존 활동 인식은 유지하되 휴대폰에선 구독하지 않는다.
-                    if (shouldSubscribeDrivingActivity(options.deviceMode, active, options.sound)) startActivityUpdates()
-                    else if (activityUpdates != null || !activityCleanupCompleted) stopActivityUpdates()
-                    app.container.safeDrive.setRoadMatchEnabled(active)
-                    if (active) app.container.safeDrive.start()
-                    else app.container.safeDrive.stop(preserveStartVoiceForReconnect =
-                        !modeChanged && options.deviceMode == DeviceMode.PORTABLE && options.enabled && options.startVoice)
-                    refreshAutomaticAlerts()
-                }
-        }
-
-        // 권한이 방금 생겼다면 이미 돌던 안내는 측위를 못 받는 채 떠 있다 —
-        // 상태를 다시 세워 위치를 기다리도록 한다. 첫 값(0)은 흘려보낸다
-        lifecycleScope.launch {
-            app.ready.first { it }
-            app.container.locationPermissionRevision.drop(1).collect {
-                val settings = app.container.settingsStore.settings.first()
-                if (!shouldMonitorGuidance(settings.deviceMode, settings.safeDrive, portableGuidanceActive.value)) return@collect
-                com.wemade.teslable.DiagLog.add("위치 권한이 바뀌어 안전운전 안내를 다시 세웁니다")
-                app.container.safeDrive.stop(preserveStartVoiceForReconnect = true)
-                app.container.safeDrive.start()
-            }
         }
     }
 
@@ -433,60 +338,12 @@ class MacroService : LifecycleService() {
             app.ready.first { it }
             app.container.poller.freshPresence.collect { present ->
                 app.container.destinations.observePresence(present)
-                driveAlertGate.observePresence(present, SystemClock.elapsedRealtime())
-                refreshAutomaticAlerts()
             }
         }
-    }
-
-    /** 차량 이동 판정은 기본 자동 탑승 감시가 꺼진 휴대폰에서도 출발 근거가 된다. */
-    private fun onActivityUpdate(intent: Intent) {
-        if (!activityUpdatesReady) return
-        val result = ActivityRecognitionResult.extractResult(intent) ?: return
-        val activity = when (result.mostProbableActivity.type) {
-            DetectedActivity.IN_VEHICLE -> DriveAlertGate.Activity.IN_VEHICLE
-            DetectedActivity.ON_FOOT, DetectedActivity.WALKING, DetectedActivity.RUNNING -> DriveAlertGate.Activity.ON_FOOT
-            else -> DriveAlertGate.Activity.OTHER
-        }
-        driveAlertGate.observeActivity(activity, result.mostProbableActivity.confidence,
-            result.elapsedRealtimeMillis, SystemClock.elapsedRealtime())
-        refreshAutomaticAlerts()
-    }
-
-    /** 권한·Play 서비스 미지원 시 무음으로 닫고, 필요할 때만 활동 갱신을 구독한다. */
-    private fun startActivityUpdates() {
-        if (activityUpdates != null || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED)) return
-        val pending = activityPendingIntent(PendingIntent.FLAG_UPDATE_CURRENT) ?: return
-        activityFailure = null
-        activityUpdates = pending
-        runCatching { ActivityRecognition.getClient(this).requestActivityUpdates(10_000L, pending) }
-            .onSuccess { task ->
-                task.addOnSuccessListener {
-                    if (activityUpdates === pending) {
-                        activityUpdatesReady = true
-                        activityFailure = null
-                        refreshAutomaticAlerts()
-                    } else runCatching { ActivityRecognition.getClient(this).removeActivityUpdates(pending) }
-                }.addOnFailureListener { error ->
-                    if (activityUpdates === pending) onActivityRegistrationFailed(error)
-                }
-            }
-            .onFailure(::onActivityRegistrationFailed)
-    }
-
-    /** Google Play 서비스가 없거나 등록에 실패해도 자동 소리만 안전하게 멈춘다. */
-    private fun onActivityRegistrationFailed(error: Throwable) {
-        activityFailure = "활동 인식 사용 불가 (${error.javaClass.simpleName})"
-        com.wemade.teslable.DiagLog.add("안전 안내 · $activityFailure")
-        stopActivityUpdates()
-        refreshAutomaticAlerts()
     }
 
     /** 설정 해제·권한 상실·서비스 종료 시 등록을 해제하고 저장된 주행 증거를 버린다. */
     private fun stopActivityUpdates() {
-        activityCleanupCompleted = true
-        activityUpdatesReady = false
         // 프로세스 강제 종료 뒤에도 Play 서비스에 남을 수 있는 등록을 같은 토큰으로 해제한다.
         val pending = activityUpdates ?: activityPendingIntent(PendingIntent.FLAG_NO_CREATE)
         activityUpdates = null
@@ -496,8 +353,6 @@ class MacroService : LifecycleService() {
                     .addOnCompleteListener { _ -> if (activityUpdates == null) it.cancel() }
             }.onFailure { _ -> if (activityUpdates == null) it.cancel() }
         }
-        driveAlertGate.clear()
-        (application as TeslaMacroApplication).container.safeDrive.setAutomaticAlertsAllowed(false)
     }
 
     /** 프로세스 재생성 후에도 이전 등록을 찾아 해제할 수 있도록 수신 토큰을 고정한다. */
@@ -505,27 +360,6 @@ class MacroService : LifecycleService() {
         val mutable = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
         return PendingIntent.getForegroundService(this, ACTIVITY_REQUEST_CODE,
             Intent(this, MacroService::class.java).setAction(ACTION_ACTIVITY_UPDATE), flags or mutable)
-    }
-
-    /** 휴대폰은 차량 오디오 연결만, 거치 기기는 기존 탑승·활동 근거로 자동 소리를 연다. */
-    private fun refreshAutomaticAlerts() {
-        val guide = (application as TeslaMacroApplication).container.safeDrive
-        if (currentDeviceMode == DeviceMode.PORTABLE) {
-            guide.setAutomaticAlertsAllowed(currentSafeDriveEnabled && portableGuidanceActive.value,
-                "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류",
-                "차량 오디오 Bluetooth 연결 · 자동 소리 사용")
-            return
-        }
-        val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-            checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
-        val reason = when {
-            !permitted -> "활동 인식 권한 필요 · 자동 소리 보류"
-            activityFailure != null -> "$activityFailure · 자동 소리 보류"
-            !activityUpdatesReady -> "활동 인식 준비 중 · 자동 소리 보류"
-            else -> "보행/주행 미확인 · 자동 소리 보류"
-        }
-        guide.setAutomaticAlertsAllowed(permitted && activityUpdatesReady &&
-            driveAlertGate.mayAlert(SystemClock.elapsedRealtime()), reason)
     }
 
     /** 신선한 탑승 엣지마다 사용자가 고른 내비의 목적지 없는 안심운전을 한 번 연다 */
@@ -648,7 +482,7 @@ class MacroService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Play 서비스의 빈번한 활동 결과로 알림 승격·차량 연결을 다시 실행하지 않는다.
         if (intent?.action == ACTION_ACTIVITY_UPDATE) {
-            onActivityUpdate(intent)
+            stopActivityUpdates()
             return super.onStartCommand(intent, flags, startId)
         }
         promote()
@@ -676,18 +510,6 @@ class MacroService : LifecycleService() {
 
             ACTION_DISCONNECT_VEHICLE -> disconnectVehicleNow()
             ACTION_TEST_SAFE_DRIVE -> beginSafeDriveTest()
-            ACTION_ACTIVITY_PERMISSION_CHANGED -> lifecycleScope.launch {
-                val app = application as TeslaMacroApplication
-                app.ready.first { it }
-                val settings = app.container.settingsStore.settings.first()
-                val permitted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-                    checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
-                if ((!permitted || settings.deviceMode != DeviceMode.MOUNTED) &&
-                    (activityUpdates != null || !activityCleanupCompleted)) stopActivityUpdates()
-                else if (shouldSubscribeDrivingActivity(settings.deviceMode,
-                        settings.safeDrive, settings.safeDriveSound)) startActivityUpdates()
-                refreshAutomaticAlerts()
-            }
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -1016,9 +838,9 @@ class MacroService : LifecycleService() {
         safeDriveTestJob?.cancel()
         stealthChargeWakeLock?.let { if (it.isHeld) it.release() }
         overlay.hide()
-        runCatching { (application as TeslaMacroApplication).container.safeDrive.stop() }
         runCatching { unregisterReceiver(powerReceiver) }
         (application as TeslaMacroApplication).container.let {
+            it.wirelessNavigation.serviceStopped()
             it.poller.stop()
             it.stealthCharge.stop()
         }
@@ -1145,19 +967,3 @@ class MacroService : LifecycleService() {
 
 /** 이 속도를 넘으면 달리는 중으로 본다. 보행 속도는 정지로 친다 */
 private const val MOVING_KPH = 5.0
-
-/** 오버레이 아래 줄에 넣을 경고 한 마디. 안내할 게 없으면 null */
-private fun warningTextOf(state: com.wemade.teslamacro.domain.safety.SafetyState): String? {
-    if (state.stalled) return state.unavailableReason ?: "위치 없음"
-    if (!state.ready) return null
-    val alert = state.alert ?: return state.dataWarning
-    val distance = alert.distanceMeters
-    val limit = alert.speedLimitKph
-    return buildString {
-        append(alert.kind.label)
-        if (alert.limitConflict) append(" · 제한 확인 필요")
-        else if (limit != null) append(" $limit")
-        if (distance != null) append(" · ${distance}m")
-        (alert.dateWarning ?: state.dataWarning)?.let { append(" · $it") }
-    }
-}

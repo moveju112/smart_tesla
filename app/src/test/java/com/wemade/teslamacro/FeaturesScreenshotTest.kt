@@ -27,8 +27,7 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
         orientation = ScreenOrientation.LANDSCAPE, fontScale = scale, softButtons = false)
         else DeviceConfig.PIXEL_6.copy(screenWidth = 720, screenHeight = 1560, density = Density.XHIGH,
             fontScale = scale, softButtons = false), showSystemUi = false)
-    private val navigation = NavigationControls(onAppChange = {}, onHudOverlayChange = {}, locationPermitted = false,
-        automaticSoundStatus = "차량 오디오 Bluetooth 연결 대기 · 자동 소리 보류")
+    private val navigation = NavigationControls(onAppChange = {}, onHudOverlayChange = {}, locationPermitted = false)
     private val smartThings = SmartThingsControls(false, {}, { _, _ -> }, {})
 
     /** 미등록·권한 부족 상태를 기능 목록에서 구별한다. */
@@ -38,14 +37,6 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
     @Test fun readyFeatureList() = features(null, AppSettings(
         vin = "5YJS0000000000000", isEnrolled = true,
         safeDrive = true, stealthCharging = false, smartThingsEnabled = true,
-    ))
-
-    /** 실행 스위치와 옵션 요약의 줄바꿈을 확인한다. */
-    @Test fun safetyExecution() = features(AppFeature.SAFE_DRIVE)
-
-    /** 켜진 안내의 실제 소리 보류 상태는 제목 도움말 뒤로 숨기지 않는다. */
-    @Test fun activeSafetyExecution() = features(AppFeature.SAFE_DRIVE, AppSettings(
-        vin = "5YJS0000000000000", isEnrolled = true, safeDrive = true,
     ))
 
     /** 충전과 스마트싱스도 제목 왼쪽·스위치 오른쪽의 실행 행을 공유한다. */
@@ -59,8 +50,8 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
         paparazzi.snapshot {
             FullScreenFrame(dark = dark) {
                 com.wemade.teslamacro.ui.component.HelpSheet(
-                    AppFeature.SAFE_DRIVE.label,
-                    AppFeature.SAFE_DRIVE.description + "\n\n500m 전 안내 · 초과 +0km/h · 소리 띠링",
+                    AppFeature.SMARTTHINGS.label,
+                    AppFeature.SMARTTHINGS.description,
                     onDismiss = {},
                 )
             }
@@ -75,7 +66,7 @@ class FeaturesScreenshotTest(private val dark: Boolean, private val wide: Boolea
         paparazzi.snapshot {
             AppFrame(Destination.Settings, dark) {
                 SettingsScreen(AppSettings(), onUnpair = {}, onStartPairing = {}, navigation = navigation,
-                    focusedFeature = FeatureSettings.SAFE_DRIVE, initialGroup = SettingsGroup.DRIVING,
+                    focusedFeature = FeatureSettings.DESTINATION, initialGroup = SettingsGroup.DRIVING,
                     onBackToFeature = {})
             }
         }

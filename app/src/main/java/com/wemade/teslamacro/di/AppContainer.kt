@@ -75,6 +75,7 @@ class AppContainer(private val context: Context) {
     val seatStore = com.wemade.teslamacro.data.settings.SeatStore(context)
 
     /** 매크로의 "지도 안내" 걸음을 처리한다 */
+    val wirelessNavigation = com.wemade.teslamacro.data.nav.WirelessNavigation(appContext)
     val navigator = com.wemade.teslamacro.data.nav.NaverNavigator(context)
     internal val destinations = com.wemade.teslamacro.data.nav.DestinationCoordinator(appContext, settingsStore, navigator)
 
@@ -94,11 +95,6 @@ class AppContainer(private val context: Context) {
     fun notifyLocationPermissionChanged() {
         locationPermissionRevision.value += 1
     }
-
-    /** 공공데이터 번들과 GPS로 단속 후보를 안내한다. */
-    val safeDrive = com.wemade.teslamacro.data.safety.SafeDriveGuide(
-        context.applicationContext as android.app.Application,
-    )
 
     /** 매크로의 "출발지 근처" 조건용 태블릿 위치 */
     val tabletLocation = com.wemade.teslamacro.data.location.TabletLocation(context)

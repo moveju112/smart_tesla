@@ -164,6 +164,9 @@ fun SettingsScreen(
                                 SectionHeader("자동 길안내", topPadding = Space.sm)
                                 NavigatorPanel(settings, navigation)
                             }
+                            if (navigation != null && focusedFeature == null) {
+                                WirelessNavigationPanel(settings, navigation)
+                            }
                         }
 
                         SettingsGroup.AUTOMATION -> {
@@ -239,9 +242,6 @@ fun SettingsScreen(
                                     SectionHeader("실시간 속도", topPadding = Space.lg)
                                     SpeedPanel(settings, navigation)
                                 }
-                                SectionHeader("단속 안내",
-                                    topPadding = if (FeatureAvailability.NAVIGATOR_SAFE_DRIVE || FeatureAvailability.HUD_OVERLAY) Space.lg else Space.sm)
-                                TCard { SafeDrivePanel(settings, navigation, settingsOnly = true) }
                             }
                         }
 
@@ -805,6 +805,12 @@ internal fun SmartThingsCommandSheet(
 
 /** 길안내를 넘길 내비 앱, HUD 속도 표시, 과속·단속 안내와 그 소리 */
 data class NavigationControls(
+    val wirelessState: com.wemade.teslamacro.data.nav.WirelessNavigationState = com.wemade.teslamacro.data.nav.WirelessNavigationState(),
+    val onWirelessEnabled: (Boolean) -> Unit = {},
+    val onWirelessPort: (String) -> Unit = {},
+    val onWirelessPair: (String, String) -> Unit = { _, _ -> },
+    val onWirelessTest: () -> Unit = {},
+    val onWirelessStop: () -> Unit = {},
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onOpenTrustedDeviceSettings: () -> Unit = {},
@@ -812,26 +818,10 @@ data class NavigationControls(
     val onSafeDriveTest: () -> Unit = {},
     val safeDriveTestMessage: String? = null,
     val onHudOverlayChange: (Boolean) -> Unit,
-    val onSafeDriveChange: (Boolean) -> Unit = {},
-    val onSafeDriveSoundChange: (Boolean) -> Unit = {},
-    val onSafeDriveAlertDistanceChange: (Int) -> Unit = {},
-    val onSafeDriveVoiceChange: (Boolean) -> Unit = {},
-    val onSafeDriveStartVoiceChange: (Boolean) -> Unit = {},
-    val onTestSafeDriveVoice: () -> Unit = {},
-    val onOpenSpeechSettings: () -> Unit = {},
-    val safeDriveVoiceStatus: String? = null,
-    val automaticSoundStatus: String? = null,
     val vehicleAudioStatus: com.wemade.teslamacro.service.VehicleAudioStatus =
         com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING,
     val pairedAudioDevices: List<com.wemade.teslable.BondedDevice> = emptyList(),
     val onSelectVehicleAudioDevice: (String) -> Unit = {},
-    val onSafeDriveProgressiveSoundChange: (Boolean) -> Unit = {},
-    val onSafeDriveVolumeChange: (Int) -> Unit = {},
-    /** 경고음 종류 저장값. 고르는 즉시 그 소리를 들려준다 */
-    val onSafeDriveWarningSoundChange: (String) -> Unit = {},
-    val onSafeDriveToleranceChange: (Int) -> Unit = {},
-    /** 앱 키가 있어야 켤 수 있다. 없으면 토글을 잠그고 이유를 적는다 */
-    val safeDriveAvailable: Boolean = true,
     /** 이 기기에 실제로 깔려 있는 앱만 고를 수 있다 */
     val installed: Set<String> = emptySet(),
     /**
@@ -980,7 +970,7 @@ private fun OverlayPermissionNotice(controls: NavigationControls) {
 
 /** 휴대 모드에서 실제 연결 상태와 페어링 차량을 같은 상세 시트에서 고른다. */
 @Composable
-private fun VehicleAudioPicker(settings: AppSettings, controls: NavigationControls) {
+internal fun VehicleAudioPicker(settings: AppSettings, controls: NavigationControls) {
     if (controls.vehicleAudioStatus != com.wemade.teslamacro.service.VehicleAudioStatus.CONNECTED) {
         Text(controls.vehicleAudioStatus.label,
             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
@@ -1022,177 +1012,6 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
         }
         if (settings.hudOverlay && !controls.overlayPermitted) {
             OverlayPermissionNotice(controls)
-        }
-    }
-}
-
-/** 과속·단속 안내와 그 소리 */
-@Composable
-internal fun SafeDrivePanel(
-    settings: AppSettings, controls: NavigationControls,
-    settingsOnly: Boolean = false, executionOnly: Boolean = false,
-) {
-    var showLocationTransferPrompt by rememberSaveable { mutableStateOf(false) }
-    Column {
-            // 목록이 없는 구성에서는 사용할 수 없는 기능을 노출하지 않는다.
-            if (!controls.safeDriveAvailable) {
-                Text("오프라인 단속 목록을 사용할 수 없어요.",
-                    style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
-                return@Column
-            }
-            val soundLabel = com.wemade.teslamacro.data.safety.WarningSound.of(settings.safeDriveWarningSound).label
-            ExpandableToggle(
-                title = if (executionOnly) "단속 안내" else "단속 카메라 안내",
-                settingsOnly = settingsOnly, executionOnly = executionOnly,
-                checked = settings.safeDrive,
-                onCheckedChange = { enabled ->
-                    // 서버 전송을 수반하는 빌드에서는 기능을 켜기 전에 반드시 확인받는다.
-                    if (enabled && com.wemade.teslamacro.BuildConfig.ROAD_MATCH_TOKEN.isNotBlank()) {
-                        showLocationTransferPrompt = true
-                    } else {
-                        controls.onSafeDriveChange(enabled)
-                    }
-                },
-                summary = "${settings.safeDriveAlertDistanceMeters}m 전 안내 · 초과 +${settings.safeDriveToleranceKph}km/h · " +
-                    if (settings.safeDriveSound) "소리 $soundLabel" else "소리 끔",
-                notices = {
-                    // 서버 전송 고지는 켤 때 확인 창에서 받으므로 스위치 아래에 상시 표시하지 않는다.
-                    // 권한 부족은 접어 둬도 안내가 멈춘 이유라 항상 보인다.
-                    if ((settingsOnly || settings.safeDrive) && !controls.locationPermitted) {
-                        LocationPermissionNotice(controls)
-                    }
-                    if ((settingsOnly || settings.safeDrive) && settings.safeDriveSound &&
-                        settings.deviceMode == DeviceMode.MOUNTED && !controls.activityPermitted) {
-                        Spacer(Modifier.height(Space.md))
-                        Text("활동 인식 권한이 없어 자동 카메라 소리가 보류돼요.",
-                            style = MaterialTheme.typography.bodySmall, color = T.Danger)
-                        Spacer(Modifier.height(Space.sm))
-                        TButton("권한 허용", fillWidth = false, onClick = controls.onRequestActivityPermission)
-                    }
-                    if (settings.safeDrive && settings.safeDriveSound) {
-                        controls.automaticSoundStatus?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-                                modifier = Modifier.padding(top = Space.xs))
-                        }
-                    }
-                    if (settings.safeDrive && (settings.safeDriveVoice || settings.safeDriveStartVoice)) {
-                        controls.safeDriveVoiceStatus?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-                                modifier = Modifier.padding(top = Space.xs))
-                        }
-                    }
-                },
-            ) {
-                // 현재 값은 행에 남기고 바꿀 항목만 선택 시트에서 편집한다.
-                ChoiceSettingRow(
-                    label = "카메라 안내 시작 거리",
-                    options = listOf("300" to "300m", "500" to "500m", "700" to "700m"),
-                    selected = settings.safeDriveAlertDistanceMeters.toString(),
-                    onSelect = { controls.onSafeDriveAlertDistanceChange(it.toInt()) },
-                )
-                NumberSettingRow(
-                    label = "경보 초과속도",
-                    value = settings.safeDriveToleranceKph.toDouble(),
-                    min = 0.0, max = 30.0, step = 1.0, unit = "km/h",
-                    onChange = { controls.onSafeDriveToleranceChange(it.toInt()) },
-                )
-                Spacer(Modifier.height(Space.md))
-                Hairline()
-                SettingToggleRow(
-                    label = "과속 경고음·음성 안내",
-                    checked = settings.safeDriveSound,
-                    onCheckedChange = controls.onSafeDriveSoundChange,
-                )
-                if (settings.safeDriveSound) {
-                    WarningSoundPicker(settings, controls)
-                    ChoiceSettingRow(
-                        label = "경고음 크기",
-                        options = listOf("1" to "작게", "2" to "보통", "3" to "크게"),
-                        selected = settings.safeDriveVolume.coerceIn(1, 3).toString(),
-                        onSelect = { controls.onSafeDriveVolumeChange(it.toInt()) },
-                    )
-                    SettingToggleRow(
-                        label = "과속 정도에 따라 경고음 간격 조절",
-                        checked = settings.safeDriveProgressiveSound,
-                        onCheckedChange = controls.onSafeDriveProgressiveSoundChange,
-                    )
-                    Spacer(Modifier.height(Space.md))
-                    Hairline()
-                    SettingToggleRow(
-                        label = "카메라 접근 음성 안내",
-                        checked = settings.safeDriveVoice,
-                        onCheckedChange = controls.onSafeDriveVoiceChange,
-                    )
-                    SettingToggleRow(
-                        label = "안내 시작 음성",
-                        checked = settings.safeDriveStartVoice,
-                        onCheckedChange = controls.onSafeDriveStartVoiceChange,
-                        description = "안내가 시작되면 ‘안전운전하세요’를 한 번 말해요.",
-                    )
-                    if (settings.safeDriveVoice || settings.safeDriveStartVoice) {
-                        SettingActionRow("음성 점검") {
-                            TButton("재생", ButtonTone.Secondary, fillWidth = false,
-                                onClick = controls.onTestSafeDriveVoice)
-                        }
-                        SettingRow("음성 설정", onClick = controls.onOpenSpeechSettings)
-                    }
-                }
-            }
-    }
-    if (showLocationTransferPrompt) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showLocationTransferPrompt = false },
-            title = { Text("GPS 경로 전송 확인") },
-            text = { Text("카메라 근처에서 GPS 경로를 gps-map.choondoggy.com에 전송해요.") },
-            confirmButton = {
-                TButton("켜기", fillWidth = false, small = true, onClick = {
-                    showLocationTransferPrompt = false
-                    controls.onSafeDriveChange(true)
-                })
-            },
-            dismissButton = {
-                TButton("취소", ButtonTone.Ghost, fillWidth = false, small = true,
-                    onClick = { showLocationTransferPrompt = false })
-            },
-            containerColor = T.Carbon,
-            titleContentColor = T.Ink,
-            textContentColor = T.InkMuted,
-        )
-    }
-}
-
-/** 경고음 종류를 모달에서 고른다. 누를 때마다 그 소리를 들려주고 창은 열어 둬 여러 소리를 이어서 비교하게 한다. */
-@Composable
-private fun WarningSoundPicker(settings: AppSettings, controls: NavigationControls) {
-    var showPicker by rememberSaveable { mutableStateOf(false) }
-    val selected = com.wemade.teslamacro.data.safety.WarningSound.of(settings.safeDriveWarningSound)
-    SettingRow(
-        label = "경고음 종류",
-        value = selected.label,
-        onClick = { showPicker = true },
-    )
-    if (showPicker) {
-        WarningSoundSheet(selected, controls.onSafeDriveWarningSoundChange) { showPicker = false }
-    }
-}
-
-/** 모달 본문. 화면 상태 없이 그려 스냅샷으로 목록·선택 표시를 검증한다. */
-@Composable
-internal fun WarningSoundSheet(
-    selected: com.wemade.teslamacro.data.safety.WarningSound,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    com.wemade.teslamacro.ui.component.PickerSheet(title = "경고음 종류", onDismiss = onDismiss) {
-        Text("누르면 실제 경고음을 들려줘요. 마음에 드는 소리를 고르고 닫으세요.",
-            style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        Spacer(Modifier.height(Space.sm))
-        com.wemade.teslamacro.ui.component.PickerList(com.wemade.teslamacro.data.safety.WarningSound.entries) { sound ->
-            com.wemade.teslamacro.ui.component.PickerRow(
-                label = sound.label,
-                value = if (sound == selected) "선택됨" else null,
-                onClick = { onSelect(sound.settingValue) },
-            )
         }
     }
 }
@@ -1294,7 +1113,7 @@ private fun ChoiceRow(
 
 /** 드문 설정은 현재 값을 목록에 남기고 입력만 상세 시트에서 바꾼다. */
 @Composable
-private fun SettingsDetails(title: String, summary: String? = null, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsDetails(title: String, summary: String? = null, content: @Composable ColumnScope.() -> Unit) {
     val expandInitially = LocalExpandSettingsDetails.current
     var expanded by rememberSaveable { mutableStateOf(expandInitially) }
     SettingRow(
@@ -1344,10 +1163,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
     append(
         "내비=${settings.navigatorApp} · HUD 오버레이=${settings.hudOverlay}" +
             " · 탑승시 내비 안심운전=${settings.autoStartNavigatorSafeDrive}" +
-            " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}" +
-            " · 과속안내=${settings.safeDrive}" +
-            " · 경보소리=${settings.safeDriveSound}(${settings.safeDriveWarningSound}, 음량 ${settings.safeDriveVolume}, 속도별 ${settings.safeDriveProgressiveSound}, 접근 음성 ${settings.safeDriveVoice}, 시작 음성 ${settings.safeDriveStartVoice})" +
-            " · 경보거리=${settings.safeDriveAlertDistanceMeters}m · 경보초과속도=${settings.safeDriveToleranceKph}km/h",
+            " · 안심운전 방식=${settings.navigatorSafeDriveLaunchMode}",
     )
 }
 

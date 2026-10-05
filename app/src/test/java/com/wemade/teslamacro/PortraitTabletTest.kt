@@ -89,7 +89,6 @@ class PortraitTabletTest {
                     navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                         onAppChange = {},
                         onHudOverlayChange = {},
-                        safeDriveAvailable = true,
                         installed = setOf("NAVER", "KAKAO", "TMAP"),
                     ),
                     initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DRIVING,

@@ -299,7 +299,6 @@ class WideScreenshotTest {
                         onAppChange = {},
                         onAutoStartSafeDriveChange = {},
                         onHudOverlayChange = {},
-                        safeDriveAvailable = true,
                         installed = setOf("NAVER", "KAKAO", "TMAP"),
                         // 권한이 빠진 모습이 가장 글자가 많다 — 잘림은 여기서 난다
                         overlayPermitted = overlayPermitted,
@@ -468,9 +467,6 @@ class WideScreenshotTest {
                 DashboardScreen(
                     state = wideState().copy(
                         speedKph = 96,
-                        safetyLabel = "과속 단속",
-                        safetyValue = "80 · 320m",
-                        safetyAlarming = true,
                         // 공기압 경보와 겹치는 순간이 실제로 있다 —
                         // 기입란에 적색 줄이 둘 서는 모습을 눈으로 확인해 둔다
                         lowTires = setOf(com.wemade.teslamacro.domain.model.TirePosition.REAR_LEFT),
@@ -493,9 +489,6 @@ class WideScreenshotTest {
                 DashboardScreen(
                     state = wideState().copy(
                         speedKph = 62,
-                        safetyLabel = "안전 안내",
-                        safetyValue = "위치 없음",
-                        safetyAlarming = true,
                     ),
                     onCommand = {},
                     onRetryConnect = {},

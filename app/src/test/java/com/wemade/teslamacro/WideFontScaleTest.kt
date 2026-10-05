@@ -94,7 +94,6 @@ class WideFontScaleTest {
                     navigation = com.wemade.teslamacro.feature.settings.NavigationControls(
                         onAppChange = {},
                         onHudOverlayChange = {},
-                        safeDriveAvailable = true,
                         installed = setOf("NAVER", "KAKAO", "TMAP"),
                         overlayPermitted = false,
                         locationPermitted = false,

@@ -28,16 +28,10 @@ class FeatureNavigationTest {
             AppSettings(vin = "5YJS0000000000000", isEnrolled = true), false, false, false))
     }
 
-    /** 위치 권한은 필수이고 활동 인식은 거치 모드의 소리 사용에만 필요하다. */
-    @Test fun safetySettingsRespectDeviceAndSoundRequirements() {
-        assertEquals(FeatureSettings.SAFE_DRIVE, requiredFeatureSettings(AppFeature.SAFE_DRIVE,
-            AppSettings(), false, true, true))
-        assertNull(requiredFeatureSettings(AppFeature.SAFE_DRIVE,
-            AppSettings(deviceMode = DeviceMode.PORTABLE, safeDriveSound = true), true, false, false))
-        assertEquals(FeatureSettings.SAFE_DRIVE, requiredFeatureSettings(AppFeature.SAFE_DRIVE,
-            AppSettings(deviceMode = DeviceMode.MOUNTED, safeDriveSound = true), true, false, true))
-        assertNull(requiredFeatureSettings(AppFeature.SAFE_DRIVE,
-            AppSettings(deviceMode = DeviceMode.MOUNTED, safeDriveSound = false), true, false, true))
+    /** 제거된 안내는 기능·설정 목록으로 돌아오지 않는다. */
+    @Test fun removedCameraFeatureIsAbsent() {
+        assertFalse(AppFeature.entries.any { it.name == "SAFE_DRIVE" })
+        assertFalse(FeatureSettings.entries.any { it.name == "SAFE_DRIVE" })
     }
 
     /** 알림 접근 권한과 명령 문구가 준비돼야 스마트싱스를 켤 수 있다. */

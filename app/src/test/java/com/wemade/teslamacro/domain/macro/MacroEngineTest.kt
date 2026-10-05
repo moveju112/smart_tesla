@@ -566,4 +566,18 @@ class MacroEngineTest {
         )
         assertTrue(weekend.isEmpty())
     }
+
+    /** 폴링 사이에 껐다 켜거나 범위를 고쳐도 이미 조건 안이면 다시 1회 발동한다. */
+    @Test
+    fun `항상 감시 래치를 비우면 조건 안에서도 1회 다시 발동한다`() {
+        val always = rule(
+            triggers = listOf(Trigger.Always),
+            conditions = listOf(Condition.InRange(Signal.INSIDE_TEMP, gte = 22.0, lte = 24.0)),
+        )
+        assertEquals(1, evaluate(listOf(always), reading(inside = 23.0), reading(inside = 23.0)).size)
+        assertTrue(evaluate(listOf(always), reading(inside = 23.0), reading(inside = 23.0)).isEmpty())
+        engine.rearmAlways(always.id)
+        assertEquals(1, evaluate(listOf(always), reading(inside = 23.0), reading(inside = 23.0)).size)
+        assertTrue(evaluate(listOf(always), reading(inside = 23.0), reading(inside = 23.0)).isEmpty())
+    }
 }

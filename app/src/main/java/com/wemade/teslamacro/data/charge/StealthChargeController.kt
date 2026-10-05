@@ -98,22 +98,26 @@ class StealthChargeController(
      * 이 대기를 취소하고 RUN으로 돌아간다.
      */
     private suspend fun confirmStoppedThenClose() {
-        val batteryBefore = poller.snapshot.value.batteryLevelPercent
-        delay(CHARGE_STOP_CONFIRM_MILLIS)
-        val batteryAfter = poller.snapshot.value.batteryLevelPercent
-        if (poller.snapshot.value.isCharging == true) {
-            com.wemade.teslable.DiagLog.add("스텔스 충전 — 충전 중단이 아니었다, 조절 계속")
+        while (true) {
+            val batteryBefore = poller.snapshot.value.batteryLevelPercent
+            delay(CHARGE_STOP_CONFIRM_MILLIS)
+            val batteryAfter = poller.snapshot.value.batteryLevelPercent
+            if (poller.snapshot.value.isCharging == true) {
+                com.wemade.teslable.DiagLog.add("스텔스 충전 — 충전 중단이 아니었다, 조절 계속")
+                return
+            }
+            // 전류·전력을 못 읽어도 배터리가 올랐으면 전기는 들어가고 있는 것이다.
+            // 게이트 값은 그대로라 여기서 끝내면 아무도 다시 확인하지 않아 1회 세션이 닫히지 않는다 — 다시 지켜본다
+            if (batteryBefore != null && batteryAfter != null && batteryAfter > batteryBefore) {
+                com.wemade.teslable.DiagLog.add(
+                    "스텔스 충전 — 배터리가 ${batteryBefore}%에서 ${batteryAfter}%로 올랐다, 종료 판정 연장"
+                )
+                continue
+            }
+            // 3분을 기다렸으니 원복에 쓸 값은 지금 저장된 것으로 다시 읽는다
+            restoreAndClose(settingsStore.settings.first(), "충전 완료")
             return
         }
-        // 전류·전력을 못 읽어도 배터리가 올랐으면 전기는 들어가고 있는 것이다
-        if (batteryBefore != null && batteryAfter != null && batteryAfter > batteryBefore) {
-            com.wemade.teslable.DiagLog.add(
-                "스텔스 충전 — 배터리가 ${batteryBefore}%에서 ${batteryAfter}%로 올랐다, 조절 계속"
-            )
-            return
-        }
-        // 3분을 기다렸으니 원복에 쓸 값은 지금 저장된 것으로 다시 읽는다
-        restoreAndClose(settingsStore.settings.first(), "충전 완료")
     }
 
     /** 충전 중에는 시간대와 실제 상한을 매 스텝 다시 확인한다. */

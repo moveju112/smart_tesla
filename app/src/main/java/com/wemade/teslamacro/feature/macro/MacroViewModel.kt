@@ -57,6 +57,7 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             try {
                 container.ruleStore.setEnabled(id, enabled)
+                if (enabled) container.poller.rearmMacro(id)
                 _folderError.value = null
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
@@ -113,7 +114,14 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
         val folderId = draftFolderId
         viewModelScope.launch {
             try {
-                container.ruleStore.upsert(current.toRule())
+                val saved = current.toRule()
+                val before = container.ruleStore.rules.value.firstOrNull { it.id == saved.id }
+                container.ruleStore.upsert(saved)
+                // 발동 조건이 바뀌었거나 다시 켠 매크로는 이미 조건 안이어도 1회 발동하게 래치를 비운다
+                if (before != null && (before.conditions != saved.conditions ||
+                        before.triggers != saved.triggers || (!before.enabled && saved.enabled))) {
+                    container.poller.rearmMacro(saved.id)
+                }
                 if (current.isNew && folderId != null) container.ruleStore.moveToFolder(current.id, folderId)
                 if (_draft.value == current) _draft.value = null
             } catch (error: Exception) {

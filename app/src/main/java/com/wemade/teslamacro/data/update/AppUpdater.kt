@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import com.wemade.teslable.DiagLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
@@ -170,19 +171,27 @@ object AppUpdater {
             return
         }
 
-        val apk = download(context, target.version, apkUrl)
-        if (apk == null) {
-            state.value = UpdateState.Failed("새 버전을 내려받지 못했어요.\n인터넷 연결을 봐주세요.")
-            DiagLog.add("업데이트 · 내려받지 못함")
-            return
-        }
-
-        state.value = UpdateState.Installing(target.version)
-        withContext(Dispatchers.IO) { runCatching { handToInstaller(context, apk) } }
-            .onFailure {
-                state.value = UpdateState.Failed("설치를 시작하지 못했어요 · ${it.message ?: it::class.simpleName}")
-                DiagLog.add("업데이트 설치 시작 실패 · ${it.message}")
+        // 첫 일시 중단 전에 진행 상태로 바꿔 두 번 누른 요청이 같은 파일을 동시에 받지 않게 한다
+        state.value = UpdateState.Downloading(target.version, 0)
+        try {
+            val apk = download(context, target.version, apkUrl)
+            if (apk == null) {
+                state.value = UpdateState.Failed("새 버전을 내려받지 못했어요.\n인터넷 연결을 봐주세요.")
+                DiagLog.add("업데이트 · 내려받지 못함")
+                return
             }
+
+            state.value = UpdateState.Installing(target.version)
+            withContext(Dispatchers.IO) { runCatching { handToInstaller(context, apk) } }
+                .onFailure {
+                    state.value = UpdateState.Failed("설치를 시작하지 못했어요 · ${it.message ?: it::class.simpleName}")
+                    DiagLog.add("업데이트 설치 시작 실패 · ${it.message}")
+                }
+        } catch (cancelled: CancellationException) {
+            // 화면이 사라져 취소돼도 전역 상태가 "받는 중"에 굳으면 확인·설치 버튼과 자동 확인이 영영 막힌다
+            restoreAvailable()
+            throw cancelled
+        }
     }
 
     /** APK를 캐시로 내려받는다. 실패하면 받다 만 파일을 지우고 null */
@@ -238,8 +247,15 @@ object AppUpdater {
             }
             return
         }
-        val target = permissionResumeTarget(state.value, lastAvailable, persisted, permitted)
-            ?: return
+        val target = permissionResumeTarget(
+            state.value, lastAvailable, persisted, permitted, com.wemade.teslamacro.BuildConfig.VERSION_NAME,
+        ) ?: run {
+            // 다른 경로로 이미 갱신된 옛 대기 정보는 다음 실행에서도 다시 고르지 않게 지운다
+            if (persisted != null && !isNewer(persisted.version, com.wemade.teslamacro.BuildConfig.VERSION_NAME)) {
+                clearPendingPermission(context)
+            }
+            return
+        }
 
         clearPendingPermission(context)
         lastAvailable = target
@@ -254,11 +270,14 @@ object AppUpdater {
         inMemory: UpdateState.Available?,
         persisted: UpdateState.Available?,
         permitted: Boolean,
+        /** 저장된 대기 릴리스가 이미 설치된 버전 이하면 재설치·다운그레이드하지 않는다 */
+        currentVersion: String? = null,
     ): UpdateState.Available? {
         if (!permitted) return null
+        val pending = persisted?.takeIf { currentVersion == null || isNewer(it.version, currentVersion) }
         return when (current) {
-            is UpdateState.NeedsInstallPermission -> inMemory ?: persisted
-            null -> persisted
+            is UpdateState.NeedsInstallPermission -> inMemory ?: pending
+            null -> pending
             else -> null
         }
     }

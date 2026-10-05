@@ -118,9 +118,11 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                     val keyguard = context.getSystemService(KeyguardManager::class.java)
                     if (!isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
                         check(hasOverlayPermission) { "잠금 인증 화면을 열려면 다른 앱 위에 표시 권한을 허용해 주세요" }
-                        check(SafeDriveUnlockActivity.runWhenUnlocked(context, app.label,
+                        val unlocked = SafeDriveUnlockActivity.runWhenUnlocked(context, app.label,
                             openActivity = { launchFromBackground(it, "목적지 잠금 해제", BackgroundLaunchMethod.DIRECT_ACTIVITY) },
-                            launch = { launch(it) })) { "잠금 해제 대기가 끝났어요. 목적지 상태를 확인해 주세요" }
+                            launch = { launch(it) })
+                        // 수신 루프가 5초마다 같은 요청으로 인증 화면을 다시 띄우지 않게 거절을 따로 알린다
+                        if (!unlocked) throw DestinationUnlockDeclinedException()
                     } else launch(null)
                     com.wemade.teslable.DiagLog.add("목적지 전송 — 네이버 지도 실행 요청")
                 }.onFailure {

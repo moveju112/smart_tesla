@@ -23,6 +23,10 @@ data class MacroDraft(
     val isNew: Boolean,
     val cancelRunningIds: Set<String> = emptySet(),
 ) {
+    /** 추가 조건과 "조건 대기" 단계의 조건을 함께 검사한다 — 둘 다 같은 값이 비면 영영 충족되지 않는다 */
+    private val checkedConditions: List<Condition>
+        get() = conditions + actions.filterIsInstance<ActionStep.WaitUntil>().map { it.condition }
+
     /** 저장 가능한지. 이유가 있으면 문자열, 없으면 null */
     val blockReason: String?
         get() = when {
@@ -40,8 +44,11 @@ data class MacroDraft(
             actions.any { it is ActionStep.Navigate && it.address.isBlank() } ->
                 "지도 안내의 주소를 입력해 주세요"
             // 위치가 비어 있는 조건은 절대 충족되지 않아 매크로가 영영 안 돈다
-            conditions.any { it is Condition.NearLocation && it.latitude == null } ->
+            checkedConditions.any { it is Condition.NearLocation && it.latitude == null } ->
                 "\"출발지 근처\" 조건에 현재 위치를 저장해 주세요"
+            // 시작이 끝보다 큰 구간은 어떤 값도 들어가지 못한다
+            checkedConditions.any { it is Condition.InRange && it.gte != null && it.lte != null && it.gte > it.lte } ->
+                "\"사이\" 조건의 시작 값을 끝 값 이하로 맞춰 주세요"
             // "항상 감시"는 조건의 문턱이 곧 사건이다 — 조건이 없으면 문턱도 없다
             triggers.any { it is Trigger.Always } && conditions.isEmpty() ->
                 "\"조건이 되면\" 발동은 조건을 하나 이상 추가해야 해요"

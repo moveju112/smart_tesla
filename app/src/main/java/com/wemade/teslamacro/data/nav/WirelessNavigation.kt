@@ -34,6 +34,10 @@ data class WirelessNavigationState(
 /** 전송 이후의 실패는 다른 실행 통로·URI로 반복하지 않고 사용자에게 돌린다. */
 internal class DestinationLaunchException(message: String, cause: Throwable? = null, val uncertain: Boolean = false) : IllegalStateException(message, cause)
 
+/** 사용자가 잠금 해제 화면을 취소했거나 시간 안에 풀지 않았다. 인계 전이라 요청은 그대로 대기한다. */
+internal class DestinationUnlockDeclinedException :
+    IllegalStateException("잠금을 해제하면 목적지를 열어요")
+
 /** 종료 정리 중 들어온 새 요청만 보관하며 정상 종료·실패를 자동 재시도로 바꾸지 않는다. */
 internal class NavigationRestartRequest(private val scope: CoroutineScope) {
     private var pending: Any? = null

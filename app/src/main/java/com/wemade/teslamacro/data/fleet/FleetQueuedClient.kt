@@ -117,7 +117,10 @@ class FleetQueuedClient(
         return withTimeoutOrNull(60_000L) {
             while (latest.pending) {
                 delay(1_000L)
-                latest = refresh(latest)
+                val next = refresh(latest)
+                // 한 번의 조회 실패(망 흔들림·5xx)는 결과가 아니다 — 같은 ID를 기한까지 GET만 다시 한다
+                if (next.result == "result_unavailable" && latest.id != null) continue
+                latest = next
                 onUpdate(latest)
             }
             latest

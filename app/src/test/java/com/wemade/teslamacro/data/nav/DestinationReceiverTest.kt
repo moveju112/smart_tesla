@@ -32,6 +32,8 @@ class DestinationReceiverTest {
         var before: () -> Unit = {}
         var launchFailure = false
         var uncertainLaunch = false
+        var declineUnlock = false
+        var attempts = 0
         val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, createdAt, createdAt + 60_000, status, selfTest)
 
         /** 인계 이후 수신함에서 제거하고 완료 응답 유실도 재현한다. */
@@ -54,6 +56,8 @@ class DestinationReceiverTest {
         /** 실제 지도 실행 직전 훅과 영속 기록 순서를 검사한다. */
         fun receiver() = DestinationReceiver(::call, { receipt }, { receipt = it }, { receipt = null }, { elapsed },
             { destination, guard -> runCatching {
+                attempts++
+                if (declineUnlock) throw DestinationUnlockDeclinedException()
                 before()
                 guard()
                 assertNotNull(receipt)
@@ -223,5 +227,21 @@ class DestinationReceiverTest {
         assertNull(destinationDeadline(160_000, 160_000, 1_000))
         assertNull(destinationDeadline(0, 160_000, 1_000))
         assertNull(destinationDeadline(1, 9_000_000, 1_000))
+    }
+
+    /** 잠금 해제를 거절한 요청은 사용자가 잠금을 풀 때까지 5초마다 인증 화면을 다시 띄우지 않는다. */
+    @Test fun declinedUnlockWaitsForUserUnlock() = runTest {
+        val scenario = Scenario().apply { declineUnlock = true }
+        val receiver = scenario.receiver()
+        assertTrue(receiver.receive { true })
+        assertTrue(receiver.receive { true })
+        assertEquals(1, scenario.attempts)
+        assertEquals("pending", scenario.status)
+        receiver.retryDeclined()
+        scenario.declineUnlock = false
+        assertTrue(receiver.receive { true })
+        assertEquals(2, scenario.attempts)
+        assertEquals(1, scenario.launches)
+        assertEquals("delivered", scenario.status)
     }
 }

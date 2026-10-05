@@ -25,4 +25,19 @@ class BackupVersionTest {
             }
         }
     }
+
+    /** 내보낸 파일이 아닌 JSON은 기본값 설정으로 덮어쓰기 전에 거부한다. */
+    @Test
+    fun `json without backup version is rejected`() {
+        for (text in listOf("{\"foo\":1}", "[]", "not json")) {
+            try {
+                decodeBackupFile(text)
+                fail("Non-backup JSON must be rejected: $text")
+            } catch (error: IllegalArgumentException) {
+                assertTrue(error.message.orEmpty().contains("백업 파일이 아니에요"))
+            }
+        }
+        val exported = BackupFile.json.encodeToString(BackupFile.serializer(), BackupFile(createdAtMillis = 1L))
+        assertTrue(decodeBackupFile(exported).createdAtMillis == 1L)
+    }
 }

@@ -298,4 +298,18 @@ class FleetQueuedClientTest {
             assertEquals(1, transport.calls.size)
         }
     }
+
+    /** 한 번의 조회 실패는 결과가 아니므로 같은 ID를 계속 GET해 최종 결과를 받는다. */
+    @Test
+    fun `transient lookup failure keeps polling the same id`() = runTest {
+        val transport = FakeTransport().apply {
+            responses.add(response("queued"))
+            responses.add(FleetHttpResponse(503, ""))
+            responses.add(response("succeeded", 200))
+        }
+        val client = FleetQueuedClient(transport, { "dummy-token" })
+        val result = withContext(CommandDeadline(60_000) { testScheduler.currentTime }) { client.execute(vin, VehicleCommand.Lock, {}) }
+        assertEquals(FleetQueueStatus.Succeeded, result.status)
+        assertEquals(1, transport.calls.count { it.method == "POST" })
+    }
 }

@@ -346,8 +346,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                         it.readBytes().decodeToString()
                     } ?: error("파일을 열지 못했어요")
                 }
-                val backup = BackupFile.json.decodeFromString(BackupFile.serializer(), text)
-                requireSupportedBackupVersion(backup.version)
+                val backup = decodeBackupFile(text)
                 container.ruleStore.restore(backup.macros)
                 container.settingsStore.restore(backup.settings)
                 backup.macros.size
@@ -373,6 +372,17 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 }
 
 /** 손실 가능한 새 형식은 복원 작업 전에 막고 기존 백업만 허용한다. */
+// 백업 파일 판별 (JSON 텍스트 -> 백업)
+// 아무 JSON이나 기본값으로 읽혀 설정을 초기값으로 덮어쓰지 않게, 내보낸 파일에 늘 있는 version부터 확인한다
+internal fun decodeBackupFile(text: String): BackupFile {
+    val root = runCatching { BackupFile.json.parseToJsonElement(text) as? kotlinx.serialization.json.JsonObject }
+        .getOrNull()
+    require(root != null && "version" in root) { "스마트 테슬라 백업 파일이 아니에요" }
+    val backup = BackupFile.json.decodeFromJsonElement(BackupFile.serializer(), root)
+    requireSupportedBackupVersion(backup.version)
+    return backup
+}
+
 internal fun requireSupportedBackupVersion(version: Int) {
     require(version in 1..BackupFile.CURRENT_VERSION) {
         "지원하지 않는 백업 형식이에요 ($version)"

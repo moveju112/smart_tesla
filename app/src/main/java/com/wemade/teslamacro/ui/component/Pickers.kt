@@ -64,12 +64,14 @@ fun PickerSheet(
     modifier: Modifier = Modifier,
     footer: (@Composable () -> Unit)? = null,
     fillHeight: Boolean = false,
+    /** 편집 내용이 있는 시트는 빈 곳을 실수로 눌러도 닫히지 않게 끈다. 닫기·뒤로는 그대로 둔다. */
+    dismissOnOutsideTap: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val compact = LocalPane.current.isCompact
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(decorFitsSystemWindows = false),
+        properties = DialogProperties(decorFitsSystemWindows = false, dismissOnClickOutside = dismissOnOutsideTap),
     ) {
         val window = (LocalView.current.parent as DialogWindowProvider).window
         SideEffect {
@@ -79,7 +81,8 @@ fun PickerSheet(
         }
         BoxWithConstraints(
             modifier = modifier.fillMaxSize().safeDrawingPadding()
-                .clickable(indication = null, interactionSource = remembered(), onClick = onDismiss),
+                .clickable(indication = null, interactionSource = remembered(), enabled = dismissOnOutsideTap,
+                    onClick = onDismiss),
             contentAlignment = if (compact) Alignment.BottomCenter else Alignment.Center,
         ) {
             val panelHeight = maxHeight * 0.9f

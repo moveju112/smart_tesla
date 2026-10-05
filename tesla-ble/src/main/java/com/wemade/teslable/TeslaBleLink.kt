@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * GATT status 코드에 사람이 읽을 해설을 붙인다 — 실차 로그 진단용.
@@ -118,11 +119,17 @@ class TeslaBleLink(private val context: Context) {
             DiagLog.add("GATT 접속 시도 ${device.address}" + if (autoConnect) " (autoConnect)" else "")
         }
         gatt = device.connectGatt(context, autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
-        try {
-            withTimeout(timeoutMillis) { deferred.await() }
+        // 연결 시간 초과는 취소가 아니라 실패다. withTimeout의 TimeoutCancellationException을 그대로 던지면
+        // 호출부의 취소 재전파 규칙에 걸려 폴러 루프·등록 화면이 실패 처리 없이 조용히 끝난다
+        val connected = try {
+            withTimeoutOrNull(timeoutMillis) { deferred.await() }
         } catch (t: Throwable) {
             close()
             throw t
+        }
+        if (connected == null) {
+            close()
+            throw IllegalStateException("GATT 연결 시간 초과 ${timeoutMillis}ms")
         }
     }
 
@@ -151,6 +158,9 @@ class TeslaBleLink(private val context: Context) {
     }
 
     fun close() {
+        // 닫힌 GATT의 콜백은 세대 검사로 버려진다 — 기다리던 연결·쓰기를 여기서 끝내야 타임아웃까지 매달리지 않는다
+        connectResult?.completeExceptionally(IllegalStateException("연결을 닫았다"))
+        writeResult?.completeExceptionally(IllegalStateException("연결을 닫았다"))
         // disconnect 없이 close만 하면 일부 스택이 링크를 물고 있는다 — 각각 독립 실행
         runCatching { gatt?.disconnect() }
         runCatching { gatt?.close() }

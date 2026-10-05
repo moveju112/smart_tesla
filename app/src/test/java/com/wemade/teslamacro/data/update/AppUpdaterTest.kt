@@ -121,4 +121,26 @@ class AppUpdaterTest {
             ),
         )
     }
+
+    /** 다른 경로로 이미 갱신했다면 저장된 옛 대기 릴리스로 재설치·다운그레이드하지 않는다. */
+    @Test
+    fun `저장된 대기 릴리스가 현재 버전 이하면 재개하지 않는다`() {
+        val persisted = UpdateState.Available("0.9.8", "https://example.com/app.apk")
+        for (installed in listOf("0.9.8", "0.9.9")) {
+            assertEquals(
+                null,
+                AppUpdater.permissionResumeTarget(
+                    current = null, inMemory = null, persisted = persisted, permitted = true,
+                    currentVersion = installed,
+                ),
+            )
+        }
+        assertEquals(
+            persisted,
+            AppUpdater.permissionResumeTarget(
+                current = null, inMemory = null, persisted = persisted, permitted = true,
+                currentVersion = "0.9.7",
+            ),
+        )
+    }
 }

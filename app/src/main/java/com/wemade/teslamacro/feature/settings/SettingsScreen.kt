@@ -1035,7 +1035,13 @@ private fun VehiclePanel(
     TCard {
         SettingActionRow("차량 등록") {
             if (settings.isPaired) {
-                TButton("해제", ButtonTone.Danger, fillWidth = false, onClick = onUnpair)
+                // VIN만 저장되고 카드키 등록을 건너뛴 상태에서도 해제 없이 등록을 이어 갈 수 있게 한다
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    if (!settings.isEnrolled) {
+                        TButton("등록 계속", fillWidth = false, onClick = onStartPairing)
+                    }
+                    TButton("해제", ButtonTone.Danger, fillWidth = false, onClick = onUnpair)
+                }
             } else {
                 TButton("등록", fillWidth = false, onClick = onStartPairing)
             }

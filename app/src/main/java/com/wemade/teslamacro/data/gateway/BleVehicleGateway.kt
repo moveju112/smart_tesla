@@ -460,6 +460,9 @@ class BleVehicleGateway(
         while (deadline != null) {
             com.wemade.teslable.ensureCommandActive()
             delay(2_000L)
+            // 기다리는 사이 재연결로 새 클라이언트가 생기면 옛 클라이언트로 보내지 않는다 —
+            // 같은 링크에 requestLock이 둘이 되어 요청이 병렬로 섞인다
+            if (client !== active) throw IllegalStateException("차량 연결이 바뀌어 다시 보내지 않았어요")
             firstAttempt(active, action)?.let { return it }
         }
         throw IllegalStateException("차량이 깨어나지 않았어요")

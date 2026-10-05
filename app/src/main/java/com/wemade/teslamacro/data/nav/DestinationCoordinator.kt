@@ -44,13 +44,13 @@ internal class DestinationCoordinator(
     fun observePresence(value: Boolean) {
         present = value
         presenceAt = SystemClock.elapsedRealtime()
-        if (!value) { fallback = null; destinationSeen = false }
+        if (!value) { fallback = null; destinationSeen = false; receiver.retryDeclined() }
         nudge()
     }
 
     /** 전원 해제 때 오래된 착석값을 버리며 배터리 사용 자체를 영구 금지하지 않는다. */
     fun powerChanged(connected: Boolean) {
-        if (!connected) { present = null; presenceAt = -1; fallback = null; destinationSeen = false }
+        if (!connected) { present = null; presenceAt = -1; fallback = null; destinationSeen = false; receiver.retryDeclined() }
         nudge()
     }
 
@@ -88,7 +88,7 @@ internal class DestinationCoordinator(
         }
         val unlocked = object : BroadcastReceiver() {
             /** 잠금 해제와 화면 복귀 때 놓친 목적지·처리 결과를 다시 확인한다. */
-            override fun onReceive(context: Context, intent: Intent) { nudge() }
+            override fun onReceive(context: Context, intent: Intent) { receiver.retryDeclined(); nudge() }
         }
         manager.registerDefaultNetworkCallback(callback)
         ContextCompat.registerReceiver(context, unlocked, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_EXPORTED)

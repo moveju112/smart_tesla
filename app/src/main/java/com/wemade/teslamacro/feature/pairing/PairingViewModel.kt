@@ -39,7 +39,22 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
         _uiState.update { it.copy(step = PairingStep.EnterVin, message = null, isError = false, nearby = null) }
     }
 
-    /** 화면을 떠날 때 진행 중인 검색·등록 확인만 중지한다. 차량 측 요청은 되돌리지 않는다. */
+    // 등록 화면 재진입 (저장 VIN -> 시작 단계)
+    // 해제 뒤의 완료·카드 단계는 연결이 없어 진행할 수 없고, VIN만 남은 등록은 입력부터 이어서 찾게 한다
+    fun resume(savedVin: String) {
+        if (_uiState.value.isBusy) return
+        _uiState.update { state ->
+            val restart = state.copy(step = PairingStep.EnterVin, message = null, isError = false, nearby = null)
+            when {
+                savedVin.isBlank() && state.step in setOf(PairingStep.TapCard, PairingStep.Done) -> restart
+                savedVin.isNotBlank() && state.step in setOf(PairingStep.EnterVin, PairingStep.Done) ->
+                    restart.copy(vin = savedVin)
+                else -> state
+            }
+        }
+    }
+
+        /** 화면을 떠날 때 진행 중인 검색·등록 확인만 중지한다. 차량 측 요청은 되돌리지 않는다. */
     fun cancelPairing() {
         pairingJob?.cancel()
         pairingJob = null

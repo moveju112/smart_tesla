@@ -64,6 +64,11 @@ data class HistoryUiState(
 @Composable
 fun HistoryRoute(viewModel: HistoryViewModel) {
     val state by viewModel.state.collectAsState()
+    // 기능 목록으로 나갔다 오면 목록부터 보여준다. 회전 재생성에서는 보던 상세를 유지한다
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+        onDispose { if (activity?.isChangingConfigurations != true) viewModel.select(null) }
+    }
     HistoryScreen(state, viewModel::setEnabled, viewModel::select, viewModel::loadMore, viewModel::setPeriod)
 }
 

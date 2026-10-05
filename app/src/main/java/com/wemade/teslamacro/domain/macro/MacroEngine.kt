@@ -24,6 +24,13 @@ class MacroEngine {
     private var droveThisTrip = false
     private var exitDoorObserved = false
 
+    // "항상 감시" 래치 초기화 (다시 켬·조건 수정 -> 새 룰처럼 1회 발동)
+    // 폴링 한 주기 안에 껐다 켜거나 범위를 고치면 판정이 꺼진 상태를 못 봐 옛 래치가 남는다
+    @Synchronized
+    fun rearmAlways(ruleId: String) {
+        alwaysHeld.remove(ruleId)
+    }
+
     /** 전원·수동 해제 경계를 넘은 문 이벤트가 나중에 실행되지 않도록 버린다. */
     @Synchronized
     fun discardPendingDoorEvents() {

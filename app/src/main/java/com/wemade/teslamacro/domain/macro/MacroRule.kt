@@ -202,7 +202,9 @@ data class MacroRule(
 
     /** 이 매크로를 판정하려면 폴링해야 하는 카테고리들 */
     val requiredCategories: Set<StateCategory>
-        get() = (triggers.flatMap { it.signals() } + conditions.flatMap { it.signals() })
+        // 조건 대기도 실행 중에 새 값을 읽어야 하므로 그 신호를 함께 폴링한다
+        get() = (triggers.flatMap { it.signals() } + conditions.flatMap { it.signals() } +
+            actions.filterIsInstance<ActionStep.WaitUntil>().flatMap { it.condition.signals() })
             .map { it.sourceCategory }
             .toSet()
 

@@ -18,6 +18,15 @@ internal class DestinationReceiver(
 ) {
     private val mutex = Mutex()
 
+    /** 잠금 해제를 거절한 요청. 사용자가 직접 잠금을 풀거나 탑승이 바뀔 때까지 인증 화면을 다시 띄우지 않는다. */
+    @Volatile
+    private var declinedRequestId: String? = null
+
+    // 잠금 해제 거절 해제 (잠금 해제·탑승 변화 -> 다음 수신에서 재시도)
+    fun retryDeclined() {
+        declinedRequestId = null
+    }
+
     /** 실제 전달 결과가 저장된 경우만 서버에 재확인하고 지도를 다시 열지 않는다. */
     suspend fun reconcileReceipt() {
         val receipt = readReceipt() ?: return
@@ -38,6 +47,10 @@ internal class DestinationReceiver(
         val inbox = call("inbox") {}
         val request = inbox.request ?: return@withLock false
         if (request.legacyTestRequest || request.status != "pending") return@withLock true
+        if (request.id == declinedRequestId) {
+            report("잠금을 해제하면 목적지를 열어요")
+            return@withLock true
+        }
         val deadline = destinationDeadline(inbox.serverNow, request.expiresAt, started) ?: return@withLock true
         var claimed = false
         var launchDeadline = deadline
@@ -59,6 +72,7 @@ internal class DestinationReceiver(
                 report(if (result.isSuccess) "네이버지도로 전달했어요" else result.exceptionOrNull()?.message ?: "네이버지도 전달에 실패했어요")
                 reconcileReceipt()
             } else if (result.isFailure) {
+                if (result.exceptionOrNull() is DestinationUnlockDeclinedException) declinedRequestId = request.id
                 report(result.exceptionOrNull()?.message ?: "네이버지도 실행을 기다리고 있어요")
             }
         } catch (error: Exception) {

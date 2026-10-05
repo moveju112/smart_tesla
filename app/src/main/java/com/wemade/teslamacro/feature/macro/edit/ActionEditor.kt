@@ -144,6 +144,9 @@ private fun parameterEditor(
 
     step is ActionStep.WaitUntil -> { onChange ->
         Column {
+            // 고른 직후의 기본 문턱(예: 27℃ 이상)에 묶이지 않게 기다릴 조건 값도 여기서 고친다
+            ConditionValueEditor(step.condition) { onChange(step.copy(condition = it)) }
+            Spacer(Modifier.height(Space.md))
             Text(
                 text = "시간이 지나면 다음 동작으로 넘어가요.",
                 style = MaterialTheme.typography.bodySmall,

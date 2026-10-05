@@ -152,7 +152,8 @@ class MainActivity : ComponentActivity() {
         )
         androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
             .isAppearanceLightStatusBars = !night
-        requestRuntimePermissions()
+        // 회전 등 재생성마다 다시 묻으면 두 번째 거부가 영구 거부로 굳는다 — 처음 생성할 때만 묻는다
+        if (savedInstanceState == null) requestRuntimePermissions()
 
         val app = application as TeslaMacroApplication
 
@@ -277,6 +278,8 @@ private fun AppRoot(factory: ViewModelFactory) {
     if (!settings.isReady && !skippedPairing) {
         val pairingViewModel: PairingViewModel = viewModel(factory = factory)
         val pairingState by pairingViewModel.uiState.collectAsState()
+        // 액티비티 범위 VM이라 해제·건너뛰기 뒤 재진입하면 지난 완료·카드 단계가 남는다 — 저장 VIN 기준으로 되돌린다
+        LaunchedEffect(Unit) { pairingViewModel.resume(settings.vin) }
 
         PairingScreen(
             state = pairingState,
@@ -291,7 +294,8 @@ private fun AppRoot(factory: ViewModelFactory) {
         )
         // 등록이 끝나면 본 화면으로 넘긴다. 컴포지션 도중이 아니라 부수효과로 처리한다
         LaunchedEffect(pairingState.step) {
-            if (pairingState.step == PairingStep.Done) skippedPairing = true
+            // 재진입 정리가 먼저 돌 수 있어 컴포지션 시점 값이 아니라 VM의 현재 단계를 본다
+            if (pairingViewModel.uiState.value.step == PairingStep.Done) skippedPairing = true
         }
         return
     }

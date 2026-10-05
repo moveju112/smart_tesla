@@ -123,7 +123,8 @@ fun PairingScreen(
                     color = if (state.isError) T.Danger else T.InkMuted,
                 )
             }
-            if (state.isError && state.step == PairingStep.FindVehicle) {
+            // 카드 단계에서 연결이 끊겨 요청이 실패해도 입력 단계로 돌아가 다시 찾을 수 있게 한다
+            if (state.isError && (state.step == PairingStep.FindVehicle || state.step == PairingStep.TapCard)) {
                 Spacer(Modifier.height(Space.sm))
                 TButton("VIN 수정", tone = ButtonTone.Ghost, fillWidth = false,
                     enabled = !state.isBusy, onClick = onEditVin)

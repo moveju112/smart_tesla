@@ -123,6 +123,9 @@ class StatePoller(
 
     private val lastFiredAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    // 사용자가 다시 켜거나 조건을 고친 매크로의 "항상 감시" 래치 초기화 (편집 -> 엔진)
+    fun rearmMacro(ruleId: String) = engine.rearmAlways(ruleId)
+
     fun start(scope: CoroutineScope) {
         if (job?.isActive == true) return
         job = scope.launch { loop() }

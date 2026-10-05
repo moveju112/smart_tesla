@@ -78,6 +78,8 @@ fun MacroEditScreen(
         onDismiss = { if (detail != null) detail = null else onCancel() },
         modifier = modifier,
         fillHeight = true,
+        // 바깥 한 번 탭으로 만들던 매크로가 통째로 사라지지 않게 한다
+        dismissOnOutsideTap = false,
         footer = {
             Column(modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth()) {
                 draft.blockReason?.let {

@@ -177,4 +177,28 @@ class MacroDraftTest {
             .first { it.label == "통풍 시트" }
         assertEquals(listOf(SeatPosition.FRONT_LEFT, SeatPosition.FRONT_RIGHT), template.seats)
     }
+
+    /** 조건 대기도 추가 조건과 같은 저장 차단을 받아 영영 충족되지 않는 매크로를 막는다. */
+    @Test
+    fun `조건 대기의 빈 위치와 뒤집힌 구간은 저장을 막는다`() {
+        val emptyLocation = validDraft().addAction(ActionStep.WaitUntil(Condition.NearLocation()))
+        assertNotNull(emptyLocation.blockReason)
+        val inverted = validDraft()
+            .addAction(ActionStep.WaitUntil(Condition.InRange(Signal.INSIDE_TEMP, gte = 26.0, lte = 24.0)))
+        assertNotNull(inverted.blockReason)
+        val invertedCondition = validDraft().addCondition(Condition.InRange(Signal.INSIDE_TEMP, gte = 26.0, lte = 24.0))
+        assertNotNull(invertedCondition.blockReason)
+        val valid = validDraft()
+            .addAction(ActionStep.WaitUntil(Condition.InRange(Signal.INSIDE_TEMP, gte = 20.0, lte = 24.0)))
+        assertNull(valid.blockReason)
+    }
+
+    /** 조건 대기가 보는 신호도 폴링해야 대기 중 값이 동결되지 않는다. */
+    @Test
+    fun `조건 대기 신호의 카테고리를 폴링 대상에 넣는다`() {
+        val rule = validDraft()
+            .addAction(ActionStep.WaitUntil(Condition.InRange(Signal.INSIDE_TEMP, gte = 20.0)))
+            .toRule()
+        assertTrue(Signal.INSIDE_TEMP.sourceCategory in rule.requiredCategories)
+    }
 }

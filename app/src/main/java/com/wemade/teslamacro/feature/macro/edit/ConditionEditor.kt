@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -158,34 +159,39 @@ fun ConditionCard(
         EditorItemHeader(describe(condition), expanded, onToggle)
         if (!expanded) return@Column
         Spacer(Modifier.height(Space.md))
-
-        when (condition) {
-            is Condition.InRange -> NumericEditor(condition, onChange)
-
-            is Condition.SignalIs -> ChipRow(
-                options = listOf(true, false),
-                selected = condition.value,
-                label = { if (it) "인 상태" else "아닌 상태" },
-                onSelect = { onChange(condition.copy(value = it)) },
-            )
-
-            is Condition.TimeWindow -> Column {
-                Text("시작", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
-                HourMinuteStepper(condition.fromMinutes) {
-                    onChange(condition.copy(fromMinutes = it))
-                }
-                Spacer(Modifier.height(Space.sm))
-                Text("종료", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
-                HourMinuteStepper(condition.toMinutes) { onChange(condition.copy(toMinutes = it)) }
-            }
-
-            is Condition.OnDays -> DayToggles(condition.days) { onChange(condition.copy(days = it)) }
-
-            is Condition.NearLocation -> NearLocationEditor(condition, onChange)
-
-            is Condition.ForecastInRange -> ForecastEditor(condition, onChange)
-        }
+        ConditionValueEditor(condition, onChange)
         RemoveEditorItem("조건 삭제", onRemove)
+    }
+}
+
+/** 조건 종류별 값 입력. 추가 조건 카드와 "조건 대기" 단계가 같은 편집기를 쓴다. */
+@Composable
+internal fun ConditionValueEditor(condition: Condition, onChange: (Condition) -> Unit) {
+    when (condition) {
+        is Condition.InRange -> NumericEditor(condition, onChange)
+
+        is Condition.SignalIs -> ChipRow(
+            options = listOf(true, false),
+            selected = condition.value,
+            label = { if (it) "인 상태" else "아닌 상태" },
+            onSelect = { onChange(condition.copy(value = it)) },
+        )
+
+        is Condition.TimeWindow -> Column {
+            Text("시작", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+            HourMinuteStepper(condition.fromMinutes) {
+                onChange(condition.copy(fromMinutes = it))
+            }
+            Spacer(Modifier.height(Space.sm))
+            Text("종료", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+            HourMinuteStepper(condition.toMinutes) { onChange(condition.copy(toMinutes = it)) }
+        }
+
+        is Condition.OnDays -> DayToggles(condition.days) { onChange(condition.copy(days = it)) }
+
+        is Condition.NearLocation -> NearLocationEditor(condition, onChange)
+
+        is Condition.ForecastInRange -> ForecastEditor(condition, onChange)
     }
 }
 
@@ -204,6 +210,9 @@ private fun NearLocationEditor(
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf<String?>(null) }
     var address by rememberSaveable { mutableStateOf("") }
+    // 위치 읽기는 최대 8초 걸린다 — 그 사이 반경 등을 고쳐도 결과가 옛 조건으로 덮어쓰지 않게 최신 값을 쓴다
+    val latestCondition by rememberUpdatedState(condition)
+    val latestOnChange by rememberUpdatedState(onChange)
 
     // 설정 앱에서 권한을 허용하고 돌아오면 "권한 없음" 문구가 바로 사라지게 복귀마다 다시 읽는다
     val hasLocationPermission = rememberOnResume { TabletLocation(context).hasPermission() }
@@ -230,7 +239,7 @@ private fun NearLocationEditor(
                 status = "위치를 읽지 못했어요.\n하늘이 보이는 곳에서 다시 시도해 주세요"
             } else {
                 status = null
-                onChange(condition.copy(latitude = point.latitude, longitude = point.longitude))
+                latestOnChange(latestCondition.copy(latitude = point.latitude, longitude = point.longitude))
             }
         }
     }
@@ -297,7 +306,7 @@ private fun NearLocationEditor(
                     status = "주소를 좌표로 못 바꿨어요.\n도로명 주소로 다시 시도해 주세요"
                 } else {
                     status = null
-                    onChange(condition.copy(latitude = point.latitude, longitude = point.longitude))
+                    latestOnChange(latestCondition.copy(latitude = point.latitude, longitude = point.longitude))
                 }
             }
         }
@@ -485,10 +494,11 @@ private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) ->
         if (comparison == Comparison.BETWEEN) {
             // "26~28도 사이" 같은 구간 조건. 단계별 통풍 조절의 재료다
             Text("부터", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
+            // 시작이 끝을 넘으면 영영 충족되지 않는 구간이 된다 — 서로의 값을 경계로 삼는다
             NumberStepper(
                 value = condition.gte ?: range.first,
                 min = range.first,
-                max = range.second,
+                max = condition.lte ?: range.second,
                 step = step,
                 unit = condition.signal.unit.orEmpty(),
                 onChange = { onChange(condition.copy(gte = it)) },
@@ -497,7 +507,7 @@ private fun NumericEditor(condition: Condition.InRange, onChange: (Condition) ->
             Text("까지", style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
             NumberStepper(
                 value = condition.lte ?: range.second,
-                min = range.first,
+                min = condition.gte ?: range.first,
                 max = range.second,
                 step = step,
                 unit = condition.signal.unit.orEmpty(),
@@ -611,7 +621,10 @@ private fun DayToggles(days: Set<Int>, onChange: (Set<Int>) -> Unit) {
                         onClick = {
                             val explicit = days.ifEmpty { (1..7).toSet() }
                             val updated = if (day in explicit) explicit - day else explicit + day
-                            onChange(if (updated.size == 7) emptySet() else updated)
+                            // 빈 집합은 "매일"이다 — 마지막 요일을 끄면 반대로 매일 실행되므로 무시한다
+                            if (updated.isNotEmpty()) {
+                                onChange(if (updated.size == 7) emptySet() else updated)
+                            }
                         },
                     )
                 }

@@ -402,6 +402,41 @@ class MacroEngineTest {
         assertTrue(fired.isEmpty())
     }
 
+    // 자정 직전 예약은 요일이 바뀐 뒤 읽어도 전날 예약으로 한 번 실행한다.
+    @Test
+    fun `자정 소급은 일요일에서 월요일까지 예약 요일을 유지한다`() {
+        (1..7).forEach { scheduledDay ->
+            val fired = evaluate(
+                rules = listOf(rule(listOf(Trigger.AtTime(23 * 60 + 59, days = setOf(scheduledDay))))),
+                previous = reading(minutesOfDay = 23 * 60 + 58, dayOfWeek = scheduledDay),
+                current = reading(minutesOfDay = 1, dayOfWeek = scheduledDay % 7 + 1),
+            )
+            assertEquals("$scheduledDay 요일의 23:59 예약을 소급해야 한다", 1, fired.size)
+        }
+    }
+
+    // 다음 날의 같은 시각 예약을 전날 소급 창에 끼워 조기 실행하지 않는다.
+    @Test
+    fun `자정 소급 중 오늘 밤 예약을 전날 예약으로 오인하지 않는다`() {
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.AtTime(23 * 60 + 59, days = setOf(2))))),
+            previous = reading(minutesOfDay = 23 * 60 + 58, dayOfWeek = 1),
+            current = reading(minutesOfDay = 1, dayOfWeek = 2),
+        )
+        assertTrue(fired.isEmpty())
+    }
+
+    // 자정 정각 예약은 소급 창이 전날부터 시작해도 새 요일로 판정한다.
+    @Test
+    fun `자정 정각 예약은 새 요일에 실행한다`() {
+        val fired = evaluate(
+            rules = listOf(rule(listOf(Trigger.AtTime(0, days = setOf(1))))),
+            previous = reading(minutesOfDay = 23 * 60 + 59, dayOfWeek = 7),
+            current = reading(minutesOfDay = 1, dayOfWeek = 1),
+        )
+        assertEquals(1, fired.size)
+    }
+
     @Test
     fun `요일을 비우면 매일 발동한다`() {
         (1..7).forEach { day ->

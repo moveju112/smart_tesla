@@ -250,6 +250,11 @@ class SettingsStore(
             prefs.remove(KeyVehicleName)
             // 차량이 바뀌면 새 차량의 위치 기록 동의를 다시 받는다.
             prefs.remove(KeyHistoryEnabled)
+            // 이전 차량의 예약·원복 전류를 새 차량에 실행하지 않는다.
+            prefs.remove(KeyStealthCharging)
+            prefs.remove(KeyStealthChargeStarted)
+            prefs.remove(KeyStealthChargeOriginalAmps)
+            prefs.remove(KeyStealthChargeModified)
         }
         prefs[KeyVin] = vin
     }
@@ -305,7 +310,8 @@ class SettingsStore(
         val alreadyOn = it[KeyStealthCharging] == true
         it[KeyStealthCharging] = enabled
         if (enabled) {
-            if (!alreadyOn) {
+            // 끈 직후 다시 켜도 아직 원복하지 못한 실제 차량 전류의 기준은 보존한다.
+            if (!alreadyOn && it[KeyStealthChargeModified] != true) {
                 it.remove(KeyStealthChargeStarted)
                 it.remove(KeyStealthChargeOriginalAmps)
                 it.remove(KeyStealthChargeModified)
@@ -437,9 +443,12 @@ class SettingsStore(
         // 사용 모드는 일부러 복원하지 않는다 — 다른 기기 백업이 이 설치본의 거치 방식을 바꾸면 안 된다.
         // 1회 실행은 다른 기기에 복원하지 않는다. 시간대 취향만 이 설치본에 남는다.
         it[KeyStealthCharging] = false
-        it.remove(KeyStealthChargeStarted)
-        it.remove(KeyStealthChargeOriginalAmps)
-        it.remove(KeyStealthChargeModified)
+        // 이 기기에서 이미 바꾼 전류는 수동 해제처럼 원복한 뒤 진행 상태를 지운다.
+        if (it[KeyStealthChargeModified] != true) {
+            it.remove(KeyStealthChargeStarted)
+            it.remove(KeyStealthChargeOriginalAmps)
+            it.remove(KeyStealthChargeModified)
+        }
         // 옛 백업(version 1)엔 아래 값이 없다 — 그때는 BackupSettings의 기본값이 들어온다.
         // 기본값이 곧 "안 쓰던 상태"라 되돌린 기기가 갑자기 GPS를 켜지는 않는다
         it[KeyHudOverlay] = backup.hudOverlay

@@ -165,9 +165,15 @@ class MacroEngine {
             // 통째로 건너뛰어 시각 매크로가 조용히 유실된다. 같은 분 재폴링은 창이 비어 걸러진다.
             // Doze로 몇 시간 밀린 뒤의 뒷북 발동은 의미가 없어 15분까지만 소급한다
             is Trigger.AtTime -> {
-                val dayMatches = trigger.days.isEmpty() || current.time.dayOfWeek in trigger.days
-                dayMatches && crossedInWindow(previous, current) { minute ->
-                    minute == trigger.minutesOfDay
+                crossedInWindow(previous, current) { minute ->
+                    // 자정 뒤 소급하는 전날 예약은 현재 요일이 아니라 예약 요일로 판정한다.
+                    val scheduledDay = if (minute > current.time.minutesOfDay) {
+                        ((current.time.dayOfWeek + 5) % 7) + 1
+                    } else {
+                        current.time.dayOfWeek
+                    }
+                    minute == trigger.minutesOfDay &&
+                        (trigger.days.isEmpty() || scheduledDay in trigger.days)
                 }
             }
 

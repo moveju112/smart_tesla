@@ -34,6 +34,29 @@ data class WirelessNavigationState(
 /** 전송 이후의 실패는 다른 실행 통로·URI로 반복하지 않고 사용자에게 돌린다. */
 internal class DestinationLaunchException(message: String, cause: Throwable? = null, val uncertain: Boolean = false) : IllegalStateException(message, cause)
 
+/** 종료 정리 중 들어온 새 요청만 보관하며 정상 종료·실패를 자동 재시도로 바꾸지 않는다. */
+internal class NavigationRestartRequest(private val scope: CoroutineScope) {
+    private var pending: Any? = null
+
+    /** 취소 중 작업의 완료 콜백을 재사용해 여러 시작 요청을 한 번으로 합친다. */
+    fun afterCancellation(operation: Job, restart: () -> Unit) {
+        if (!operation.isCancelled || operation.isCompleted || pending != null) return
+        val request = Any()
+        pending = request
+        operation.invokeOnCompletion {
+            scope.launch {
+                if (pending === request) {
+                    pending = null
+                    restart()
+                }
+            }
+        }
+    }
+
+    /** 설정 해제·하차·서비스 종료 뒤 늦게 도착하는 완료 콜백은 실행 권한이 없다. */
+    fun cancel() { pending = null }
+}
+
 /** ADB는 준비 때만 쓰고 지도 제어는 같은 휴대폰의 Binder로 연결한다. */
 class WirelessNavigation(private val context: Context) {
     private val preferences = context.getSharedPreferences("wireless_navigation", Context.MODE_PRIVATE)
@@ -43,6 +66,7 @@ class WirelessNavigation(private val context: Context) {
     val state = mutableState.asStateFlow()
     private val identity by lazy { LocalAdbIdentity(File(context.noBackupFilesDir, "local-adb.p12")).load() }
     private var operation: Job? = null
+    private val restartRequest = NavigationRestartRequest(scope)
     private var disconnect: Job? = null
     private var connected = false
     @Volatile private var keepWirelessDebugging = false
@@ -263,6 +287,7 @@ class WirelessNavigation(private val context: Context) {
         if (connected == value) return
         connected = value
         disconnect?.cancel()
+        if (!value) restartRequest.cancel()
         if (value) {
             keepWirelessDebugging = state.value.enabled
             if (state.value.enabled) start(delayed = false)
@@ -277,7 +302,13 @@ class WirelessNavigation(private val context: Context) {
 
     /** 잠금 테스트 예약부터 세션 종료까지 하나의 작업으로 묶어 중복 실행을 막는다. */
     fun start(delayed: Boolean = true) {
-        if (operation?.isCompleted == false) return
+        operation?.takeUnless { it.isCompleted }?.let { previous ->
+            restartRequest.afterCancellation(previous) {
+                if (delayed || (state.value.enabled && connected)) start(delayed)
+            }
+            return
+        }
+        restartRequest.cancel()
         if (Build.VERSION.SDK_INT < 31) {
             report("Android 12 이상에서 사용할 수 있어요")
             return
@@ -388,6 +419,7 @@ class WirelessNavigation(private val context: Context) {
 
     /** 취소해도 정리 블록에서 지도 종료 응답을 확인한 뒤 통신 연결을 닫는다. */
     fun stop() {
+        restartRequest.cancel()
         // 유예 중 수동 종료해도 하차 타이머는 남겨 디버깅 유지가 무기한 이어지지 않게 한다.
         if (connected || !keepWirelessDebugging) disconnect?.cancel()
         if (operation?.isCompleted != false) {

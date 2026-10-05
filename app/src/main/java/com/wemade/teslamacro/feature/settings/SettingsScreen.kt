@@ -47,6 +47,7 @@ import com.wemade.teslamacro.ui.component.SectionTabs
 import com.wemade.teslamacro.ui.component.DiagLogPanel
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.Hairline
+import com.wemade.teslamacro.ui.component.HelpTitle
 import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
@@ -280,7 +281,9 @@ fun SettingsScreen(
 
                         SettingsGroup.DEVICE -> {
                             if (backup != null) {
-                                SectionHeader("백업", topPadding = if (compact) Space.lg else Space.sm)
+                                HelpTitle("백업", "차량 등록·키는 제외돼요. 새 기기에서는 다시 등록해야 해요.",
+                                    modifier = Modifier.fillMaxWidth().padding(top = if (compact) Space.lg else Space.sm),
+                                    style = MaterialTheme.typography.titleMedium)
                                 BackupPanel(backup)
                             }
 
@@ -577,8 +580,12 @@ private fun UpdatePanel(
     onRequestPermission: () -> Unit,
 ) {
     TCard {
-        LabelValueRow(label = "현재 버전", value = com.wemade.teslamacro.BuildConfig.VERSION_NAME)
-        Hairline()
+        SettingActionRow("현재 버전 ${com.wemade.teslamacro.BuildConfig.VERSION_NAME}") {
+            TButton(if (update is UpdateState.Checking) "확인 중…" else "확인",
+                ButtonTone.Secondary, fillWidth = false, small = true,
+                enabled = update !is UpdateState.Checking && update !is UpdateState.Downloading && update !is UpdateState.Installing,
+                onClick = onCheck)
+        }
         if (update is UpdateState.Failed || update is UpdateState.NeedsInstallPermission) {
             Text(
                 text = if (update is UpdateState.Failed) update.message
@@ -588,10 +595,9 @@ private fun UpdatePanel(
                 modifier = Modifier.padding(vertical = Space.sm),
             )
         }
-        SettingActionRow(
+        if (update is UpdateState.Available || update is UpdateState.Downloading ||
+            update is UpdateState.Installing || update is UpdateState.NeedsInstallPermission) SettingActionRow(
             label = when (update) {
-                is UpdateState.Checking -> "확인 중…"
-                is UpdateState.UpToDate -> "최신 버전"
                 is UpdateState.Available -> "새 버전 ${update.version}"
                 is UpdateState.Downloading -> "내려받는 중… ${update.percent}%"
                 is UpdateState.Installing -> "설치 중…"
@@ -606,22 +612,22 @@ private fun UpdatePanel(
                     TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
                 is UpdateState.NeedsInstallPermission ->
                     TButton("권한 켜기", fillWidth = false, small = true, onClick = onRequestPermission)
-                else ->
-                    TButton("확인", ButtonTone.Secondary, icon = Icons.Rounded.SystemUpdate,
-                        fillWidth = false, small = true,
-                        enabled = update !is UpdateState.Checking, onClick = onCheck)
+                else -> Unit
             }
         }
+        if (update is UpdateState.UpToDate) {
+            Text("최신 버전이에요", style = MaterialTheme.typography.bodySmall, color = T.InkFaint,
+                modifier = Modifier.padding(horizontal = Space.sm))
+        }
 
-        // 뭐가 바뀌는지 모르고 설치를 누르게 두지 않는다. 릴리스 본문은 이미 받아온 값이다.
+        // 긴 변경 내역은 원하는 사람만 펼치고 새 릴리스는 다시 접힌 상태로 시작한다.
         val notes = (update as? UpdateState.Available)?.notes
-        if (notes != null) {
-            Spacer(Modifier.height(Space.sm))
-            Text(
-                text = notes,
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkFaint,
-            )
+        if (!notes.isNullOrBlank()) {
+            var showNotes by rememberSaveable(update.version, notes) { mutableStateOf(false) }
+            TButton(if (showNotes) "변경 내역 접기" else "변경 내역 펼치기",
+                ButtonTone.Ghost, fillWidth = false, small = true, onClick = { showNotes = !showNotes })
+            if (showNotes) Text(notes, style = MaterialTheme.typography.labelSmall, color = T.InkFaint,
+                modifier = Modifier.padding(horizontal = Space.sm))
         }
     }
 }
@@ -1055,25 +1061,16 @@ data class BackupControls(
     val onDismissMessage: () -> Unit = {},
 )
 
-/** 백업 동작은 이름 옆에 두고 제외 항목과 실행 결과는 아래에 남긴다. */
+/** 같은 백업의 두 동작을 한 줄에 두고 실행 결과만 아래에 남긴다. */
 @Composable
 internal fun BackupPanel(backup: BackupControls) {
     TCard {
-        SettingActionRow("백업 내보내기") {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             TButton("내보내기", icon = Icons.Rounded.Backup,
-                fillWidth = false, small = true, onClick = backup.onExport)
-        }
-        Hairline()
-        SettingActionRow("백업 가져오기") {
+                modifier = Modifier.weight(1f), small = true, onClick = backup.onExport)
             TButton("가져오기", ButtonTone.Secondary, icon = Icons.Rounded.Restore,
-                fillWidth = false, small = true, onClick = backup.onImport)
+                modifier = Modifier.weight(1f), small = true, onClick = backup.onImport)
         }
-        Text(
-            text = "차량 등록·키는 제외돼요. 새 기기에서는 다시 등록해야 해요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkFaint,
-            modifier = Modifier.padding(top = Space.sm),
-        )
         // 결과는 성공이든 실패든 남긴다 — 조용히 끝나면 됐는지 안 됐는지 알 길이 없다
         backup.message?.let { message ->
             Spacer(Modifier.height(Space.sm))

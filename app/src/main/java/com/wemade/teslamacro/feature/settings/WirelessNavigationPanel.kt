@@ -75,8 +75,8 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         "무선 디버깅을 켜고 ‘페어링 코드로 기기 페어링’을 연 다음, 화면을 닫지 말고 알림의 ‘코드 입력’에 6자리를 입력해 주세요. " +
         "IP·포트는 자동으로 찾으며 코드는 저장하지 않아요. 알림 입력을 위해 앱 알림을 허용해 주세요. " +
         "저장된 인증이 있으면 코드 입력 없이 연결을 먼저 시도해요. 자동 탐색이 안 되면 아래 수동 입력을 사용해 주세요.\n\n" +
-        "준비가 끝나면 USB 디버깅을 켜 둔 상태에서 Wi-Fi 없이 실행·종료할 수 있어요. 케이블 연결은 필요 없어요. 자동 실행을 켜면 재부팅 후 Wi-Fi 연결 때 준비 복구를 시도해요. " +
-        "처음 허용하지 않은 네트워크는 시스템 확인이 필요할 수 있어요. 프로세스가 종료되면 Wi-Fi에서 다시 준비해 주세요.\n\n" +
+        "무선 디버깅은 연결 준비에만 쓰고 끝나면 꺼요. 준비가 끝나면 USB 디버깅을 켜 둔 상태에서 Wi-Fi 없이 실행·종료할 수 있어요. 케이블 연결은 필요 없어요. 자동 실행을 켜면 재부팅 후 Wi-Fi 연결 때 준비 복구를 시도해요. " +
+        "처음 Wi-Fi 허용 창에서 ‘이 네트워크에서 항상 허용’을 선택하면 다음 준비 때 확인을 줄일 수 있어요. 프로세스가 종료되면 Wi-Fi에서 다시 준비해 주세요.\n\n" +
         "실행 전 네이버지도 초기 설정·위치·음량 설정을 마쳐 주세요. 기존 네이버지도 실행이 있으면 실험을 시작하지 않아요. " +
         "테스트 버튼을 누른 뒤 화면을 잠가 음성을 확인해 주세요.\n\n" +
         "자동 실행은 아래에서 직접 선택한 차량 오디오 연결을 사용해요. 연결 해제 30초 뒤 실험을 종료해요. " +
@@ -88,42 +88,16 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
             Text("Android 12 이상에서 사용할 수 있어요", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
         } else {
             Text(if (checkingSetup) "연결 설정 확인 중…" else if (state.busy || state.prepared) state.message else setupMessage ?: state.message, style = MaterialTheme.typography.bodyMedium, color = T.Ink)
-            Spacer(Modifier.height(Space.md))
-            TButton("연결 설정", ButtonTone.Secondary, enabled = !checkingSetup && !state.busy && !state.running) {
-                setupRequest++
-            }
-            Spacer(Modifier.height(Space.sm))
-            TButton("연결 준비 / 복구", ButtonTone.Secondary, enabled = !state.busy && !state.running,
-                onClick = { setupMessage = null; controls.onWirelessPrepare() })
-            Spacer(Modifier.height(Space.sm))
-            SettingsDetails("수동 페어링 / 연결 포트") {
-                TButton("개발자 옵션 열기", ButtonTone.Secondary) {
-                    runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
-                        .onFailure { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
-                }
-                Spacer(Modifier.height(Space.sm))
-                DraftField(pairingPort, { pairingPort = it.filter(Char::isDigit).take(5) }, "페어링 포트 · 비우면 자동 탐색",
-                    enabled = !state.busy && !state.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                Spacer(Modifier.height(Space.sm))
-                DraftField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "페어링 코드 6자리",
-                    enabled = !state.busy && !state.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    visualTransformation = PasswordVisualTransformation())
-                Spacer(Modifier.height(Space.sm))
-                TButton("페어링", enabled = !state.busy && !state.running && pairingCode.length == 6) {
-                    setupMessage = null
-                    controls.onWirelessPair(pairingPort, pairingCode)
-                    pairingCode = ""
-                }
+            // 최초 설정만 전면에 두고 완료 후에는 다른 설정과 같은 상세 시트로 관리한다.
+            if (!state.prepared && !state.running) {
                 Spacer(Modifier.height(Space.md))
-                DraftField(state.port, controls.onWirelessPort, "연결 포트",
-                    enabled = !state.busy && !state.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                TButton("연결 설정", ButtonTone.Secondary, enabled = !checkingSetup && !state.busy) {
+                    setupRequest++
+                }
             }
-            Spacer(Modifier.height(Space.md))
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                TButton("10초 뒤 테스트", ButtonTone.Secondary, modifier = Modifier.weight(1f),
-                    enabled = !state.busy && !state.running, onClick = controls.onWirelessTest)
-                TButton("종료", ButtonTone.Ghost, modifier = Modifier.weight(1f),
-                    enabled = state.busy || state.running, onClick = controls.onWirelessStop)
+            if (state.busy || state.running) {
+                Spacer(Modifier.height(Space.sm))
+                TButton("종료", ButtonTone.Ghost, enabled = !checkingSetup, onClick = controls.onWirelessStop)
             }
             Spacer(Modifier.height(Space.md))
             SettingToggleRow("차량 오디오 연결 시 자동 실행", checked = state.enabled,
@@ -131,6 +105,41 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
             SettingsDetails("차량 오디오 선택") { VehicleAudioPicker(settings, controls) }
             if (state.enabled && settings.vehicleAudioAddress.isBlank()) {
                 Text("자동 실행할 차량 오디오를 직접 선택해 주세요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+            }
+            SettingsDetails("연결 관리", if (state.prepared) "연결됨" else "준비 필요") {
+                TButton("다시 연결 설정", ButtonTone.Secondary, enabled = !checkingSetup && !state.busy && !state.running) {
+                    setupRequest++
+                }
+                Spacer(Modifier.height(Space.sm))
+                TButton("연결 준비 / 복구", ButtonTone.Secondary, enabled = !state.busy && !state.running,
+                    onClick = { setupMessage = null; controls.onWirelessPrepare() })
+                Spacer(Modifier.height(Space.sm))
+                SettingsDetails("수동 페어링 / 연결 포트") {
+                    TButton("개발자 옵션 열기", ButtonTone.Secondary) {
+                        runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
+                            .onFailure { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
+                    }
+                    Spacer(Modifier.height(Space.sm))
+                    DraftField(pairingPort, { pairingPort = it.filter(Char::isDigit).take(5) }, "페어링 포트 · 비우면 자동 탐색",
+                        enabled = !state.busy && !state.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    Spacer(Modifier.height(Space.sm))
+                    DraftField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "페어링 코드 6자리",
+                        enabled = !state.busy && !state.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation())
+                    Spacer(Modifier.height(Space.sm))
+                    TButton("페어링", enabled = !state.busy && !state.running && pairingCode.length == 6) {
+                        setupMessage = null
+                        controls.onWirelessPair(pairingPort, pairingCode)
+                        pairingCode = ""
+                    }
+                    Spacer(Modifier.height(Space.md))
+                    DraftField(state.port, controls.onWirelessPort, "연결 포트",
+                        enabled = !state.busy && !state.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                }
+            }
+            SettingsDetails("실행 점검") {
+                TButton("10초 뒤 테스트", ButtonTone.Secondary,
+                    enabled = !checkingSetup && !state.busy && !state.running, onClick = controls.onWirelessTest)
             }
         }
     }

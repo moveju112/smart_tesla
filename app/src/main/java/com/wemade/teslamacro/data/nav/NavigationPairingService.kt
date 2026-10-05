@@ -98,6 +98,8 @@ class NavigationPairingService : Service() {
     override fun onDestroy() {
         navigationWork?.takeIf { it.isActive }?.cancel()
         scope.cancel()
+        // 코드 입력 대기만 하다가 취소·만료된 경우도 다른 연결 작업이 없으면 닫는다.
+        if (!navigation.state.value.busy) navigation.closeWirelessDebugging()
         super.onDestroy()
     }
 

@@ -74,26 +74,40 @@ class WirelessNavigation(private val context: Context) {
     /** 기존 내부 서버를 우선 사용하고 서버가 없을 때만 무선 디버깅으로 다시 세운다. */
     private suspend fun ensurePrepared() = withTimeout(30_000) {
         mutableState.value = state.value.copy(prepared = false)
-        // 두 디버깅 방식이 모두 꺼지면 Android가 부모 데몬과 준비 프로세스를 종료한다.
-        check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
-        NavigationBridgeProvider.request()
-        if (runCatching { NavigationChannel().connect().use { it.status() in setOf("AVAILABLE", "ACTIVE") } }.getOrDefault(false)) {
-            mutableState.value = state.value.copy(prepared = true)
-            return@withTimeout
-        }
-        mutableState.value = state.value.copy(prepared = false)
-        var toggled = false
         try {
+            // 두 디버깅 방식이 모두 꺼지면 Android가 부모 데몬과 준비 프로세스를 종료한다.
+            check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
+            NavigationBridgeProvider.request()
+            if (runCatching { NavigationChannel().connect().use { it.status() in setOf("AVAILABLE", "ACTIVE") } }.getOrDefault(false)) {
+                mutableState.value = state.value.copy(prepared = true)
+                return@withTimeout
+            }
+            mutableState.value = state.value.copy(prepared = false)
             if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED &&
                 Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) {
-                toggled = Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1)
+                check(Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1))
             }
             manager().use { connection ->
                 DiagLog.add("네이버 안심주행 · 연결 포트 탐색")
-                val discovered = LocalAdbDiscovery.port(context)
-                val port = discovered ?: validPort(state.value.port) ?: error("No local debugging port")
+                var port: Int? = null
+                // 재활성화 직후 남아 있는 이전 포트 광고는 짧게 다시 탐색하되 전체 준비 제한은 유지한다.
+                for (attempt in 0 until 3) {
+                    val candidate = LocalAdbDiscovery.port(context) ?: validPort(state.value.port) ?: break
+                    val connected = try {
+                        runInterruptible { connection.connect("127.0.0.1", candidate) }
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        false
+                    }
+                    if (connected) { port = candidate; break }
+                    connection.disconnect()
+                    if (attempt < 2) {
+                        DiagLog.add("네이버 안심주행 · 연결 포트 갱신 대기")
+                        delay(500)
+                    }
+                }
+                check(port != null) { "No local debugging connection" }
                 DiagLog.add("네이버 안심주행 · 자체 ADB 연결")
-                check(runInterruptible { connection.connect("127.0.0.1", port) })
                 preferences.edit().putString("port", port.toString()).putBoolean("configured", true).apply()
                 mutableState.value = state.value.copy(port = port.toString())
                 DiagLog.add("네이버 안심주행 · 독립 실행 프로세스 준비")
@@ -109,8 +123,16 @@ class WirelessNavigation(private val context: Context) {
             }
             mutableState.value = state.value.copy(prepared = true)
         } finally {
-            if (toggled) runCatching { Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 0) }
+            closeWirelessDebugging()
         }
+    }
+
+    /** 준비 이후 Binder만 사용하므로 최초에 직접 켠 무선 디버깅도 닫는다. */
+    internal fun closeWirelessDebugging() {
+        if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) return
+        if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) return
+        runCatching { check(Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 0)) }
+            .onFailure { DiagLog.add("네이버 안심주행 · 무선 디버깅 종료 실패 ${it.javaClass.simpleName}") }
     }
 
     /** ADB 전용 RSA 키는 기존 목적지용 EC 인증 계약과 달라 독립적으로 제공한다. */
@@ -172,7 +194,10 @@ class WirelessNavigation(private val context: Context) {
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
                 report(if (error.message == USB_DEBUGGING_REQUIRED) USB_DEBUGGING_REQUIRED else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
-            } finally { mutableState.value = state.value.copy(busy = false) }
+            } finally {
+                closeWirelessDebugging()
+                mutableState.value = state.value.copy(busy = false)
+            }
         }.also { job ->
             operation = job
             job.invokeOnCompletion { cause -> scope.launch { if (cause == null && state.value.prepared && state.value.enabled && connected) start(false) } }

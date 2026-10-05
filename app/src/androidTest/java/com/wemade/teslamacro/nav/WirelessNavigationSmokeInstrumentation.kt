@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 
 /** 로컬 에뮬레이터와 지도 대체 앱으로 연결·잠금 실행·오디오 해제 종료를 검사한다. */
 class WirelessNavigationSmokeInstrumentation : Instrumentation() {
+    private var panelOnly = false
     private var setupOnly = false
     private var prepareOnly = false
     private var pairOnly = false
@@ -26,6 +27,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
     /** 별도 계측 실행기로만 테스트를 시작하며 일반 앱 실행에는 포함하지 않는다. */
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
+        panelOnly = arguments?.getString("panelOnly") == "true"
         setupOnly = arguments?.getString("setupOnly") == "true"
         prepareOnly = arguments?.getString("prepareOnly") == "true"
         pairOnly = arguments?.getString("pairOnly") == "true"
@@ -46,12 +48,15 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
             check(original.first.encoded.contentEquals(restored.first.encoded))
             restored.second.verify(restored.second.publicKey)
             runBlocking {
+                if (panelOnly) { verifyPanel(); return@runBlocking }
                 val navigation = withContext(Dispatchers.Main) {
                     (if (pairOnly || setupOnly) (targetContext.applicationContext as com.wemade.teslamacro.TeslaMacroApplication)
                         .container.wirelessNavigation else WirelessNavigation(targetContext)).also { controller = it }
                 }
                 if (setupOnly) { verifySetup(navigation); return@runBlocking }
                 if (pairOnly) {
+                    // 이전 계측에서 남은 하위 설정 화면을 재사용하지 않는다.
+                    shell("am force-stop com.android.settings")
                     val automation = getUiAutomation()
                     shell("settings delete secure enabled_accessibility_services")
                     check(android.provider.Settings.Secure.getString(targetContext.contentResolver, "enabled_accessibility_services").isNullOrEmpty())
@@ -62,6 +67,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     }
                     // 테스트에서만 설정 UI를 조작하며 제품에는 화면 읽기 권한이 없다.
                     var code: String? = null
+                    var scrollForward = true
                     withTimeout(60_000) {
                         while (code == null) {
                             val nodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
@@ -71,10 +77,17 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                             if (displayed != null && texts.any { it.contains("pairing code", true) }) {
                                 code = displayed
                             } else {
+                                // 최초 Wi-Fi 신뢰는 테스트 기기에서 명시적으로 허용하며 제품은 이를 자동 선택하지 않는다.
+                                val trust = nodes.firstOrNull { it.isCheckable && !it.isChecked && it.text?.toString()?.contains("Always allow", true) == true }
                                 val names = listOf("Allow", "ALLOW", "Pair device with pairing code", "Use wireless debugging", "Wireless debugging")
-                                val node = names.firstNotNullOfOrNull { name -> nodes.firstOrNull { it.text?.toString() == name && it.isEnabled } }
+                                val node = trust ?: names.firstNotNullOfOrNull { name -> nodes.firstOrNull { it.text?.toString() == name && it.isEnabled } }
                                 if (node != null) click(node)
-                                else nodes.asReversed().firstOrNull { it.isScrollable }?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+                                else {
+                                    val list = nodes.asReversed().firstOrNull { it.isScrollable }
+                                    val direction = if (scrollForward) android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                                        else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                                    if (list?.performAction(direction) == false) scrollForward = !scrollForward
+                                }
                             }
                             delay(500)
                         }
@@ -101,6 +114,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     withTimeout(65_000) { navigation.state.first { it.prepared && !it.busy } }
                     check(navigation.state.value.message.startsWith("페어링·준비 완료")) { navigation.state.value.message }
                     check(navigation.state.value.port.isNotEmpty())
+                    check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
                     withTimeout(5000) {
                         while (manager.activeNotifications.any { it.notification.channelId == "navigation_pairing" && !it.notification.actions.isNullOrEmpty() }) delay(100)
                     }
@@ -113,6 +127,49 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                         check(navigation.state.value.busy)
                         check(NavigationSetup.resolve(targetContext) == NavigationSetup.Step.READY)
                         preparation?.join()
+                    }
+                    // 이미 준비된 Binder를 재사용할 때도 켜져 있던 무선 디버깅을 닫는다.
+                    shell("settings put global adb_wifi_enabled 1")
+                    withContext(Dispatchers.Main) { navigation.prepare() }?.join()
+                    check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
+                    // 이 일회용 에뮬레이터에서 만든 셸 프로세스만 종료해 실제 재준비를 검증한다.
+                    val process = shell("ps -A -o PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+")) }
+                        .single { it.size == 5 && it[1] == "app_process" && it[3] == "com.wemade.teslamacro.data.nav.NaverControlServer" && it[4] == android.os.Process.myUid().toString() }
+                    check(process[0].all(Char::isDigit))
+                    shell("kill " + process[0])
+                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for helper termination") })
+                    withTimeout(5000) {
+                        while (com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge?.pingBinder() == true) delay(100)
+                    }
+                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for on-demand debugging") })
+                    val recovery = withContext(Dispatchers.Main) { navigation.prepare() }
+                    withTimeout(5000) {
+                        while (android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0) delay(20)
+                    }
+                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for recovery completion") })
+                    recovery?.join()
+                    check(navigation.state.value.prepared)
+                    check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
+                    check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.status() } == "AVAILABLE")
+                    sendStatus(0, Bundle().apply { putString("phase", "Checking failure and cancellation cleanup") })
+                    // 실패한 재페어링도 디버깅을 남기지 않는다.
+                    shell("settings put global adb_wifi_enabled 1")
+                    withContext(Dispatchers.Main) { navigation.pair("65534", "000000") }?.join()
+                    check(!navigation.state.value.busy)
+                    check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
+                    // 코드 입력 대기를 취소할 때도 권한을 얻은 기기의 무선 디버깅을 닫는다.
+                    shell("settings put global adb_wifi_enabled 1")
+                    withContext(Dispatchers.Main) {
+                        com.wemade.teslamacro.data.nav.NavigationPairingService.begin(targetContext)
+                    }
+                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for cancellation notification") })
+                    withTimeout(5000) {
+                        while (manager.activeNotifications.none { !it.notification.actions.isNullOrEmpty() }) delay(100)
+                    }
+                    sendStatus(0, Bundle().apply { putString("phase", "Stopping pairing service; busy=${navigation.state.value.busy}") })
+                    targetContext.stopService(android.content.Intent(targetContext, com.wemade.teslamacro.data.nav.NavigationPairingService::class.java))
+                    withTimeout(5000) {
+                        while (android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) != 0) delay(100)
                     }
                     return@runBlocking
                 }
@@ -163,18 +220,77 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     check(navigation.state.value.message == "실험 종료 완료") { navigation.state.value.message }
                 }
             }
-            result.putString("result", if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
-                else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper and saved-auth reuse"
+            result.putString("result", if (panelOnly) "PASS: prepared controls hidden, management and test sheets reachable, active stop, unprepared setup"
+                else if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
+                else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper, saved-auth reuse, debugging on-demand and off after success/failure/cancel"
                 else if (prepareOnly) "PASS: detached helper prepared" else "PASS: Wi-Fi and wireless debugging off, unusable ADB port, key persistence, reconnect grace, automatic stop, repeated start/stop")
         } catch (error: Throwable) {
             status = Activity.RESULT_CANCELED
             result.putString("result", "FAIL: ${error.javaClass.simpleName}: ${error.message}; ${error.stackTrace.firstOrNull { it.className.contains("WirelessNavigationSmoke") }}")
         } finally {
+            targetContext.stopService(android.content.Intent(targetContext, com.wemade.teslamacro.data.nav.NavigationPairingService::class.java))
             runOnMainSync { controller?.setEnabled(false) }
             key.delete()
         }
         finish(status, result)
     }
+    /** 연결 단계별 노출과 상세 시트 동작을 실제 패널에서 검사한다. */
+    private suspend fun verifyPanel() {
+        val panelState = androidx.compose.runtime.mutableStateOf(
+            com.wemade.teslamacro.data.nav.WirelessNavigationState(prepared = true, message = "연결 준비 완료"))
+        var tests = 0
+        var stops = 0
+        val activity = startActivitySync(android.content.Intent(targetContext, com.wemade.teslamacro.MainActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) as com.wemade.teslamacro.MainActivity
+        try {
+            runOnMainSync {
+                activity.setContent {
+                    com.wemade.teslamacro.ui.theme.TeslaMacroTheme(dark = false) {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            com.wemade.teslamacro.feature.settings.WirelessNavigationPanel(
+                                com.wemade.teslamacro.data.settings.AppSettings(),
+                                com.wemade.teslamacro.feature.settings.NavigationControls(
+                                    wirelessState = panelState.value, onAppChange = {}, onHudOverlayChange = {},
+                                    onWirelessTest = { tests++ }, onWirelessStop = { stops++ }))
+                        }
+                    }
+                }
+            }
+            awaitPanelText("연결 관리", true)
+            for (text in listOf("연결 설정", "연결 준비 / 복구", "수동 페어링 / 연결 포트", "10초 뒤 테스트", "종료")) {
+                awaitPanelText(text, false)
+            }
+            clickSetup("연결 관리")
+            awaitPanelText("연결 준비 / 복구", true)
+            awaitPanelText("수동 페어링 / 연결 포트", true)
+            uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+            awaitPanelText("연결 준비 / 복구", false)
+            clickSetup("실행 점검")
+            clickSetup("10초 뒤 테스트")
+            runOnMainSync { check(tests == 1) }
+            uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+            awaitPanelText("10초 뒤 테스트", false)
+            runOnMainSync { panelState.value = panelState.value.copy(running = true, message = "안심주행 실행 중") }
+            clickSetup("종료")
+            runOnMainSync { check(stops == 1) }
+            awaitPanelText("연결 설정", false)
+            runOnMainSync { panelState.value = panelState.value.copy(prepared = false, running = false, message = "무선 페어링 필요") }
+            awaitPanelText("연결 설정", true)
+            awaitPanelText("종료", false)
+        } finally { runOnMainSync { activity.finish() } }
+    }
+
+    /** 애니메이션과 재구성 이후 사용자가 볼 수 있는 항목만 비교한다. */
+    private suspend fun awaitPanelText(text: String, visible: Boolean) = withTimeout(5000) {
+        while (true) {
+            val nodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+            uiAutomation.rootInActiveWindow?.let { collect(it, nodes) }
+            val present = nodes.any { it.text?.toString() == text && it.isVisibleToUser }
+            if (present == visible && nodes.any { it.packageName?.toString() == targetContext.packageName }) return@withTimeout
+            delay(100)
+        }
+    }
+
     /** 실제 설정 버튼과 화면 복귀를 사용해 권한 거부·부족한 설정·다음 단계 이동을 검사한다. */
     private suspend fun verifySetup(navigation: WirelessNavigation) {
         withTimeout(20000) { while (!NavigationSetup.read(targetContext).wifi) delay(100) }
@@ -220,11 +336,11 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
     }
 
     /** 제품 버튼을 실제 접근성 노드로 눌러 클릭 콜백과 설정 이동까지 검사한다. */
-    private suspend fun clickSetup() = withTimeout(10000) {
+    private suspend fun clickSetup(text: String = "연결 설정") = withTimeout(10000) {
         while (true) {
             val nodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
             uiAutomation.rootInActiveWindow?.let { collect(it, nodes) }
-            val button = nodes.firstOrNull { it.text?.toString() == "연결 설정" && it.isEnabled && it.isVisibleToUser }
+            val button = nodes.firstOrNull { it.text?.toString() == text && it.isEnabled && it.isVisibleToUser }
             if (button != null) { click(button); return@withTimeout }
             delay(100)
         }
@@ -247,9 +363,8 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         .bufferedReader().use { it.readText() }.lineSequence().firstOrNull { it.contains("topResumedActivity=") }.orEmpty()
 
     /** 테스트 셸은 로컬 에뮬레이터 준비에만 사용한다. */
-    private fun shell(command: String) {
-        android.os.ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand(command)).use { it.readBytes() }
-    }
+    private fun shell(command: String): String =
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(uiAutomation.executeShellCommand(command)).use { it.readBytes().toString(Charsets.UTF_8) }
 
     /** 테스트만 시스템 설정 노드를 제한 깊이로 수집한다. */
     private fun collect(node: android.view.accessibility.AccessibilityNodeInfo, result: MutableList<android.view.accessibility.AccessibilityNodeInfo>, depth: Int = 0) {

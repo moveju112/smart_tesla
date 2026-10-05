@@ -580,4 +580,17 @@ class MacroEngineTest {
         assertEquals(1, evaluate(listOf(always), reading(inside = 23.0), reading(inside = 23.0)).size)
         assertTrue(evaluate(listOf(always), reading(inside = 23.0), reading(inside = 23.0)).isEmpty())
     }
+
+    /** 금요일 23:58 예약을 토요일 00:02에 처리해도 요일 조건은 예약한 금요일로 판정한다. */
+    @Test
+    fun `자정을 넘겨 처리한 예약은 요일 조건도 예약 요일로 판정한다`() {
+        fun scheduled(day: Int) = rule(
+            triggers = listOf(Trigger.AtTime(23 * 60 + 58)),
+            conditions = listOf(Condition.OnDays(setOf(day))),
+        )
+        val previous = reading(minutesOfDay = 23 * 60 + 57, dayOfWeek = 5, epochMillis = defaultNow)
+        val current = reading(minutesOfDay = 2, dayOfWeek = 6, epochMillis = defaultNow + 5 * 60_000L)
+        assertEquals(1, evaluate(listOf(scheduled(5)), previous, current).size)
+        assertTrue(evaluate(listOf(scheduled(6)), previous, current).isEmpty())
+    }
 }

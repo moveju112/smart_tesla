@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -111,5 +113,39 @@ class RuleStoreFoldersTest {
         file.writeText(saved)
         restarted.load()
         assertEquals(original.rules.value, restarted.rules.value)
+    }
+
+    /** 이 버전이 모르는 매크로 하나가 앱 시작을 막지 않고, 다시 읽히면 목록에 되돌아온다. */
+    @Test fun `unknown macro is quarantined and recovered later`() = runBlocking {
+        val first = store()
+        first.load()
+        val count = first.rules.value.size
+        val file = java.io.File(temporary.root, "macros.json")
+        val parsed = kotlinx.serialization.json.Json.parseToJsonElement(file.readText()).jsonArray
+        val template = parsed.first().jsonObject
+        val future = kotlinx.serialization.json.JsonObject(template + mapOf(
+            "id" to kotlinx.serialization.json.JsonPrimitive("future-1"),
+            "actions" to kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.buildJsonObject { put("type", kotlinx.serialization.json.JsonPrimitive("future.Action")) })
+            },
+        ))
+        file.writeText(kotlinx.serialization.json.JsonArray(parsed + future).toString())
+
+        val older = store()
+        older.load()
+        assertEquals(count, older.rules.value.size)
+        assertFalse(older.rules.value.any { it.id == "future-1" })
+        val rejected = java.io.File(temporary.root, "macros.rejected.json")
+        assertTrue(rejected.exists())
+
+        // 새 버전이 읽을 수 있게 된 상황을 같은 원문의 읽히는 매크로로 재현한다
+        val readable = kotlinx.serialization.json.JsonObject(template + mapOf("id" to kotlinx.serialization.json.JsonPrimitive("future-1")))
+        rejected.writeText(kotlinx.serialization.json.JsonArray(listOf(readable)).toString())
+        // 구버전에서 다른 매크로를 저장해 본 파일에서는 빠진 상태다
+        file.writeText(parsed.toString())
+        val newer = store()
+        newer.load()
+        assertTrue(newer.rules.value.any { it.id == "future-1" })
+        assertFalse(rejected.exists())
     }
 }

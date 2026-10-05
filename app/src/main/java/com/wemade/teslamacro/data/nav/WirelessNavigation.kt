@@ -163,19 +163,35 @@ class WirelessNavigation(private val context: Context) {
     /** 명령 직전 꺼진 디버깅을 복구하고 권한이 없으면 설정 안내로 돌린다. */
     @Synchronized
     private fun enableWirelessDebugging() {
+        // 사용자가 이미 켠 디버깅(PC 연결·다른 앱)은 앱 소유가 아니다 — 소유 표시 없이 그대로 쓴다
         if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1) return
         check(context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED) { WIRELESS_DEBUGGING_REQUIRED }
         check(Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1) &&
             Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1) { WIRELESS_DEBUGGING_REQUIRED }
+        preferences.edit().putBoolean(OWNS_WIRELESS_DEBUGGING, true).apply()
+    }
+
+    // 연결 설정 시작 (꺼진 디버깅 -> 앱이 켜게 한 것으로 소유 표시)
+    // 페어링은 사용자가 설정 화면에서 직접 켜지만 앱의 안내로 켠 것이라 끝나면 앱이 닫는다
+    internal fun claimWirelessDebuggingForPairing() {
+        if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) {
+            preferences.edit().putBoolean(OWNS_WIRELESS_DEBUGGING, true).apply()
+        }
     }
 
     /** 탑승·재연결 유예·실행 중에는 유지하고 하차 후 명령 정리까지 끝나면 닫는다. */
     @Synchronized
     internal fun closeWirelessDebugging() {
         if (keepWirelessDebugging || navigationSessionActive || destinationCommands.get() > 0) return
-        if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) return
+        // 앱이 켜지 않은 디버깅은 끄지 않는다 — Shizuku·PC 무선 adb 연결을 매 Wi-Fi 접속마다 끊어 버린다
+        if (!preferences.getBoolean(OWNS_WIRELESS_DEBUGGING, false)) return
+        if (Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) {
+            preferences.edit().remove(OWNS_WIRELESS_DEBUGGING).apply()
+            return
+        }
         if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) return
         runCatching { check(Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 0)) }
+            .onSuccess { preferences.edit().remove(OWNS_WIRELESS_DEBUGGING).apply() }
             .onFailure { DiagLog.add("네이버 안심주행 · 무선 디버깅 종료 실패 ${it.javaClass.simpleName}") }
     }
 
@@ -448,6 +464,8 @@ class WirelessNavigation(private val context: Context) {
     }
 
     companion object {
+        /** 앱이 무선 디버깅을 켰는지. 사용자가 켜 둔 디버깅은 앱이 닫지 않는다 */
+        private const val OWNS_WIRELESS_DEBUGGING = "owns_adb_wifi"
         private const val USB_DEBUGGING_REQUIRED = "USB 디버깅을 켜고 연결 준비를 다시 눌러 주세요"
         private const val WIRELESS_DEBUGGING_REQUIRED = "Wi-Fi 연결과 무선 디버깅 권한을 확인한 뒤 연결 설정을 눌러 주세요"
         /** 포트 범위와 숫자 형식을 검증해 명령이나 원격 주소 입력을 차단한다. */

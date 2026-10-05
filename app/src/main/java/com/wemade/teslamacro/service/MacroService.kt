@@ -682,6 +682,7 @@ class MacroService : LifecycleService() {
             beforeDispatch()
             if (rule != null) {
                 // 빅스비 실행은 목록의 "지금 실행"과 같다. 자동 조건은 다시 검사하지 않는다.
+                app.container.poller.holdConnectionWhileMacroRuns(rule.id, app.container.appScope)
                 app.container.runner.launch(
                     rule,
                     System.currentTimeMillis(),
@@ -843,6 +844,9 @@ class MacroService : LifecycleService() {
             it.wirelessNavigation.serviceStopped()
             it.poller.stop()
             it.stealthCharge.stop()
+            // 폴러가 멈추면 연결 보호 판정도 멈춘다 — 인증된 GATT를 남겨 두면 휴대폰 키 간섭 방지가 무력해진다
+            val gateway = it.gateway
+            it.appScope.launch { runCatching { gateway.disconnect() } }
         }
         super.onDestroy()
     }

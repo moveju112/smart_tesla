@@ -23,6 +23,9 @@ import java.security.SecureRandom
 /** 프로토콜 계층에서 나는 오류 */
 class TeslaProtocolException(message: String) : Exception(message)
 
+/** 세션을 세우지 못해 명령 본문을 차량에 보내지 않았다. 실행됐을 가능성이 없어 다시 보내도 중복이 아니다 */
+class CommandNotSentException(message: String, cause: Throwable) : Exception(message, cause)
+
 /**
  * 차량이 "응답이 너무 크다"고 돌려보냈다.
  *
@@ -131,7 +134,16 @@ class TeslaClient(
         quiet: Boolean = false,
     ): ByteArray = requestLock.withLock {
         val session = session(domain)
-        if (!session.isEstablished) handshake(domain, session)
+        if (!session.isEstablished) {
+            // 본문 전송 전의 실패다 — 호출부가 비멱등 명령도 깨운 뒤 다시 보낼 수 있게 따로 알린다
+            try {
+                handshake(domain, session)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                throw CommandNotSentException(failure.message ?: "세션을 세우지 못했다", failure)
+            }
+        }
 
         return@withLock try {
             transmit(domain, session, payload, quiet)

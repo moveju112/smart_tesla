@@ -1032,6 +1032,27 @@ private fun VehiclePanel(
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
 ) {
+    // 해제는 VIN·카드키 등록·저장 주소를 한 번에 지운다 — 한 번의 오탭으로 재등록부터 다시 하지 않게 묻는다
+    var confirmUnpair by rememberSaveable { mutableStateOf(false) }
+    if (confirmUnpair) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmUnpair = false },
+            title = { Text("차량 등록을 해제할까요?") },
+            text = { Text("다시 쓰려면 차량에서 카드키로 키 등록을 다시 해야 해요.") },
+            confirmButton = {
+                TButton("해제", ButtonTone.Danger, fillWidth = false, small = true) {
+                    confirmUnpair = false
+                    onUnpair()
+                }
+            },
+            dismissButton = {
+                TButton("취소", ButtonTone.Ghost, fillWidth = false, small = true) { confirmUnpair = false }
+            },
+            containerColor = T.Carbon,
+            titleContentColor = T.Ink,
+            textContentColor = T.InkMuted,
+        )
+    }
     TCard {
         SettingActionRow("차량 등록") {
             if (settings.isPaired) {
@@ -1040,7 +1061,7 @@ private fun VehiclePanel(
                     if (!settings.isEnrolled) {
                         TButton("등록 계속", fillWidth = false, onClick = onStartPairing)
                     }
-                    TButton("해제", ButtonTone.Danger, fillWidth = false, onClick = onUnpair)
+                    TButton("해제", ButtonTone.Danger, fillWidth = false) { confirmUnpair = true }
                 }
             } else {
                 TButton("등록", fillWidth = false, onClick = onStartPairing)
@@ -1163,7 +1184,7 @@ private fun settingsDump(settings: AppSettings): String = buildString {
         "기기 사용 모드=${settings.deviceMode.label}" +
             " · 휴대폰 키 간섭 방지=${settings.protectPhoneKey}" +
             " · 스텔스 충전 1회=${settings.stealthCharging}" +
-            "(시작=${settings.stealthChargeStarted}, 변경=${settings.stealthChargeModified})" +
+            "(시작=${settings.stealthChargeStarted}, 변경=${settings.stealthChargeModified}, 원복대기=${settings.stealthChargeRestorePending})" +
             " · 시간대=${settings.stealthScheduleEnabled}($stealthWindow)",
     )
     append(

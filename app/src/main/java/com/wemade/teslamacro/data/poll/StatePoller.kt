@@ -678,6 +678,21 @@ class StatePoller(
         nudge()
     }
 
+    // 사용자가 직접 부른 매크로의 연결 유지 (실행 시작 -> 종료까지 사용권)
+    // 휴대 모드는 자동 매크로를 연결 사유로 쓰지 않는다. 빅스비·지금 실행은 단발 명령처럼 끝날 때까지 붙잡아
+    // "창문 열기 → 대기 → 닫기"의 뒤 단계가 보호 해제로 끊기지 않게 한다
+    fun holdConnectionWhileMacroRuns(ruleId: String, scope: CoroutineScope, startWaitMillis: Long = 2_000L) {
+        beginCommandConnection()
+        scope.launch {
+            try {
+                withTimeoutOrNull(startWaitMillis) { runner.running.first { ruleId in it } }
+                runner.running.first { ruleId !in it }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { endCommandConnection() }
+            }
+        }
+    }
+
     /** 단발 명령이 끝나면 남은 사용자가 없는 연결을 정리한다. */
     suspend fun endCommandConnection() {
         commandConnections.updateAndGet { count -> (count - 1).coerceAtLeast(0) }
@@ -952,7 +967,7 @@ class StatePoller(
             .filter { it.enabled }
             .flatMap { it.requiredCategories }
         )
-        if (settings.stealthCharging || settings.stealthChargeModified) add(StateCategory.CHARGE)
+        if (settings.stealthCharging || settings.stealthChargeNeedsRestore) add(StateCategory.CHARGE)
         if (isEmpty()) add(StateCategory.BODY_CONTROLLER)
     }
 

@@ -8,6 +8,7 @@ import com.wemade.teslamacro.data.macro.MacroShortcutPublisher
 import com.wemade.teslamacro.data.macro.RuleStore
 import com.wemade.teslamacro.data.poll.StatePoller
 import com.wemade.teslamacro.data.settings.SettingsStore
+import com.wemade.teslamacro.domain.command.confirmCategory
 import com.wemade.teslamacro.domain.macro.MacroRunner
 import com.wemade.teslamacro.domain.macro.Reading
 import kotlinx.coroutines.CoroutineScope
@@ -153,7 +154,13 @@ class AppContainer(private val context: Context) {
             initial = if (settings.isPaired) BleVehicleGateway(context, settingsStore, appScope)
             else SimulatedVehicleGateway(),
             scope = appScope,
-            onCommandConfirmed = commandFeedback::confirmed,
+            // 명령이 받아들여지면 결과 카테고리를 곧바로 다시 읽는다 — 매크로 결과가 다음 정기 주기(최대 120초)까지 밀리지 않게
+            onCommandConfirmed = { command ->
+                commandFeedback.confirmed(command)
+                if (this::poller.isInitialized) {
+                    poller.focusOn(command.confirmCategory())
+                }
+            },
         )
 
         // 어느 내비로 보낼지는 실행 순간의 설정을 따른다 — 컨테이너 조립 시점에 굳히면

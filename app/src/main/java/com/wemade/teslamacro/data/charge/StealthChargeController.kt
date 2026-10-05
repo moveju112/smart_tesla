@@ -77,7 +77,7 @@ class StealthChargeController(
             stealthChargeAction(
                 enabled = gate.enabled,
                 started = settings.stealthChargeStarted,
-                modified = settings.stealthChargeModified,
+                modified = settings.stealthChargeNeedsRestore,
                 linked = gate.linked,
                 isCharging = gate.isCharging,
             )
@@ -139,14 +139,16 @@ class StealthChargeController(
                 )
                 if (!inWindow) {
                     _runtime.value = StealthChargeRuntime()
-                    if (settings.stealthChargeModified) {
+                    if (settings.stealthChargeNeedsRestore) {
                         val restored = restoreOriginalAmps(settings)
-                        settingsStore.setStealthChargeModified(false)
                         if (restored) {
+                            settingsStore.markStealthRestored()
                             current = settings.stealthChargeOriginalAmps ?: current
                         } else {
+                            // 연결은 놓되 원래 전류는 기억해 다음 연결·완료·해제 때 다시 되돌린다
+                            settingsStore.markStealthRestorePending()
                             com.wemade.teslable.DiagLog.add(
-                                "스텔스 충전 시간대 종료 원복 실패 — 휴대폰 키 보호 정책부터 복귀"
+                                "스텔스 충전 시간대 종료 원복 실패 — 휴대폰 키 보호 정책부터 복귀, 다음 연결 때 재시도"
                             )
                         }
                     }
@@ -189,6 +191,8 @@ class StealthChargeController(
                     ?: StealthChargePlan.autoMinAmps(MIN_AMPS, maxAmps)
                 val step = StealthChargePlan.next(minAmps, maxAmps)
                 _runtime.value = StealthChargeRuntime(running = true)
+                // 응답만 유실돼도 차에는 바뀐 값이 들어갔을 수 있다 — 보내기 전에 원복 필요로 표시한다
+                if (step.amps != settings.stealthChargeOriginalAmps) settingsStore.setStealthChargeModified(true)
                 val sent = sendWithRetry(step.amps)
                 stepCount++
                 if (sent.isSuccess) {
@@ -229,14 +233,20 @@ class StealthChargeController(
 
     /** 원래 전류 복구를 시도한 뒤 결과와 무관하게 1회 상태를 닫고 보호 정책을 되살린다. */
     private suspend fun restoreAndClose(settings: AppSettings, reason: String) {
-        val restored = !settings.stealthChargeModified || restoreOriginalAmps(settings)
+        val restored = !settings.stealthChargeNeedsRestore || restoreOriginalAmps(settings)
         if (!restored) {
             com.wemade.teslable.DiagLog.add(
                 "스텔스 충전 원래 전류 복구 실패 — 휴대폰 키 보호 정책부터 복귀"
             )
         }
         withContext(NonCancellable) {
-            settingsStore.completeStealthCharge()
+            if (restored) {
+                settingsStore.completeStealthCharge()
+            } else {
+                // 1회 실행은 끝내되 원래 전류는 남겨 다음 연결 때 "사용자 해제" 경로로 다시 되돌린다
+                settingsStore.setStealthCharging(false)
+                settingsStore.markStealthRestorePending()
+            }
             com.wemade.teslable.DiagLog.add("스텔스 충전 1회 종료 — $reason · 연결 보호 정책 복귀")
             poller.enforceConnectionGuard()
         }

@@ -113,7 +113,9 @@ class MacroEngine {
             }
 
             // 어떤 조건이 막았는지 알려준다 — 진단 로그 없이는 "왜 안 터졌는지" 알 길이 없다
-            val unmet = rule.conditions.filter { !holds(it, current) }
+            // 자정을 넘겨 늦게 처리한 시각 예약은 요일·시간대 조건도 예약 시각 기준으로 본다
+            val conditionReading = scheduledTime(firedTriggers, current)?.let { current.copy(time = it) } ?: current
+            val unmet = rule.conditions.filter { !holds(it, conditionReading) }
             if (unmet.isNotEmpty()) {
                 // 위치·예보 미확인만 잠시 기다린다. 범위 밖·시간·기어 등 실제 불충족은 소급하지 않는다.
                 val missingContextOnly = unmet.all {
@@ -227,6 +229,18 @@ class MacroEngine {
     }
 
     /** 조건은 "지금 그런 상태인가요"만 본다. 대기 해제와 같은 규칙을 쓴다 */
+    // 늦게 처리한 시각 예약의 기준 시각 (예약 분 -> 그 분의 요일·시각)
+    // 시각 예약으로만 발동했을 때만 쓴다. 문 열림 등 다른 트리거는 지금 시각이 기준이다
+    private fun scheduledTime(firedTriggers: List<Trigger>, current: Reading): TimeContext? {
+        if (firedTriggers.isEmpty() || firedTriggers.any { it !is Trigger.AtTime }) return null
+        val scheduled = (firedTriggers.first() as Trigger.AtTime).minutesOfDay
+        val now = current.time.minutesOfDay
+        if (scheduled == now) return null
+        val back = ((now - scheduled) + MINUTES_PER_DAY) % MINUTES_PER_DAY
+        val day = if (scheduled > now) ((current.time.dayOfWeek + 5) % 7) + 1 else current.time.dayOfWeek
+        return TimeContext(current.time.epochMillis - back * 60_000L, scheduled, day)
+    }
+
     private fun holds(condition: Condition, current: Reading): Boolean =
         ConditionEvaluator.holds(condition, current)
 

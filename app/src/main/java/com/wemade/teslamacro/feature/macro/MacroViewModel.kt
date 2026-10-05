@@ -3,12 +3,16 @@ package com.wemade.teslamacro.feature.macro
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wemade.teslamacro.di.AppContainer
+import com.wemade.teslamacro.domain.gateway.LinkState
+import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.MacroRule
 import com.wemade.teslamacro.feature.macro.edit.MacroDraft
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -68,9 +72,22 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 조건과 무관하게 즉시 실행 (매크로 동작을 눈으로 확인할 때) */
     fun runNow(rule: MacroRule) {
-        // 수동 실행은 기존 실행을 끊고 처음부터 + 쿨다운 기록 (직후 트리거 재발동 방지)
-        container.runner.launch(rule, System.currentTimeMillis(), restartIfRunning = true,
-            onAccepted = { container.poller.recordFired(rule.id) })
+        val needsVehicle = rule.actions.any { it is ActionStep.Run }
+        // 직접 실행은 끝날 때까지 연결 사용권을 쥔다 — 연결 대기 시간만큼 시작 대기를 늘린다
+        if (needsVehicle) {
+            container.poller.holdConnectionWhileMacroRuns(rule.id, container.appScope, RUN_NOW_CONNECT_WAIT_MILLIS + 2_000L)
+        }
+        viewModelScope.launch {
+            // 연결 보호로 끊긴 상태에서 바로 보내면 모든 단계가 즉시 실패한다 — 폴러가 다시 붙을 때까지 잠깐 기다린다
+            if (needsVehicle && container.settingsStore.settings.first().isReady) {
+                withTimeoutOrNull(RUN_NOW_CONNECT_WAIT_MILLIS) {
+                    container.gateway.linkState.first { it is LinkState.Ready }
+                }
+            }
+            // 수동 실행은 기존 실행을 끊고 처음부터 + 쿨다운 기록 (직후 트리거 재발동 방지)
+            container.runner.launch(rule, System.currentTimeMillis(), restartIfRunning = true,
+                onAccepted = { container.poller.recordFired(rule.id) })
+        }
     }
 
     fun stopAll() = container.runner.cancelAll()
@@ -168,7 +185,14 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
         _draft.value = MacroDraft.from(rule).copy(
             id = "macro-${java.util.UUID.randomUUID()}",
             name = "${rule.name} 복사본",
+            // 같은 트리거로 원본과 함께 두 번 실행되지 않게 자동 실행은 꺼 둔다. 편집 화면에서 켤 수 있다
+            enabled = false,
             isNew = true,
         )
+    }
+
+    private companion object {
+        // 저장 주소 직행 연결이 보통 이 안에 끝난다. 더 기다리면 누른 뒤 반응이 없어 보인다
+        const val RUN_NOW_CONNECT_WAIT_MILLIS = 15_000L
     }
 }

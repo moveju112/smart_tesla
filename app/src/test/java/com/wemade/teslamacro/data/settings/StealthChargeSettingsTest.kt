@@ -200,4 +200,38 @@ class StealthChargeSettingsTest {
                 .settings.first().stealthMinAmps,
         )
     }
+
+    /** 원복이 실패해 연결을 놓아도 원래 전류를 지켜 해제·재활성·완료 때 다시 되돌린다. */
+    @Test
+    fun `원복 실패 표식은 해제 뒤에도 원래 전류를 지킨다`() = runTest {
+        val preferences = PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            File(temporaryFolder.root, "stealth-charge-pending.preferences_pb")
+        }
+        val store = SettingsStore(ContextWrapper(paparazzi.context), preferences)
+        store.setStealthCharging(true)
+        store.beginStealthCharge(32)
+        store.setStealthChargeModified(true)
+        store.markStealthRestorePending()
+        store.setStealthCharging(false)
+
+        val pending = store.settings.first()
+        assertFalse(pending.stealthChargeModified)
+        assertTrue(pending.stealthChargeRestorePending)
+        assertTrue(pending.stealthChargeNeedsRestore)
+        assertEquals(32, pending.stealthChargeOriginalAmps)
+        assertEquals(
+            StealthChargeAction.RESTORE_DISABLED,
+            stealthChargeAction(false, pending.stealthChargeStarted, pending.stealthChargeNeedsRestore, true, false),
+        )
+
+        store.restore(BackupSettings())
+        assertEquals(32, store.settings.first().stealthChargeOriginalAmps)
+
+        store.markStealthRestored()
+        assertFalse(store.settings.first().stealthChargeNeedsRestore)
+        store.completeStealthCharge()
+        val done = store.settings.first()
+        assertFalse(done.stealthChargeRestorePending)
+        assertNull(done.stealthChargeOriginalAmps)
+    }
 }

@@ -268,6 +268,37 @@ class PortableBoardingPollTest {
         fixture.poller.stop()
     }
 
+    /** 휴대 모드에서 직접 부른 매크로는 대기 단계 사이에 연결 보호로 끊기지 않고 끝나면 놓는다. */
+    @Test
+    fun `직접 실행 매크로는 끝날 때까지 휴대 모드 연결을 유지한다`() = runTest {
+        val fixture = fixture(autoStart = false)
+        val rule = MacroRule(
+            id = "portable-manual-run", name = "창문 열고 닫기",
+            triggers = listOf(Trigger.Manual),
+            actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn), ActionStep.Wait(60),
+                ActionStep.Run(VehicleCommand.ClimateOff)),
+        )
+        fixture.poller.setAppVisible(true)
+        fixture.start()
+        runCurrent()
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+        fixture.poller.setAppVisible(false)
+
+        fixture.poller.holdConnectionWhileMacroRuns(rule.id, backgroundScope)
+        fixture.runner.launch(rule, 0L)
+        runCurrent()
+        advanceTimeBy(30_000)
+        runCurrent()
+        fixture.poller.enforceConnectionGuard()
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+
+        advanceTimeBy(40_000)
+        runCurrent()
+        assertEquals(listOf(VehicleCommand.ClimateOn, VehicleCommand.ClimateOff), fixture.gateway.commands)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
     @Test
     fun `앱 화면과 직접 명령은 안심운전 전용 제한 없이 기존 조회를 유지한다`() = runTest {
         val fixture = fixture()
@@ -667,11 +698,12 @@ class PortableBoardingPollTest {
         var forecastReads = 0
         var forecastResult: com.wemade.teslamacro.domain.macro.WeatherForecast? = null
         val reading = MutableStateFlow<Reading?>(null)
+        val runner = MacroRunner(gateway, scope.backgroundScope, reading)
         val poller = StatePoller(
             gateway = gateway,
             ruleStore = rules,
             settingsStore = settings,
-            runner = MacroRunner(gateway, scope.backgroundScope, reading),
+            runner = runner,
             latestReading = reading,
             now = { epoch + scope.testScheduler.currentTime },
             locationReader = {

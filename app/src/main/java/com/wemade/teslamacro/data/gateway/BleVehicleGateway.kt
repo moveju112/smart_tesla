@@ -369,6 +369,7 @@ class BleVehicleGateway(
                     active = active,
                     command = VehicleCommand.Wake,
                     action = request.toByteArray(),
+                    retryUntilDeadline = true,
                 )
                 SnapshotDecoder.fromVehicleData(response, System.currentTimeMillis()).shiftState
             }.onFailure {
@@ -432,12 +433,17 @@ class BleVehicleGateway(
         active: TeslaClient,
         command: VehicleCommand,
         action: ByteArray,
+        /** 보닛 P단 조회만 요청 수명 동안 계속 확인한다. 다른 바로가기 수명은 기존대로다 (BLE_RULES 0.9.34) */
+        retryUntilDeadline: Boolean = false,
     ): ByteArray {
         // 1. 평소 경로 — 차가 깨어 있으면 여기서 끝난다
-        firstAttempt(active, action)?.let { return it }
+        val first = attempt(active, action)
+        first.getOrNull()?.let { return it }
 
-        // 2. 재시도는 멱등 명령만. 응답만 유실됐을 수도 있어 트렁크를 두 번 열면 안 된다
-        if (!command.isIdempotent()) {
+        // 2. 재시도는 멱등 명령만. 응답만 유실됐을 수도 있어 트렁크를 두 번 열면 안 된다.
+        //    단 세션을 못 세워 아예 보내지 못했다면 실행됐을 리 없다 — 잠든 차를 깨워 다시 보낸다
+        val idempotent = command.isIdempotent()
+        if (!idempotent && first.exceptionOrNull() !is com.wemade.teslable.CommandNotSentException) {
             throw IllegalStateException("차가 응답하지 않았어요 — 실행됐는지 몰라 다시 보내지 않았어요")
         }
 
@@ -452,31 +458,38 @@ class BleVehicleGateway(
         // 4. 깨는 데 걸리는 시간은 차 상태마다 다르다. 짧게 시작해 늘려 잡는다
         WAKE_RETRY_DELAYS_MS.forEach { waitMillis ->
             delay(waitMillis)
-            firstAttempt(active, action)?.let { return it }
+            val retry = attempt(active, action)
+            retry.getOrNull()?.let { return it }
+            // 멱등이 아닌 명령은 실제로 보냈을 수 있는 실패 뒤에는 더 보내지 않는다
+            if (!idempotent && retry.exceptionOrNull() !is com.wemade.teslable.CommandNotSentException) {
+                throw IllegalStateException("차가 응답하지 않았어요 — 실행됐는지 몰라 다시 보내지 않았어요")
+            }
         }
         // 보닛의 P단 조회는 읽기이므로 요청 수명이 남아 있으면 계속 확인한다.
         // 실제 개방 명령은 이 경로 밖에서 한 번만 전송한다.
         val deadline = kotlin.coroutines.coroutineContext[com.wemade.teslable.CommandDeadline]
+            ?.takeIf { retryUntilDeadline }
         while (deadline != null) {
             com.wemade.teslable.ensureCommandActive()
             delay(2_000L)
             // 기다리는 사이 재연결로 새 클라이언트가 생기면 옛 클라이언트로 보내지 않는다 —
             // 같은 링크에 requestLock이 둘이 되어 요청이 병렬로 섞인다
             if (client !== active) throw IllegalStateException("차량 연결이 바뀌어 다시 보내지 않았어요")
-            firstAttempt(active, action)?.let { return it }
+            attempt(active, action).getOrNull()?.let { return it }
         }
         throw IllegalStateException("차량이 깨어나지 않았어요")
     }
 
-    /** 한 번 보내보고 응답을 돌려준다. 실패면 null — 취소만은 그대로 올린다 */
-    private suspend fun firstAttempt(active: TeslaClient, action: ByteArray): ByteArray? =
+    // 인포테인먼트 1회 전송 (요청 -> 응답 또는 실패 원인)
+    // 실패 원인을 남겨야 "보내지도 못함"과 "보냈지만 응답 없음"을 가려 중복 전송을 막는다
+    private suspend fun attempt(active: TeslaClient, action: ByteArray): Result<ByteArray> =
         try {
-            active.sendToInfotainment(action)
+            Result.success(active.sendToInfotainment(action))
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (failure: Throwable) {
             com.wemade.teslable.DiagLog.add("인포테인먼트 무응답 — ${failure.message}")
-            null
+            Result.failure(failure)
         }
 
     private fun checkInfotainmentResult(command: VehicleCommand, responseBytes: ByteArray) {

@@ -109,6 +109,8 @@ data class AppSettings(
     val stealthChargeOriginalAmps: Int? = null,
     /** 마지막 전류 명령이 원래 값과 다른지. 원복이 필요한 세션만 연결을 잠시 유지한다. */
     val stealthChargeModified: Boolean = false,
+    /** 원복 명령이 실패해 원래 전류로 돌아가지 못했다. 연결은 붙잡지 않고 다음 연결 때 다시 되돌린다. */
+    val stealthChargeRestorePending: Boolean = false,
     /** 스텔스 충전이 넘지 않을 사용자 지정 전류 상한. 차량 상한이 더 낮으면 차량값을 따른다. */
     val stealthMaxAmps: Int = 48,
     /** 사용자가 직접 정한 전류 하한. null이면 상한의 75% 자동 하한을 쓴다. */
@@ -153,6 +155,9 @@ data class AppSettings(
 
     /** 등록 절차를 끝냈는가 (본 화면으로 넘어가도 되는가) */
     val isReady: Boolean get() = isPaired && isEnrolled
+
+    /** 바꾼 전류가 있거나 이전 원복이 실패해 원래 전류로 되돌려야 하는지 */
+    val stealthChargeNeedsRestore: Boolean get() = stealthChargeModified || stealthChargeRestorePending
 }
 
 class SettingsStore(
@@ -194,6 +199,7 @@ class SettingsStore(
             stealthChargeStarted = prefs[KeyStealthChargeStarted] ?: false,
             stealthChargeOriginalAmps = prefs[KeyStealthChargeOriginalAmps],
             stealthChargeModified = prefs[KeyStealthChargeModified] ?: false,
+            stealthChargeRestorePending = prefs[KeyStealthChargeRestorePending] ?: false,
             stealthMaxAmps = (prefs[KeyStealthMaxAmps] ?: 48).coerceIn(5, 48),
             stealthMinAmps = prefs[KeyStealthMinAmps]?.coerceIn(5, 48),
             stealthScheduleEnabled = prefs[KeyStealthScheduleEnabled] ?: false,
@@ -242,6 +248,10 @@ class SettingsStore(
     }
 
     /** 동일 차량은 승인을 유지하고 차량 변경 때만 식별자에 종속된 상태를 비운다. */
+    // 원복 필요 판정 (저장 표식 -> 진행 상태 보존 여부)
+    private fun needsStealthRestore(prefs: androidx.datastore.preferences.core.MutablePreferences): Boolean =
+        prefs[KeyStealthChargeModified] == true || prefs[KeyStealthChargeRestorePending] == true
+
     private fun setVinInPreferences(prefs: androidx.datastore.preferences.core.MutablePreferences, vin: String) {
         if (prefs[KeyVin] != vin) {
             prefs.remove(KeyEnrolled)
@@ -255,6 +265,7 @@ class SettingsStore(
             prefs.remove(KeyStealthChargeStarted)
             prefs.remove(KeyStealthChargeOriginalAmps)
             prefs.remove(KeyStealthChargeModified)
+            prefs.remove(KeyStealthChargeRestorePending)
         }
         prefs[KeyVin] = vin
     }
@@ -311,12 +322,12 @@ class SettingsStore(
         it[KeyStealthCharging] = enabled
         if (enabled) {
             // 끈 직후 다시 켜도 아직 원복하지 못한 실제 차량 전류의 기준은 보존한다.
-            if (!alreadyOn && it[KeyStealthChargeModified] != true) {
+            if (!alreadyOn && !needsStealthRestore(it)) {
                 it.remove(KeyStealthChargeStarted)
                 it.remove(KeyStealthChargeOriginalAmps)
                 it.remove(KeyStealthChargeModified)
             }
-        } else if (it[KeyStealthChargeModified] != true) {
+        } else if (!needsStealthRestore(it)) {
             // 전류를 바꾸지 않았다면 연결해서 되돌릴 것도 없다. 내부 진행 상태를 바로 비운다.
             it.remove(KeyStealthChargeStarted)
             it.remove(KeyStealthChargeOriginalAmps)
@@ -338,12 +349,26 @@ class SettingsStore(
         it[KeyStealthChargeModified] = modified
     }
 
+    // 원복 실패 기록 (원복 실패 -> 연결 보호 복귀 + 다음 연결 때 재원복)
+    // 바꿈 표식을 그냥 지우면 완료·해제 때 원복을 건너뛰고 원래 전류까지 지워 낮은 전류에 영구히 남는다
+    suspend fun markStealthRestorePending() = edit {
+        it[KeyStealthChargeModified] = false
+        it[KeyStealthChargeRestorePending] = true
+    }
+
+    // 원복 성공 기록 (원래 전류 복귀 -> 바꿈·원복 대기 표식 해제)
+    suspend fun markStealthRestored() = edit {
+        it[KeyStealthChargeModified] = false
+        it.remove(KeyStealthChargeRestorePending)
+    }
+
     /** 충전 완료나 수동 해제 뒤 1회 설정과 내부 복구 상태를 함께 비운다. */
     suspend fun completeStealthCharge() = edit {
         it[KeyStealthCharging] = false
         it.remove(KeyStealthChargeStarted)
         it.remove(KeyStealthChargeOriginalAmps)
         it.remove(KeyStealthChargeModified)
+        it.remove(KeyStealthChargeRestorePending)
     }
 
     /** 차량 상한보다 높은 값도 안전하게 저장 범위에서 제한하고 실제 실행 때 다시 차량값과 비교한다. */
@@ -444,7 +469,7 @@ class SettingsStore(
         // 1회 실행은 다른 기기에 복원하지 않는다. 시간대 취향만 이 설치본에 남는다.
         it[KeyStealthCharging] = false
         // 이 기기에서 이미 바꾼 전류는 수동 해제처럼 원복한 뒤 진행 상태를 지운다.
-        if (it[KeyStealthChargeModified] != true) {
+        if (!needsStealthRestore(it)) {
             it.remove(KeyStealthChargeStarted)
             it.remove(KeyStealthChargeOriginalAmps)
             it.remove(KeyStealthChargeModified)
@@ -573,6 +598,7 @@ class SettingsStore(
         val KeyStealthChargeStarted = booleanPreferencesKey("stealth_charge_started")
         val KeyStealthChargeOriginalAmps = intPreferencesKey("stealth_charge_original_amps")
         val KeyStealthChargeModified = booleanPreferencesKey("stealth_charge_modified")
+        val KeyStealthChargeRestorePending = booleanPreferencesKey("stealth_charge_restore_pending")
         val KeyStealthMaxAmps = intPreferencesKey("stealth_max_amps")
         val KeyStealthMinAmps = intPreferencesKey("stealth_min_amps")
         val KeyStealthScheduleEnabled = booleanPreferencesKey("stealth_schedule_enabled")

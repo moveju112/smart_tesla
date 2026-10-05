@@ -20,7 +20,7 @@ internal object NavigationSetup {
         NOTIFICATIONS("앱 알림을 허용해 주세요"),
         CHANNEL("‘네이버 안심주행 연결’ 알림을 허용해 주세요"),
         PAIR("무선 디버깅 → 페어링 코드로 기기 페어링 → 알림에 코드 6자리 입력"),
-        READY("연결 준비 완료 · Wi-Fi 없이 실행할 수 있어요"),
+        READY("연결 준비 완료"),
     }
 
     data class State(val developer: Boolean, val usb: Boolean, val wifi: Boolean, val notifications: Boolean, val channel: Boolean) {

@@ -193,8 +193,8 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     withTimeout(40_000) { navigation.state.first { it.prepared && !it.busy } }
                     return@runBlocking
                 }
-                // Wi-Fi·무선 디버깅을 끄고 연결 불가능한 포트로 바꿔 Binder 재사용을 확인한다.
-                check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) == 0)
+                // 무선 디버깅을 끈 뒤 불가능한 포트에서도 명령 전 활성화와 Binder 재사용을 확인한다.
+                check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) != 0)
                 check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
                 withContext(Dispatchers.Main) {
                     navigation.setPort("65534")
@@ -205,25 +205,64 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     navigation.vehicleChanged(true)
                 }
                 withTimeout(30_000) { navigation.state.first { it.running } }
+                check(wirelessDebuggingEnabled())
+                // 주행 중 설정이 꺼져도 다음 심박 명령 전에 다시 켠다.
+                shell("settings put global adb_wifi_enabled 0")
+                withTimeout(10_000) { while (!wirelessDebuggingEnabled()) delay(50) }
+                check(navigation.state.value.running)
+                withContext(Dispatchers.Main) { navigation.closeWirelessDebugging() }
+                check(wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.vehicleChanged(false) }
                 delay(1_000)
+                check(wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
                 check(navigation.state.value.running)
+                // 수동 종료 후에도 탑승 유지 설정은 디버깅을 끄지 않는다.
+                withContext(Dispatchers.Main) { navigation.stop() }
+                withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
+                check(wirelessDebuggingEnabled())
+                withContext(Dispatchers.Main) { navigation.start(false) }
+                withTimeout(20_000) { navigation.state.first { it.running } }
                 withContext(Dispatchers.Main) { navigation.vehicleChanged(false) }
                 withTimeout(50_000) { navigation.state.first { !it.running && !it.busy } }
                 check(navigation.state.value.message == "실험 종료 완료") { navigation.state.value.message }
+                check(!wirelessDebuggingEnabled())
                 repeat(2) {
                     withContext(Dispatchers.Main) { navigation.start(false) }
                     withTimeout(20_000) { navigation.state.first { it.running } }
+                    check(wirelessDebuggingEnabled())
+                    // 종료 명령도 디버깅이 꺼져 있으면 복구한 뒤 전송한다.
+                    shell("settings put global adb_wifi_enabled 0")
                     withContext(Dispatchers.Main) { navigation.stop() }
                     withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
                     check(navigation.state.value.message == "실험 종료 완료") { navigation.state.value.message }
+                    check(!wirelessDebuggingEnabled())
                 }
+                // 실행 작업 없이 탑승만 남은 상태도 자동 실행 해제 시 정리한다.
+                withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
+                withTimeout(20_000) { navigation.state.first { it.running } }
+                withContext(Dispatchers.Main) { navigation.stop() }
+                withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
+                check(wirelessDebuggingEnabled())
+                // 유예 중 수동 종료를 다시 눌러도 하차 정리 타이머는 유지한다.
+                withContext(Dispatchers.Main) {
+                    navigation.vehicleChanged(false)
+                    navigation.stop()
+                }
+                check(wirelessDebuggingEnabled())
+                withTimeout(35_000) { while (wirelessDebuggingEnabled()) delay(100) }
+                withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
+                withTimeout(20_000) { navigation.state.first { it.running } }
+                withContext(Dispatchers.Main) { navigation.stop() }
+                withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
+                check(wirelessDebuggingEnabled())
+                withContext(Dispatchers.Main) { navigation.setEnabled(false) }
+                check(!wirelessDebuggingEnabled())
             }
             result.putString("result", if (panelOnly) "PASS: prepared controls hidden, management and test sheets reachable, active stop, unprepared setup"
                 else if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
                 else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper, saved-auth reuse, debugging on-demand and off after success/failure/cancel"
-                else if (prepareOnly) "PASS: detached helper prepared" else "PASS: Wi-Fi and wireless debugging off, unusable ADB port, key persistence, reconnect grace, automatic stop, repeated start/stop")
+                else if (prepareOnly) "PASS: detached helper prepared" else "PASS: debugging enabled before commands, retained during ride and reconnect grace, heartbeat recovery, manual stop retention, departure and disable cleanup, repeated start/stop")
         } catch (error: Throwable) {
             status = Activity.RESULT_CANCELED
             result.putString("result", "FAIL: ${error.javaClass.simpleName}: ${error.message}; ${error.stackTrace.firstOrNull { it.className.contains("WirelessNavigationSmoke") }}")
@@ -234,6 +273,9 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         }
         finish(status, result)
     }
+    /** 설정 복구와 종료 시점을 실제 Android 설정값으로 검사한다. */
+    private fun wirelessDebuggingEnabled(): Boolean =
+        android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 1
     /** 연결 단계별 노출과 상세 시트 동작을 실제 패널에서 검사한다. */
     private suspend fun verifyPanel() {
         val panelState = androidx.compose.runtime.mutableStateOf(

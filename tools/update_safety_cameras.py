@@ -132,6 +132,7 @@ def apply_road_axes(cameras, axes_path):
 
 # 원자료 위치·속도·기준일·설치 방향이 그대로인 카메라에만 개별 검증한 지도 이름과 방향을 복원한다.
 def apply_verified_context(cameras, rows, context_path=VERIFIED_CONTEXT):
+    from camera_direction_context import validate_evidence
     verified = json.loads(Path(context_path).read_text(encoding="utf-8"))
     sources = {}
     for row in rows:
@@ -154,6 +155,16 @@ def apply_verified_context(cameras, rows, context_path=VERIFIED_CONTEXT):
         road_name = context["roadName"]
         if type(direction) is not int or not 0 <= direction < 360 or comparable_road_name(road_name) is None:
             raise ValueError("잘못된 카메라 검증 자료: " + camera["id"])
+        evidence = context.get("evidence", {})
+        if evidence.get("kind") == "cardinal-arrow":
+            # 자동 보강 자료는 원문과 연결 선분을 다시 계산해 숫자만 고친 근거가 통과하지 못하게 한다.
+            if set(fingerprint) != set(source) - {"id"} or \
+                    comparable_road_name(road_name) != comparable_road_name(source["roadName"]) or \
+                    camera.get("direction") not in (None, direction) or \
+                    validate_evidence(camera, installation, evidence) != direction:
+                raise ValueError("자동 단속 방향 근거 불일치: " + camera["id"])
+        elif evidence.get("kind") is not None:
+            raise ValueError("알 수 없는 단속 방향 근거: " + camera["id"])
         camera.update(roadName=road_name, direction=direction)
         applied += 1
     return applied

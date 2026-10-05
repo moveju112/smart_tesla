@@ -8,6 +8,20 @@ import org.junit.Test
 class CameraIndexTest {
     private val index = CameraIndex(listOf(OfflineCamera("test", 37.003, 127.0, 50)))
 
+    /** 원문 남→북과 지도 선분을 검증한 카메라는 북행을 안내하고 남행·다른 도로를 제외한다. */
+    @Test fun explicitCardinalBundleContextRejectsReverseTravel() {
+        val dataset = Json { ignoreUnknownKeys = true }.decodeFromString<CameraDataset>(
+            java.io.File("src/main/assets/safety_cameras.json").readText())
+        val camera = dataset.cameras.single { it.id == "1320000:H7586" }.copy(latitude = 37.0, longitude = 127.0)
+        val cameras = CameraIndex(listOf(camera))
+        assertEquals(camera.id, cameras.nearest(36.997, 127.0, 0.0, 55.0, 8.0)?.cameraId)
+        assertTrue(hasCameraAudioEvidence(camera.direction, camera.roadName, null))
+        assertNull(cameras.nearest(37.003, 127.0, 180.0, 55.0, 8.0))
+        assertNull(cameras.nearest(36.997, 127.0, 0.0, 55.0, 8.0, matchedRoadName = "다른로"))
+        // 원문이 없는 다른 카메라까지 도로 축을 방향으로 승격하지 않는다.
+        assertFalse(hasCameraAudioEvidence(null, camera.roadName, null))
+    }
+
     /** 검증한 번들 근거를 가상 위치로 옮겨 동행 안내·역방향 제외와 고속도로 소리 보류를 고정한다. */
     @Test fun verifiedBundleContextRestoresOnlySupportedDirection() {
         val dataset = Json { ignoreUnknownKeys = true }.decodeFromString<CameraDataset>(

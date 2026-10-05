@@ -20,5 +20,37 @@
       "cameraRoadGapMeters": 3.71,
       "reason": "원자료의 이의동→구성동 방향과 석성로 동행 선형을 대조. 도로 전체의 이름 동치가 아니라 이 카메라 위치에서만 적용."
     }
+  },
+  "1320000:H7586": {
+    "source": {
+      "latitude": 37.5198161,
+      "longitude": 126.7753492,
+      "speedLimitKph": 50,
+      "section": false,
+      "referenceDate": "2026-04-06",
+      "roadName": "신흥로"
+    },
+    "installation": "내동사거리(남→북)",
+    "roadName": "신흥로",
+    "direction": 0,
+    "evidence": {
+      "kind": "cardinal-arrow",
+      "shapeSnapshotSha256": "9391201975ac60b3fa1edf4baeb7dc63fb5180d4cbe5b8e5ed672d6150914ab5",
+      "osmWayId": 490069577,
+      "approachNodes": [
+        2318131566,
+        13751865134
+      ],
+      "coordinates": [
+        [
+          126.7753009,
+          37.5195228
+        ],
+        [
+          126.7752977,
+          37.5201313
+        ]
+      ]
+    }
   }
 }

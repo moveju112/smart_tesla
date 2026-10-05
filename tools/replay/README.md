@@ -105,3 +105,24 @@ SAFETY_REPLAY_TOKEN=$(grep '^roadMatchToken=' local.properties | cut -d= -f2-) \
 - `1320000:H3410` 고속도로 카메라는 교차하는 일반도로 재현에서 두 모드 모두 음성·경고음 0회를 유지한다. 화면 후보까지 제거한 것은 아니다. 총 3경로×2모드 검증이며 실차 소리 출력 검증은 아니다.
 - 지도 원본 읽기 전용 도구로 캐시를 만든 뒤 재현했다. 재현 중 운영 API·Fleet API 호출과 캐시 누락은 없었으며, 앱의 지도 요청 주기도 그대로다.
 - 고정 회귀: `python3 -B -m unittest discover -s tools -p 'test_camera_directions.py'`, `python3 -B -m unittest discover -s tools -p 'test_update_safety_cameras.py'`, `CameraIndexTest.verifiedBundleContextRestoresOnlySupportedDirection`. 방향 추출·번들 회귀는 변경 전 실패를 확인했다.
+
+### 명시적 방위와 실제 도로 구간을 함께 보강
+
+- `tools/camera_direction_context.py`는 저장된 원자료·번들·지도 선형만 읽는다. `남→북`처럼 서로 반대인 방위가 명시된 경우에만 방향 후보를 만들며, 지명→지명·양방향 표기·도로 축에서 단속 방향을 추정하지 않는다.
+- 같은 도로명으로 카메라 20m 안에 있는 **모든** 선분을 먼저 조사한다. 유일한 노드 쌍만 허용하고, 교차·평행 구간 중 각도가 맞는 것만 선택하지 않는다. 길이 5~250m, 원문 방위와 지도 진행방위 차이 30° 이하, 기존 축과 차이 20° 이하를 요구한다. 인접 선분이 겹치는 교차로도 보수적으로 보류한다.
+- 결과는 기존 `verified_camera_context.json` 형식이다. 원자료 지문·설치 원문에 더해 지도 way ID, **진행 순서가 있는** 노드 쌍·선분 좌표·입력 선형 파일 SHA-256을 남긴다. 기존 방향은 덮어쓰지 않는다. 생성기의 `apply_verified_context`는 자동 근거의 원문과 선분을 다시 계산해 검증한다.
+- SHA-256은 조사한 입력의 추적용이다. 실행 중 서버 지도 버전을 자동 확인하는 기능이나 지도 갱신에 따른 자동 재검증은 아니다. 새 지도에서는 다시 생성·검토해야 한다. 앱에는 기존 `direction`·`roadName` 필드로 적용하므로 추가 서버 호출이 없다.
+- 2026-10-05 전체 원자료 43,724건과 번들 12,012건을 비교한 결과, 명시적 방위·유일한 지도 구간까지 검증한 `1320000:H7586`(신흥로, 50km/h)에 북행 0°를 추가했다. 원문 `내동사거리(남→북)`, 도로 이격 약 4.4m, 지도 진행방위 약 359.8°. 나머지 12,011건과 기존 앱 알림 정책은 그대로다. 지명 해석·추가 조사 없이 일반 지명 화살표 581건을 일괄 승격하지 않는다.
+- 새 번들 고정 회귀는 변경 전 실패를 확인했다. 지도 기반 북행·남행 및 기존 기흥 정·역방향/고속도로 교차 재현 5경로×2모드가 통과했다. 북행 음성 2회, 남행 후보·음성 0회, 교차하는 일반도로의 고속도로110 음성 0회. 실제 차량의 출력 검증은 아니다.
+- 재사용: `tools/camera_directions.py:22`의 `direction_places`와 `bearing/diff/meters`, `tools/update_safety_cameras.py:26`의 `convert`와 `comparable_road_name/apply_verified_context`, `tools/replay/make_route.py:43`의 `sample`, `SafeDriveReplayTest`. 기존 `refine_camera_road_axes`는 양방향 도로 축만 검증하므로 단속 방향 생성에는 사용하지 않았다.
+
+```bash
+python3 -B tools/camera_direction_context.py \
+  --raw local-replay/artifacts/directed_camera_context/source-rows.json \
+  --bundle local-replay/artifacts/directed_camera_context/dataset-before.json \
+  --shapes local-replay/artifacts/directed_camera_context/road-shapes.jsonl \
+  --output local-replay/artifacts/directed_camera_context/candidate.json \
+  --report local-replay/artifacts/directed_camera_context/candidate-report.json
+python3 -B -m unittest discover -s tools -p 'test_camera_direction*.py'
+python3 -B -m unittest discover -s tools -p 'test_update_safety_cameras.py'
+```

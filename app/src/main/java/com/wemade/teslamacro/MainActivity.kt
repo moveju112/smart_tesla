@@ -429,6 +429,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onWirelessEnabled = settingsViewModel.wirelessNavigation::setEnabled,
                         onWirelessPort = settingsViewModel.wirelessNavigation::setPort,
                         onWirelessPair = settingsViewModel.wirelessNavigation::pair,
+                        onWirelessPrepare = settingsViewModel.wirelessNavigation::prepare,
                         onWirelessTest = { settingsViewModel.wirelessNavigation.start() },
                         onWirelessStop = settingsViewModel.wirelessNavigation::stop,
                         onAppChange = settingsViewModel::setNavigatorApp,

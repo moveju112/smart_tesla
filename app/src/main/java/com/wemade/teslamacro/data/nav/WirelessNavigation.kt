@@ -5,7 +5,12 @@ import android.os.Build
 import android.os.PowerManager
 import com.wemade.teslable.DiagLog
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
-import io.github.muntashirakon.adb.AdbStream
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.provider.Settings
+import android.content.pm.PackageManager
 import java.io.File
 import java.security.PrivateKey
 import java.security.cert.Certificate
@@ -20,10 +25,11 @@ data class WirelessNavigationState(
     val port: String = "",
     val busy: Boolean = false,
     val running: Boolean = false,
+    val prepared: Boolean = false,
     val message: String = "무선 페어링 필요",
 )
 
-/** 네이버지도만 같은 휴대폰의 ADB로 실행하며 연결 종료는 자신이 시작한 세션에만 보낸다. */
+/** ADB는 준비 때만 쓰고 지도 제어는 같은 휴대폰의 Binder로 연결한다. */
 class WirelessNavigation(private val context: Context) {
     private val preferences = context.getSharedPreferences("wireless_navigation", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -34,6 +40,75 @@ class WirelessNavigation(private val context: Context) {
     private var operation: Job? = null
     private var disconnect: Job? = null
     private var connected = false
+
+    init {
+        val networks = context.getSystemService(ConnectivityManager::class.java)
+        networks.registerNetworkCallback(NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),
+            object : ConnectivityManager.NetworkCallback() {
+                /** 재부팅 뒤 Wi-Fi가 생기면 사용자가 켠 자동 실행만 다시 준비한다. */
+                override fun onAvailable(network: Network) {
+                    scope.launch { if (state.value.enabled && preferences.getBoolean("configured", false)) prepare() }
+                }
+            })
+    }
+
+    /** 지도 실행 없이 권한 프로세스만 준비해 Wi-Fi를 끄기 전에 연결을 확인한다. */
+    fun prepare() {
+        if (operation?.isCompleted == false) return
+        operation = scope.launch {
+            mutableState.value = state.value.copy(busy = true)
+            try {
+                withContext(Dispatchers.IO) { ensurePrepared() }
+                report("준비 완료 · Wi-Fi 없이 실행할 수 있어요")
+            } catch (error: Exception) {
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                report(if (error.message == USB_DEBUGGING_REQUIRED) USB_DEBUGGING_REQUIRED else "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
+            } finally { mutableState.value = state.value.copy(busy = false) }
+        }.also { job ->
+            job.invokeOnCompletion { cause -> scope.launch { if (cause == null && state.value.prepared && state.value.enabled && connected) start(false) } }
+        }
+    }
+
+    /** 기존 내부 서버를 우선 사용하고 서버가 없을 때만 무선 디버깅으로 다시 세운다. */
+    private suspend fun ensurePrepared() = withTimeout(30_000) {
+        // 두 디버깅 방식이 모두 꺼지면 Android가 부모 데몬과 준비 프로세스를 종료한다.
+        check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
+        NavigationBridgeProvider.request()
+        if (runCatching { NavigationChannel().connect().use { it.status() in setOf("AVAILABLE", "ACTIVE") } }.getOrDefault(false)) {
+            mutableState.value = state.value.copy(prepared = true)
+            return@withTimeout
+        }
+        mutableState.value = state.value.copy(prepared = false)
+        var toggled = false
+        try {
+            if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED &&
+                Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 0) {
+                toggled = Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1)
+            }
+            manager().use { connection ->
+                DiagLog.add("네이버 안심주행 · 연결 포트 탐색")
+                val discovered = LocalAdbDiscovery.port(context)
+                val port = discovered ?: validPort(state.value.port) ?: error("No local debugging port")
+                DiagLog.add("네이버 안심주행 · 자체 ADB 연결")
+                check(runInterruptible { connection.connect("127.0.0.1", port) })
+                preferences.edit().putString("port", port.toString()).putBoolean("configured", true).apply()
+                mutableState.value = state.value.copy(port = port.toString())
+                DiagLog.add("네이버 안심주행 · 독립 실행 프로세스 준비")
+                val uid = android.os.Process.myUid()
+                val command = "trap '' HUP; pm grant --user ${uid / 100000} com.wemade.teslamacro android.permission.WRITE_SECURE_SETTINGS >/dev/null 2>&1; " +
+                    "CLASSPATH=${quote(context.applicationInfo.sourceDir)} setsid app_process / " +
+                    "com.wemade.teslamacro.data.nav.NaverControlServer $uid </dev/null >/dev/null 2>&1 & wait"
+                runInterruptible { connection.openStream("shell:$command") }.use {
+                    withTimeout(15_000) {
+                        while (!runCatching { NavigationChannel().connect().use { it.status() == "AVAILABLE" } }.getOrDefault(false)) delay(150)
+                    }
+                }
+            }
+            mutableState.value = state.value.copy(prepared = true)
+        } finally {
+            if (toggled) runCatching { Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 0) }
+        }
+    }
 
     /** ADB 전용 RSA 키는 기존 목적지용 EC 인증 계약과 달라 독립적으로 제공한다. */
     private fun manager(): AbsAdbConnectionManager = object : AbsAdbConnectionManager() {
@@ -56,7 +131,7 @@ class WirelessNavigation(private val context: Context) {
     fun setEnabled(enabled: Boolean) {
         preferences.edit().putBoolean("enabled", enabled).apply()
         mutableState.value = mutableState.value.copy(enabled = enabled)
-        if (!enabled) stop() else if (connected) start(delayed = false)
+        if (!enabled) stop() else if (connected) start(delayed = false) else prepare()
     }
 
     /** 포트는 숫자만 허용하며 실행 중 연결 대상을 바꾸지 않는다. */
@@ -76,15 +151,22 @@ class WirelessNavigation(private val context: Context) {
         }
         operation = scope.launch {
             mutableState.value = state.value.copy(busy = true)
+            var paired = false
             try {
-                val paired = withContext(Dispatchers.IO) {
+                paired = withContext(Dispatchers.IO) {
                     manager().use { LocalAdbPairing.pair(it, port.toInt(), code) }
                 }
-                report(if (paired) "페어링 완료 · 연결 포트를 입력해 주세요" else "페어링 실패 · 새 코드를 확인해 주세요")
+                if (paired) {
+                    preferences.edit().putBoolean("configured", true).apply()
+                    withContext(Dispatchers.IO) { ensurePrepared() }
+                }
+                report(if (paired) "페어링·준비 완료 · Wi-Fi 없이 실행할 수 있어요" else "페어링 실패 · 새 코드를 확인해 주세요")
             } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                report("페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                report(if (error.message == USB_DEBUGGING_REQUIRED) USB_DEBUGGING_REQUIRED else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
             } finally { mutableState.value = state.value.copy(busy = false) }
+        }.also { job ->
+            job.invokeOnCompletion { cause -> scope.launch { if (cause == null && state.value.prepared && state.value.enabled && connected) start(false) } }
         }
     }
 
@@ -103,9 +185,8 @@ class WirelessNavigation(private val context: Context) {
     /** 잠금 테스트 예약부터 세션 종료까지 하나의 작업으로 묶어 중복 실행을 막는다. */
     fun start(delayed: Boolean = true) {
         if (operation?.isCompleted == false) return
-        val port = validPort(state.value.port)
-        if (Build.VERSION.SDK_INT < 31 || port == null) {
-            report(if (port == null) "무선 디버깅의 연결 포트를 입력해 주세요" else "Android 12 이상에서 사용할 수 있어요")
+        if (Build.VERSION.SDK_INT < 31) {
+            report("Android 12 이상에서 사용할 수 있어요")
             return
         }
         operation = scope.launch {
@@ -117,21 +198,18 @@ class WirelessNavigation(private val context: Context) {
                 report(if (delayed) "10초 뒤 실행 · 화면을 잠가 주세요" else "네이버지도 실행 준비")
                 if (delayed) delay(10_000)
                 withContext(Dispatchers.IO) {
-                    manager().use { connection ->
-                        check(runInterruptible { connection.connect("127.0.0.1", port) })
-                        val uri = requireNotNull(NavigatorApp.NAVER.safeDriveUri(context.packageName)).toString()
-                        val command = "trap '' HUP; CLASSPATH=${quote(context.applicationInfo.sourceDir)} exec app_process / " +
-                            "com.wemade.teslamacro.data.nav.NaverDisplaySession ${android.os.Process.myUid() / 100000} ${quote(uri)}"
-                        runInterruptible { connection.openStream("shell:$command") }.use { active ->
-                            var needsStop = true
-                            try { needsStop = runSession(active) }
-                            finally { if (needsStop) finishSession(active) }
-                        }
+                    ensurePrepared()
+                    NavigationChannel().connect().use { active ->
+                        var needsStop = true
+                        try {
+                            active.send("START")
+                            needsStop = runSession(active)
+                        } finally { if (needsStop) finishSession(active) }
                     }
                 }
             } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                report("실행 실패 · 무선 디버깅 연결 포트와 네이버지도 상태를 확인해 주세요")
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                report(if (error.message == USB_DEBUGGING_REQUIRED) USB_DEBUGGING_REQUIRED else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 네이버지도 상태를 확인해 주세요")
                 DiagLog.add("네이버 안심주행 · 실행 예외 ${error.javaClass.simpleName}")
             } finally {
                 if (wake.isHeld) wake.release()
@@ -141,15 +219,15 @@ class WirelessNavigation(private val context: Context) {
     }
 
     /** 셸의 준비 신호만 실행 요청 완료로 표시하고 음성 출력 성공으로 간주하지 않는다. */
-    private suspend fun runSession(active: AdbStream): Boolean {
-        val output = active.openOutputStream()
-        val input = active.openInputStream()
+    private suspend fun runSession(active: NavigationChannel): Boolean {
+        val output = active.output
+        val input = active.input
         val buffer = ByteArray(1024)
         var text = ""
         var ready = false
         val started = System.nanoTime()
         var lastPing = 0L
-        while (currentCoroutineContext().isActive && (!active.isClosed || input.available() > 0)) {
+        while (currentCoroutineContext().isActive) {
             val now = System.nanoTime()
             if (now - lastPing > TimeUnit.SECONDS.toNanos(3)) {
                 runInterruptible { output.write("PING\n".toByteArray()); output.flush() }
@@ -185,16 +263,15 @@ class WirelessNavigation(private val context: Context) {
         return true
     }
 
-    /** 채널을 먼저 닫으면 셸이 먼저 죽을 수 있어 종료 응답까지 제한된 시간 동안 기다린다. */
-    private suspend fun finishSession(active: AdbStream) = withContext(NonCancellable + Dispatchers.IO) {
-        if (active.isClosed) return@withContext
+    /** 지도 정리를 확인한 뒤 소유 채널을 닫고 준비된 권한 프로세스는 유지한다. */
+    private suspend fun finishSession(active: NavigationChannel) = withContext(NonCancellable + Dispatchers.IO) {
         val acknowledged = runCatching {
             withTimeout(12_000) {
-                runInterruptible { active.openOutputStream().apply { write("STOP\n".toByteArray()); flush() } }
-                val input = active.openInputStream()
+                runInterruptible { active.output.apply { write("STOP\n".toByteArray()); flush() } }
+                val input = active.input
                 val bytes = ByteArray(1024)
                 var response = ""
-                while (!active.isClosed || input.available() > 0) {
+                while (true) {
                     if (input.available() > 0) {
                         val count = input.read(bytes)
                         if (count < 0) break
@@ -231,6 +308,7 @@ class WirelessNavigation(private val context: Context) {
     }
 
     companion object {
+        private const val USB_DEBUGGING_REQUIRED = "USB 디버깅을 켜고 연결 준비를 다시 눌러 주세요"
         /** 포트 범위와 숫자 형식을 검증해 명령이나 원격 주소 입력을 차단한다. */
         internal fun validPort(value: String): Int? = value.takeIf { it.matches(Regex("[0-9]{1,5}")) }
             ?.toIntOrNull()?.takeIf { it in 1..65535 }

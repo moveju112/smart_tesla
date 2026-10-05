@@ -17,3 +17,5 @@
 # 공개 SDK에 없는 시스템 타입이며 앱은 이 어댑터 대신 자체 TLS 소켓 경로를 사용한다.
 -dontwarn com.android.org.conscrypt.SSLParametersImpl
 -dontwarn org.apache.harmony.xnet.provider.jsse.SSLParametersImpl
+
+-keep class com.wemade.teslamacro.data.nav.NaverControlServer { *; }

@@ -809,6 +809,7 @@ data class NavigationControls(
     val onWirelessEnabled: (Boolean) -> Unit = {},
     val onWirelessPort: (String) -> Unit = {},
     val onWirelessPair: (String, String) -> Unit = { _, _ -> },
+    val onWirelessPrepare: () -> Unit = {},
     val onWirelessTest: () -> Unit = {},
     val onWirelessStop: () -> Unit = {},
     val onAppChange: (String) -> Unit,

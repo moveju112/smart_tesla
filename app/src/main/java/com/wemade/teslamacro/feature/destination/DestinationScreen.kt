@@ -200,18 +200,9 @@ fun DestinationScreen(
                                     enabled = canSend && state.receiverName != null,
                                     onClick = onSend)
                             })
-                            state.request?.let { request ->
+                            if (state.request?.status == "pending") {
                                 Hairline()
-                                SettingActionRow("보낸 검색어", action = {
-                                    Text(request.destination.name, style = MaterialTheme.typography.bodyMedium,
-                                        color = T.InkMuted, textAlign = TextAlign.End)
-                                })
-                                SettingActionRow("전송 상태", description = "네이버지도에 전달된 뒤 장소 선택과 길안내 시작은 받는 기기에서 해 주세요.", action = {
-                                    Text(destinationStatus(request.status),
-                                        style = MaterialTheme.typography.bodyMedium, color = T.InkMuted,
-                                        textAlign = TextAlign.End)
-                                })
-                                if (request.status == "pending") SettingActionRow("대기 중인 전송", action = {
+                                SettingActionRow("대기 중인 전송", action = {
                                     TButton("취소", tone = ButtonTone.Ghost, fillWidth = false, small = true,
                                         enabled = !state.busy, onClick = onCancel)
                                 })
@@ -316,16 +307,4 @@ internal fun DestinationQueryEditorSheet(
         DraftField(draft, { draft = it }, label = "장소 또는 주소", enabled = !busy,
             isError = invalid, note = if (invalid) "줄바꿈 없이 1~120자로 입력해 주세요" else null)
     }
-}
-
-/** 지도 앱에 전달한 사실과 실제 길 안내 시작 여부를 구분한다. */
-internal fun destinationStatus(status: String): String = when (status) {
-    "pending" -> "수신 대기"
-    "claimed" -> "인계됨 · 전달 결과 확인 필요"
-    "delivered" -> "네이버지도로 전달됨"
-    "failed" -> "전달 실패 · 목적지를 다시 보내 주세요"
-    "cancelled" -> "전송 취소됨"
-    "replaced" -> "새 목적지로 교체됨"
-    "expired" -> "유효시간 만료"
-    else -> "상태 확인 필요"
 }

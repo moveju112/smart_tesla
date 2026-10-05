@@ -29,14 +29,14 @@ class DestinationScreenshotTest(private val dark: Boolean, private val wide: Boo
     /** 검색 전 안내와 연결 전 비활성 동작을 큰 글자로 확인한다. */
     @Test fun empty() = snapshot(DestinationUiState())
 
-    /** 일반 전송의 대기 상태 문구를 확인한다. */
+    /** 보낸 검색어·상태를 반복하지 않고 대기 중 취소 동작을 제공한다. */
     @Test fun pending() = snapshot(DestinationUiState(query = place.name, overlayAllowed = true,
         request = DestinationRequest("test", place, 1, 600001, "pending", false)))
 
     /** 장소 선택 없이 검색어와 연결 대상만으로 전송할 수 있는 화면을 확인한다. */
     @Test fun readyToSend() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿"))
 
-    /** 전송 완료 정보는 검색어와 상태가 같은 행에서 줄바꿈되어 표시된다. */
+    /** 전송 완료 후에도 보낸 검색어·상태 행 없이 기본 전송 화면을 유지한다. */
     @Test fun delivered() = snapshot(DestinationUiState(query = place.name, receiverName = "차량 태블릿",
         request = DestinationRequest("test", place, 1, 600001, "delivered", false)))
 

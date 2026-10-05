@@ -3,8 +3,8 @@
 설정 → 주행 → **네이버 안심주행 · 실험**. Android 12 이상, 네이버지도 설치·초기 설정·위치 및 음량 설정 필요.
 
 1. 개발자 옵션과 USB 디버깅을 켜고 Wi-Fi에 연결한다. 케이블 연결은 필요 없다. 최초 설정은 화면 잠금을 해제한 상태에서 한다.
-2. **자동 페어링 설정**을 누르고 설정 도우미 접근성을 허용한다. 도우미는 요청 뒤 최대 3분 동안 시스템 설정에서 무선 디버깅·페어링 화면을 찾아 포트와 코드를 읽고 현재 Wi-Fi의 허용을 기억한다. 완료 후 접근성을 꺼도 된다.
-3. 자동 설정을 지원하지 않는 기기는 **수동 페어링 / 연결 포트**에서 입력한다. 페어링 포트와 실제 연결 포트는 다르며 연결 포트는 로컬 NSD 광고에서 우선 찾는다.
+2. **연결 설정**을 누르고 알림을 허용한다. 무선 디버깅을 켜고 **페어링 코드로 기기 페어링**을 연다. 코드 화면을 닫지 않은 채 알림창을 내려 **코드 입력**에 6자리를 입력한다. IP·페어링 포트·연결 포트는 로컬 NSD로 자동 탐색한다. 접근성 권한은 사용하지 않는다.
+3. 저장된 인증이 있으면 코드 없이 연결 준비부터 시도한다. 인증이 만료됐으면 알림의 **설정 열기**에서 새 코드를 표시한다. 탐색이 안 되는 기기는 **수동 페어링 / 연결 포트**를 사용한다. 포트를 비워도 자동 탐색하며 페어링 포트와 연결 포트는 서로 다르다. 알림 설정 요청은 3분 뒤 종료하고 재전송된 과거 알림은 무시한다.
 4. USB 디버깅을 켜 둔 상태에서는 **준비 완료** 후 Wi-Fi를 꺼도 지도 실행·종료가 가능하다. 네이버지도 기존 실행을 종료하고 **10초 뒤 테스트**를 누른 뒤 잠금 상태에서 안내 음성을 확인한다.
 5. 자동 실행은 차량 오디오를 직접 선택한 후 별도로 켠다. 재부팅·디버깅 데몬 재시작·권한 프로세스 종료 뒤에는 Wi-Fi에서 **연결 준비 / 복구**를 사용한다. 자동 실행을 켜면 Wi-Fi 연결 때 복구를 시도한다.
 
@@ -22,11 +22,11 @@ USB 디버깅도 꺼지면 Android가 ADB 데몬과 그 하위 준비 프로세�
 
 ## 로컬 회귀 검증
 
-- `./gradlew :app:testDebugUnitTest --tests '*PairingScreenTest' --tests '*LocalAdbIdentityTest' --tests '*RemovedSafetySettingsTest' --tests '*RoadDeviceIdentityTest'`
+- `./gradlew :app:testDebugUnitTest --tests '*LocalAdbIdentityTest' --tests '*RemovedSafetySettingsTest' --tests '*RoadDeviceIdentityTest'`
 - 에뮬레이터 APK: `./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PhistorySmokeEmulator=true -PsmokeRunner=com.wemade.teslamacro.nav.WirelessNavigationSmokeInstrumentation`
 - 지도 대체 APK: `python3 tools/nav-smoke/build_fixture.py`. 실제 네이버지도 대신 가상 화면 진입만 기록한다.
 - 프로젝트 상시 승인 범위의 **읽기 전용 로컬 에뮬레이터에만** 대체 APK·앱·계측 APK를 설치하고 임시 ADB 포트를 사용한다. 실제 휴대폰에 대체 APK를 설치하지 않는다.
-- 실행기: `com.wemade.teslamacro.test/com.wemade.teslamacro.nav.WirelessNavigationSmokeInstrumentation`. `-e prepareOnly true`로 임시 5557 포트의 앱 내부 ADB 준비를 검사한다. 일반 실행은 Wi-Fi·무선 디버깅을 끈 뒤 연결 불가능한 65534 포트로 바꾸어 앱 재시작·키 복원·재연결 유예·30초 해제 후 종료·반복 실행을 검사한다. `-e pairOnly true`는 접근성 자동 설정부터 TLS 페어링과 연결 포트 탐색을 검사한다. `-e recoveryOnly true`는 준비 프로세스가 없는 상태에서 Wi-Fi 도착에 따른 자동 복구와 무선 디버깅 원복을 검사한다.
+- 실행기: `com.wemade.teslamacro.test/com.wemade.teslamacro.nav.WirelessNavigationSmokeInstrumentation`. `-e prepareOnly true`로 임시 5557 포트의 앱 내부 ADB 준비를 검사한다. 일반 실행은 Wi-Fi·무선 디버깅을 끈 뒤 연결 불가능한 65534 포트로 바꾸어 앱 재시작·키 복원·재연결 유예·30초 해제 후 종료·반복 실행을 검사한다. `-e pairOnly true`는 접근성이 없는 조건에서 알림 RemoteInput·입력 오류·이전 알림 재전송·TLS 페어링·두 포트 탐색·인증 재사용을 검사한다. 시스템 설정 UI는 테스트 계측에서만 조작한다. `-e recoveryOnly true`는 준비 프로세스가 없는 상태에서 Wi-Fi 도착에 따른 자동 복구와 무선 디버깅 원복을 검사한다.
 - 별도 확인: PIN 잠금 유지, 기본 화면과 다른 display ID, 종료 뒤 대체 앱 프로세스 없음, 심박 중단 정리, 기존 실행 보호.
 - 지도 대체 앱 검증은 실제 네이버지도 음성 출력의 증거가 아니다. TLS 페어링은 별도 `pairOnly` 결과로 판단한다. 실기기 결과는 설정 → 기기 → 진단 로그 → 공유로 받는다.
 
@@ -51,3 +51,12 @@ USB 디버깅도 꺼지면 Android가 ADB 데몬과 그 하위 준비 프로세�
 - 에뮬레이터의 `adb usb`는 기본 5555 포트를 남기고 ADB 데몬을 재시작하면서 하위 준비 프로세스를 종료했다. 이 동작을 Wi-Fi 해제 성공으로 간주하지 않는다. USB 디버깅은 계속 켜 두며 실제 통신은 준비 이후 Binder를 사용한다.
 - 자동 설정에서는 중첩 목록 스크롤과 시스템 UI의 네트워크 확인 창을 별도로 처리한다. 설정 도우미를 끄면 예약된 조작도 취소된다.
 - 실제 네이버지도 음성, 삼성 등 제조사별 설정·절전·재부팅 전체 과정은 미확인.
+
+## 0.9.163 검증
+
+- 접근성 서비스·설정 화면 파서를 제거했다. 기존 `WirelessNavigation.prepare/pair`와 `LocalAdbDiscovery.port`를 확장해 알림 코드 입력과 저장된 인증 재사용을 연결했다. 수동 입력도 페어링 포트를 비우면 자동 탐색한다.
+- debug/release 각각 앱 480건·BLE 30건 통과, 앱 기존 조건부 제외 13건. 접근성 파서 제거로 해당 테스트 1건을 함께 제거했다. `./gradlew test :app:assembleRelease` 통과.
+- Android 14 일반 앱/셸 권한에서 접근성 서비스가 없는 상태로 RemoteInput 코드 입력 → 실제 TLS 페어링 → 로컬 페어링·연결 포트 탐색 → 셸 준비 통과. 짧은 잘못된 코드, 진행 중 중복 제출, 완료된 알림 재전송을 거부하고 저장된 인증으로 코드 없이 재준비하는 것을 확인했다.
+- Wi-Fi·무선 디버깅을 끄고 연결 포트를 사용할 수 없는 값으로 바꾼 뒤 앱 재시작·키 복원·PIN 잠금 유지·재연결 유예·30초 해제 종료·반복 실행을 확인했다. 종료 후 대체 지도 프로세스 없음도 확인했다.
+- 첫 계측에서는 빈 문자열 셸 처리와 시스템 문구의 특수 하이픈 때문에 테스트가 실패했다. 테스트만 수정했다. 기존 AVD는 개발자 옵션 값과 설정 Activity 활성 상태도 달랐다. 일회용 에뮬레이터에서 바로가기 상태를 맞춘 뒤 일반 셸 UID 2000으로 복귀해 검증했다. 제품은 설정 화면 텍스트를 읽지 않는다.
+- 이번 검증은 debug APK 런타임과 R8 arm64 릴리스 빌드다. 실제 네이버 음성·삼성 설정 UI·재부팅 전체 과정은 미확인이다.

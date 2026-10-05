@@ -12,7 +12,7 @@ import kotlin.coroutines.resume
 /** 발견된 주소가 이 휴대폰에 속할 때만 포트를 사용하며 연결 자체는 루프백으로 고정한다. */
 internal object LocalAdbDiscovery {
     /** 광고 해석을 직렬화해 다른 기기가 먼저 발견돼도 로컬 광고를 버리지 않는다. */
-    suspend fun port(context: Context): Int? = withTimeoutOrNull(10_000) {
+    suspend fun port(context: Context, pairing: Boolean = false): Int? = withTimeoutOrNull(10_000) {
         val manager = context.getSystemService(NsdManager::class.java)
         val addresses = NetworkInterface.getNetworkInterfaces().toList()
             .flatMap { it.inetAddresses.toList() }.map { it.hostAddress }.toSet()
@@ -32,7 +32,7 @@ internal object LocalAdbDiscovery {
             override fun onStopDiscoveryFailed(type: String, error: Int) { }
         }
         try {
-            manager.discoverServices("_adb-tls-connect._tcp.", NsdManager.PROTOCOL_DNS_SD, listener)
+            manager.discoverServices(if (pairing) "_adb-tls-pairing._tcp." else "_adb-tls-connect._tcp.", NsdManager.PROTOCOL_DNS_SD, listener)
             for (service in found) {
                 val resolved = resolve(manager, service) ?: continue
                 if (resolved.host?.hostAddress in addresses && resolved.port in 1..65535) return@withTimeoutOrNull resolved.port

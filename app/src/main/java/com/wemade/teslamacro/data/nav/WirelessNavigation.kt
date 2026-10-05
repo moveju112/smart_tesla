@@ -53,9 +53,9 @@ class WirelessNavigation(private val context: Context) {
     }
 
     /** 지도 실행 없이 권한 프로세스만 준비해 Wi-Fi를 끄기 전에 연결을 확인한다. */
-    fun prepare() {
-        if (operation?.isCompleted == false) return
-        operation = scope.launch {
+    fun prepare(): Job? {
+        if (operation?.isCompleted == false) return null
+        return scope.launch {
             mutableState.value = state.value.copy(busy = true)
             try {
                 withContext(Dispatchers.IO) { ensurePrepared() }
@@ -65,12 +65,14 @@ class WirelessNavigation(private val context: Context) {
                 report(if (error.message == USB_DEBUGGING_REQUIRED) USB_DEBUGGING_REQUIRED else "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
             } finally { mutableState.value = state.value.copy(busy = false) }
         }.also { job ->
+            operation = job
             job.invokeOnCompletion { cause -> scope.launch { if (cause == null && state.value.prepared && state.value.enabled && connected) start(false) } }
         }
     }
 
     /** 기존 내부 서버를 우선 사용하고 서버가 없을 때만 무선 디버깅으로 다시 세운다. */
     private suspend fun ensurePrepared() = withTimeout(30_000) {
+        mutableState.value = state.value.copy(prepared = false)
         // 두 디버깅 방식이 모두 꺼지면 Android가 부모 데몬과 준비 프로세스를 종료한다.
         check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
         NavigationBridgeProvider.request()
@@ -142,19 +144,24 @@ class WirelessNavigation(private val context: Context) {
         mutableState.value = state.value.copy(port = port)
     }
 
+    /** 저장된 인증이 있는 경우 설정 화면보다 재연결을 먼저 시도한다. */
+    val hasPairing: Boolean get() = preferences.getBoolean("configured", false)
+
     /** 페어링 코드는 이 요청에서만 사용하고 설정이나 진단 로그에는 저장하지 않는다. */
-    fun pair(port: String, code: String) {
-        if (operation?.isCompleted == false) return
-        if (validPort(port) == null || !code.matches(Regex("[0-9]{6}"))) {
+    fun pair(port: String, code: String): Job? {
+        if (operation?.isCompleted == false) return null
+        if ((port.isNotBlank() && validPort(port) == null) || !code.matches(Regex("[0-9]{6}"))) {
             report("페어링 포트와 6자리 코드를 확인해 주세요")
-            return
+            return null
         }
-        operation = scope.launch {
-            mutableState.value = state.value.copy(busy = true)
+        return scope.launch {
+            mutableState.value = state.value.copy(busy = true, prepared = false)
             var paired = false
             try {
                 paired = withContext(Dispatchers.IO) {
-                    manager().use { LocalAdbPairing.pair(it, port.toInt(), code) }
+                    val target = validPort(port) ?: LocalAdbDiscovery.port(context, pairing = true)
+                        ?: error("No local pairing port")
+                    manager().use { LocalAdbPairing.pair(it, target, code) }
                 }
                 if (paired) {
                     preferences.edit().putBoolean("configured", true).apply()
@@ -166,6 +173,7 @@ class WirelessNavigation(private val context: Context) {
                 report(if (error.message == USB_DEBUGGING_REQUIRED) USB_DEBUGGING_REQUIRED else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
             } finally { mutableState.value = state.value.copy(busy = false) }
         }.also { job ->
+            operation = job
             job.invokeOnCompletion { cause -> scope.launch { if (cause == null && state.value.prepared && state.value.enabled && connected) start(false) } }
         }
     }

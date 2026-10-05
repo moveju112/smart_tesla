@@ -1,131 +1,143 @@
 package com.wemade.teslamacro.data.nav
 
-import android.accessibilityservice.AccessibilityService
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.RemoteInput
+import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
-import android.os.SystemClock
+import android.net.Uri
+import android.os.IBinder
 import android.provider.Settings
-import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
 import com.wemade.teslamacro.TeslaMacroApplication
+import kotlinx.coroutines.*
+import java.util.UUID
 
-/** 사용자가 시작한 짧은 설정 구간에만 시스템 설정의 페어링 화면을 조작한다. */
-class NavigationPairingService : AccessibilityService() {
-    private val handler = Handler(Looper.getMainLooper())
-    private var lastAction = 0L
-    private val check = Runnable { inspect() }
+/** 설정 화면을 읽지 않고 사용자가 알림에 입력한 일회용 코드만 로컬 페어링에 전달한다. */
+class NavigationPairingService : Service() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val navigation get() = (application as TeslaMacroApplication).container.wirelessNavigation
+    private val notifications get() = getSystemService(NotificationManager::class.java)
+    private var session: String? = null
+    private var work: Job? = null
+    private var navigationWork: Job? = null
 
-    /** 권한 허용 후 진행 중인 최초 설정만 이어서 연다. */
-    override fun onServiceConnected() {
-        service = this
-        if (SystemClock.elapsedRealtime() < deadline) {
-            openSettings(this)
-            handler.postDelayed(check, 500)
-        }
-    }
+    /** 외부 바인딩 대신 앱이 만든 알림 액션만 받는다. */
+    override fun onBind(intent: Intent?): IBinder? = null
 
-    /** 설정 화면 변화만 받아 사용자 요청의 유효시간 안에서 검사한다. */
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (SystemClock.elapsedRealtime() < deadline && !handler.hasCallbacks(check)) handler.postDelayed(check, 200)
-    }
-
-    /** 서비스 중단 때 남은 자동 클릭 요청을 폐기한다. */
-    override fun onInterrupt() { deadline = 0; handler.removeCallbacks(check) }
-
-    /** 서비스가 꺼지면 예약된 설정 조작도 함께 끝낸다. */
-    override fun onDestroy() { if (service === this) service = null; onInterrupt(); super.onDestroy() }
-
-    /** 설정과 무선 디버깅 확인 창만 대상으로 하며 요청 시간이 지나면 조작을 끝낸다. */
-    private fun inspect() {
-        val now = SystemClock.elapsedRealtime()
-        if (now >= deadline) return
-        val root = rootInActiveWindow ?: run { handler.postDelayed(check, 500); return }
-        val packageName = root.packageName?.toString()
-        if (packageName !in listOf("com.android.settings", "com.android.systemui")) return
-        val nodes = mutableListOf<AccessibilityNodeInfo>()
-        collect(root, nodes)
-        val texts = nodes.mapNotNull { it.text?.toString() }
-        if (packageName == "com.android.systemui") {
-            // 시스템 UI에서는 현재 요청의 무선 디버깅 네트워크 확인 대화상자만 허용한다.
-            if (texts.any { it.contains("무선 디버깅") || it.contains("wireless debugging", true) } &&
-                texts.any { it.contains("네트워크") || it.contains("network", true) }) {
-                // 같은 Wi-Fi로 복구할 때 확인 창이 다시 막지 않도록 현재 네트워크만 기억한다.
-                val remember = nodes.firstOrNull { it.text?.toString()?.let { text ->
-                    text.contains("이 네트워크에서 항상 허용") || text.contains("Always allow on this network", true)
-                } == true }
-                if (remember != null && !remember.isChecked) click(remember)
-                nodes.firstOrNull { it.text?.toString() in listOf("허용", "Allow", "ALLOW") }?.let { click(it) }
-                handler.postDelayed(check, 1000)
+    /** 재전송된 이전 알림과 중복 제출을 버리고 현재 설정 요청만 진행한다. */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == BEGIN) {
+            if (session != null) return START_NOT_STICKY
+            session = UUID.randomUUID().toString()
+            notifications.createNotificationChannel(NotificationChannel(CHANNEL, "네이버 안심주행 연결", NotificationManager.IMPORTANCE_DEFAULT))
+            startForeground(ID, notification("무선 디버깅에서 ‘페어링 코드로 기기 페어링’을 열어 주세요", input = true))
+            scope.launch { delay(180_000); finish("설정 시간이 지났어요 · 앱에서 연결 설정을 다시 눌러 주세요") }
+            if (navigation.hasPairing) work = scope.launch {
+                update("저장된 인증으로 연결 준비 중", input = false)
+                navigationWork = navigation.prepare()
+                navigationWork?.join()
+                if (navigation.state.value.prepared) finish("연결 준비 완료")
+                else update("설정 열기 → 무선 디버깅 → 페어링 코드로 기기 페어링", input = true)
             }
-            return
-        }
-        PairingScreen.read(texts)?.let { (port, code) ->
-            deadline = 0
-            com.wemade.teslable.DiagLog.add("네이버 안심주행 · 자동 페어링 정보 확인")
-            (application as TeslaMacroApplication).container.wirelessNavigation.pair(port, code)
-            return
-        }
-        if (now - lastAction < 1000) { handler.postDelayed(check, 1000); return }
-        val pairing = nodes.firstOrNull { it.text?.toString() in listOf("페어링 코드로 기기 페어링", "Pair device with pairing code") && it.isEnabled }
-        val wireless = nodes.firstOrNull { it.text?.toString() in listOf("무선 디버깅 사용", "Use wireless debugging") }
-            ?: nodes.firstOrNull { it.text?.toString() in listOf("무선 디버깅", "Wireless debugging") }
-        val allow = if (texts.any { it.contains("무선 디버깅") || it.contains("wireless debugging", true) })
-            nodes.firstOrNull { it.text?.toString() in listOf("허용", "Allow", "ALLOW") } else null
-        val target = allow ?: pairing ?: wireless
-        if (target != null && click(target)) lastAction = now
-        else if (target == null && texts.any { it in listOf("개발자 옵션", "개발자 옵션 사용", "Developer options", "Use developer options") }) {
-            // 기기마다 바로가기 강조 위치가 달라 개발자 옵션 목록 안에서만 아래로 찾는다.
-            nodes.asReversed().any { it.isScrollable && it.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) }
-            lastAction = now
-        }
-        handler.postDelayed(check, 1000)
+        } else if (session != null && intent != null && intent.data?.lastPathSegment == session) {
+            if (intent.action == CANCEL) finish(null)
+            else if (intent.action == REPLY && work?.isActive != true) {
+                val code = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(CODE)?.toString()?.trim().orEmpty()
+                if (!code.matches(Regex("[0-9]{6}"))) {
+                    update("숫자 6자리를 입력해 주세요", input = true)
+                } else work = scope.launch {
+                    update("페어링·연결 준비 중", input = false)
+                    navigationWork = navigation.pair("", code)
+                    if (navigationWork == null) {
+                        update("다른 연결 작업이 끝난 뒤 다시 입력해 주세요", input = true)
+                        return@launch
+                    }
+                    navigationWork?.join()
+                    if (navigation.state.value.prepared) finish("페어링·연결 준비 완료")
+                    else update(navigation.state.value.message + " · 새 코드 화면을 열어 주세요", input = true)
+                }
+            }
+        } else if (session == null) stopSelf()
+        return START_NOT_STICKY
     }
 
-    /** 깊이와 개수를 제한해 설정 화면만 짧게 순회한다. */
-    private fun collect(node: AccessibilityNodeInfo, result: MutableList<AccessibilityNodeInfo>, depth: Int = 0) {
-        if (depth > 40 || result.size >= 500) return
-        result.add(node)
-        for (index in 0 until node.childCount) node.getChild(index)?.let { collect(it, result, depth + 1) }
+    /** 입력 내용은 알림 기록에 넣지 않고 새 상태만 표시한다. */
+    private fun update(message: String, input: Boolean) { notifications.notify(ID, notification(message, input)) }
+
+    /** 현재 요청의 일회용 액션만 만들며 코드는 화면 잠금 해제 후 입력한다. */
+    private fun notification(message: String, input: Boolean): Notification {
+        val settings = PendingIntent.getActivity(this, 0, settingsIntent(), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val content = if (session != null) settings else PendingIntent.getActivity(this, 1,
+            Intent(this, com.wemade.teslamacro.MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val builder = Notification.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle("네이버 안심주행 연결")
+            .setContentText(message).setStyle(Notification.BigTextStyle().bigText(message))
+            .setContentIntent(content).setOnlyAlertOnce(true).setAutoCancel(session == null)
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(session != null)
+        if (input) {
+            builder.addAction(Notification.Action.Builder(null, "코드 입력", action(REPLY, mutable = true))
+                .addRemoteInput(RemoteInput.Builder(CODE).setLabel("페어링 코드 6자리").build())
+                .setAuthenticationRequired(true).build())
+            builder.addAction(Notification.Action.Builder(null, "설정 열기", settings).build())
+        }
+        if (session != null) builder.addAction(Notification.Action.Builder(null, "취소", action(CANCEL, mutable = false)).build())
+        return builder.build()
     }
 
-    /** 이미 켜진 스위치는 건드리지 않고 가까운 활성 클릭 영역만 누른다. */
-    private fun click(node: AccessibilityNodeInfo): Boolean {
-        var candidate: AccessibilityNodeInfo? = node
-        repeat(4) {
-            val current = candidate ?: return false
-            if (current.isCheckable && current.isChecked) return false
-            if (current.isClickable && current.isEnabled) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            candidate = current.parent
-        }
-        return false
+    /** 세션 주소로 이전 알림과 새 요청을 분리하며 입력 액션만 수정 가능하게 한다. */
+    private fun action(name: String, mutable: Boolean): PendingIntent = PendingIntent.getService(this, 0,
+        Intent(this, NavigationPairingService::class.java).setAction(name).setData(Uri.parse("nav-pair://request/$session")),
+        PendingIntent.FLAG_UPDATE_CURRENT or if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE)
+
+    /** 성공·취소·만료 때 진행 중 알림과 이 서비스 소유의 작업을 정리한다. */
+    private fun finish(message: String?) {
+        session = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (message != null) notifications.notify(ID, notification(message, input = false))
+        stopSelf()
+    }
+
+    /** 서비스 종료 뒤 포트 탐색이나 새 페어링을 계속하지 않는다. */
+    override fun onDestroy() {
+        navigationWork?.takeIf { it.isActive }?.cancel()
+        scope.cancel()
+        super.onDestroy()
     }
 
     companion object {
-        private var deadline = 0L
-        private var service: NavigationPairingService? = null
+        private const val CHANNEL = "navigation_pairing"
+        private const val ID = 1047
+        private const val BEGIN = "nav.pair.begin"
+        private const val REPLY = "nav.pair.reply"
+        private const val CANCEL = "nav.pair.cancel"
+        private const val CODE = "pairing_code"
 
-        /** 최초 권한 허용은 사용자가 하고 그 뒤 설정 화면 조작만 최대 3분간 돕는다. */
+        /** 알림 입력을 사용할 수 있는지 확인해 보이지 않는 설정 대기를 막는다. */
+        fun notificationsEnabled(context: Context): Boolean {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            return manager.areNotificationsEnabled() && manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
+        }
+
+        /** 사용자가 화면에서 시작하며 저장된 인증이 없을 때만 시스템 설정을 함께 연다. */
         fun begin(context: Context) {
-            deadline = SystemClock.elapsedRealtime() + 180_000
-            com.wemade.teslable.DiagLog.add("네이버 안심주행 · 자동 설정 시작")
-            val enabled = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-                .orEmpty().split(":").any { android.content.ComponentName.unflattenFromString(it) ==
-                    android.content.ComponentName(context, NavigationPairingService::class.java) }
-            if (enabled) {
-                openSettings(context)
-                service?.let { it.handler.removeCallbacks(it.check); it.handler.postDelayed(it.check, 500) }
+            if (!notificationsEnabled(context)) {
+                context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
             }
-            else context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startForegroundService(Intent(context, NavigationPairingService::class.java).setAction(BEGIN))
+            val navigation = (context.applicationContext as TeslaMacroApplication).container.wirelessNavigation
+            if (!navigation.hasPairing) context.startActivity(settingsIntent())
         }
 
-        /** 개발자 옵션의 무선 디버깅 항목으로 이동하며 설정 앱만 대상으로 한다. */
-        private fun openSettings(context: Context) {
-            context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                .putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
-                    putString(":settings:fragment_args_key", "toggle_adb_wireless")
-                }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
+        /** 제조사별 위치는 설정 앱에 맡기고 무선 디버깅 항목을 강조한다. */
+        private fun settingsIntent() = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+            .putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
+                putString(":settings:fragment_args_key", "toggle_adb_wireless")
+            }).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 }

@@ -30,6 +30,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 목적지 수신은 비행기 모드·핫스팟 복구 뒤 즉시 재개한다. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 로컬 무선 디버깅 페어링을 연결 서비스로 유지한다. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
@@ -168,11 +170,7 @@
         <provider android:name=".data.nav.NavigationBridgeProvider"
             android:authorities="${applicationId}.navigation" android:exported="true" />
         <service android:name=".data.nav.NavigationPairingService"
-            android:label="네이버 안심주행 설정 도우미"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
-            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
-            <meta-data android:name="android.accessibilityservice" android:resource="@xml/navigation_pairing_accessibility" />
-        </service>
+            android:exported="false" android:foregroundServiceType="connectedDevice" />
         <service
             android:name=".service.MacroService"
             android:exported="false"

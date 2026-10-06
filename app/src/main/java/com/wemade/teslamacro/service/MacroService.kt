@@ -370,6 +370,12 @@ class MacroService : LifecycleService() {
             app.container.poller.boardingEvents.collect {
                 val settings = app.container.settingsStore.settings.first()
                 if (!settings.autoStartNavigatorSafeDrive) return@collect
+                // 두 경로가 같은 탑승에 내비를 따로 열면 BUSY·음성 겹침·종료 시 강제 종료가 생긴다.
+                // 준비 프로세스가 없으면 실험이 실행되지 않으므로 기존 방식을 그대로 쓴다.
+                if (settings.vehicleAudioAddress.isNotBlank() && app.container.wirelessNavigation.ownsBoardingSafeDrive()) {
+                    com.wemade.teslable.DiagLog.add("탑승 안심운전 — 안심주행 실험 자동 실행이 준비되어 기존 방식 건너뜀")
+                    return@collect
+                }
 
                 val navigatorApp = NavigatorApp.of(settings.navigatorApp)
                 val configuredLaunchMode = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode

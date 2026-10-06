@@ -217,6 +217,22 @@ public final class NavigationReleaseSmokeInstrumentation extends Instrumentation
             require(taskProcess.equals(shell("pidof " + target).trim()));
             require(shell("dumpsys activity activities").contains(target + "/.Fixture"));
 
+            // 배경에서 프로세스만 회수되고 최근 앱 작업이 남은 경우는 실행을 허용한다.
+            shell("input keyevent KEYCODE_HOME");
+            await(5000, () -> {
+                shell("am kill " + target);
+                return shell("pidof " + target).trim().isEmpty();
+            });
+            require(shell("dumpsys activity activities").contains(target + "/.Fixture"));
+            try (ParcelFileDescriptor connection = startSession(bridge, "NAVER_READY")) {
+                require(hasDisplay());
+                stopSession(connection);
+            }
+            await(5000, () -> !hasDisplay() && shell("pidof " + target).trim().isEmpty());
+            shell("am start -W -n " + target + "/.Fixture");
+            taskProcess = shell("pidof " + target).trim();
+            require(!taskProcess.isEmpty());
+
             shell("am startservice -n " + component);
             shell("am start -W -n " + target + "/.Fixture --ez finish true -f 0x10008000");
             await(5000, () -> !shell("dumpsys activity activities").contains(" " + target + "/.Fixture t"));

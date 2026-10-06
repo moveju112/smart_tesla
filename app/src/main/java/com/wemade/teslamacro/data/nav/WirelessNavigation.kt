@@ -307,6 +307,14 @@ class WirelessNavigation(private val context: Context) {
         if (!enabled) stop() else if (connected) start(delayed = false) else prepare()
     }
 
+    /** 실험 자동 실행이 켜져 있고 현재 버전 준비 프로세스가 살아 있을 때만 탑승 안심운전을 실험에 맡긴다. */
+    internal suspend fun ownsBoardingSafeDrive(): Boolean = state.value.enabled && withContext(Dispatchers.IO) {
+        NavigationBridgeProvider.request()
+        runCatching { NavigationChannel().connect().use {
+            it.status() in setOf("AVAILABLE", "ACTIVE") && it.serverVersionCode() == BuildConfig.VERSION_CODE
+        } }.getOrDefault(false)
+    }
+
     /** 안심운전 앱은 실행 중 바꾸지 않아 종료 정리가 다른 앱을 강제 종료하지 않게 한다. */
     fun setApp(name: String) {
         val app = safeDriveApp(name)

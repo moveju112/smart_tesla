@@ -268,7 +268,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
             result.putString("result", if (panelOnly) "PASS: no inline action result, repeated result Toasts from worker thread, silent progress, management/test sheets, active stop, unprepared setup"
                 else if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
                 else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper, saved-auth reuse, debugging on-demand and off after success/failure/cancel"
-                else if (serverOnly) "PASS: current helper reused without ADB, legacy and mismatched active helpers preserved, stale helper rejected when ADB unavailable"
+                else if (serverOnly) "PASS: current helper reused without ADB, boarding safe drive delegated only to current helper while enabled, legacy and mismatched active helpers preserved, stale helper rejected when ADB unavailable"
                 else if (prepareOnly) "PASS: detached helper prepared with current APK version" else "PASS: debugging enabled before commands, retained during ride and reconnect grace, heartbeat recovery, manual stop retention, departure and disable cleanup, repeated start/stop")
         } catch (error: Throwable) {
             status = Activity.RESULT_CANCELED
@@ -287,6 +287,11 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         }
         val real = com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge
         check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.serverVersionCode() } == com.wemade.teslamacro.BuildConfig.VERSION_CODE)
+        // 자동 실행이 꺼져 있으면 탑승 안심운전은 항상 기존 방식이 맡는다.
+        check(!navigation.ownsBoardingSafeDrive())
+        withContext(Dispatchers.Main) { navigation.setEnabled(true) }
+        withTimeout(10_000) { while (navigation.state.value.busy) delay(100) }
+        check(navigation.ownsBoardingSafeDrive())
         try {
             for ((version, active) in listOf(null to true, com.wemade.teslamacro.BuildConfig.VERSION_CODE - 1 to true,
                 com.wemade.teslamacro.BuildConfig.VERSION_CODE to false, null to false)) {
@@ -304,6 +309,8 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 }
                 com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge = bridge
                 check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.serverVersionCode() } == version)
+                // 현재 버전 준비 프로세스만 실험이 탑승 안심운전을 대신 실행한다.
+                check(navigation.ownsBoardingSafeDrive() == (version == com.wemade.teslamacro.BuildConfig.VERSION_CODE))
                 // 로컬 ADB 계측 연결은 유지하고 제품의 포트 탐색·접속만 불가능하게 만든다.
                 if (!active && version == null) shell("svc wifi disable")
                 withContext(Dispatchers.Main) { navigation.setPort("65534"); navigation.prepare() }?.join()
@@ -316,6 +323,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         } finally {
             shell("svc wifi enable")
             com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge = real
+            withContext(Dispatchers.Main) { navigation.setEnabled(false) }
         }
     }
 

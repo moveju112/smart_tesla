@@ -136,10 +136,16 @@ public final class NaverDisplaySession {
         ActivityManager activityManager = shell.getSystemService(ActivityManager.class);
         // 셸 권한으로 전체 작업을 확인해야 배경 지도나 다른 화면의 지도도 보호할 수 있다.
         java.lang.reflect.Field taskUser = ActivityManager.RunningTaskInfo.class.getField("userId");
+        boolean processAlive = hasProcess(activityManager, target, user);
         for (ActivityManager.RunningTaskInfo task : activityManager.getRunningTasks(Integer.MAX_VALUE)) {
             if (taskUser.getInt(task) != user || task.numActivities <= 0) continue;
             if ((task.baseActivity != null && target.equals(task.baseActivity.getPackageName())) ||
                 (task.topActivity != null && target.equals(task.topActivity.getPackageName()))) {
+                // 배경에서 프로세스가 회수된 뒤 최근 앱 목록에 남은 작업은 안내 중일 수 없어 보호하지 않는다.
+                if (!processAlive) {
+                    diagnostic(output, "남은 작업 무시 · 프로세스 없음 · " + taskDetails(task));
+                    continue;
+                }
                 diagnostic(output, "기존 실행 보호 · " + taskDetails(task));
                 return true;
             }
@@ -151,6 +157,18 @@ public final class NaverDisplaySession {
                 diagnostic(output, "기존 실행 보호 · 전경서비스=" + service.service.flattenToShortString());
                 return true;
             }
+        }
+        return false;
+    }
+
+    // 대상 프로세스 생존 확인 (같은 사용자 프로세스 목록 -> 패키지 포함 여부)
+    private static boolean hasProcess(ActivityManager activityManager, String target, int user) {
+        java.util.List<ActivityManager.RunningAppProcessInfo> processes = activityManager.getRunningAppProcesses();
+        // 조회 결과가 없으면 판단할 수 없으므로 기존 실행으로 보고 보호한다.
+        if (processes == null) return true;
+        for (ActivityManager.RunningAppProcessInfo process : processes) {
+            if (process.uid / 100000 != user || process.pkgList == null) continue;
+            for (String packageName : process.pkgList) if (target.equals(packageName)) return true;
         }
         return false;
     }

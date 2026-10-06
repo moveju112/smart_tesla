@@ -37,6 +37,9 @@ internal class NavigationChannel : Closeable {
     /** 업데이트 전 서버는 이 명령을 몰라 네이버 외 안심운전 앱을 실행하지 못하므로 재준비 대상으로 본다. */
     fun supportsSafeDriveApps(): Boolean = runCatching { transact(5) { it.readInt() == 1 } }.getOrDefault(false)
 
+    /** 기능 지원만으로 구버전 서버를 재사용하지 않도록 실제 APK 빌드 버전을 조회한다. */
+    fun serverVersionCode(): Int? = runCatching { transact(6) { it.readInt() } }.getOrNull()
+
     /** 구형 서버·잠금·다른 지도 세션은 명령을 보내기 전에 기존 실행 경로로 돌린다. */
     fun canLaunchDestination(packageName: String, uri: String): Boolean =
         transact(3, { it.writeString(packageName); it.writeString(uri) }) { it.readInt() == 1 }

@@ -3,6 +3,8 @@
 This project's AI rules live in [CLAUDE.md](CLAUDE.md) and the `docs/*.md` files it links.
 Read CLAUDE.md first, then load the relevant `docs/` file for your task.
 
+- In this repository, an approved feature/fix remains authorized through related user-reported failures, follow-up diagnosis, necessary reversible fixes, verification and the existing automatic release procedure. Logs, screenshots and test results continue that work; do not require fresh approval merely because a diagnostic patch was released. Ask only for a materially different objective/target, destructive or irreversible impact, or an operation outside existing permissions. Preserve all existing remote, data, device and Git safety boundaries.
+
 ## CI / GitHub Actions
 
 - GitHub Actions CI를 사용하지 않는다.

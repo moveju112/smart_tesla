@@ -45,6 +45,9 @@ public final class NaverControlServer {
                     } else if (code == 5) {
                         // 앱별 안심운전 시작 명령을 이해하는 서버인지 앱이 확인한다.
                         reply.writeNoException(); reply.writeInt(1);
+                    } else if (code == 6) {
+                        // 앱 업데이트 뒤에도 남은 셸은 자신이 로드한 APK 버전을 반환한다.
+                        reply.writeNoException(); reply.writeInt(com.wemade.teslamacro.BuildConfig.VERSION_CODE);
                     } else if (code == 3 || code == 4) {
                         String packageName = data.readString();
                         String address = data.readString();

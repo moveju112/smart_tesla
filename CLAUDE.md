@@ -3,6 +3,8 @@
 휴대폰 우선 안드로이드 앱이며 차내 거치 태블릿도 지원한다. 차량 제어의 정본은 클라우드를 거치지 않는 BLE다(공조/시트/잠금/충전 + 매크로). 주행 안내 등 보조 기능의 인터넷 사용은 금지하지 않는다.
 모듈 2개: `:app`(UI/도메인) + `:tesla-ble`(전송 계층).
 
+- In this repository, an approved feature/fix remains authorized through related user-reported failures, follow-up diagnosis, necessary reversible fixes, verification and the existing automatic release procedure. Logs, screenshots and test results continue that work; do not require fresh approval merely because a diagnostic patch was released. Ask only for a materially different objective/target, destructive or irreversible impact, or an operation outside existing permissions. Preserve all existing remote, data, device and Git safety boundaries.
+
 ## Core Rules
 
 - **사용자 실 VIN을 코드·테스트·문서·로그 샘플에 절대 넣지 않는다.** 더미는 `5YJS0000000000000`

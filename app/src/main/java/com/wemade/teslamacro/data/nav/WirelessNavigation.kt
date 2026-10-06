@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import com.wemade.teslable.DiagLog
+import com.wemade.teslamacro.BuildConfig
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -131,7 +132,7 @@ class WirelessNavigation(private val context: Context) {
                 report("연결 준비 완료")
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED)) error.message!! else "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
+                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY)) error.message!! else "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
             } finally { mutableState.value = state.value.copy(busy = false) }
         }.also { job ->
             operation = job
@@ -139,7 +140,7 @@ class WirelessNavigation(private val context: Context) {
         }
     }
 
-    /** 기존 서버 재사용도 무선 디버깅을 먼저 켜고, 서버가 없을 때만 ADB로 다시 세운다. */
+    /** 현재 APK와 같은 서버만 재사용하고 구버전은 기존 ADB 준비 경로에서 교체한다. */
     private suspend fun ensurePrepared() = withTimeout(30_000) {
         mutableState.value = state.value.copy(prepared = false)
         try {
@@ -147,13 +148,17 @@ class WirelessNavigation(private val context: Context) {
             check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
             enableWirelessDebugging()
             NavigationBridgeProvider.request()
-            val app = state.value.app
-            if (runCatching { NavigationChannel().connect().use {
-                    it.status() in setOf("AVAILABLE", "ACTIVE") && (app == NavigatorApp.NAVER || it.supportsSafeDriveApps())
-                } }.getOrDefault(false)) {
+            val server = runCatching { NavigationChannel().connect().use {
+                it.status() to it.serverVersionCode()
+            } }.getOrNull()
+            if (server != null) DiagLog.add("안심주행 · 준비 프로세스 버전 · 앱=${BuildConfig.VERSION_CODE} · 셸=${server.second ?: "미확인"}")
+            if (server?.first in setOf("AVAILABLE", "ACTIVE") && server?.second == BuildConfig.VERSION_CODE) {
                 mutableState.value = state.value.copy(prepared = true)
                 return@withTimeout
             }
+            // 이전 서버에서 주행 중이면 강제 교체로 내비를 종료하지 않고 명시적 종료를 먼저 받는다.
+            check(server?.first != "ACTIVE") { SERVER_UPDATE_BUSY }
+            if (server != null) DiagLog.add("안심주행 · 이전 준비 프로세스를 현재 앱 버전으로 교체")
             mutableState.value = state.value.copy(prepared = false)
             manager().use { connection ->
                 DiagLog.add("안심주행 · 연결 포트 탐색")
@@ -192,10 +197,13 @@ class WirelessNavigation(private val context: Context) {
                     "com.wemade.teslamacro.data.nav.NaverControlServer $uid </dev/null >/dev/null 2>&1 & wait"
                 runInterruptible { connection.openStream("shell:$command") }.use {
                     withTimeout(15_000) {
-                        while (!runCatching { NavigationChannel().connect().use { it.status() == "AVAILABLE" } }.getOrDefault(false)) delay(150)
+                        while (!runCatching { NavigationChannel().connect().use {
+                            it.status() == "AVAILABLE" && it.serverVersionCode() == BuildConfig.VERSION_CODE
+                        } }.getOrDefault(false)) delay(150)
                     }
                 }
             }
+            DiagLog.add("안심주행 · 준비 프로세스 확인 완료 · 버전=${BuildConfig.VERSION_CODE}")
             mutableState.value = state.value.copy(prepared = true)
         } finally {
             closeWirelessDebugging()
@@ -346,7 +354,7 @@ class WirelessNavigation(private val context: Context) {
                 report(if (paired) "페어링·준비 완료" else "페어링 실패 · 새 코드를 확인해 주세요")
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED)) error.message!! else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
+                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY)) error.message!! else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
             } finally {
                 closeWirelessDebugging()
                 mutableState.value = state.value.copy(busy = false)
@@ -418,7 +426,7 @@ class WirelessNavigation(private val context: Context) {
                 }
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED)) error.message!! else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 ${app.label} 상태를 확인해 주세요")
+                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY)) error.message!! else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 ${app.label} 상태를 확인해 주세요")
                 DiagLog.add("안심주행 · 실행 예외 ${error.javaClass.simpleName}")
             } finally {
                 if (wake.isHeld) wake.release()
@@ -543,6 +551,7 @@ class WirelessNavigation(private val context: Context) {
     }
 
     companion object {
+        private const val SERVER_UPDATE_BUSY = "이전 안심주행 실험을 종료한 뒤 준비를 다시 해 주세요"
         /** 앱이 무선 디버깅을 켰는지. 사용자가 켜 둔 디버깅은 앱이 닫지 않는다 */
         private const val OWNS_WIRELESS_DEBUGGING = "owns_adb_wifi"
         private const val USB_DEBUGGING_REQUIRED = "USB 디버깅을 켜고 연결 준비를 다시 눌러 주세요"

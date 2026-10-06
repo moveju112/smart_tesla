@@ -500,7 +500,8 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 onBackToFeature = if (returnToFeature) backFromSettings else null,
                                 initialGroup = when (settingsTarget) {
                                     FeatureSettings.VEHICLE -> SettingsGroup.VEHICLE
-                                    FeatureSettings.DESTINATION -> SettingsGroup.DRIVING
+                                    // 기능에서 온 경우만 초기 칸을 지정해 일반 설정의 선택 칸이 시트 닫기로 초기화되지 않게 한다.
+                                    FeatureSettings.DESTINATION -> if (returnToFeature) SettingsGroup.DRIVING else null
                                     FeatureSettings.STEALTH_CHARGE, FeatureSettings.SMARTTHINGS -> SettingsGroup.AUTOMATION
                                     else -> null
                                 },

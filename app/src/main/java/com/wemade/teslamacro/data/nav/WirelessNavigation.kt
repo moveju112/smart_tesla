@@ -409,8 +409,8 @@ class WirelessNavigation(private val context: Context) {
                     return@launch
                 }
                 logLaunchEnvironment("예약", app)
-                report(if (delayed) "10초 뒤 실행 · 화면을 잠가 주세요" else "${app.label} 실행 준비", notify = delayed)
-                if (delayed) delay(10_000)
+                report(if (delayed) "5초 뒤 실행" else "${app.label} 실행 준비", notify = delayed)
+                if (delayed) delay(5_000)
                 withContext(Dispatchers.IO) {
                     ensurePrepared()
                     NavigationChannel().connect().use { active ->

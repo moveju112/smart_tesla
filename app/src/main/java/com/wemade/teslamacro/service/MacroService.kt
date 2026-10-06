@@ -533,7 +533,7 @@ class MacroService : LifecycleService() {
                     app.ready.first { it }
                     val prepared = app.container.settingsStore.settings.first()
                     app.container.navigator.logSafeDriveState(
-                        "잠금 테스트 준비 · 10초 뒤 실행 · 홈 전환 끔",
+                        "잠금 테스트 준비 · 5초 뒤 실행 · 홈 전환 끔",
                         NavigatorApp.of(prepared.navigatorApp),
                         SafeDriveLaunchMode.of(prepared.navigatorSafeDriveLaunchMode),
                     )
@@ -911,8 +911,8 @@ class MacroService : LifecycleService() {
         private const val ACTION_ACTIVITY_PERMISSION_CHANGED =
             "com.wemade.teslamacro.action.ACTIVITY_PERMISSION_CHANGED"
         private const val ACTIVITY_REQUEST_CODE = 81
-        private const val SAFE_DRIVE_TEST_DELAY_MILLIS = 10_000L
-        // 10초 예약 뒤 시스템 인증을 최대 60초 기다리고 전달할 시간을 남긴다.
+        private const val SAFE_DRIVE_TEST_DELAY_MILLIS = 5_000L
+        // 5초 예약 뒤 시스템 인증을 최대 60초 기다리고 전달할 시간을 남긴다.
         private const val SAFE_DRIVE_TEST_TIMEOUT_MILLIS = 90_000L
         // 랜덤 전환 최대 간격(5분)보다 길고, 상태는 매초 재확인한다.
         private const val STEALTH_WAKE_LOCK_TIMEOUT_MILLIS = 6 * 60_000L

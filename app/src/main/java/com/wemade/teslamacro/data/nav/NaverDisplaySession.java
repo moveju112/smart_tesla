@@ -100,8 +100,8 @@ public final class NaverDisplaySession {
             int observations = 0;
             while (!stopping.get() && System.nanoTime() - heartbeat.get() < TimeUnit.SECONDS.toNanos(15)) {
                 long now = System.nanoTime();
-                // 최초 30초에 바뀐 화면만 최대 8회 기록해 장시간 주행의 로그·조회 비용을 제한한다.
-                if (observations < 8 && now >= nextObservation && now - observationStart < TimeUnit.SECONDS.toNanos(30)) {
+                // 최초 5초에 바뀐 화면만 최대 8회 기록해 장시간 주행의 로그·조회 비용을 제한한다.
+                if (observations < 8 && now >= nextObservation && now - observationStart < TimeUnit.SECONDS.toNanos(5)) {
                     String state = navigationState(target, user);
                     if (!state.equals(previousState)) {
                         diagnostic(output, "화면 관측 · 실행후=" + TimeUnit.NANOSECONDS.toSeconds(now - observationStart) +
@@ -109,7 +109,7 @@ public final class NaverDisplaySession {
                         previousState = state;
                         observations++;
                     }
-                    nextObservation = now + TimeUnit.SECONDS.toNanos(2);
+                    nextObservation = now + TimeUnit.SECONDS.toNanos(1);
                 }
                 Thread.sleep(250);
             }
@@ -170,10 +170,11 @@ public final class NaverDisplaySession {
     private static void launchSafeDrive(NavigatorApp app, String target, int user, int displayId, PrintStream output) throws Exception {
         String uri = String.valueOf(app.safeDriveUri(OWNER));
         java.util.List<String[]> candidates = new java.util.ArrayList<>();
-        // 카카오 위젯 URI는 매니페스트 필터에 없고, 티맵은 런처 인텐트의 url extra로 안심운전을 연다.
+        // 카카오 위젯은 명시 진입점이 필요하고, 티맵은 런처 extra보다 URI 전달을 우선한다.
         if (app == NavigatorApp.KAKAO) {
             candidates.add(new String[] {"-a", "android.intent.action.VIEW", "-d", uri, "-n", target + "/" + NavigatorApp.KAKAO_DEEP_LINK_ACTIVITY});
         } else if (app == NavigatorApp.TMAP) {
+            candidates.add(new String[] {"-a", "android.intent.action.VIEW", "-d", uri, "-p", target});
             // am은 DEFAULT 카테고리 없는 런처 화면을 패키지만으로 찾지 못해 컴포넌트를 직접 지정한다.
             android.content.Intent launcher = shell.getPackageManager().getLaunchIntentForPackage(target);
             if (launcher != null && launcher.getComponent() != null) {
@@ -181,7 +182,9 @@ public final class NaverDisplaySession {
                     "-n", launcher.getComponent().flattenToString(), "--es", "url", uri});
             }
         }
-        candidates.add(new String[] {"-a", "android.intent.action.VIEW", "-d", uri, "-p", target});
+        if (app != NavigatorApp.TMAP) {
+            candidates.add(new String[] {"-a", "android.intent.action.VIEW", "-d", uri, "-p", target});
+        }
         for (String[] intent : candidates) {
             java.util.List<String> arguments = new java.util.ArrayList<>(java.util.Arrays.asList(
                 "am", "start", "--user", Integer.toString(user), "--display", Integer.toString(displayId), "-W"));

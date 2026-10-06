@@ -355,7 +355,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
             runOnMainSync { panelState.value = panelState.value.copy(enabled = true) }
             awaitPanelText("설정 → 차량 → 탑승 감지 블루투스에서 기기를 선택해 주세요", true)
             runOnMainSync { panelState.value = panelState.value.copy(enabled = false) }
-            for (text in listOf("연결 설정", "연결 준비 / 복구", "수동 페어링 / 연결 포트", "10초 뒤 테스트", "종료")) {
+            for (text in listOf("연결 설정", "연결 준비 / 복구", "수동 페어링 / 연결 포트", "5초 뒤 테스트", "종료")) {
                 awaitPanelText(text, false)
             }
             clickSetup("연결 관리")
@@ -364,10 +364,10 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
             uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
             awaitPanelText("연결 준비 / 복구", false)
             clickSetup("실행 점검")
-            clickSetup("10초 뒤 테스트")
+            clickSetup("5초 뒤 테스트")
             runOnMainSync { check(tests == 1) }
             uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
-            awaitPanelText("10초 뒤 테스트", false)
+            awaitPanelText("5초 뒤 테스트", false)
             val completed = "실행 요청 완료 · 음성 안내를 확인해 주세요"
             runOnMainSync { panelState.value = panelState.value.copy(running = true, message = completed) }
             awaitPanelText(completed, false)

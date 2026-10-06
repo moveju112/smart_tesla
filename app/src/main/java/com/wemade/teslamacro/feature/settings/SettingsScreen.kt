@@ -916,7 +916,7 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                             .of(settings.navigatorSafeDriveLaunchMode).settingValue,
                         onSelect = controls.onSafeDriveLaunchModeChange,
                     )
-                    SettingActionRow("10초 뒤 실행 점검") {
+                    SettingActionRow("5초 뒤 실행 점검") {
                         TButton("실행", ButtonTone.Secondary, fillWidth = false,
                             enabled = controls.overlayPermitted, onClick = controls.onSafeDriveTest)
                     }

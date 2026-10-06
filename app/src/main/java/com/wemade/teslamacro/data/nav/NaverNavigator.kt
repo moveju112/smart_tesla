@@ -267,7 +267,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
         )
     }
 
-    /** 앱이 실제로 쓰는 안심운전 진입 형태를 우선하고, 공개 스킴을 대체 경로로 둔다 */
+    /** 카카오는 명시 진입점, 티맵은 URI 전달을 우선하고 거절 시에만 대체 경로를 쓴다 */
     private fun safeDriveIntents(
         app: NavigatorApp,
         packageName: String,
@@ -285,13 +285,13 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 schemeIntent,
             )
 
-            // 티맵 자체 블루투스 자동 실행도 런처 인텐트의 url extra로 tmap://navi를 넘긴다
+            // 런처 url extra가 일반 메인 화면에 머무는 기기에서는 URI 데이터로 먼저 전달한다
             NavigatorApp.TMAP -> listOfNotNull(
+                schemeIntent,
                 context.packageManager.getLaunchIntentForPackage(packageName)?.apply {
                     putExtra("url", uri.toString())
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 },
-                schemeIntent,
             )
 
             NavigatorApp.NAVER -> listOf(schemeIntent)

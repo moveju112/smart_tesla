@@ -79,7 +79,7 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         "명령을 보내기 전에 꺼진 무선 디버깅을 다시 켜고, 자동 실행을 켠 상태로 차량에 연결되어 있으면 계속 켜 둬요. 연결 해제 30초 뒤 지도 종료를 마치면 꺼요. USB 디버깅도 켜 두고 무선 디버깅에 사용할 Wi-Fi에 연결해 주세요. 케이블 연결은 필요 없어요. 자동 실행을 켜면 재부팅 후 Wi-Fi 연결 때 준비 복구를 시도해요. " +
         "처음 Wi-Fi 허용 창에서 ‘이 네트워크에서 항상 허용’을 선택하면 다음 준비 때 확인을 줄일 수 있어요. 프로세스가 종료되면 Wi-Fi에서 다시 준비해 주세요.\n\n" +
         "실행 전 선택한 내비의 초기 설정·위치·음량 설정을 마쳐 주세요. 선택한 내비가 이미 실행 중이면 실험을 시작하지 않아요. " +
-        "테스트 버튼을 누른 뒤 화면을 잠가 음성을 확인해 주세요.\n\n" +
+        "화면이 켜진 상태와 잠긴 상태에서 각각 테스트해 음성을 확인해 주세요.\n\n" +
         "자동 실행은 ‘설정 → 차량 → 탑승 감지 블루투스’에서 직접 선택한 기기 연결을 사용해요. 연결 해제 30초 뒤 실험을 종료해요. " +
         "종료 시 선택한 내비를 강제 종료하므로 실험 도중 직접 시작한 길안내도 함께 종료돼요. " +
         "이 실험은 이 휴대폰의 선택한 내비에만 명령을 보내요.")
@@ -138,7 +138,7 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
                 }
             }
             SettingsDetails("실행 점검") {
-                TButton("10초 뒤 테스트", ButtonTone.Secondary,
+                TButton("5초 뒤 테스트", ButtonTone.Secondary,
                     enabled = !checkingSetup && !state.busy && !state.running, onClick = controls.onWirelessTest)
             }
         }

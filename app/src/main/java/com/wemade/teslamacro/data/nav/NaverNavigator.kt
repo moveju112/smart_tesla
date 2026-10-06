@@ -26,6 +26,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import java.util.Locale
 
+/** 일반 실행과 가상 화면 실험이 같은 기기·앱·잠금 상태를 기록하도록 조회 경로를 공유한다. */
+internal fun navigationLaunchEnvironment(context: Context, packageName: String?): String = runCatching {
+    val power = context.getSystemService(PowerManager::class.java)
+    val keyguard = context.getSystemService(KeyguardManager::class.java)
+    val version = packageName?.let { context.packageManager.getPackageInfo(it, 0) }
+    "기기=${Build.MANUFACTURER}/${Build.MODEL} · Android=${Build.VERSION.RELEASE}(API ${Build.VERSION.SDK_INT}) · " +
+        "화면켜짐=${power?.isInteractive} · 키가드잠금=${keyguard?.isKeyguardLocked} · " +
+        "기기잠금=${keyguard?.isDeviceLocked} · 오버레이권한=${Settings.canDrawOverlays(context)} · " +
+        "대상=${packageName ?: "미설치"} · 버전=${version?.versionName ?: "미확인"}"
+}.getOrElse { "실행 상태 조회 실패=${it.javaClass.simpleName}" }
+
 /**
  * 네이버 지도 길안내를 시작한다.
  *
@@ -221,20 +232,9 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
     fun logSafeDriveState(stage: String, app: NavigatorApp, launchMode: SafeDriveLaunchMode) {
         com.wemade.teslable.DiagLog.add(
             "${app.label} 안심운전 $stage — 방식=${launchMode.label} · " +
-                launchEnvironment(installedPackage(app)),
+                navigationLaunchEnvironment(context, installedPackage(app)),
         )
     }
-
-    /** 상태 조회 실패가 지도 실행을 막지 않도록 진단 정보만 안전하게 수집한다. */
-    private fun launchEnvironment(packageName: String?): String = runCatching {
-        val power = context.getSystemService(PowerManager::class.java)
-        val keyguard = context.getSystemService(KeyguardManager::class.java)
-        val version = packageName?.let { context.packageManager.getPackageInfo(it, 0) }
-        "Android=${Build.VERSION.SDK_INT} · 화면켜짐=${power?.isInteractive} · " +
-            "키가드잠금=${keyguard?.isKeyguardLocked} · 기기잠금=${keyguard?.isDeviceLocked} · " +
-            "오버레이권한=$hasOverlayPermission · 대상=${packageName ?: "미설치"} · " +
-            "버전=${version?.versionName ?: "미확인"}"
-    }.getOrElse { "실행 상태 조회 실패=${it.message}" }
 
     /** 설치된 패키지 중 첫 번째. 티맵처럼 패키지가 둘인 앱이 있다 */
     private fun installedPackage(app: NavigatorApp): String? = app.packages.firstOrNull { pkg ->
@@ -448,7 +448,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
         val target = resolved.activityInfo?.name ?: "알 수 없는 화면"
         com.wemade.teslable.DiagLog.add(
             "$appLabel 전달 직전 — 방식=${method.logLabel} · " +
-                launchEnvironment(resolved.activityInfo?.packageName),
+                navigationLaunchEnvironment(context, resolved.activityInfo?.packageName),
         )
 
         if (method == BackgroundLaunchMethod.DIRECT_ACTIVITY) {

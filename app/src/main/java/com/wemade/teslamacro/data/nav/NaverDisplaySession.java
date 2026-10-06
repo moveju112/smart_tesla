@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 
 /** 앱과 연결된 동안만 잠금 화면과 분리된 선택 내비 실행 화면을 유지한다. */
 public final class NaverDisplaySession {
+    public static final String DIAGNOSTIC_PREFIX = "NAVER_DIAG ";
     private static final String OWNER = "com.wemade.teslamacro";
     private static DisplayManager manager;
     private static Context shell;
@@ -67,8 +68,9 @@ public final class NaverDisplaySession {
             lock = new LocalServerSocket("smart_tesla_naver_" + user);
             initialize();
             target = installedPackage(app);
+            diagnostic(output, "셸 환경 · " + NaverNavigatorKt.navigationLaunchEnvironment(shell, target));
             // 종료 후 남은 캐시 프로세스는 허용하되 기존 화면·주행 서비스는 종료 대상에 섞지 않는다.
-            if (hasExistingNavigation(target, user)) {
+            if (hasExistingNavigation(target, user, output)) {
                 output.println("NAVER_BUSY");
                 return;
             }
@@ -87,11 +89,30 @@ public final class NaverDisplaySession {
             display = manager.createVirtualDisplay("Smart Tesla Navigation", 720, 1280, 240, surface, flags);
             if (display == null || display.getDisplay().getDisplayId() == 0) throw new IllegalStateException();
             int displayId = display.getDisplay().getDisplayId();
+            diagnostic(output, "가상 화면 생성 · 요청display=" + displayId + " · 화면상태=" + display.getDisplay().getState());
             launched = true;
-            launchSafeDrive(app, target, user, displayId);
+            launchSafeDrive(app, target, user, displayId, output);
             output.println("NAVER_READY");
             output.flush();
-            while (!stopping.get() && System.nanoTime() - heartbeat.get() < TimeUnit.SECONDS.toNanos(15)) Thread.sleep(250);
+            long observationStart = System.nanoTime();
+            long nextObservation = observationStart;
+            String previousState = null;
+            int observations = 0;
+            while (!stopping.get() && System.nanoTime() - heartbeat.get() < TimeUnit.SECONDS.toNanos(15)) {
+                long now = System.nanoTime();
+                // 최초 30초에 바뀐 화면만 최대 8회 기록해 장시간 주행의 로그·조회 비용을 제한한다.
+                if (observations < 8 && now >= nextObservation && now - observationStart < TimeUnit.SECONDS.toNanos(30)) {
+                    String state = navigationState(target, user);
+                    if (!state.equals(previousState)) {
+                        diagnostic(output, "화면 관측 · 실행후=" + TimeUnit.NANOSECONDS.toSeconds(now - observationStart) +
+                            "초 · 요청display=" + displayId + " · " + state);
+                        previousState = state;
+                        observations++;
+                    }
+                    nextObservation = now + TimeUnit.SECONDS.toNanos(2);
+                }
+                Thread.sleep(250);
+            }
         } catch (Exception error) {
             // 실행 환경 예외 이름만 남겨 경로·페어링 비밀값은 출력하지 않는다.
             output.println("NAVER_ERROR " + error.getClass().getSimpleName());
@@ -111,19 +132,25 @@ public final class NaverDisplaySession {
     }
 
     /** 같은 사용자의 살아 있는 지도 작업·전경 서비스만 보호하고 조회 실패는 시작 실패로 넘긴다. */
-    private static boolean hasExistingNavigation(String target, int user) throws Exception {
+    private static boolean hasExistingNavigation(String target, int user, PrintStream output) throws Exception {
         ActivityManager activityManager = shell.getSystemService(ActivityManager.class);
         // 셸 권한으로 전체 작업을 확인해야 배경 지도나 다른 화면의 지도도 보호할 수 있다.
         java.lang.reflect.Field taskUser = ActivityManager.RunningTaskInfo.class.getField("userId");
         for (ActivityManager.RunningTaskInfo task : activityManager.getRunningTasks(Integer.MAX_VALUE)) {
             if (taskUser.getInt(task) != user || task.numActivities <= 0) continue;
             if ((task.baseActivity != null && target.equals(task.baseActivity.getPackageName())) ||
-                (task.topActivity != null && target.equals(task.topActivity.getPackageName()))) return true;
+                (task.topActivity != null && target.equals(task.topActivity.getPackageName()))) {
+                diagnostic(output, "기존 실행 보호 · " + taskDetails(task));
+                return true;
+            }
         }
         // 화면 없이 음성 안내 중일 수 있으므로 실제 전경 서비스도 함께 보호한다.
         for (ActivityManager.RunningServiceInfo service : activityManager.getRunningServices(Integer.MAX_VALUE)) {
             if (service.uid / 100000 == user && service.foreground && service.pid > 0 &&
-                service.service != null && target.equals(service.service.getPackageName())) return true;
+                service.service != null && target.equals(service.service.getPackageName())) {
+                diagnostic(output, "기존 실행 보호 · 전경서비스=" + service.service.flattenToShortString());
+                return true;
+            }
         }
         return false;
     }
@@ -140,7 +167,7 @@ public final class NaverDisplaySession {
     }
 
     /** 앱 내부 실행과 같은 진입 후보를 순서대로 쓰되, 시작을 거절한 응답에서만 다음 후보로 넘어가 중복 실행을 막는다. */
-    private static void launchSafeDrive(NavigatorApp app, String target, int user, int displayId) throws Exception {
+    private static void launchSafeDrive(NavigatorApp app, String target, int user, int displayId, PrintStream output) throws Exception {
         String uri = String.valueOf(app.safeDriveUri(OWNER));
         java.util.List<String[]> candidates = new java.util.ArrayList<>();
         // 카카오 위젯 URI는 매니페스트 필터에 없고, 티맵은 런처 인텐트의 url extra로 안심운전을 연다.
@@ -159,12 +186,74 @@ public final class NaverDisplaySession {
             java.util.List<String> arguments = new java.util.ArrayList<>(java.util.Arrays.asList(
                 "am", "start", "--user", Integer.toString(user), "--display", Integer.toString(displayId), "-W"));
             arguments.addAll(java.util.Arrays.asList(intent));
+            diagnostic(output, "요청 · 요청display=" + displayId + " · intent=" + String.join(" ", intent));
             String result = command(arguments.toArray(new String[0]));
+            diagnostic(output, "응답 · 요청display=" + displayId + " · " + launchResultDetails(result));
             if (result.contains("Status: ok") && !result.contains("Error")) return;
             // 시작 여부가 불명확한 응답은 다른 진입점으로 다시 보내지 않는다.
             if (!result.contains("Error")) break;
         }
         throw new IllegalStateException();
+    }
+
+    /** 셸 진단은 기존 연결에만 보내며 줄바꿈·길이를 제한해 제어 응답과 분리한다. */
+    private static void diagnostic(PrintStream output, String message) {
+        String safe = message.replace('\n', ' ').replace('\r', ' ');
+        output.println(DIAGNOSTIC_PREFIX + safe.substring(0, Math.min(safe.length(), 1200)));
+        output.flush();
+    }
+
+    /** 시스템 응답에서 상태·컴포넌트만 골라 인텐트 전체나 임의 오류 본문을 기록하지 않는다. */
+    static String launchResultDetails(String result) {
+        String component = "미확인";
+        for (String line : result.split("\\r?\\n")) {
+            if (!line.trim().startsWith("Activity:")) continue;
+            String value = line.trim().substring("Activity:".length()).trim();
+            if (value.length() <= 256 && value.matches("[A-Za-z0-9_.$/]+")) component = value;
+        }
+        String status = result.contains("Error") ? "거절" : result.contains("Status: ok") ? "접수" : "불명";
+        return "상태=" + status + " · 진입=" + component;
+    }
+
+    /** 선택한 앱의 화면·전경 서비스만 관측하고 조회 실패는 실험 실행을 중단하지 않는다. */
+    private static String navigationState(String target, int user) {
+        try {
+            ActivityManager activityManager = shell.getSystemService(ActivityManager.class);
+            java.lang.reflect.Field taskUser = ActivityManager.RunningTaskInfo.class.getField("userId");
+            java.util.SortedSet<String> records = new java.util.TreeSet<>();
+            for (ActivityManager.RunningTaskInfo task : activityManager.getRunningTasks(Integer.MAX_VALUE)) {
+                if (taskUser.getInt(task) != user || task.numActivities <= 0) continue;
+                if ((task.baseActivity != null && target.equals(task.baseActivity.getPackageName())) ||
+                    (task.topActivity != null && target.equals(task.topActivity.getPackageName()))) {
+                    records.add(taskDetails(task));
+                    if (records.size() >= 3) break;
+                }
+            }
+            for (ActivityManager.RunningServiceInfo service : activityManager.getRunningServices(Integer.MAX_VALUE)) {
+                if (service.uid / 100000 == user && service.foreground && service.pid > 0 &&
+                    service.service != null && target.equals(service.service.getPackageName())) {
+                    records.add("전경서비스=" + service.service.flattenToShortString());
+                    if (records.size() >= 6) break;
+                }
+            }
+            return records.isEmpty() ? "화면·전경서비스 없음" : String.join(" | ", records);
+        } catch (Exception error) {
+            return "화면 조회 실패=" + error.getClass().getSimpleName();
+        }
+    }
+
+    /** 실제 작업의 기본·상단 화면과 배치된 디스플레이를 표시하며 화면 내용은 수집하지 않는다. */
+    private static String taskDetails(ActivityManager.RunningTaskInfo task) {
+        return "기본=" + (task.baseActivity == null ? "없음" : task.baseActivity.flattenToShortString()) +
+            " · 상단=" + (task.topActivity == null ? "없음" : task.topActivity.flattenToShortString()) +
+            " · 실제display=" + taskField(task, "displayId") + " · 표시=" + taskField(task, "isVisible") +
+            " · 화면수=" + task.numActivities;
+    }
+
+    /** 제조사·Android 버전에서 공개되지 않은 작업 필드는 미확인으로 남기고 나머지 조회를 유지한다. */
+    private static String taskField(ActivityManager.RunningTaskInfo task, String field) {
+        try { return String.valueOf(ActivityManager.RunningTaskInfo.class.getField(field).get(task)); }
+        catch (Exception ignored) { return "미확인"; }
     }
 
     /** 부모 앱이 살아 있음을 확인하고 EOF나 명시적 종료는 즉시 정리 신호로 바꾼다. */

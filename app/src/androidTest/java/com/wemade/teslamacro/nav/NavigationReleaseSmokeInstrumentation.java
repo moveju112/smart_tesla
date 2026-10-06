@@ -14,11 +14,15 @@ import java.lang.reflect.Field;
 /** 축소된 앱의 Kotlin 클래스명에 의존하지 않고 실제 Binder 계약만 검사한다. */
 public final class NavigationReleaseSmokeInstrumentation extends Instrumentation {
     private boolean stateOnly;
+    private boolean diagnosticsOnly;
+    private boolean applicationOnly;
 
     /** 별도 실행기를 명시했을 때만 릴리스 검증을 시작한다. */
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         stateOnly = arguments != null && "true".equals(arguments.getString("stateOnly"));
+        diagnosticsOnly = arguments != null && "true".equals(arguments.getString("diagnosticsOnly"));
+        applicationOnly = arguments != null && "true".equals(arguments.getString("applicationOnly"));
         start();
     }
 
@@ -28,7 +32,7 @@ public final class NavigationReleaseSmokeInstrumentation extends Instrumentation
         int code = Activity.RESULT_OK;
         try {
             require(Build.FINGERPRINT.contains("generic") || Build.MODEL.contains("sdk"));
-            if (!stateOnly) require(getTargetContext().getSystemService(KeyguardManager.class).isDeviceLocked());
+            if (!stateOnly && !diagnosticsOnly && !applicationOnly) require(getTargetContext().getSystemService(KeyguardManager.class).isDeviceLocked());
             ProviderInfo[] providers = getTargetContext().getPackageManager().getPackageInfo(
                 getTargetContext().getPackageName(), PackageManager.GET_PROVIDERS).providers;
             Field found = null;
@@ -41,6 +45,18 @@ public final class NavigationReleaseSmokeInstrumentation extends Instrumentation
             field.setAccessible(true);
             await(10000, () -> field.get(null) != null && ((IBinder) field.get(null)).isBinderAlive());
             IBinder bridge = (IBinder) field.get(null);
+            if (applicationOnly) {
+                verifyApplicationDiagnostics();
+                result.putString("result", "PASS: production WirelessNavigation receives UTF-8 diagnostics into shared DiagLog, model/app version recorded, normal STOP cleanup");
+                finish(code, result);
+                return;
+            }
+            if (diagnosticsOnly) {
+                verifyLaunchDiagnostics(bridge);
+                result.putString("result", "PASS: TMAP and Kakao versions, intent and response, actual screen changes, virtual/default displays, busy protection, STOP cleanup");
+                finish(code, result);
+                return;
+            }
             if (stateOnly) {
                 verifyNavigationState(bridge);
                 result.putString("result", "PASS: live task and foreground service preserved, closed task with idle process allowed, second session blocked, STOP and restart");
@@ -91,6 +107,70 @@ public final class NavigationReleaseSmokeInstrumentation extends Instrumentation
         finish(code, result);
     }
 
+    /** 앱의 실제 실행·수신 경로를 사용해 셸 진단이 사용자 공유 로그까지 도착하는지 검사한다. */
+    private void verifyApplicationDiagnostics() throws Exception {
+        com.wemade.teslamacro.data.nav.WirelessNavigation navigation =
+            new com.wemade.teslamacro.data.nav.WirelessNavigation(getTargetContext());
+        try {
+            navigation.setApp("TMAP");
+            navigation.start(false);
+            await(15000, () -> navigation.getState().getValue().getRunning());
+            await(7000, () -> String.join("\n", com.wemade.teslable.DiagLog.INSTANCE.getLines().getValue())
+                .contains("상단=com.skt.tmap.ku/.FollowUp"));
+            String logs = String.join("\n", com.wemade.teslable.DiagLog.INSTANCE.getLines().getValue());
+            require(logs.contains("티맵 전달 직전"));
+            require(logs.contains("버전=diagnostic-fixture"));
+            require(logs.contains("기기="));
+            require(logs.contains("intent="));
+            require(logs.contains("상태=접수"));
+            require(logs.contains("실제display="));
+        } finally {
+            navigation.stop();
+            await(7000, () -> !navigation.getState().getValue().getBusy() && !navigation.getState().getValue().getRunning() && !hasDisplay());
+        }
+    }
+
+    /** 두 내비 대체 앱에서 실제 화면 전환·디스플레이 이동과 기존 실행 보호 진단을 검사한다. */
+    private void verifyLaunchDiagnostics(IBinder bridge) throws Exception {
+        String[] targets = { "com.skt.tmap.ku", "com.locnall.KimGiSa" };
+        String[] commands = { "START TMAP", "START KAKAO" };
+        for (int index = 0; index < targets.length; index++) {
+            final String target = targets[index];
+            final String command = commands[index];
+            require("diagnostic-fixture".equals(getTargetContext().getPackageManager().getPackageInfo(target, 0).versionName));
+            try {
+                shell("am force-stop " + target);
+                StringBuilder received = new StringBuilder();
+                try (ParcelFileDescriptor connection = startSession(bridge, "NAVER_READY", command, received)) {
+                    InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(connection);
+                    await(7000, () -> {
+                        read(input, received);
+                        return received.indexOf("상단=" + target + "/.FollowUp") >= 0;
+                    });
+                    require(received.indexOf("버전=diagnostic-fixture") >= 0);
+                    require(received.indexOf("API " + Build.VERSION.SDK_INT) >= 0);
+                    require(received.indexOf("NAVER_DIAG 요청 ·") >= 0);
+                    require(received.indexOf("상태=접수") >= 0);
+                    require(java.util.regex.Pattern.compile("실제display=[1-9][0-9]*").matcher(received).find());
+                    require(received.indexOf(index == 0 ? "--es url tmap://navi" : "kakaonavi://widget?action=SafetyDrive") >= 0);
+                    require(hasDisplay());
+                    shell("am start -W --display 0 -n " + target + "/.FollowUp -f 0x10000000");
+                    await(5000, () -> {
+                        read(input, received);
+                        return received.indexOf("실제display=0") >= 0;
+                    });
+                    stopSession(connection);
+                }
+                await(5000, () -> !hasDisplay() && shell("pidof " + target).trim().isEmpty());
+                shell("am start -W -n " + target + "/.Fixture");
+                StringBuilder denied = new StringBuilder();
+                try (ParcelFileDescriptor connection = startSession(bridge, "NAVER_BUSY", command, denied)) { }
+                require(denied.indexOf("기존 실행 보호") >= 0);
+                require(denied.indexOf("NAVER_DIAG 요청 ·") < 0);
+            } finally { shell("am force-stop " + target); }
+        }
+    }
+
     /** 실제 작업·전경 서비스는 보존하고 사용자가 화면을 닫은 뒤 남은 프로세스는 허용한다. */
     private void verifyNavigationState(IBinder bridge) throws Exception {
         String target = "com.nhn.android.nmap";
@@ -132,6 +212,11 @@ public final class NavigationReleaseSmokeInstrumentation extends Instrumentation
 
     /** 기존 Binder·가상 화면 계약으로 거절 응답과 실제 준비 응답을 분리해 검사한다. */
     private ParcelFileDescriptor startSession(IBinder bridge, String expected) throws Exception {
+        return startSession(bridge, expected, "START", new StringBuilder());
+    }
+
+    /** 같은 Binder 채널로 앱별 고정 명령을 보내고 제어 응답과 진단을 함께 수집한다. */
+    private ParcelFileDescriptor startSession(IBinder bridge, String expected, String command, StringBuilder received) throws Exception {
         Parcel request = Parcel.obtain();
         Parcel response = Parcel.obtain();
         ParcelFileDescriptor connection;
@@ -144,9 +229,8 @@ public final class NavigationReleaseSmokeInstrumentation extends Instrumentation
         } finally { request.recycle(); response.recycle(); }
         try {
             OutputStream output = new ParcelFileDescriptor.AutoCloseOutputStream(connection);
-            output.write("START\nPING\n".getBytes()); output.flush();
+            output.write((command + "\nPING\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)); output.flush();
             InputStream input = new ParcelFileDescriptor.AutoCloseInputStream(connection);
-            StringBuilder received = new StringBuilder();
             await(12000, () -> {
                 read(input, received);
                 if (received.indexOf("NAVER_ERROR") >= 0 ||

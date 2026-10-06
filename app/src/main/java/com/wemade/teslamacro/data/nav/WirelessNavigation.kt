@@ -13,6 +13,7 @@ import android.net.NetworkRequest
 import android.provider.Settings
 import android.content.pm.PackageManager
 import java.io.File
+import java.io.ByteArrayOutputStream
 import java.security.PrivateKey
 import java.security.cert.Certificate
 import java.util.concurrent.TimeUnit
@@ -20,6 +21,32 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+/** 셸 출력은 줄 단위로 조립해 한글 분할 수신과 진단 문구 속 제어 신호 오인을 막는다. */
+internal class NavigationSessionOutput {
+    private val pending = ByteArrayOutputStream()
+    private var discarding = false
+
+    /** 완성된 UTF-8 줄만 반환하고 과도하게 긴 기록은 다음 줄부터 정상 수신한다. */
+    fun feed(bytes: ByteArray, size: Int): List<String> {
+        val messages = mutableListOf<String>()
+        for (index in 0 until size) {
+            val value = bytes[index].toInt() and 0xff
+            if (value == 10) {
+                if (!discarding) messages.add(pending.toString(Charsets.UTF_8.name()).trimEnd('\r'))
+                pending.reset()
+                discarding = false
+            } else if (!discarding) {
+                if (pending.size() < 4096) pending.write(value)
+                else {
+                    pending.reset()
+                    discarding = true
+                }
+            }
+        }
+        return messages
+    }
+}
 
 /** 실험 설정은 일반 백업과 분리해 다른 기기에서 자동 실행되지 않게 한다. */
 data class WirelessNavigationState(
@@ -373,6 +400,7 @@ class WirelessNavigation(private val context: Context) {
                     report("${app.label} 설치 후 다시 시도해 주세요")
                     return@launch
                 }
+                logLaunchEnvironment("예약", app)
                 report(if (delayed) "10초 뒤 실행 · 화면을 잠가 주세요" else "${app.label} 실행 준비", notify = delayed)
                 if (delayed) delay(10_000)
                 withContext(Dispatchers.IO) {
@@ -382,6 +410,7 @@ class WirelessNavigation(private val context: Context) {
                         try {
                             enableWirelessDebugging()
                             sessionApp = app
+                            logLaunchEnvironment("전달 직전", app)
                             active.send(app.safeDriveCommand)
                             needsStop = runSession(active, app)
                         } finally { if (needsStop) finishSession(active, app) }
@@ -406,7 +435,7 @@ class WirelessNavigation(private val context: Context) {
         val output = active.output
         val input = active.input
         val buffer = ByteArray(1024)
-        var text = ""
+        val messages = NavigationSessionOutput()
         var ready = false
         val started = System.nanoTime()
         var lastPing = 0L
@@ -420,24 +449,28 @@ class WirelessNavigation(private val context: Context) {
             if (input.available() > 0) {
                 val size = input.read(buffer)
                 if (size < 0) break
-                text = (text + String(buffer, 0, size)).takeLast(4096)
-                if (text.contains("NAVER_BUSY")) {
-                    report("${app.label} 실행을 먼저 종료해 주세요 · 기존 실행은 유지했어요")
-                    return false
-                }
-                if (text.contains("NAVER_ERROR")) error("Virtual display launch rejected")
-                if (!ready && text.contains("NAVER_READY")) {
-                    ready = true
-                    mutableState.value = state.value.copy(busy = false, running = true)
-                    report("실행 요청 완료 · 음성 안내를 확인해 주세요")
-                }
-                if (text.contains("NAVER_STOP_FAILED")) {
-                    report("${app.label} 종료를 확인해 주세요")
-                    return false
-                }
-                if (text.contains("NAVER_CLOSED")) {
-                    report("실험 종료 완료")
-                    return false
+                for (message in messages.feed(buffer, size)) {
+                    if (message.startsWith(NaverDisplaySession.DIAGNOSTIC_PREFIX)) {
+                        DiagLog.add("안심주행 · ${app.label} · ${message.removePrefix(NaverDisplaySession.DIAGNOSTIC_PREFIX)}")
+                    }
+                    if (message == "NAVER_BUSY") {
+                        report("${app.label} 실행을 먼저 종료해 주세요 · 기존 실행은 유지했어요")
+                        return false
+                    }
+                    if (message.startsWith("NAVER_ERROR ")) error("Virtual display launch rejected")
+                    if (!ready && message == "NAVER_READY") {
+                        ready = true
+                        mutableState.value = state.value.copy(busy = false, running = true)
+                        report("실행 요청 완료 · 음성 안내를 확인해 주세요")
+                    }
+                    if (message == "NAVER_STOP_FAILED") {
+                        report("${app.label} 종료를 확인해 주세요")
+                        return false
+                    }
+                    if (message == "NAVER_CLOSED") {
+                        report("실험 종료 완료")
+                        return false
+                    }
                 }
             }
             if (!ready && now - started > TimeUnit.SECONDS.toNanos(20)) error("Launch timed out")
@@ -445,6 +478,14 @@ class WirelessNavigation(private val context: Context) {
         }
         report("실행 연결 종료 · ${app.label} 상태를 확인해 주세요")
         return true
+    }
+
+    /** 조회 실패는 기록만 남기고 실행·인증·종료 흐름에는 영향을 주지 않는다. */
+    private fun logLaunchEnvironment(stage: String, app: NavigatorApp) {
+        val packageName = app.packages.firstOrNull {
+            runCatching { context.packageManager.getPackageInfo(it, 0) }.isSuccess
+        }
+        DiagLog.add("안심주행 · ${app.label} $stage — ${navigationLaunchEnvironment(context, packageName)}")
     }
 
     /** 지도 정리를 확인한 뒤 소유 채널을 닫고 준비된 권한 프로세스는 유지한다. */

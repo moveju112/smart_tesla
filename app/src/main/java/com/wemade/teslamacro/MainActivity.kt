@@ -436,6 +436,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onWirelessPrepare = { settingsViewModel.wirelessNavigation.prepare(); Unit },
                         onWirelessTest = { settingsViewModel.wirelessNavigation.start() },
                         onWirelessStop = settingsViewModel.wirelessNavigation::stop,
+                        onWirelessApp = settingsViewModel.wirelessNavigation::setApp,
                         onAppChange = settingsViewModel::setNavigatorApp,
                         onAutoStartSafeDriveChange = settingsViewModel::setAutoStartNavigatorSafeDrive,
                         onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },

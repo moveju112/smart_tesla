@@ -42,6 +42,9 @@ public final class NaverControlServer {
                         reply.writeNoException();
                         reply.writeParcelable(pair[1], android.os.Parcelable.PARCELABLE_WRITE_RETURN_VALUE);
                         pair[1].close();
+                    } else if (code == 5) {
+                        // 앱별 안심운전 시작 명령을 이해하는 서버인지 앱이 확인한다.
+                        reply.writeNoException(); reply.writeInt(1);
                     } else if (code == 3 || code == 4) {
                         String packageName = data.readString();
                         String address = data.readString();
@@ -145,10 +148,11 @@ public final class NaverControlServer {
             // 버퍼를 미리 읽지 않아 뒤따르는 첫 심박·종료 요청을 버리지 않는다.
             StringBuilder command = new StringBuilder();
             for (int value; command.length() < 16 && (value = input.read()) != -1 && value != '\n';) command.append((char) value);
-            if ("START".contentEquals(command)) {
+            NavigatorApp app = NavigatorApp.Companion.ofSafeDriveCommand(command.toString());
+            if (app != null) {
                 if (!active.compareAndSet(false, true)) { output.println("NAVER_BUSY"); return; }
                 ownsSession = true;
-                NaverDisplaySession.run(uid / 100000, "nmap://navigation?&appname=com.wemade.teslamacro", input, output);
+                NaverDisplaySession.run(uid / 100000, app, input, output);
             }
         } catch (Exception ignored) { }
         finally { if (ownsSession) active.set(false); }

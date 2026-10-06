@@ -293,13 +293,18 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                                 com.wemade.teslamacro.data.settings.AppSettings(),
                                 com.wemade.teslamacro.feature.settings.NavigationControls(
                                     wirelessState = panelState.value, onAppChange = {}, onHudOverlayChange = {},
-                                    onWirelessTest = { tests++ }, onWirelessStop = { stops++ }))
+                                    onWirelessTest = { tests++ }, onWirelessStop = { stops++ }, installed = setOf("NAVER", "TMAP")))
                         }
                     }
                 }
             }
             awaitPanelText("연결 관리", true)
             awaitPanelText("차량 오디오 선택", false)
+            // 안심운전 앱 선택은 현재 선택 이름을 보여 주고 상태 변경을 그대로 반영한다.
+            awaitPanelText("내비 앱", true)
+            awaitPanelText("네이버 지도", true)
+            runOnMainSync { panelState.value = panelState.value.copy(app = com.wemade.teslamacro.data.nav.NavigatorApp.TMAP) }
+            awaitPanelText("티맵", true)
             runOnMainSync { panelState.value = panelState.value.copy(enabled = true) }
             awaitPanelText("설정 → 차량 → 탑승 감지 블루투스에서 기기를 선택해 주세요", true)
             runOnMainSync { panelState.value = panelState.value.copy(enabled = false) }

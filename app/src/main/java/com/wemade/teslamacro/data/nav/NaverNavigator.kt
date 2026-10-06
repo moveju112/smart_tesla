@@ -85,9 +85,6 @@ internal fun backgroundLaunchMethods(
 /** 주소 → 좌표 캐시 저장소 이름 */
 private const val GEOCODE_CACHE = "geocode_cache"
 
-/** 카카오내비가 자체 안전운전 위젯에서도 사용하는 외부 딥링크 진입점 */
-private const val KAKAO_DEEP_LINK_ACTIVITY = "com.locnall.KimGiSa.Engine.SMS.CremoteActivity"
-
 /** 진단 실행 사이에 네이버 지도가 전면으로 올 시간을 남긴다. */
 private const val DIAGNOSTIC_ATTEMPT_GAP_MILLIS = 2_000L
 
@@ -283,7 +280,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
             // 카카오내비 안전운전 위젯의 내부 URI는 매니페스트 필터에 없어 명시 진입점이 필요하다
             NavigatorApp.KAKAO -> listOf(
                 Intent(Intent.ACTION_VIEW, uri)
-                    .setComponent(ComponentName(packageName, KAKAO_DEEP_LINK_ACTIVITY))
+                    .setComponent(ComponentName(packageName, NavigatorApp.KAKAO_DEEP_LINK_ACTIVITY))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 schemeIntent,
             )

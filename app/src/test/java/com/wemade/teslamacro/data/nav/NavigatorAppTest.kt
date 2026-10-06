@@ -159,4 +159,22 @@ class NavigatorAppTest {
             SafeDriveLaunchMode.DIRECT_ACTIVITY.forAutomaticStart(),
         )
     }
+
+    /** 네이버는 구버전 서버와 같은 START를 유지하고, 셸은 안심운전 지원 앱 명령만 해석한다. */
+    @Test fun safeDriveCommandsRoundTripOnlyForSupportedApps() {
+        assertEquals("START", NavigatorApp.NAVER.safeDriveCommand)
+        listOf(NavigatorApp.NAVER, NavigatorApp.TMAP, NavigatorApp.KAKAO).forEach {
+            assertEquals(it, NavigatorApp.ofSafeDriveCommand(it.safeDriveCommand))
+        }
+        listOf(null, "", "START GOOGLE", "START NAVER", "START tmap", "STOP", "PING").forEach {
+            assertNull(it, NavigatorApp.ofSafeDriveCommand(it))
+        }
+    }
+
+    /** 저장값이 깨졌거나 구글 지도면 안심운전 대상은 기존 네이버로 돌아간다. */
+    @Test fun wirelessSafeDriveAppFallsBackToNaver() {
+        assertEquals(NavigatorApp.TMAP, WirelessNavigation.safeDriveApp("TMAP"))
+        assertEquals(NavigatorApp.KAKAO, WirelessNavigation.safeDriveApp("KAKAO"))
+        listOf(null, "GOOGLE", "broken").forEach { assertEquals(NavigatorApp.NAVER, WirelessNavigation.safeDriveApp(it)) }
+    }
 }

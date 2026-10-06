@@ -33,7 +33,7 @@ class NavigationPairingService : Service() {
             if (session != null) return START_NOT_STICKY
             session = UUID.randomUUID().toString()
             navigation.claimWirelessDebuggingForPairing()
-            notifications.createNotificationChannel(NotificationChannel(CHANNEL, "네이버 안심주행 연결", NotificationManager.IMPORTANCE_DEFAULT))
+            notifications.createNotificationChannel(NotificationChannel(CHANNEL, "안심주행 연결", NotificationManager.IMPORTANCE_DEFAULT))
             startForeground(ID, notification("무선 디버깅에서 ‘페어링 코드로 기기 페어링’을 열어 주세요", input = true))
             scope.launch { delay(180_000); finish("설정 시간이 지났어요 · 앱에서 연결 설정을 다시 눌러 주세요") }
         } else if (session != null && intent != null && intent.data?.lastPathSegment == session) {
@@ -68,7 +68,7 @@ class NavigationPairingService : Service() {
             Intent(this, com.wemade.teslamacro.MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("네이버 안심주행 연결")
+            .setContentTitle("안심주행 연결")
             .setContentText(message).setStyle(Notification.BigTextStyle().bigText(message))
             .setContentIntent(content).setOnlyAlertOnce(true).setAutoCancel(session == null)
             .setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(session != null)

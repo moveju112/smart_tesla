@@ -18,7 +18,7 @@ internal object NavigationSetup {
         CONNECT("저장된 인증으로 연결 준비 중"),
         WIFI("Wi-Fi에 연결해 주세요"),
         NOTIFICATIONS("앱 알림을 허용해 주세요"),
-        CHANNEL("‘네이버 안심주행 연결’ 알림을 허용해 주세요"),
+        CHANNEL("‘안심주행 연결’ 알림을 허용해 주세요"),
         PAIR("무선 디버깅 → 페어링 코드로 기기 페어링 → 알림에 코드 6자리 입력"),
         READY("연결 준비 완료"),
     }

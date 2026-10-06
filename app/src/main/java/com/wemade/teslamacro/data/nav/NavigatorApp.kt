@@ -74,7 +74,17 @@ enum class NavigatorApp(
         GOOGLE -> null
     }?.let(Uri::parse)
 
+    /** 셸 안심운전 세션 시작 명령. 네이버는 구버전 서버와 같은 "START"를 유지해 업데이트 직후에도 동작한다 */
+    val safeDriveCommand: String get() = if (this == NAVER) "START" else "START $name"
+
     companion object {
+        /** 카카오내비 안전운전 위젯 URI를 받는 명시 진입점. 앱 내부·셸 실행이 같은 값을 쓴다 */
+        const val KAKAO_DEEP_LINK_ACTIVITY = "com.locnall.KimGiSa.Engine.SMS.CremoteActivity"
+
+        /** 셸은 고정 명령에 대응하는 안심운전 지원 앱만 실행한다. 그 밖의 문자열은 거절한다 */
+        fun ofSafeDriveCommand(command: String?): NavigatorApp? =
+            entries.firstOrNull { it.supportsSafeDrive && it.safeDriveCommand == command }
+
         /** 셸에는 기존 목적지 스킴과 내비 패키지만 허용해 임의 앱·명령 실행을 막는다. */
         fun acceptsDestination(packageName: String?, uri: Uri?): Boolean {
             if (uri == null || uri.toString().length > 8192 || uri.fragment != null) return false

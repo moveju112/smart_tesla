@@ -23,7 +23,7 @@ internal class NavigationChannel : Closeable {
     /** 시작할 때만 소유 채널을 만들고 나머지 제어는 그 채널에 보낸다. */
     fun send(command: String) {
         if (descriptor == null) {
-            check(command == "START")
+            check(NavigatorApp.ofSafeDriveCommand(command) != null)
             transact(2) { descriptor = it.readParcelable(ParcelFileDescriptor::class.java.classLoader) }
             reader = ParcelFileDescriptor.AutoCloseInputStream(requireNotNull(descriptor))
             writer = ParcelFileDescriptor.AutoCloseOutputStream(requireNotNull(descriptor))
@@ -33,6 +33,9 @@ internal class NavigationChannel : Closeable {
 
     /** 상태 조회는 지도 실행 없이 준비된 프로세스만 확인한다. */
     fun status(): String = transact(1) { it.readString().orEmpty() }
+
+    /** 업데이트 전 서버는 이 명령을 몰라 네이버 외 안심운전 앱을 실행하지 못하므로 재준비 대상으로 본다. */
+    fun supportsSafeDriveApps(): Boolean = runCatching { transact(5) { it.readInt() == 1 } }.getOrDefault(false)
 
     /** 구형 서버·잠금·다른 지도 세션은 명령을 보내기 전에 기존 실행 경로로 돌린다. */
     fun canLaunchDestination(packageName: String, uri: String): Boolean =

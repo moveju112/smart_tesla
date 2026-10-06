@@ -20,9 +20,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeUnit;
 
-/** 앱과 연결된 동안만 잠금 화면과 분리된 네이버지도 실행 화면을 유지한다. */
+/** 앱과 연결된 동안만 잠금 화면과 분리된 선택 내비 실행 화면을 유지한다. */
 public final class NaverDisplaySession {
-    private static final String NAVER = "com.nhn.android.nmap";
+    private static final String OWNER = "com.wemade.teslamacro";
     private static DisplayManager manager;
     private static Context shell;
 
@@ -30,7 +30,8 @@ public final class NaverDisplaySession {
     /** 셸 권한으로만 실행하며 연결 단절·종료 요청에는 지도와 가상 화면을 함께 정리한다. */
     public static void main(String[] args) {
         if (Process.myUid() != 2000 || Build.VERSION.SDK_INT < 31 || args.length != 2) return;
-        run(Integer.parseInt(args[0]), args[1], System.in, System.out);
+        NavigatorApp app = NavigatorApp.Companion.ofSafeDriveCommand(args[1]);
+        if (app != null) run(Integer.parseInt(args[0]), app, System.in, System.out);
     }
 
     /** 시스템 문맥과 화면 관리자는 프로세스에서 한 번만 만들어 반복 실행 때 재초기화하지 않는다. */
@@ -50,7 +51,7 @@ public final class NaverDisplaySession {
     public static Context shellContext() { return shell; }
 
     /** 통신 소켓 수명과 지도 수명만 묶어 ADB 연결 종료의 영향을 받지 않게 한다. */
-    public static void run(int user, String uri, InputStream input, PrintStream output) {
+    public static void run(int user, NavigatorApp app, InputStream input, PrintStream output) {
         AtomicLong heartbeat = new AtomicLong(System.nanoTime());
         AtomicBoolean stopping = new AtomicBoolean();
         VirtualDisplay display = null;
@@ -59,18 +60,20 @@ public final class NaverDisplaySession {
         HandlerThread frames = null;
         LocalServerSocket lock = null;
         boolean launched = false;
+        String target = null;
         try {
-            if (user < 0 || !uri.equals("nmap://navigation?&appname=com.wemade.teslamacro")) return;
+            if (user < 0 || !app.getSupportsSafeDrive()) return;
             lock = new LocalServerSocket("smart_tesla_naver_" + user);
+            initialize();
+            target = installedPackage(app);
             // 기존 지도 작업은 실험 종료 때 닫지 않도록 시작 자체를 거절한다.
-            if (!command("pidof", NAVER).trim().isEmpty()) {
+            if (!command("pidof", target).trim().isEmpty()) {
                 output.println("NAVER_BUSY");
                 return;
             }
             Thread watcher = new Thread(() -> watchInput(input, heartbeat, stopping), "nav-session-input");
             watcher.setDaemon(true);
             watcher.start();
-            initialize();
             frames = new HandlerThread("nav-display-frames");
             frames.start();
             images = ImageReader.newInstance(720, 1280, PixelFormat.RGBA_8888, 2);
@@ -84,9 +87,7 @@ public final class NaverDisplaySession {
             if (display == null || display.getDisplay().getDisplayId() == 0) throw new IllegalStateException();
             int displayId = display.getDisplay().getDisplayId();
             launched = true;
-            String result = command("am", "start", "--user", Integer.toString(user), "--display", Integer.toString(displayId),
-                "-W", "-a", "android.intent.action.VIEW", "-d", uri, "-p", NAVER);
-            if (result.contains("Error") || !result.contains("Status: ok")) throw new IllegalStateException();
+            launchSafeDrive(app, target, user, displayId);
             output.println("NAVER_READY");
             output.flush();
             while (!stopping.get() && System.nanoTime() - heartbeat.get() < TimeUnit.SECONDS.toNanos(15)) Thread.sleep(250);
@@ -95,7 +96,7 @@ public final class NaverDisplaySession {
             output.println("NAVER_ERROR " + error.getClass().getSimpleName());
         } finally {
             if (launched) {
-                try { command("am", "force-stop", "--user", Integer.toString(user), NAVER); }
+                try { command("am", "force-stop", "--user", Integer.toString(user), target); }
                 catch (Exception error) { output.println("NAVER_STOP_FAILED"); }
             }
             if (display != null) display.release();
@@ -106,6 +107,45 @@ public final class NaverDisplaySession {
             output.println("NAVER_CLOSED");
             output.flush();
         }
+    }
+
+    /** 셸 문맥에 설치된 첫 패키지만 대상으로 삼는다. 티맵처럼 패키지가 둘인 앱이 있다. */
+    private static String installedPackage(NavigatorApp app) {
+        for (String candidate : app.getPackages()) {
+            try {
+                shell.getPackageManager().getPackageInfo(candidate, 0);
+                return candidate;
+            } catch (Exception ignored) { }
+        }
+        throw new IllegalStateException();
+    }
+
+    /** 앱 내부 실행과 같은 진입 후보를 순서대로 쓰되, 시작을 거절한 응답에서만 다음 후보로 넘어가 중복 실행을 막는다. */
+    private static void launchSafeDrive(NavigatorApp app, String target, int user, int displayId) throws Exception {
+        String uri = String.valueOf(app.safeDriveUri(OWNER));
+        java.util.List<String[]> candidates = new java.util.ArrayList<>();
+        // 카카오 위젯 URI는 매니페스트 필터에 없고, 티맵은 런처 인텐트의 url extra로 안심운전을 연다.
+        if (app == NavigatorApp.KAKAO) {
+            candidates.add(new String[] {"-a", "android.intent.action.VIEW", "-d", uri, "-n", target + "/" + NavigatorApp.KAKAO_DEEP_LINK_ACTIVITY});
+        } else if (app == NavigatorApp.TMAP) {
+            // am은 DEFAULT 카테고리 없는 런처 화면을 패키지만으로 찾지 못해 컴포넌트를 직접 지정한다.
+            android.content.Intent launcher = shell.getPackageManager().getLaunchIntentForPackage(target);
+            if (launcher != null && launcher.getComponent() != null) {
+                candidates.add(new String[] {"-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER",
+                    "-n", launcher.getComponent().flattenToString(), "--es", "url", uri});
+            }
+        }
+        candidates.add(new String[] {"-a", "android.intent.action.VIEW", "-d", uri, "-p", target});
+        for (String[] intent : candidates) {
+            java.util.List<String> arguments = new java.util.ArrayList<>(java.util.Arrays.asList(
+                "am", "start", "--user", Integer.toString(user), "--display", Integer.toString(displayId), "-W"));
+            arguments.addAll(java.util.Arrays.asList(intent));
+            String result = command(arguments.toArray(new String[0]));
+            if (result.contains("Status: ok") && !result.contains("Error")) return;
+            // 시작 여부가 불명확한 응답은 다른 진입점으로 다시 보내지 않는다.
+            if (!result.contains("Error")) break;
+        }
+        throw new IllegalStateException();
     }
 
     /** 부모 앱이 살아 있음을 확인하고 EOF나 명시적 종료는 즉시 정리 신호로 바꾼다. */
@@ -128,7 +168,9 @@ public final class NaverDisplaySession {
             child.destroyForcibly();
             throw new IllegalStateException();
         }
-        if (child.exitValue() != 0 && !"pidof".equals(arguments[0])) throw new IllegalStateException();
+        // 실행 거절 응답은 호출자가 문구로 판별하므로 종료 코드만으로 버리지 않는다.
+        boolean reportsOutput = "pidof".equals(arguments[0]) || ("am".equals(arguments[0]) && "start".equals(arguments[1]));
+        if (child.exitValue() != 0 && !reportsOutput) throw new IllegalStateException();
         byte[] bytes = new byte[8192];
         int count = child.getInputStream().read(bytes);
         return count <= 0 ? "" : new String(bytes, 0, count, java.nio.charset.StandardCharsets.UTF_8);

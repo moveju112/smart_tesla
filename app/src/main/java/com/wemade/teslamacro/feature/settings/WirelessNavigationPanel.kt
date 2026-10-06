@@ -2,6 +2,7 @@ package com.wemade.teslamacro.feature.settings
 
 import android.content.Intent
 import com.wemade.teslamacro.data.nav.NavigationPairingService
+import com.wemade.teslamacro.data.nav.NavigatorApp
 import com.wemade.teslamacro.data.nav.NavigationSetup
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -64,12 +65,12 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             setupMessage = "연결 설정을 확인하지 못했어요 · 다시 눌러 주세요"
-            com.wemade.teslable.DiagLog.add("네이버 안심주행 · 설정 확인 실패 ${error.javaClass.simpleName}")
+            com.wemade.teslable.DiagLog.add("안심주행 · 설정 확인 실패 ${error.javaClass.simpleName}")
         } finally { checkingSetup = false }
     }
     val supported = Build.VERSION.SDK_INT >= 31
     Spacer(Modifier.height(Space.lg))
-    HelpTitle("네이버 안심주행 · 실험", "Android 12 이상에서 자체 무선 디버깅으로 별도 화면 실행을 시도해요. " +
+    HelpTitle("안심주행 · 실험", "네이버 지도·티맵·카카오내비 중 고른 내비의 안심운전을 실행해요. Android 12 이상에서 자체 무선 디버깅으로 별도 화면 실행을 시도해요. " +
         "휴대폰 잠금을 해제하지 않으며 실제 음성 출력은 기기에서 확인해야 해요.\n\n" +
         "‘연결 설정’을 누르면 개발자 옵션·USB 디버깅·Wi-Fi·알림 중 필요한 설정 화면을 열어요. 설정을 마치고 돌아오면 다음 단계로 이어져요. " +
         "무선 디버깅을 켜고 ‘페어링 코드로 기기 페어링’을 연 다음, 화면을 닫지 말고 알림의 ‘코드 입력’에 6자리를 입력해 주세요. " +
@@ -77,11 +78,11 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         "저장된 인증이 있으면 코드 입력 없이 연결을 먼저 시도해요. 자동 탐색이 안 되면 아래 수동 입력을 사용해 주세요.\n\n" +
         "명령을 보내기 전에 꺼진 무선 디버깅을 다시 켜고, 자동 실행을 켠 상태로 차량에 연결되어 있으면 계속 켜 둬요. 연결 해제 30초 뒤 지도 종료를 마치면 꺼요. USB 디버깅도 켜 두고 무선 디버깅에 사용할 Wi-Fi에 연결해 주세요. 케이블 연결은 필요 없어요. 자동 실행을 켜면 재부팅 후 Wi-Fi 연결 때 준비 복구를 시도해요. " +
         "처음 Wi-Fi 허용 창에서 ‘이 네트워크에서 항상 허용’을 선택하면 다음 준비 때 확인을 줄일 수 있어요. 프로세스가 종료되면 Wi-Fi에서 다시 준비해 주세요.\n\n" +
-        "실행 전 네이버지도 초기 설정·위치·음량 설정을 마쳐 주세요. 기존 네이버지도 실행이 있으면 실험을 시작하지 않아요. " +
+        "실행 전 선택한 내비의 초기 설정·위치·음량 설정을 마쳐 주세요. 선택한 내비가 이미 실행 중이면 실험을 시작하지 않아요. " +
         "테스트 버튼을 누른 뒤 화면을 잠가 음성을 확인해 주세요.\n\n" +
         "자동 실행은 ‘설정 → 차량 → 탑승 감지 블루투스’에서 직접 선택한 기기 연결을 사용해요. 연결 해제 30초 뒤 실험을 종료해요. " +
-        "종료 시 네이버지도를 강제 종료하므로 실험 도중 직접 시작한 길안내도 함께 종료돼요. " +
-        "이 실험은 이 휴대폰의 네이버지도에만 명령을 보내요.")
+        "종료 시 선택한 내비를 강제 종료하므로 실험 도중 직접 시작한 길안내도 함께 종료돼요. " +
+        "이 실험은 이 휴대폰의 선택한 내비에만 명령을 보내요.")
     Spacer(Modifier.height(Space.sm))
     TCard {
         if (!supported) {
@@ -100,6 +101,9 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
                 TButton("종료", ButtonTone.Ghost, enabled = !checkingSetup, onClick = controls.onWirelessStop)
             }
             Spacer(Modifier.height(Space.md))
+            // 설치된 앱만 고르게 하되, 지운 앱을 고른 상태여도 현재 선택 이름은 보여 준다.
+            val apps = NavigatorApp.entries.filter { it.supportsSafeDrive && (it.name in controls.installed || it == state.app) }
+            ChoiceSettingRow("내비 앱", apps.map { it.name to it.label }, state.app.name, controls.onWirelessApp)
             SettingToggleRow("차량 오디오 연결 시 자동 실행", checked = state.enabled,
                 onCheckedChange = controls.onWirelessEnabled)
             if (state.enabled && settings.vehicleAudioAddress.isBlank()) {

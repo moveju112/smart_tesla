@@ -820,6 +820,7 @@ data class NavigationControls(
     val onWirelessPrepare: () -> Unit = {},
     val onWirelessTest: () -> Unit = {},
     val onWirelessStop: () -> Unit = {},
+    val onWirelessApp: (String) -> Unit = {},
     val onAppChange: (String) -> Unit,
     val onAutoStartSafeDriveChange: (Boolean) -> Unit = {},
     val onOpenTrustedDeviceSettings: () -> Unit = {},

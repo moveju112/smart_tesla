@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -29,11 +30,15 @@ fun QuickActionRequestPanel(
     onDismiss: (Long) -> Unit,
     onStopObserving: (Long) -> Unit = {},
 ) {
-    if (requests.isEmpty()) return
+    requests.firstOrNull { !it.active }?.let { request ->
+        key(request.id) { ActionFeedback("${request.label} · ${request.status.message}", onDismiss = { onDismiss(request.id) }, useSnackbar = true) }
+    }
+    val activeRequests = requests.filter { it.active }
+    if (activeRequests.isEmpty()) return
     LazyColumn(
         modifier = Modifier.fillMaxWidth().heightIn(max = Space.xxl * 5).background(T.Slate),
     ) {
-        items(requests.sortedBy { if (it.canCancel) 0 else if (it.active) 1 else 2 }, key = { it.id }) { request ->
+        items(activeRequests.sortedBy { if (it.canCancel) 0 else 1 }, key = { it.id }) { request ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(Space.md),
                 horizontalArrangement = Arrangement.spacedBy(Space.md),
@@ -51,8 +56,6 @@ fun QuickActionRequestPanel(
                 } else if (request.canStopObserving) {
                     TButton(text = "결과 확인 중단", tone = ButtonTone.Ghost, small = true, fillWidth = false,
                         onClick = { onStopObserving(request.id) })
-                } else if (!request.active) {
-                    TButton(text = "닫기", tone = ButtonTone.Ghost, small = true, fillWidth = false, onClick = { onDismiss(request.id) })
                 }
             }
         }

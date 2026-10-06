@@ -33,6 +33,11 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
         val cleaned = input.uppercase().filter { it.isLetterOrDigit() }.take(17)
         _uiState.update { it.copy(vin = cleaned, message = null, isError = false) }
     }
+    /** 검색·등록 상태는 보존하고 소비한 일회성 안내만 비운다. */
+    fun clearMessage() {
+        _uiState.update { if (!it.isBusy && it.step != PairingStep.Done) it.copy(message = null) else it }
+    }
+
     /** 실패한 검색에서 입력 단계로 돌아가 VIN을 고친다. */
     fun editVin() {
         if (_uiState.value.isBusy) return
@@ -226,9 +231,9 @@ class PairingViewModel(private val container: AppContainer) : ViewModel() {
                         NearbyDevice(device.name, 0, device.name.contains("tesla", ignoreCase = true))
                     },
                     isError = true,
-                    message = "페어링된 기기 ${bonded.size}대를 로그에 남겼어요.\n복사해서 보내 주세요",
                 )
             }
+            android.widget.Toast.makeText(container.appContext, "페어링된 기기 ${bonded.size}대를 로그에 남겼어요", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 

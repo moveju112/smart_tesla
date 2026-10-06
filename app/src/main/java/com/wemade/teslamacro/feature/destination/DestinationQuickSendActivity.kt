@@ -79,17 +79,21 @@ private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -
     val state by model.state.collectAsState()
     val context = LocalContext.current
     ObserveDestination(model)
-    LaunchedEffect(state.sendCompleted, state.error) {
+    LaunchedEffect(state.sendCompleted) {
         if (state.sendCompleted) {
             Toast.makeText(context, "전송했어요", Toast.LENGTH_SHORT).show()
             onClose()
-        } else state.error?.let { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        }
+    }
+    if (!needsDestinationSetup(state) && state.connectionError == null) {
+        com.wemade.teslamacro.ui.component.ActionFeedback(state.error, onDismiss = model::clearFeedback, useSnackbar = true)
     }
     DestinationQuickSendContent(state, model::queryChanged, model::send, model::refresh) {
         DestinationScreen(state, onBack = onClose, onMinutes = model::minutesChanged,
             onRefresh = model::refresh, onPairingCode = model::pairingCodeChanged,
             onPair = model::pair, onUnlink = model::unlink, onCreateCode = model::createPairCode,
-            onReceiving = model::receivingChanged, onOverlay = model::allowOverlay, settingsOnly = true)
+            onReceiving = model::receivingChanged, onOverlay = model::allowOverlay, settingsOnly = true,
+            onDismissFeedback = model::clearFeedback)
     }
 }
 
@@ -106,7 +110,9 @@ internal fun DestinationQuickSendContent(
             shape = RoundedCornerShape(Radius.hero), color = T.Carbon.copy(alpha = 0.88f),
         ) {
             Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Text(state.connectionError ?: "연결 확인 중…", color = T.Ink,
+                com.wemade.teslamacro.ui.component.ActionFeedback(if (state.busy) null else state.connectionError,
+                    actionLabel = "재확인", onAction = onRefresh)
+                Text(if (state.connectionError != null) "연결 확인 필요" else "연결 확인 중…", color = T.Ink,
                     modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                 if (state.connectionError != null) TButton("재확인", enabled = !state.busy, onClick = onRefresh)
             }

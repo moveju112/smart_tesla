@@ -59,6 +59,7 @@ fun MacroEditScreen(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
     saveError: String? = null,
+    onDismissSaveError: () -> Unit = {},
 ) {
     var picker by remember { mutableStateOf(OpenPicker.NONE) }
     var detail by rememberSaveable(draft.id) { mutableStateOf<DetailSection?>(null) }
@@ -81,13 +82,11 @@ fun MacroEditScreen(
         // 바깥 한 번 탭으로 만들던 매크로가 통째로 사라지지 않게 한다
         dismissOnOutsideTap = false,
         footer = {
+            com.wemade.teslamacro.ui.component.ActionFeedback(saveError, onDismiss = onDismissSaveError,
+                actionLabel = "다시 저장", onAction = onSave)
             Column(modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth()) {
                 draft.blockReason?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = T.WarnText,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm))
-                }
-                saveError?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = T.Danger,
                         modifier = Modifier.fillMaxWidth().padding(bottom = Space.sm))
                 }
                 Row(

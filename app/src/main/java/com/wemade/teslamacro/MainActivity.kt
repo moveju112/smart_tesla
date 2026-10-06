@@ -288,6 +288,7 @@ private fun AppRoot(factory: ViewModelFactory) {
             onRequestEnrollment = pairingViewModel::requestEnrollment,
             onSkip = { pairingViewModel.cancelPairing(); skippedPairing = true },
             onEditVin = pairingViewModel::editVin,
+            onDismissMessage = pairingViewModel::clearMessage,
             onScanNearby = pairingViewModel::scanNearby,
             onLoadBonded = pairingViewModel::loadBonded,
             onConnectDirect = pairingViewModel::connectDirect,
@@ -356,7 +357,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                         ActivityResultContracts.OpenDocument()
                     ) { uri -> uri?.let(settingsViewModel::importBackup) }
                     val backupMessage by settingsViewModel.backupMessage.collectAsState()
-                    val safeDriveTestMessage by settingsViewModel.safeDriveTestMessage.collectAsState()
                     val vehicleAudioStatus by settingsViewModel.vehicleAudioStatus.collectAsState()
                     val pairedAudioDevices by settingsViewModel.pairedAudioDevices.collectAsState()
 
@@ -442,7 +442,6 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onOpenTrustedDeviceSettings = { com.wemade.teslamacro.ui.component.openTrustedDeviceSettings(context) },
                         onSafeDriveLaunchModeChange = settingsViewModel::setNavigatorSafeDriveLaunchMode,
                         onSafeDriveTest = settingsViewModel::scheduleSafeDriveTest,
-                        safeDriveTestMessage = safeDriveTestMessage,
                         onHudOverlayChange = settingsViewModel::setHudOverlay,
                         vehicleAudioStatus = vehicleAudioStatus,
                         pairedAudioDevices = pairedAudioDevices,
@@ -552,6 +551,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 fleetCredentials = com.wemade.teslamacro.feature.settings.FleetCredentialControls(
                                     fleetCredentials, settingsViewModel::saveFleetToken,
                                     settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,
+                                    settingsViewModel::clearFleetCredentialMessage,
                                 ),
                                 smartThings = smartThingsControls,
                                 navigation = navigationControls,
@@ -599,6 +599,7 @@ private fun MacroRoute(factory: ViewModelFactory) {
         folderError = folderError,
         onSaveFolder = vm::saveFolder,
         onMoveToFolder = vm::moveToFolder,
+        onDismissFolderError = vm::clearFolderError,
     )
     draft?.let { editing ->
         MacroEditScreen(
@@ -608,6 +609,7 @@ private fun MacroRoute(factory: ViewModelFactory) {
             onDelete = vm::deleteDraft,
             onCancel = vm::cancelEdit,
             saveError = saveError,
+            onDismissSaveError = vm::clearSaveError,
         )
     }
 }

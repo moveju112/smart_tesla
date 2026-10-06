@@ -1,24 +1,15 @@
 package com.wemade.teslamacro.ui.component
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -169,59 +160,3 @@ fun EmptyState(
         }
     }
 }
-
-/** 사용자가 닫을 때까지 결과 메시지를 화면에 유지한다. */
-@Composable
-fun InlineBanner(
-    message: String?,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    tone: BannerTone = BannerTone.Error,
-) {
-    AnimatedVisibility(
-        visible = message != null,
-        enter = if (reducedMotion()) EnterTransition.None else fadeIn() + expandVertically(),
-        exit = if (reducedMotion()) ExitTransition.None else fadeOut() + shrinkVertically(),
-        modifier = modifier,
-    ) {
-        val color = when (tone) {
-            BannerTone.Error -> T.Danger
-            BannerTone.Warning -> T.Warn
-            BannerTone.Info -> T.Electric
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(Radius.button))
-                .background(color.copy(alpha = 0.10f))
-                .padding(horizontal = Space.md, vertical = Space.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = message.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
-                color = color,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(Space.xs))
-            // 닫기 텍스트를 유지하면서 최소 48dp 터치 영역을 제공한다.
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.pill))
-                    .clickable(onClick = onDismiss)
-                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "닫기",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = color,
-                )
-            }
-        }
-    }
-}
-
-enum class BannerTone { Error, Warning, Info }
-

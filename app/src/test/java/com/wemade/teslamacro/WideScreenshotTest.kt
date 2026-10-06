@@ -254,7 +254,6 @@ class WideScreenshotTest {
             com.wemade.teslamacro.data.settings.DeviceMode.MOUNTED,
         batteryUnrestricted: Boolean = false,
         overlayPermitted: Boolean = false,
-        safeDriveTestMessage: String? = null,
         simulatorVisible: Boolean = false,
     ) {
         // 다른 테스트의 진단 기록 수가 기기 설정 스냅샷에 섞이지 않게 한다.
@@ -302,7 +301,6 @@ class WideScreenshotTest {
                         installed = setOf("NAVER", "KAKAO", "TMAP"),
                         // 권한이 빠진 모습이 가장 글자가 많다 — 잘림은 여기서 난다
                         overlayPermitted = overlayPermitted,
-                        safeDriveTestMessage = safeDriveTestMessage,
                         locationPermitted = false,
                     ),
                     simulator = if (simulatorVisible) com.wemade.teslamacro.feature.settings.SimulatorControls(

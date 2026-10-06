@@ -98,7 +98,7 @@ class WirelessNavigation(private val context: Context) {
         if (operation?.isCompleted == false) return null
         return scope.launch {
             mutableState.value = state.value.copy(busy = true)
-            report("저장된 인증으로 연결 준비 중")
+            report("저장된 인증으로 연결 준비 중", notify = false)
             try {
                 withContext(Dispatchers.IO) { ensurePrepared() }
                 report("연결 준비 완료")
@@ -373,7 +373,7 @@ class WirelessNavigation(private val context: Context) {
                     report("${app.label} 설치 후 다시 시도해 주세요")
                     return@launch
                 }
-                report(if (delayed) "10초 뒤 실행 · 화면을 잠가 주세요" else "${app.label} 실행 준비")
+                report(if (delayed) "10초 뒤 실행 · 화면을 잠가 주세요" else "${app.label} 실행 준비", notify = delayed)
                 if (delayed) delay(10_000)
                 withContext(Dispatchers.IO) {
                     ensurePrepared()
@@ -482,7 +482,7 @@ class WirelessNavigation(private val context: Context) {
             return
         }
         operation?.cancel()
-        report("종료 요청 전송")
+        report("종료 요청 전송", notify = false)
     }
 
     /** 서비스가 다시 시작되면 현재 오디오 상태를 새 탑승 근거로 받을 수 있게 초기화한다. */
@@ -492,10 +492,13 @@ class WirelessNavigation(private val context: Context) {
         stop()
     }
 
-    /** 상태 로그에는 포트·코드·키를 제외하고 사용자에게 필요한 진행 단계만 남긴다. */
-    private fun report(message: String) {
+    /** 진행은 로그에 남기고 결과는 메인 스레드의 일회성 Toast로 알려 설정 레이아웃을 밀지 않는다. */
+    private fun report(message: String, notify: Boolean = true) {
         mutableState.value = state.value.copy(message = message)
         DiagLog.add("안심주행 · $message")
+        if (notify) scope.launch {
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     companion object {

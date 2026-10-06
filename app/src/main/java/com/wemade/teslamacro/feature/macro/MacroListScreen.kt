@@ -97,7 +97,9 @@ fun MacroListScreen(
     folderError: String? = null,
     onSaveFolder: (String?, String) -> Unit = { _, _ -> },
     onMoveToFolder: (String, String?) -> Unit = { _, _ -> },
+    onDismissFolderError: () -> Unit = {},
 ) {
+    com.wemade.teslamacro.ui.component.ActionFeedback(folderError, onDismiss = onDismissFolderError, useSnackbar = true)
     var selectedFolderId by rememberSaveable { mutableStateOf<String?>(null) }
     var folderDialog by remember { mutableStateOf(false) }
     var renamingFolder by remember { mutableStateOf<MacroFolder?>(null) }
@@ -178,7 +180,6 @@ fun MacroListScreen(
                 }
             }
         }
-        folderError?.let { Text(it, color = T.Danger, modifier = Modifier.padding(horizontal = Space.md)) }
 
         if (runningIds.isNotEmpty()) {
             TButton(

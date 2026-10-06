@@ -34,7 +34,6 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
     val prerequisites = rememberOnResume { NavigationSetup.read(context) }
     var setupRequest by remember { mutableIntStateOf(0) }
     var waitingStep by remember { mutableStateOf<NavigationSetup.Step?>(null) }
-    var setupMessage by remember { mutableStateOf<String?>(null) }
     var checkingSetup by remember { mutableStateOf(false) }
     LaunchedEffect(prerequisites) {
         if (prerequisites.completed(waitingStep)) setupRequest++
@@ -46,7 +45,6 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         checkingSetup = true
         try {
             val step = NavigationSetup.resolve(context)
-            setupMessage = step.message
             if (step != NavigationSetup.Step.READY) {
                 // 연결 대기 중 앱을 벗어나면 복귀할 때 열어 백그라운드 화면 실행 제한을 피한다.
                 owner.lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
@@ -57,14 +55,16 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
                     else context.startActivity(NavigationSetup.intent(context, step))
                 } catch (error: Exception) {
                     waitingStep = null
-                    setupMessage = step.message + " · 설정 화면에서 직접 선택해 주세요"
+                    android.widget.Toast.makeText(context, step.message + " · 설정 화면에서 직접 선택해 주세요", android.widget.Toast.LENGTH_LONG).show()
                     runCatching { context.startActivity(Intent(Settings.ACTION_SETTINGS)) }
-                        .onFailure { setupMessage = "설정 화면을 열 수 없어요 · 휴대폰 설정에서 직접 확인해 주세요" }
+                        .onFailure { android.widget.Toast.makeText(context, "설정 화면을 열 수 없어요 · 휴대폰 설정에서 직접 확인해 주세요", android.widget.Toast.LENGTH_LONG).show() }
                 }
+            } else {
+                android.widget.Toast.makeText(context, step.message, android.widget.Toast.LENGTH_LONG).show()
             }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            setupMessage = "연결 설정을 확인하지 못했어요 · 다시 눌러 주세요"
+            android.widget.Toast.makeText(context, "연결 설정을 확인하지 못했어요 · 다시 눌러 주세요", android.widget.Toast.LENGTH_LONG).show()
             com.wemade.teslable.DiagLog.add("안심주행 · 설정 확인 실패 ${error.javaClass.simpleName}")
         } finally { checkingSetup = false }
     }
@@ -88,11 +88,9 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         if (!supported) {
             Text("Android 12 이상에서 사용할 수 있어요", style = MaterialTheme.typography.bodyMedium, color = T.InkMuted)
         } else {
-            Text(if (checkingSetup) "연결 설정 확인 중…" else if (state.busy || state.prepared) state.message else setupMessage ?: state.message, style = MaterialTheme.typography.bodyMedium, color = T.Ink)
             // 최초 설정만 전면에 두고 완료 후에는 다른 설정과 같은 상세 시트로 관리한다.
             if (!state.prepared && !state.running) {
-                Spacer(Modifier.height(Space.md))
-                TButton("연결 설정", ButtonTone.Secondary, enabled = !checkingSetup && !state.busy) {
+                TButton(if (checkingSetup || state.busy) "연결 확인 중…" else "연결 설정", ButtonTone.Secondary, enabled = !checkingSetup && !state.busy) {
                     setupRequest++
                 }
             }
@@ -115,7 +113,7 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
                 }
                 Spacer(Modifier.height(Space.sm))
                 TButton("연결 준비 / 복구", ButtonTone.Secondary, enabled = !state.busy && !state.running,
-                    onClick = { setupMessage = null; controls.onWirelessPrepare() })
+                    onClick = controls.onWirelessPrepare)
                 Spacer(Modifier.height(Space.sm))
                 SettingsDetails("수동 페어링 / 연결 포트") {
                     TButton("개발자 옵션 열기", ButtonTone.Secondary) {
@@ -131,7 +129,6 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
                         visualTransformation = PasswordVisualTransformation())
                     Spacer(Modifier.height(Space.sm))
                     TButton("페어링", enabled = !state.busy && !state.running && pairingCode.length == 6) {
-                        setupMessage = null
                         controls.onWirelessPair(pairingPort, pairingCode)
                         pairingCode = ""
                     }

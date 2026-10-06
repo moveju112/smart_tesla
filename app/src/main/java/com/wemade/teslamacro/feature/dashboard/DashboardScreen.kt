@@ -46,7 +46,7 @@ import com.wemade.teslamacro.ui.component.DraftMark
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.HourMinuteStepper
 import com.wemade.teslamacro.ui.component.IndeterminateBar
-import com.wemade.teslamacro.ui.component.InlineBanner
+import com.wemade.teslamacro.ui.component.ActionFeedback
 import com.wemade.teslamacro.ui.component.LevelSelector
 import com.wemade.teslamacro.ui.component.NumberStepper
 import com.wemade.teslamacro.ui.component.TButton
@@ -93,7 +93,7 @@ fun DashboardScreen(
     Column(modifier = modifier.fillMaxSize()) {
         // 명령이 오가는 동안 맨 위에 얇은 선이 흐른다. 누른 게 먹었는지 즉시 안다
         IndeterminateBar(active = state.isBusy)
-        InlineBanner(message = state.errorMessage, onDismiss = onDismissError)
+        ActionFeedback(message = state.errorMessage, onDismiss = onDismissError, useSnackbar = true)
         Hairline()
         Column(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm)) {
             Text(state.vehicleName, style = MaterialTheme.typography.titleMedium, color = T.Ink)

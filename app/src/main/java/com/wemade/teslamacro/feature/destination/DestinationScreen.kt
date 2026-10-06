@@ -13,10 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.Text
-import androidx.compose.material3.Snackbar
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -78,7 +74,7 @@ fun DestinationRoute(
         viewModel::minutesChanged, viewModel::send, viewModel::cancel,
         viewModel::refresh, viewModel::pairingCodeChanged, viewModel::pair, viewModel::unlink,
         viewModel::createPairCode, viewModel::receivingChanged, viewModel::allowOverlay,
-        settingsOnly = settingsOnly, onOpenSettings = onOpenSettings)
+        settingsOnly = settingsOnly, onOpenSettings = onOpenSettings, onDismissFeedback = viewModel::clearFeedback)
 }
 
 /** 위젯 입력창도 기존 화면과 같은 수명 동안만 전송 결과를 조회한다. */
@@ -109,6 +105,7 @@ fun DestinationScreen(
     settingsOnly: Boolean = false,
     onOpenSettings: (() -> Unit)? = null,
     scrollState: ScrollState = rememberScrollState(),
+    onDismissFeedback: () -> Unit = {},
 ) {
     var setup by rememberSaveable { mutableStateOf(initialSetup || settingsOnly) }
     var pairingExpanded by rememberSaveable { mutableStateOf(false) }
@@ -118,6 +115,7 @@ fun DestinationScreen(
     val canSend = state.canSend && DestinationPlace(state.query.trim()).valid() &&
         state.minutes in 1..120
     val content: @Composable () -> Unit = {
+        if (!pairingExpanded) DestinationFeedback(state, onRefresh, onDismissFeedback)
         Column(if (setup) Modifier.fillMaxWidth() else Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f, fill = !setup).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(
@@ -211,13 +209,13 @@ fun DestinationScreen(
                     }
                 }
             }
-            if (!setup || !pairingExpanded) DestinationFeedback(state, onRefresh)
         }
     }
     if (setup) PickerSheet("목적지 설정",
         onDismiss = { if (settingsOnly) onBack() else setup = false }, content = content)
     else content()
     if (setup && pairingExpanded) PickerSheet("전송받을 기기", onDismiss = { pairingExpanded = false }) {
+        DestinationFeedback(state, onRefresh, onDismissFeedback)
         DestinationPairingEditor(state, onPairingCode, onPair, onUnlink, onRefresh)
     }
 
@@ -259,23 +257,18 @@ internal fun DestinationPairingEditor(
             }
         }
         if (state.busy) Text("처리 중…", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        DestinationFeedback(state, onRefresh)
     }
 }
 
-/** 결과와 재확인을 현재 열린 화면에 표시해 편집 시트 뒤로 오류가 가려지지 않게 한다. */
+/** 결과는 한 번만 알리고 재확인 동작은 본문·편집 시트 위에 표시한다. */
 @Composable
-private fun DestinationFeedback(state: DestinationUiState, onRefresh: () -> Unit) {
-    (state.error ?: state.connectionError ?: state.notice)?.let { message ->
-        Snackbar(
-            modifier = Modifier.padding(Space.md).semantics { liveRegion = LiveRegionMode.Polite },
-            action = if (state.error != null || state.connectionError != null) {
-                { androidx.compose.material3.TextButton(enabled = !state.busy, onClick = onRefresh,
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                        contentColor = androidx.compose.material3.SnackbarDefaults.actionColor)) { Text("재확인") } }
-            } else null,
-        ) { Text(message) }
-    }
+private fun DestinationFeedback(state: DestinationUiState, onRefresh: () -> Unit, onDismiss: () -> Unit) {
+    ActionFeedback(
+        message = if (state.busy) null else state.error ?: state.connectionError ?: state.notice,
+        onDismiss = onDismiss,
+        actionLabel = if (state.error != null || state.connectionError != null) "재확인" else null,
+        onAction = onRefresh,
+    )
 }
 
 /** 검색어는 현재 값만 표시하고 편집 시트의 적용 버튼으로만 원본을 바꾼다. */

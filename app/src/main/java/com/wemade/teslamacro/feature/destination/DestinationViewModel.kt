@@ -42,6 +42,9 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { coordinator.message.collect { message -> mutableState.update { it.copy(receiveMessage = message) } } }
     }
 
+    /** 소비한 결과만 지우고 전송 가능 여부를 결정하는 연결 오류는 유지한다. */
+    fun clearFeedback() { mutableState.update { it.copy(error = null, notice = null) } }
+
     /** 서버와 같은 길이 제한을 적용하고 검색은 받는 기기의 네이버지도에 맡긴다. */
     fun queryChanged(value: String) { mutableState.update { it.copy(query = value.take(120)) } }
 

@@ -69,7 +69,12 @@ fun PairingScreen(
     onLoadBonded: () -> Unit = {},
     onConnectDirect: (String) -> Unit = {},
     onEditVin: () -> Unit = {},
+    onDismissMessage: () -> Unit = {},
 ) {
+    com.wemade.teslamacro.ui.component.ActionFeedback(
+        state.message?.takeIf { !state.isBusy && state.step != PairingStep.Done },
+        onDismiss = onDismissMessage, useSnackbar = state.isError,
+    )
     val compact = LocalPane.current.isCompact
 
     // 넓으면 안내(왼쪽)와 입력(오른쪽)을 나란히 둔다. 한 기둥으로 세우면
@@ -115,7 +120,7 @@ fun PairingScreen(
                 VinPrivacyNotice()
             }
 
-            if (state.message != null) {
+            if (state.message != null && (state.isBusy || state.step == PairingStep.Done)) {
                 Spacer(Modifier.height(Space.md))
                 Text(
                     text = state.message,
@@ -267,14 +272,7 @@ private fun OpenTeslaAppButton() {
                 else "테슬라 앱을 열 수 없어요.\n차량 화면에서 확인해 주세요"
             },
         )
-        notice?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = T.InkMuted,
-                modifier = Modifier.padding(top = Space.sm),
-            )
-        }
+        com.wemade.teslamacro.ui.component.ActionFeedback(notice, onDismiss = { notice = null })
     }
 }
 

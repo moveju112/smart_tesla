@@ -2,6 +2,8 @@ package com.wemade.teslamacro.nav
 
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
@@ -259,7 +261,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 withContext(Dispatchers.Main) { navigation.setEnabled(false) }
                 check(!wirelessDebuggingEnabled())
             }
-            result.putString("result", if (panelOnly) "PASS: prepared controls hidden, management and test sheets reachable, active stop, unprepared setup"
+            result.putString("result", if (panelOnly) "PASS: no inline action result, repeated result Toasts from worker thread, silent progress, management/test sheets, active stop, unprepared setup"
                 else if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
                 else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper, saved-auth reuse, debugging on-demand and off after success/failure/cancel"
                 else if (prepareOnly) "PASS: detached helper prepared" else "PASS: debugging enabled before commands, retained during ride and reconnect grace, heartbeat recovery, manual stop retention, departure and disable cleanup, repeated start/stop")
@@ -299,6 +301,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 }
             }
             awaitPanelText("연결 관리", true)
+            awaitPanelText("연결 준비 완료", false)
             awaitPanelText("차량 오디오 선택", false)
             // 안심운전 앱 선택은 현재 선택 이름을 보여 주고 상태 변경을 그대로 반영한다.
             awaitPanelText("내비 앱", true)
@@ -321,24 +324,196 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
             runOnMainSync { check(tests == 1) }
             uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
             awaitPanelText("10초 뒤 테스트", false)
-            runOnMainSync { panelState.value = panelState.value.copy(running = true, message = "안심주행 실행 중") }
+            val completed = "실행 요청 완료 · 음성 안내를 확인해 주세요"
+            runOnMainSync { panelState.value = panelState.value.copy(running = true, message = completed) }
+            awaitPanelText(completed, false)
             clickSetup("종료")
             runOnMainSync { check(stops == 1) }
             awaitPanelText("연결 설정", false)
             runOnMainSync { panelState.value = panelState.value.copy(prepared = false, running = false, message = "무선 페어링 필요") }
             awaitPanelText("연결 설정", true)
             awaitPanelText("종료", false)
+            sendStatus(0, Bundle().apply { putString("phase", "Checking result Toasts") })
+            verifyFeedback(completed)
+            sendStatus(0, Bundle().apply { putString("phase", "Checking shared feedback") })
+            verifyActionFeedback(activity)
         } finally { runOnMainSync { activity.finish() } }
     }
 
+    /** 작업 스레드의 동일 결과도 매번 Toast로 표시하고 진행 로그는 알림을 만들지 않는지 검사한다. */
+    private fun verifyFeedback(message: String) {
+        val navigation = (targetContext.applicationContext as com.wemade.teslamacro.TeslaMacroApplication)
+            .container.wirelessNavigation
+        val report = WirelessNavigation::class.java.getDeclaredMethod("report", String::class.java, java.lang.Boolean.TYPE)
+            .apply { isAccessible = true }
+        val filter = android.app.UiAutomation.AccessibilityEventFilter { event ->
+            event.eventType == android.view.accessibility.AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED &&
+                event.packageName?.toString() == targetContext.packageName && event.text.any { it.toString() == message }
+        }
+        repeat(2) {
+            uiAutomation.executeAndWaitForEvent({ report.invoke(navigation, message, true) }, filter, 8000).recycle()
+        }
+        try {
+            uiAutomation.executeAndWaitForEvent({ report.invoke(navigation, message, false) }, filter, 800).recycle()
+            error("Progress must not show a Toast")
+        } catch (_: java.util.concurrent.TimeoutException) {
+            check(navigation.state.value.message == message)
+        }
+    }
+
+    /** 백업·Fleet·명령 결과가 본문을 밀지 않고 닫기·재시도·자동 종료 뒤 한 번만 소비되는지 검사한다. */
+    private suspend fun verifyActionFeedback(activity: com.wemade.teslamacro.MainActivity) {
+        val originalInfo = uiAutomation.serviceInfo
+        uiAutomation.serviceInfo = uiAutomation.serviceInfo.apply {
+            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
+        val mode = androidx.compose.runtime.mutableIntStateOf(0)
+        val message = androidx.compose.runtime.mutableStateOf<String?>(null)
+        val requests = androidx.compose.runtime.mutableStateOf(listOf(
+            com.wemade.teslamacro.service.QuickActionRequests.Request(1, "대기 명령", com.wemade.teslamacro.service.QuickActionRequests.Status.Waiting)))
+        var dismissed = 0
+        var retried = 0
+        val consume = { message.value = null; dismissed++; Unit }
+        try {
+            runOnMainSync {
+                activity.setContent {
+                    com.wemade.teslamacro.ui.theme.TeslaMacroTheme(dark = false) {
+                        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+                            when (mode.intValue) {
+                                0 -> com.wemade.teslamacro.feature.settings.BackupPanel(
+                                    com.wemade.teslamacro.feature.settings.BackupControls({}, {}, message.value, consume))
+                                1 -> com.wemade.teslamacro.feature.settings.FleetApiPanel(false, {},
+                                    com.wemade.teslamacro.feature.settings.FleetCredentialControls(
+                                        com.wemade.teslamacro.feature.settings.FleetCredentialState(stored = true, message = message.value),
+                                        {}, {}, {}, consume))
+                                2 -> com.wemade.teslamacro.ui.component.ActionFeedback(message.value, consume, "다시 저장", { retried++ })
+                                3 -> com.wemade.teslamacro.ui.component.QuickActionRequestPanel(requests.value, {},
+                                    { id -> requests.value = requests.value.filterNot { it.id == id } })
+                                4 -> com.wemade.teslamacro.ui.component.ActionFeedback(message.value, consume)
+                            }
+                            androidx.compose.material3.Text("레이아웃 기준")
+                        }
+                    }
+                }
+            }
+            for (index in 0..1) {
+                sendStatus(0, Bundle().apply { putString("phase", "Checking feedback panel $index") })
+                runOnMainSync { mode.intValue = index }
+                awaitFeedbackText(if (index == 0) "내보내기" else "Fleet API", true)
+                sendStatus(0, Bundle().apply { putString("phase", "Showing feedback panel $index") })
+                val before = android.graphics.Rect().also { feedbackNodes().first { it.text?.toString() == "레이아웃 기준" }.getBoundsInScreen(it) }
+                val result = if (index == 0) "백업 결과 점검" else "Fleet 처리 결과 점검"
+                runOnMainSync { message.value = result }
+                awaitFeedbackText(result, true)
+                sendStatus(0, Bundle().apply { putString("phase", "Checking feedback close $index") })
+                val after = android.graphics.Rect().also { feedbackNodes().first { it.text?.toString() == "레이아웃 기준" }.getBoundsInScreen(it) }
+                check(before == after) { "Result shifted body: $index" }
+                dismissFeedback()
+                withTimeout(5000) { while (message.value != null) delay(50) }
+                awaitFeedbackText(result, false)
+                if (index == 1) {
+                    sendStatus(0, Bundle().apply { putString("phase", "Checking feedback above Fleet sheet") })
+                    click(feedbackNodes().first { it.text?.toString() == "Fleet API" && it.isVisibleToUser })
+                    awaitFeedbackText("암호화해 저장됨", true)
+                    runOnMainSync { message.value = "Fleet 상세 결과 점검" }
+                    awaitFeedbackText("Fleet 상세 결과 점검", true)
+                    dismissFeedback()
+                    withTimeout(5000) { while (message.value != null) delay(50) }
+                    awaitFeedbackText("Fleet 상세 결과 점검", false)
+                    uiAutomation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                    awaitFeedbackText("암호화해 저장됨", false)
+                }
+            }
+            sendStatus(0, Bundle().apply { putString("phase", "Checking retry action") })
+            runOnMainSync { mode.intValue = 2; message.value = "저장 실패 점검" }
+            awaitFeedbackText("다시 저장", true)
+            click(feedbackNodes().first { it.text?.toString() == "다시 저장" })
+            withTimeout(5000) { while (retried != 1 || message.value != null) delay(50) }
+            sendStatus(0, Bundle().apply { putString("phase", "Checking auto-dismiss") })
+            runOnMainSync { message.value = "자동 닫힘 점검" }
+            awaitFeedbackText("자동 닫힘 점검", true)
+            withTimeout(16000) { while (message.value != null) delay(100) }
+            check(dismissed == 5 && retried == 1)
+            sendStatus(0, Bundle().apply { putString("phase", "Checking result queue") })
+            runOnMainSync { mode.intValue = 3 }
+            awaitFeedbackText("대기 명령", true)
+            val before = android.graphics.Rect().also { feedbackNodes().first { it.text?.toString() == "레이아웃 기준" }.getBoundsInScreen(it) }
+            runOnMainSync { requests.value = requests.value + listOf(
+                com.wemade.teslamacro.service.QuickActionRequests.Request(2, "첫 명령", com.wemade.teslamacro.service.QuickActionRequests.Status.Finished),
+                com.wemade.teslamacro.service.QuickActionRequests.Request(3, "다음 명령", com.wemade.teslamacro.service.QuickActionRequests.Status.Cancelled)) }
+            for ((label, status) in listOf("첫 명령" to com.wemade.teslamacro.service.QuickActionRequests.Status.Finished,
+                "다음 명령" to com.wemade.teslamacro.service.QuickActionRequests.Status.Cancelled)) {
+                val result = "$label · ${status.message}"
+                awaitFeedbackText(result, true)
+                val after = android.graphics.Rect().also { feedbackNodes().first { it.text?.toString() == "레이아웃 기준" }.getBoundsInScreen(it) }
+                check(before == after) { "Completed request shifted body" }
+                dismissFeedback()
+                awaitFeedbackText(result, false)
+            }
+            check(requests.value.size == 1 && requests.value.single().active)
+            awaitFeedbackText("취소", true)
+            sendStatus(0, Bundle().apply { putString("phase", "Checking repeated shared Toast") })
+            runOnMainSync { mode.intValue = 4 }
+            repeat(2) {
+                uiAutomation.executeAndWaitForEvent({ runOnMainSync { message.value = "동일 결과 Toast 점검" } },
+                    { event -> event.eventType == android.view.accessibility.AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED &&
+                        event.packageName?.toString() == targetContext.packageName && event.text.any { it.toString() == "동일 결과 Toast 점검" } }, 8000).recycle()
+                withTimeout(5000) { while (message.value != null) delay(50) }
+                waitForIdleSync()
+            }
+            check(dismissed == 7)
+            sendStatus(0, Bundle().apply { putString("phase", "PASS: stable body, backup/Fleet overlays, retry once, auto-dismiss, sequential command results, repeated Toast consumption") })
+        } finally { uiAutomation.serviceInfo = originalInfo }
+    }
+
+    /** Popup 제거·내용 교체 후 남은 접근성 캐시를 비우고 모든 창의 현재 노드를 읽는다. */
+    private fun feedbackNodes(): List<android.view.accessibility.AccessibilityNodeInfo> {
+        if (Build.VERSION.SDK_INT >= 33) uiAutomation.clearCache()
+        return mutableListOf<android.view.accessibility.AccessibilityNodeInfo>().also { result ->
+            uiAutomation.windows.forEach { it.root?.let { root -> collect(root, result) } }
+        }
+    }
+
+    /** 알림 표시·제거를 관측하며 고정 대기 대신 화면 상태 변화를 기다린다. */
+    private suspend fun awaitFeedbackText(text: String, visible: Boolean) {
+        val reached = withTimeoutOrNull(5000) {
+            while (feedbackNodes().any { it.text?.toString() == text && it.isVisibleToUser } != visible) delay(50)
+            true
+        }
+        check(reached == true) {
+            val matches = feedbackNodes().filter { it.text?.toString() == text }.map { node ->
+                val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
+                "visible=${node.isVisibleToUser}, bounds=$bounds"
+            }
+            val labels = feedbackNodes().mapNotNull { it.text?.toString() }.filter {
+                it in listOf("내보내기", "가져오기", "Fleet API", "레이아웃 기준", "암호화해 저장됨", "토큰 등록 필요")
+            }
+            "Feedback timeout: expected=$text visible=$visible; matches=$matches; labels=$labels; windows=${uiAutomation.windows.map { it.type to it.layer }}"
+        }
+    }
+
+    /** Snackbar의 실제 닫기 버튼을 눌러 소비 콜백을 검증한다. */
+    private fun dismissFeedback() {
+        val button = feedbackNodes().first { it.contentDescription?.toString() in listOf("Dismiss", "닫기") }
+        click(button)
+    }
+
     /** 애니메이션과 재구성 이후 사용자가 볼 수 있는 항목만 비교한다. */
-    private suspend fun awaitPanelText(text: String, visible: Boolean) = withTimeout(5000) {
-        while (true) {
-            val nodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
-            uiAutomation.rootInActiveWindow?.let { collect(it, nodes) }
-            val present = nodes.any { it.text?.toString() == text && it.isVisibleToUser }
-            if (present == visible && nodes.any { it.packageName?.toString() == targetContext.packageName }) return@withTimeout
-            delay(100)
+    private suspend fun awaitPanelText(text: String, visible: Boolean) {
+        val reached = withTimeoutOrNull(5000) {
+            while (true) {
+                val nodes = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+                uiAutomation.rootInActiveWindow?.let { collect(it, nodes) }
+                val present = nodes.any { it.text?.toString() == text && it.isVisibleToUser }
+                if (present == visible && nodes.any { it.packageName?.toString() == targetContext.packageName }) return@withTimeoutOrNull true
+                delay(100)
+            }
+        }
+        check(reached == true) {
+            val labels = feedbackNodes().mapNotNull { it.text?.toString() }.filter {
+                it in listOf("내보내기", "가져오기", "레이아웃 기준", "Fleet API", "연결 관리", "내비 앱", "암호화해 저장됨")
+            }
+            "Panel timeout: expected=$text visible=$visible; labels=$labels; activity=${resumedActivity()}"
         }
     }
 

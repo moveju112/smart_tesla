@@ -24,6 +24,12 @@ class MacroViewModel(private val container: AppContainer) : ViewModel() {
     val saveError: StateFlow<String?> = _saveError.asStateFlow()
     private var saving = false
 
+    /** 폴더 작업 결과를 소비해 같은 실패도 다음 요청에서 다시 알린다. */
+    fun clearFolderError() { _folderError.value = null }
+
+    /** 편집 내용은 보존하고 표시가 끝난 저장 오류만 비운다. */
+    fun clearSaveError() { _saveError.value = null }
+
     /** 생성·이름 변경 결과를 저장하고 실패는 목록에서 알린다. */
     fun saveFolder(id: String?, name: String) {
         viewModelScope.launch {

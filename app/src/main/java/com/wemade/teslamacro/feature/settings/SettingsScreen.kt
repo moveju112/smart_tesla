@@ -40,6 +40,7 @@ import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.settings.MAX_SMARTTHINGS_COMMAND_TEXT_LENGTH
 import com.wemade.teslamacro.data.settings.SmartThingsCommands
 import com.wemade.teslamacro.ui.layout.LocalPane
+import com.wemade.teslamacro.ui.component.ActionFeedback
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.ui.component.ButtonTone
 import com.wemade.teslamacro.ui.component.ChoiceGrid
@@ -403,10 +404,13 @@ private fun ExpandableToggle(
     settingsOnly: Boolean = false,
     executionOnly: Boolean = false,
     notices: @Composable ColumnScope.() -> Unit = {},
+    feedback: @Composable () -> Unit = {},
     details: @Composable ColumnScope.() -> Unit,
 ) {
     val expandInitially = LocalExpandSettingsDetails.current
     var expanded by rememberSaveable { mutableStateOf(expandInitially) }
+    // Popup은 현재 열린 창에 붙여야 상세 Dialog 뒤로 알림이 가려지지 않는다.
+    if (!expanded) feedback()
     Column(Modifier.fillMaxWidth()) {
         if (executionOnly) {
             SettingToggleRow(title, checked, onCheckedChange, description = summary)
@@ -437,6 +441,7 @@ private fun ExpandableToggle(
                 LocalExpandSettingsDetails provides false,
             ) {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    feedback()
                     details()
                 }
             }
@@ -586,10 +591,10 @@ private fun UpdatePanel(
                 enabled = update !is UpdateState.Checking && update !is UpdateState.Downloading && update !is UpdateState.Installing,
                 onClick = onCheck)
         }
-        if (update is UpdateState.Failed || update is UpdateState.NeedsInstallPermission) {
+        ActionFeedback((update as? UpdateState.Failed)?.message, actionLabel = "다시 확인", onAction = onCheck)
+        if (update is UpdateState.NeedsInstallPermission) {
             Text(
-                text = if (update is UpdateState.Failed) update.message
-                    else "앱 설치 권한이 필요해요.\n허용하고 돌아오면 설치를 자동으로 이어가요.",
+                text = "앱 설치 권한이 필요해요.\n허용하고 돌아오면 설치를 자동으로 이어가요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = T.WarnText,
                 modifier = Modifier.padding(vertical = Space.sm),
@@ -659,13 +664,10 @@ internal fun FleetApiPanel(enabled: Boolean, onEnabledChange: (Boolean) -> Unit,
             title = "Fleet API",
             checked = enabled,
             onCheckedChange = onEnabledChange,
+            feedback = {
+                ActionFeedback(credentials?.state?.message, onDismiss = { credentials?.onDismissMessage?.invoke() }, useSnackbar = true)
+            },
             notices = {
-                credentials?.state?.message?.let { message ->
-                    Spacer(Modifier.height(Space.sm))
-                    Text(message, style = MaterialTheme.typography.bodySmall,
-                        color = if (message.startsWith("연결 확인 완료") || message.startsWith("토큰을 삭제하고") ||
-                            message.startsWith("토큰을 암호화")) T.InkMuted else T.Danger)
-                }
                 if (credentials != null && !credentials.state.stored) {
                     Text("토큰 등록 필요",
                         style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
@@ -826,7 +828,6 @@ data class NavigationControls(
     val onOpenTrustedDeviceSettings: () -> Unit = {},
     val onSafeDriveLaunchModeChange: (String) -> Unit = {},
     val onSafeDriveTest: () -> Unit = {},
-    val safeDriveTestMessage: String? = null,
     val onHudOverlayChange: (Boolean) -> Unit,
     val vehicleAudioStatus: com.wemade.teslamacro.service.VehicleAudioStatus =
         com.wemade.teslamacro.service.VehicleAudioStatus.CHECKING,
@@ -921,11 +922,6 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
                     }
                     Text("누른 뒤 화면을 잠가 주세요. 인증이 필요하면 직접 잠금을 해제해 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
-                        modifier = Modifier.padding(top = Space.sm))
-                }
-                // 점검을 접어도 실행 결과·실패 안내는 가리지 않는다.
-                controls.safeDriveTestMessage?.let { message ->
-                    Text(message, style = MaterialTheme.typography.bodySmall, color = T.InkMuted,
                         modifier = Modifier.padding(top = Space.sm))
                 }
             }
@@ -1089,26 +1085,16 @@ data class BackupControls(
     val onDismissMessage: () -> Unit = {},
 )
 
-/** 같은 백업의 두 동작을 한 줄에 두고 실행 결과만 아래에 남긴다. */
+/** 백업 동작은 한 줄에 두고 결과는 본문 밖에서 닫거나 자동으로 사라지게 한다. */
 @Composable
 internal fun BackupPanel(backup: BackupControls) {
+    ActionFeedback(backup.message, onDismiss = backup.onDismissMessage, useSnackbar = true)
     TCard {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             TButton("내보내기", icon = Icons.Rounded.Backup,
                 modifier = Modifier.weight(1f), small = true, onClick = backup.onExport)
             TButton("가져오기", ButtonTone.Secondary, icon = Icons.Rounded.Restore,
                 modifier = Modifier.weight(1f), small = true, onClick = backup.onImport)
-        }
-        // 결과는 성공이든 실패든 남긴다 — 조용히 끝나면 됐는지 안 됐는지 알 길이 없다
-        backup.message?.let { message ->
-            Spacer(Modifier.height(Space.sm))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (message.startsWith("되돌리지 못했어요") || message.startsWith("내보내지 못했어요")) T.Danger else T.Ink,
-            )
-            TButton("알림 닫기", tone = ButtonTone.Ghost, fillWidth = false, small = true,
-                onClick = backup.onDismissMessage)
         }
     }
 }

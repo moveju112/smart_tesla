@@ -77,6 +77,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val mutableFleetCredentials = MutableStateFlow(FleetCredentialState(busy = true))
     val fleetCredentials: StateFlow<FleetCredentialState> = mutableFleetCredentials.asStateFlow()
 
+    /** 표시한 토큰 처리 결과만 비워 같은 작업을 다시 실행해도 새 알림을 받을 수 있게 한다. */
+    fun clearFleetCredentialMessage() {
+        mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = null)
+    }
+
     init {
         viewModelScope.launch {
             val stored = runCatching {
@@ -271,21 +276,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setNavigatorSafeDriveLaunchMode(mode: String) {
-        _safeDriveTestMessage.value = null
         viewModelScope.launch { container.settingsStore.setNavigatorSafeDriveLaunchMode(mode) }
     }
 
-    private val _safeDriveTestMessage = MutableStateFlow<String?>(null)
-    val safeDriveTestMessage: StateFlow<String?> = _safeDriveTestMessage.asStateFlow()
-
     /** 화면을 잠가도 예약이 유지되도록 실행은 서비스에 맡긴다. */
     fun scheduleSafeDriveTest() {
-        _safeDriveTestMessage.value = runCatching {
+        val message = runCatching {
             com.wemade.teslamacro.service.MacroService.scheduleSafeDriveTest(container.appContext)
         }.fold(
             onSuccess = { "예약을 요청했어요. 지금 화면을 잠가 주세요.\n인증이 필요하면 잠금을 해제해 주세요." },
             onFailure = { "예약 요청을 확인해 주세요 · ${it.message}" },
         )
+        android.widget.Toast.makeText(container.appContext, message, android.widget.Toast.LENGTH_LONG).show()
     }
 
     fun setHudOverlay(enabled: Boolean) {

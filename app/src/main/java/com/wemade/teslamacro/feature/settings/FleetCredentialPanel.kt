@@ -24,6 +24,7 @@ data class FleetCredentialControls(
     val onSave: (String) -> Unit,
     val onDelete: () -> Unit,
     val onCheck: () -> Unit,
+    val onDismissMessage: () -> Unit = {},
 )
 
 /** 토큰 입력과 관리 동작은 Fleet 상세 시트에만 놓고 비밀값은 제출 즉시 비운다. */
@@ -60,11 +61,6 @@ internal fun FleetCredentialPanel(controls: FleetCredentialControls) {
                     fillWidth = false, onClick = { token = ""; controls.onDelete() })
             }
             Text("암호화해 저장됨", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
-        }
-        state.message?.let { message ->
-            Text(message, style = MaterialTheme.typography.bodySmall,
-                color = if (message.startsWith("연결 확인 완료") || message.startsWith("토큰을 삭제하고") ||
-                    message.startsWith("토큰을 암호화")) T.InkMuted else T.Danger)
         }
     }
 }

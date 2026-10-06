@@ -8,7 +8,7 @@ import os
 # 테스트 소스는 보관하고 빌드 산출물은 Git에서 제외된 경로에 둔다.
 root = pathlib.Path(__file__).resolve().parents[2]
 source = root / "tools/nav-smoke"
-output = root / "local-replay/nav-smoke"
+output = pathlib.Path(os.environ.get("NAV_SMOKE_OUTPUT", str(root / "local-replay/nav-smoke")))
 sdk = pathlib.Path(os.environ.get("ANDROID_HOME", "/home/ubuntu/Android/Sdk"))
 tools = sdk / "build-tools/35.0.0"
 android = sdk / "platforms/android-35/android.jar"
@@ -22,7 +22,7 @@ def run(arguments):
 
 
 run(["javac", "-source", "8", "-target", "8", "-classpath", android, "-d", output / "classes", source / "Fixture.java"])
-run([tools / "d8", "--lib", android, "--output", output / "dex", output / "classes/com/nhn/android/nmap/Fixture.class"])
+run([tools / "d8", "--lib", android, "--output", output / "dex", *sorted((output / "classes/com/nhn/android/nmap").glob("*.class"))])
 run([tools / "aapt2", "link", "-I", android, "--manifest", source / "AndroidManifest.xml", "-o", output / "fixture.apk"])
 with zipfile.ZipFile(output / "fixture.apk", "a") as archive:
     archive.write(output / "dex/classes.dex", "classes.dex")

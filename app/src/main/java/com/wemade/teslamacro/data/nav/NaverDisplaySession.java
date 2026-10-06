@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.nav;
 
 import android.content.Context;
+import android.app.ActivityManager;
 import android.media.ImageReader;
 import android.graphics.PixelFormat;
 import android.os.Handler;
@@ -66,8 +67,8 @@ public final class NaverDisplaySession {
             lock = new LocalServerSocket("smart_tesla_naver_" + user);
             initialize();
             target = installedPackage(app);
-            // 기존 지도 작업은 실험 종료 때 닫지 않도록 시작 자체를 거절한다.
-            if (!command("pidof", target).trim().isEmpty()) {
+            // 종료 후 남은 캐시 프로세스는 허용하되 기존 화면·주행 서비스는 종료 대상에 섞지 않는다.
+            if (hasExistingNavigation(target, user)) {
                 output.println("NAVER_BUSY");
                 return;
             }
@@ -107,6 +108,24 @@ public final class NaverDisplaySession {
             output.println("NAVER_CLOSED");
             output.flush();
         }
+    }
+
+    /** 같은 사용자의 살아 있는 지도 작업·전경 서비스만 보호하고 조회 실패는 시작 실패로 넘긴다. */
+    private static boolean hasExistingNavigation(String target, int user) throws Exception {
+        ActivityManager activityManager = shell.getSystemService(ActivityManager.class);
+        // 셸 권한으로 전체 작업을 확인해야 배경 지도나 다른 화면의 지도도 보호할 수 있다.
+        java.lang.reflect.Field taskUser = ActivityManager.RunningTaskInfo.class.getField("userId");
+        for (ActivityManager.RunningTaskInfo task : activityManager.getRunningTasks(Integer.MAX_VALUE)) {
+            if (taskUser.getInt(task) != user || task.numActivities <= 0) continue;
+            if ((task.baseActivity != null && target.equals(task.baseActivity.getPackageName())) ||
+                (task.topActivity != null && target.equals(task.topActivity.getPackageName()))) return true;
+        }
+        // 화면 없이 음성 안내 중일 수 있으므로 실제 전경 서비스도 함께 보호한다.
+        for (ActivityManager.RunningServiceInfo service : activityManager.getRunningServices(Integer.MAX_VALUE)) {
+            if (service.uid / 100000 == user && service.foreground && service.pid > 0 &&
+                service.service != null && target.equals(service.service.getPackageName())) return true;
+        }
+        return false;
     }
 
     /** 셸 문맥에 설치된 첫 패키지만 대상으로 삼는다. 티맵처럼 패키지가 둘인 앱이 있다. */

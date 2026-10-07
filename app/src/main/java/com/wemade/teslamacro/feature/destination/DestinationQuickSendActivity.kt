@@ -6,10 +6,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material3.Text
-import com.wemade.teslamacro.ui.component.TButton
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,17 +74,17 @@ class DestinationQuickSendActivity : ComponentActivity() {
 private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -> Unit) {
     val state by model.state.collectAsState()
     val context = LocalContext.current
-    ObserveDestination(model)
+    if (needsDestinationSetup(state)) ObserveDestination(model)
     LaunchedEffect(state.sendCompleted) {
         if (state.sendCompleted) {
             Toast.makeText(context, "전송했어요", Toast.LENGTH_SHORT).show()
             onClose()
         }
     }
-    if (!needsDestinationSetup(state) && state.connectionError == null) {
+    if (!needsDestinationSetup(state)) {
         com.wemade.teslamacro.ui.component.ActionFeedback(state.error, onDismiss = model::clearFeedback, useSnackbar = true)
     }
-    DestinationQuickSendContent(state, model::queryChanged, model::send, model::refresh) {
+    DestinationQuickSendContent(state, model::queryChanged, model::send) {
         DestinationScreen(state, onBack = onClose, onMinutes = model::minutesChanged,
             onRefresh = model::refresh, onPairingCode = model::pairingCodeChanged,
             onPair = model::pair, onUnlink = model::unlink, onCreateCode = model::createPairCode,
@@ -97,26 +93,15 @@ private fun DestinationQuickSendRoute(model: DestinationViewModel, onClose: () -
     }
 }
 
-/** 로컬 설정 이력을 먼저 읽어 첫 사용을 네트워크 대기 화면에 가두지 않는다. */
+/** 설정 이력만 읽고 입력창을 열며 서버 연결 확인은 전송 요청 때 수행한다. */
 @Composable
 internal fun DestinationQuickSendContent(
     state: DestinationUiState, onQuery: (String) -> Unit, onSend: () -> Unit,
-    onRefresh: () -> Unit, setup: @Composable () -> Unit,
+    setup: @Composable () -> Unit,
 ) {
     when {
         needsDestinationSetup(state) -> setup()
         state.setupStarted == null && !state.connectionChecked -> Unit
-        state.connectionError != null || !state.connectionChecked -> Surface(
-            shape = RoundedCornerShape(Radius.hero), color = T.Carbon.copy(alpha = 0.88f),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                com.wemade.teslamacro.ui.component.ActionFeedback(if (state.busy) null else state.connectionError,
-                    actionLabel = "재확인", onAction = onRefresh)
-                Text(if (state.connectionError != null) "연결 확인 필요" else "연결 확인 중…", color = T.Ink,
-                    modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-                if (state.connectionError != null) TButton("재확인", enabled = !state.busy, onClick = onRefresh)
-            }
-        }
         else -> DestinationQuickSendScreen(state, onQuery, onSend)
     }
 }
@@ -154,7 +139,7 @@ internal fun DestinationQuickSendScreen(
             ),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = {
-                if (state.canSend && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120) onSend()
+                if (!state.busy && state.setupStarted != null && DestinationPlace(state.query.trim()).valid() && state.minutes in 1..120) onSend()
             }),
         )
     }

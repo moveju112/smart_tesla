@@ -107,16 +107,24 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             runOnMainSync { model = ViewModelProvider(activity as DestinationQuickSendActivity)[DestinationViewModel::class.java] }
             check(model.state.value.setupStarted == false && model.state.value.canConfigure)
             check(runBlocking { withTimeoutOrNull(5_500) { model.state.first { it.connectionError != null } } } == null)
-            // 설정 이력이 있는 설치본은 새 화면에서 실제 통신 실패를 표시한다.
+            // 설정 이력이 있으면 오프라인에서도 즉시 입력하고 전송 요청 때만 연결을 확인한다.
             runOnMainSync { activity!!.finish() }
             runBlocking { store.setDestinationSetupStarted(true) }
             val configuredMonitor = addMonitor(DestinationQuickSendActivity::class.java.name, null, false)
             runOnMainSync { view.findViewById<android.view.View>(R.id.destination_widget_root).performClick() }
             activity = waitForMonitorWithTimeout(configuredMonitor, 10_000)
+            removeMonitor(configuredMonitor)
             check(activity != null)
-            awaitNode { it.text?.toString() == "연결을 확인하지 못했어요" }
-            check(find(uiAutomation.rootInActiveWindow) { it.className == "android.widget.EditText" } == null)
-            check(find(uiAutomation.rootInActiveWindow) { it.text?.toString() == "연결코드생성" } == null)
+            awaitNode { it.className == "android.widget.EditText" }
+            runOnMainSync { model = ViewModelProvider(activity as DestinationQuickSendActivity)[DestinationViewModel::class.java] }
+            check(!model.state.value.connectionChecked && !model.state.value.busy)
+            enter(awaitNode { it.className == "android.widget.EditText" && it.isFocused }, "서울역")
+            check(runBlocking { withTimeoutOrNull(5_500) { model.state.first { it.connectionError != null || it.connectionChecked } } } == null)
+            check(awaitNode { it.className == "android.widget.EditText" }
+                .performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id))
+            runBlocking { kotlinx.coroutines.withTimeout(20_000) { model.state.first { !it.busy && it.error != null } } }
+            check(model.state.value.query == "서울역" && !model.state.value.sendCompleted)
+            awaitNode { it.className == "android.widget.EditText" }
             // 명시적 해제 기록을 읽으면 오류 화면에서도 설정으로 돌아간다.
             runBlocking { store.setDestinationSetupStarted(false) }
             awaitNode { it.text?.toString() == "전송받을 기기" }
@@ -130,7 +138,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
                         DestinationQuickSendContent(fixture.value,
                             onQuery = { fixture.value = fixture.value.copy(query = it) },
                             onSend = { sends++; fixture.value = fixture.value.copy(error = "오프라인") },
-                            onRefresh = {}, setup = {
+                            setup = {
                                 DestinationScreen(fixture.value, settingsOnly = true,
                                     onCreateCode = { fixture.value = fixture.value.copy(receiverCode = "ABCD234567") },
                                     onUnlink = { disconnects++; fixture.value = DestinationUiState(connectionChecked = true) },
@@ -177,7 +185,7 @@ class DestinationWidgetSmokeInstrumentation : Instrumentation() {
             check(disconnects == 1)
             awaitNode { it.text?.toString() == "미연결" }
             checkDisabled("이 기기 자동 수신")
-            runOnMainSync { fixture.value = DestinationUiState(connectionChecked = true, receiverName = "차량 태블릿") }
+            runOnMainSync { fixture.value = DestinationUiState(setupStarted = true, connectionChecked = true, receiverName = "차량 태블릿") }
             val field = awaitNode { it.className == "android.widget.EditText" && it.isFocused }
             check(field.isFocused) { "주소 입력칸의 자동 초점 누락" }
             val keyboardDeadline = SystemClock.uptimeMillis() + 10_000

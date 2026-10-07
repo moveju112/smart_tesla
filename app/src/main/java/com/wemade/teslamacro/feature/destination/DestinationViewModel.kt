@@ -56,12 +56,14 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     /** 연결 코드는 대문자로 정리하되 장소 입력과 섞지 않는다. */
     fun pairingCodeChanged(value: String) { mutableState.update { it.copy(pairingCode = value.filter(Char::isLetterOrDigit).uppercase().take(10)) } }
 
-    /** 서버에서 확인된 수신 기기로만 전송해 미연결 요청을 만들지 않는다. */
+    /** 입력을 먼저 검증한 뒤 전송 직전에 서버 연결을 확인해 오래된 수신 기기로 보내지 않는다. */
     fun send() = act {
         val value = state.value
-        check(value.connectionChecked && value.connectionError == null && value.receiverName != null) { "받는 기기를 연결해 주세요" }
         val place = DestinationPlace(value.query.trim())
         check(place.valid()) { "검색어를 1~120자로 입력해 주세요. 줄바꿈은 사용할 수 없어요" }
+        check(value.minutes in 1..120) { "전송 유효시간을 확인해 주세요" }
+        refreshState()
+        check(state.value.receiverName != null) { "받는 기기를 연결해 주세요" }
         val reply = client.send(place, value.minutes)
         mutableState.update { it.copy(request = reply.request, notice = "전송했어요", sendCompleted = true) }
     }

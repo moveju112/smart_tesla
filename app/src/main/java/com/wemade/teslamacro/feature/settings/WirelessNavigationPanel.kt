@@ -102,7 +102,7 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
             Spacer(Modifier.height(Space.md))
             // 설치된 앱만 고르게 하되, 지운 앱을 고른 상태여도 현재 선택 이름은 보여 준다.
             val apps = NavigatorApp.entries.filter { it.supportsSafeDrive && (it.name in controls.installed || it == state.app) }
-            ChoiceSettingRow("내비 앱", apps.map { it.name to it.label }, state.app.name, controls.onWirelessApp)
+            ChoiceSettingRow("내비 앱", apps.map { it.name to it.label }, state.app.name, onSelect = controls.onWirelessApp)
             SettingToggleRow("차량 오디오 연결 시 자동 실행", checked = state.enabled,
                 onCheckedChange = controls.onWirelessEnabled)
             if (state.enabled && settings.vehicleAudioAddress.isBlank()) {

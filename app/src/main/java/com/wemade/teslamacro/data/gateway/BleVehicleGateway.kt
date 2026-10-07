@@ -12,6 +12,7 @@ import com.wemade.teslamacro.domain.command.isIdempotent
 import com.wemade.teslamacro.domain.command.requiresPark
 import com.wemade.teslamacro.domain.gateway.EnrollmentState
 import com.wemade.teslamacro.domain.gateway.LinkState
+import com.wemade.teslamacro.domain.gateway.VehicleConnectionUnavailableException
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import com.wemade.teslamacro.domain.model.ShiftState
 import com.wemade.teslamacro.domain.model.StateCategory
@@ -77,7 +78,7 @@ class BleVehicleGateway(
         }
         if (!scanner.isBluetoothReady) {
             _linkState.value = LinkState.Failed("블루투스가 꺼져 있어요")
-            return@withLock Result.failure(IllegalStateException("블루투스가 꺼져 있어요"))
+            return@withLock Result.failure(VehicleConnectionUnavailableException("블루투스가 꺼져 있어요"))
         }
 
         runCatching {
@@ -214,7 +215,7 @@ class BleVehicleGateway(
         }
         if (!scanner.isBluetoothReady) {
             _linkState.value = LinkState.Failed("블루투스가 꺼져 있어요")
-            return@withLock Result.failure(IllegalStateException("블루투스가 꺼져 있어요"))
+            return@withLock Result.failure(VehicleConnectionUnavailableException("블루투스가 꺼져 있어요"))
         }
 
         runCatching {
@@ -690,14 +691,18 @@ class BleVehicleGateway(
 }
 
 /**
- * 인포테인먼트 응답에서 거부 사유를 뽑는다. 거부가 아니면 null.
+ * 인포테인먼트 응답에서 거부·결과 확인 실패 사유를 뽑는다. 정상 결과면 null.
  * 게이트웨이 없이도 검사할 수 있게 순수 함수로 둔다.
  */
 internal fun infotainmentRejection(responseBytes: ByteArray): String? {
     val status = runCatching { CarServer.Response.parseFrom(responseBytes).actionStatus }
-        .getOrNull() ?: return null // 본문 해석 실패는 여기서 판정하지 않는다
-    if (status.result != CarServer.OperationStatus_E.OPERATIONSTATUS_ERROR) return null
-    return status.resultReason.plainText.ifBlank { "차량이 거부함 (사유 없음)" }
+        .getOrNull() ?: return "차량 응답을 해석하지 못해 실행 결과를 확인할 수 없어요"
+    return when (status.result) {
+        CarServer.OperationStatus_E.OPERATIONSTATUS_OK -> null
+        CarServer.OperationStatus_E.OPERATIONSTATUS_ERROR ->
+            status.resultReason.plainText.ifBlank { "차량이 거부함 (사유 없음)" }
+        else -> "차량 응답의 실행 결과를 확인할 수 없어요"
+    }
 }
 
 /**
@@ -719,9 +724,10 @@ internal fun vcsecRejection(response: Vcsec.FromVCSECMessage): String? {
     // 2. 명령 처리 상태. OK가 아니면 성공으로 기록하면 안 된다
     if (!response.hasCommandStatus()) return null
     return when (response.commandStatus.operationStatus) {
+        Vcsec.OperationStatus_E.OPERATIONSTATUS_OK -> null
         Vcsec.OperationStatus_E.OPERATIONSTATUS_ERROR -> signedMessageFaultText(response)
         Vcsec.OperationStatus_E.OPERATIONSTATUS_WAIT -> "차량이 아직 준비되지 않았어요"
-        else -> null
+        else -> "차량 응답의 실행 결과를 확인할 수 없어요"
     }
 }
 

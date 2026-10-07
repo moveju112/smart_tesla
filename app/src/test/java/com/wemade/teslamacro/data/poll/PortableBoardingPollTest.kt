@@ -9,6 +9,7 @@ import com.wemade.teslamacro.data.settings.SettingsStore
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.gateway.EnrollmentState
 import com.wemade.teslamacro.domain.gateway.LinkState
+import com.wemade.teslamacro.domain.gateway.VehicleConnectionUnavailableException
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
@@ -129,6 +130,262 @@ class PortableBoardingPollTest {
         advanceTimeBy(90_000)
         runCurrent()
         assertEquals(reads, fixture.gateway.reads.size)
+        fixture.poller.stop()
+    }
+
+    /** 전원 복귀 뒤 늦게 켜진 블루투스도 새 VCSEC 착석 응답을 받은 뒤에만 수신 준비를 알린다. */
+    @Test fun destinationWaitsForBluetoothReadinessBeforeCountingVehicleConnections() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        var vehicleConnections = 0
+        fixture.gateway.onConnect = {
+            if (testScheduler.currentTime < 6_000L) {
+                Result.failure(VehicleConnectionUnavailableException("블루투스 준비 중"))
+            } else {
+                vehicleConnections++
+                Result.success(Unit)
+            }
+        }
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        val presence = mutableListOf<Boolean>()
+        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it } }
+        fixture.start()
+        advanceTimeBy(5_999)
+        runCurrent()
+
+        assertEquals(0, vehicleConnections)
+        assertTrue(presence.isEmpty())
+        assertTrue(fixture.gateway.reads.isEmpty())
+        advanceTimeBy(2_001)
+        runCurrent()
+
+        assertTrue(fixture.gateway.connections > 2)
+        assertEquals(1, vehicleConnections)
+        assertEquals(listOf(true), presence)
+        assertEquals(1, fixture.boardings)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 거치 목적지 수신은 첫 60초가 지나도 휴지 후 재접속해 신선한 착석 응답을 얻는다. */
+    @Test fun mountedDestinationRecoversAfterInitialDeadline() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = {
+            if (testScheduler.currentTime < 90_000L)
+                Result.failure(VehicleConnectionUnavailableException("블루투스 준비 중"))
+            else Result.success(Unit)
+        }
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        val presence = mutableListOf<Boolean>()
+        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it } }
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+        val attempts = fixture.gateway.connections
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        advanceTimeBy(59_999)
+        runCurrent()
+        assertEquals(attempts, fixture.gateway.connections)
+        assertTrue(presence.isEmpty())
+        advanceTimeBy(30_001)
+        runCurrent()
+        assertTrue(fixture.gateway.connections > attempts)
+        assertTrue(presence.contains(true))
+        assertEquals(1, fixture.boardings)
+        fixture.poller.stop()
+    }
+
+    /** 실제 연결 실패 두 번도 영구 중단하지 않고 휴지 뒤 다음 확인 예산으로 복구한다. */
+    @Test fun mountedDestinationRetriesRealFailuresAfterRest() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = { attempt ->
+            if (attempt <= 2) Result.failure(IllegalStateException("차량 연결 실패"))
+            else Result.success(Unit)
+        }
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.start()
+        advanceTimeBy(59_000)
+        runCurrent()
+        assertEquals(2, fixture.gateway.connections)
+        advanceTimeBy(40_000)
+        runCurrent()
+        assertEquals(3, fixture.gateway.connections)
+        assertEquals(1, fixture.boardings)
+        fixture.poller.stop()
+    }
+
+    /** 수신 해제·전원 해제는 만료 뒤 예약된 자동 복구도 막는다. */
+    @Test fun mountedDestinationRecoveryRespectsStopConditions() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = { Result.failure(VehicleConnectionUnavailableException("준비 중")) }
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+        val attempts = fixture.gateway.connections
+        fixture.settings.setDestinationReceiveEnabled(false)
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(attempts, fixture.gateway.connections)
+        fixture.poller.setVehiclePowerConnected(false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(attempts, fixture.gateway.connections)
+        fixture.poller.stop()
+    }
+
+    /** 첫 확인 창이 끝난 뒤 수동으로 끊어도 예약된 복구가 사용자 선택을 덮지 않는다. */
+    @Test fun mountedDestinationRecoveryRespectsManualDisconnect() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = { Result.failure(VehicleConnectionUnavailableException("준비 중")) }
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+        fixture.poller.disconnectUntilNextUse()
+        val attempts = fixture.gateway.connections
+        fixture.gateway.onConnect = { Result.success(Unit) }
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        advanceTimeBy(180_000)
+        runCurrent()
+        assertEquals(attempts, fixture.gateway.connections)
+        assertEquals(0, fixture.boardings)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 재확인에서도 미착석 응답은 탑승으로 취급하지 않고 확인 창 종료 시 연결을 놓는다. */
+    @Test fun mountedDestinationRecoveryStillRequiresPresence() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onRead = { fixture.snapshot(false) }
+        fixture.start()
+        advanceTimeBy(180_000)
+        runCurrent()
+        assertTrue(fixture.gateway.connections >= 2)
+        assertEquals(0, fixture.boardings)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 블루투스가 끝내 준비되지 않아도 원래 60초 마감 뒤에는 늦은 수신을 시도하지 않는다. */
+    @Test fun destinationBluetoothReadinessExpiresAtOriginalDeadline() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = {
+            Result.failure(VehicleConnectionUnavailableException("블루투스 준비 중"))
+        }
+        fixture.start()
+        advanceTimeBy(59_999)
+        runCurrent()
+
+        assertTrue(fixture.gateway.connections > 2)
+        assertTrue(fixture.gateway.linkState.value is LinkState.Failed)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        val attemptsAtDeadline = fixture.gateway.connections
+        fixture.gateway.onConnect = { Result.success(Unit) }
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(attemptsAtDeadline, fixture.gateway.connections)
+        assertEquals(0, fixture.boardings)
+        assertTrue(fixture.gateway.reads.isEmpty())
+        fixture.poller.stop()
+    }
+
+    /** 준비 대기 뒤에도 실제 차량 연결 실패는 두 번에서 끝내 과도한 재접속을 막는다. */
+    @Test fun destinationLimitsRealConnectionFailuresAfterBluetoothBecomesReady() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        var vehicleConnections = 0
+        fixture.gateway.onConnect = {
+            if (testScheduler.currentTime < 4_000L) {
+                Result.failure(VehicleConnectionUnavailableException("블루투스 준비 중"))
+            } else {
+                vehicleConnections++
+                Result.failure(IllegalStateException("차량 연결 실패"))
+            }
+        }
+        fixture.start()
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        assertEquals(2, vehicleConnections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        val attempts = fixture.gateway.connections
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(attempts, fixture.gateway.connections)
+        assertTrue(fixture.gateway.reads.isEmpty())
+        fixture.poller.stop()
+    }
+
+    /** 준비 중 수동 연결 해제를 받으면 블루투스가 켜져도 같은 요청을 다시 시작하지 않는다. */
+    @Test fun destinationBluetoothWaitStopsAfterManualDisconnect() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = {
+            Result.failure(VehicleConnectionUnavailableException("블루투스 준비 중"))
+        }
+        fixture.start()
+        advanceTimeBy(3_000)
+        runCurrent()
+        fixture.poller.disconnectUntilNextUse()
+        fixture.gateway.onConnect = { Result.success(Unit) }
+        val attempts = fixture.gateway.connections
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(attempts, fixture.gateway.connections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        assertTrue(fixture.gateway.reads.isEmpty())
+        fixture.poller.stop()
+    }
+
+    /** 전원 해제로 확인 창이 취소되면 남은 준비 대기가 실제 접속으로 이어지지 않는다. */
+    @Test fun destinationBluetoothWaitStopsWhenPowerDisconnects() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = {
+            Result.failure(VehicleConnectionUnavailableException("블루투스 준비 중"))
+        }
+        fixture.start()
+        advanceTimeBy(3_000)
+        runCurrent()
+        fixture.poller.setVehiclePowerConnected(false)
+        fixture.gateway.onConnect = { Result.success(Unit) }
+        val attempts = fixture.gateway.connections
+        advanceTimeBy(90_000)
+        runCurrent()
+
+        assertEquals(attempts, fixture.gateway.connections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        assertTrue(fixture.gateway.reads.isEmpty())
+        fixture.poller.stop()
+    }
+
+    /** 취소를 Result로 바꾸는 실제 연결 지연도 총 60초와 두 번의 접속 상한을 지킨다. */
+    @Test fun destinationSlowConnectionsKeepOriginalDeadline() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = { runCatching { delay(45_000) } }
+        fixture.start()
+        advanceTimeBy(60_000)
+        runCurrent()
+
+        assertEquals(2, fixture.gateway.connections)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        assertTrue(fixture.gateway.reads.isEmpty())
+        advanceTimeBy(90_000)
+        runCurrent()
+        assertEquals(2, fixture.gateway.connections)
         fixture.poller.stop()
     }
 

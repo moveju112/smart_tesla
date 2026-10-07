@@ -61,10 +61,6 @@ enum class VehicleAudioStatus(val label: String) {
     READ_FAILED("Bluetooth 상태 확인 실패 · 탑승 감지 대기"),
 }
 
-// 1. 권한 변경과 설정 변경이 동일한 구독 조건을 사용해 휴대 모드의 재등록을 막는다.
-internal fun shouldSubscribeDrivingActivity(mode: DeviceMode, guideEnabled: Boolean, soundEnabled: Boolean): Boolean =
-    mode == DeviceMode.MOUNTED && guideEnabled && soundEnabled
-
 // 1. 거치 기기는 기존 안내를 유지하고 휴대 기기만 실제 차량 오디오 연결에 묶는다.
 internal fun shouldMonitorGuidance(mode: DeviceMode, enabled: Boolean, portableGuidanceActive: Boolean): Boolean =
     enabled && (mode == DeviceMode.MOUNTED || portableGuidanceActive)

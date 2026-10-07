@@ -449,6 +449,46 @@ class MacroEngineTest {
         }
     }
 
+    // 예약 요일·시간대 보정 뒤에도 방금 측위한 GPS를 미래 표본으로 버리지 않는다.
+    @Test
+    fun `자정 소급 예약은 현재 신선한 위치를 사용한다`() {
+        val scheduled = rule(
+            triggers = listOf(Trigger.AtTime(23 * 60 + 59, days = setOf(7))),
+            conditions = listOf(
+                Condition.OnDays(setOf(7)),
+                Condition.TimeWindow(23 * 60 + 58, 23 * 60 + 59),
+                Condition.NearLocation(latitude = 37.0, longitude = 127.0),
+            ),
+        )
+        val current = reading(minutesOfDay = 1, dayOfWeek = 1).copy(
+            location = GeoPoint(37.0, 127.0, observedAtMillis = defaultNow),
+        )
+
+        assertEquals(1, evaluate(
+            rules = listOf(scheduled),
+            previous = reading(minutesOfDay = 23 * 60 + 58, dayOfWeek = 7, epochMillis = defaultNow - 180_000L),
+            current = current,
+        ).size)
+    }
+
+    // 예약 당시에는 신선했어도 실행 시점에 2분을 넘긴 위치는 자동 명령의 근거로 쓰지 않는다.
+    @Test
+    fun `지연 예약은 현재 오래된 위치를 신선한 위치로 오인하지 않는다`() {
+        val scheduled = rule(
+            triggers = listOf(Trigger.AtTime(9 * 60)),
+            conditions = listOf(Condition.NearLocation(latitude = 37.0, longitude = 127.0)),
+        )
+        val current = reading(minutesOfDay = 9 * 60 + 2).copy(
+            location = GeoPoint(37.0, 127.0, observedAtMillis = defaultNow - 180_000L),
+        )
+
+        assertTrue(evaluate(
+            rules = listOf(scheduled),
+            previous = reading(minutesOfDay = 9 * 60 - 1, epochMillis = defaultNow - 180_000L),
+            current = current,
+        ).isEmpty())
+    }
+
     // ---- 시간 조건 ----
 
     @Test

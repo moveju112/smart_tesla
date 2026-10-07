@@ -132,7 +132,7 @@ class WirelessNavigation(private val context: Context) {
                 report("연결 준비 완료")
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY)) error.message!! else "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
+                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY, LOCAL_CONNECTION_REQUIRED)) error.message!! else "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
             } finally { mutableState.value = state.value.copy(busy = false) }
         }.also { job ->
             operation = job
@@ -146,7 +146,6 @@ class WirelessNavigation(private val context: Context) {
         try {
             // 두 디버깅 방식이 모두 꺼지면 Android가 부모 데몬과 준비 프로세스를 종료한다.
             check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
-            enableWirelessDebugging()
             NavigationBridgeProvider.request()
             val server = runCatching { NavigationChannel().connect().use {
                 it.status() to it.serverVersionCode()
@@ -161,28 +160,42 @@ class WirelessNavigation(private val context: Context) {
             if (server != null) DiagLog.add("안심주행 · 이전 준비 프로세스를 현재 앱 버전으로 교체")
             mutableState.value = state.value.copy(prepared = false)
             manager().use { connection ->
-                DiagLog.add("안심주행 · 연결 포트 탐색")
-                var port: Int? = null
-                // 재활성화 직후 남아 있는 이전 포트 광고는 짧게 다시 탐색하되 전체 준비 제한은 유지한다.
-                for (attempt in 0 until 3) {
-                    val candidate = LocalAdbDiscovery.port(context) ?: validPort(state.value.port) ?: break
-                    val connected = try {
-                        runInterruptible { connection.connect("127.0.0.1", candidate) }
-                    } catch (error: Exception) {
-                        if (error is CancellationException) throw error
-                        false
+                val tcpPort = localTcpPort()
+                var port = tcpPort?.takeIf { connectLocal(connection, it) }
+                if (port != null) DiagLog.add("안심주행 · 저장된 인증으로 로컬 TCP 재접속 완료")
+                if (port == null) {
+                    val networks = context.getSystemService(ConnectivityManager::class.java)
+                    check(networks.allNetworks.any { networks.getNetworkCapabilities(it)
+                        ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true }) {
+                        LOCAL_CONNECTION_REQUIRED
                     }
-                    if (connected) { port = candidate; break }
+                    enableWirelessDebugging()
+                    DiagLog.add("안심주행 · 무선 연결 포트 탐색")
+                    for (attempt in 0 until 3) {
+                        val candidate = LocalAdbDiscovery.port(context) ?: validPort(state.value.port) ?: break
+                        if (connectLocal(connection, candidate, 8)) { port = candidate; break }
+                        if (attempt < 2) delay(500)
+                    }
+                    check(port != null) { "No local debugging connection" }
+                    preferences.edit().putString("port", port.toString()).apply()
+                    mutableState.value = state.value.copy(port = port.toString())
+                    // 최초 페어링 인증을 유지한 채 TCP로 전환해 Wi-Fi 해제 뒤에도 복구한다.
+                    val target = tcpPort ?: java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())
+                        .use { it.localPort }
+                    try {
+                        runInterruptible { connection.openStream("tcpip:$target") }.use { stream ->
+                            runInterruptible { stream.openInputStream().readBytes() }
+                        }
+                    } catch (_: java.io.IOException) {
+                        // adbd 재시작으로 스트림이 닫혀도 인증 재접속 성공 전에는 준비 완료로 보지 않는다.
+                    }
                     connection.disconnect()
-                    if (attempt < 2) {
-                        DiagLog.add("안심주행 · 연결 포트 갱신 대기")
-                        delay(500)
+                    withTimeout(10_000) {
+                        while (!connectLocal(connection, target)) delay(250)
                     }
+                    DiagLog.add("안심주행 · LTE 복구용 로컬 TCP 인증 확인 완료")
                 }
-                check(port != null) { "No local debugging connection" }
-                DiagLog.add("안심주행 · 자체 ADB 연결")
-                preferences.edit().putString("port", port.toString()).putBoolean("configured", true).apply()
-                mutableState.value = state.value.copy(port = port.toString())
+                preferences.edit().putBoolean("configured", true).apply()
                 DiagLog.add("안심주행 · 독립 실행 프로세스 준비")
                 val uid = android.os.Process.myUid()
                 // 업데이트 전 서버가 잠금 소켓을 쥐고 있으면 새 서버가 뜨지 못하므로 같은 UID 서버만 먼저 정리한다.
@@ -210,7 +223,29 @@ class WirelessNavigation(private val context: Context) {
         }
     }
 
-    /** 명령 직전 꺼진 디버깅을 복구하고 권한이 없으면 설정 안내로 돌린다. */
+    /** 공개 시스템 속성의 실제 수신 포트만 사용해 재부팅 뒤 오래된 TLS 포트를 피한다. */
+    private suspend fun localTcpPort(): Int? = runInterruptible {
+        val process = ProcessBuilder("/system/bin/getprop").start()
+        try {
+            val properties = process.inputStream.bufferedReader().use { it.readText() }
+            localAdbTcpPort(properties)
+        } finally { process.destroy() }
+    }
+
+    /** 설치별 기존 키로만 인증하고 실패한 소켓은 다음 시도 전에 닫는다. */
+    private suspend fun connectLocal(connection: AbsAdbConnectionManager, port: Int, timeoutSeconds: Long = 3): Boolean {
+        try {
+            connection.setTimeout(timeoutSeconds, TimeUnit.SECONDS)
+            if (runInterruptible { connection.connect("127.0.0.1", port) }) return true
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            DiagLog.add("안심주행 · 로컬 ADB 연결 실패 ${error.javaClass.simpleName}")
+        }
+        connection.disconnect()
+        return false
+    }
+
+    /** 최초 무선 인증·연결에만 디버깅을 켜고 권한이 없으면 설정 안내로 돌린다. */
     @Synchronized
     private fun enableWirelessDebugging() {
         // 사용자가 이미 켠 디버깅(PC 연결·다른 앱)은 앱 소유가 아니다 — 소유 표시 없이 그대로 쓴다
@@ -260,7 +295,6 @@ class WirelessNavigation(private val context: Context) {
             if (!runCatching { channel.canLaunchDestination(packageName, uri.toString()) }.getOrDefault(false)) return@withContext false
             destinationCommands.incrementAndGet()
             try {
-                if (runCatching { enableWirelessDebugging() }.isFailure) return@withContext false
                 try { beforeLaunch() } catch (error: Exception) {
                     if (error is CancellationException) throw error
                     throw DestinationLaunchException(error.message ?: "목적지를 다시 확인해 주세요", error)
@@ -362,7 +396,7 @@ class WirelessNavigation(private val context: Context) {
                 report(if (paired) "페어링·준비 완료" else "페어링 실패 · 새 코드를 확인해 주세요")
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY)) error.message!! else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
+                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY, LOCAL_CONNECTION_REQUIRED)) error.message!! else if (paired) "페어링 완료 · 연결 준비를 다시 눌러 주세요" else "페어링 실패 · 무선 디버깅과 코드를 확인해 주세요")
             } finally {
                 closeWirelessDebugging()
                 mutableState.value = state.value.copy(busy = false)
@@ -424,7 +458,6 @@ class WirelessNavigation(private val context: Context) {
                     NavigationChannel().connect().use { active ->
                         var needsStop = true
                         try {
-                            enableWirelessDebugging()
                             sessionApp = app
                             logLaunchEnvironment("전달 직전", app)
                             active.send(app.safeDriveCommand)
@@ -434,7 +467,7 @@ class WirelessNavigation(private val context: Context) {
                 }
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY)) error.message!! else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 ${app.label} 상태를 확인해 주세요")
+                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY, LOCAL_CONNECTION_REQUIRED)) error.message!! else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 ${app.label} 상태를 확인해 주세요")
                 DiagLog.add("안심주행 · 실행 예외 ${error.javaClass.simpleName}")
             } finally {
                 if (wake.isHeld) wake.release()
@@ -458,7 +491,6 @@ class WirelessNavigation(private val context: Context) {
         while (currentCoroutineContext().isActive) {
             val now = System.nanoTime()
             if (now - lastPing > TimeUnit.SECONDS.toNanos(3)) {
-                enableWirelessDebugging()
                 runInterruptible { output.write("PING\n".toByteArray()); output.flush() }
                 lastPing = now
             }
@@ -508,7 +540,6 @@ class WirelessNavigation(private val context: Context) {
     private suspend fun finishSession(active: NavigationChannel, app: NavigatorApp) = withContext(NonCancellable + Dispatchers.IO) {
         val acknowledged = runCatching {
             withTimeout(12_000) {
-                enableWirelessDebugging()
                 runInterruptible { active.output.apply { write("STOP\n".toByteArray()); flush() } }
                 val input = active.input
                 val bytes = ByteArray(1024)
@@ -559,6 +590,7 @@ class WirelessNavigation(private val context: Context) {
     }
 
     companion object {
+        private const val LOCAL_CONNECTION_REQUIRED = "로컬 연결 준비가 필요해요 · Wi-Fi에서 연결 준비를 다시 해 주세요"
         private const val SERVER_UPDATE_BUSY = "이전 안심주행 실험을 종료한 뒤 준비를 다시 해 주세요"
         /** 앱이 무선 디버깅을 켰는지. 사용자가 켜 둔 디버깅은 앱이 닫지 않는다 */
         private const val OWNS_WIRELESS_DEBUGGING = "owns_adb_wifi"

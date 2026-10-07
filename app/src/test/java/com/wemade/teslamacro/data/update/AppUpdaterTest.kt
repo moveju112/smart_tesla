@@ -5,9 +5,73 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runTest
+import org.junit.After
 
 /** 버전 비교 검증 — 다운그레이드 APK를 "새 버전"으로 안내하는 사고를 막는 게 핵심 */
 class AppUpdaterTest {
+
+    /** 전역 업데이트 상태가 다음 검증에 넘어가지 않게 정리한다. */
+    @After fun resetUpdateState() {
+        AppUpdater.state.value = null
+    }
+
+    /** 화면 종료로 조회가 취소돼도 확인 버튼이 영구 비활성화되지 않는다. */
+    @Test fun `cancelled release check restores the previous state and permits retry`() = runTest {
+        val previous = UpdateState.Available("1.0.0", "https://example.com/app.apk")
+        AppUpdater.state.value = previous
+        val entered = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<UpdateState>()
+        val check = launch {
+            AppUpdater.checkRelease {
+                entered.complete(Unit)
+                response.await()
+            }
+        }
+        entered.await()
+        assertEquals(UpdateState.Checking, AppUpdater.state.value)
+        check.cancelAndJoin()
+        assertEquals(previous, AppUpdater.state.value)
+        assertTrue(AppUpdater.checkRelease { UpdateState.UpToDate })
+        assertEquals(UpdateState.UpToDate, AppUpdater.state.value)
+    }
+
+    /** 자동·수동 조회가 겹쳐도 요청은 한 번만 실행하고 진행률을 덮지 않는다. */
+    @Test fun `overlapping checks and active installations are not replaced`() = runTest {
+        AppUpdater.state.value = null
+        val entered = CompletableDeferred<Unit>()
+        val response = CompletableDeferred<UpdateState>()
+        val check = launch {
+            AppUpdater.checkRelease {
+                entered.complete(Unit)
+                response.await()
+            }
+        }
+        entered.await()
+        assertFalse(AppUpdater.checkRelease { error("중복 조회가 실행되면 안 됨") })
+        assertEquals(UpdateState.Checking, AppUpdater.state.value)
+        response.complete(UpdateState.UpToDate)
+        check.join()
+        assertEquals(UpdateState.UpToDate, AppUpdater.state.value)
+
+        for (active in listOf(UpdateState.Downloading("1.0.0", 50), UpdateState.Installing("1.0.0"))) {
+            AppUpdater.state.value = active
+            assertFalse(AppUpdater.checkRelease { error("설치 중 조회가 실행되면 안 됨") })
+            assertEquals(active, AppUpdater.state.value)
+        }
+    }
+
+    /** 통신 오류는 취소와 구분해 다시 확인할 수 있는 실패 상태로 남긴다. */
+    @Test fun `release check failure permits a later retry`() = runTest {
+        AppUpdater.state.value = null
+        assertTrue(AppUpdater.checkRelease { throw java.io.IOException("offline") })
+        assertTrue(AppUpdater.state.value is UpdateState.Failed)
+        assertTrue(AppUpdater.checkRelease { UpdateState.UpToDate })
+        assertEquals(UpdateState.UpToDate, AppUpdater.state.value)
+    }
 
     @Test
     fun `자리별 수치로 비교한다`() {

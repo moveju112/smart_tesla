@@ -1,6 +1,8 @@
 package com.wemade.teslamacro.data.nav
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
@@ -9,6 +11,15 @@ internal const val SAFE_DRIVE_UNLOCK_TIMEOUT_MILLIS = 60_000L
 /** 보안 인증이 풀려도 키가드 화면이 남아 있으면 지도 전달을 기다린다. */
 internal fun isSafeDriveUnlocked(keyguardLocked: Boolean, deviceLocked: Boolean): Boolean =
     !keyguardLocked && !deviceLocked
+
+/** 서버 인계를 기다리는 동안 다시 잠기거나 취소되면 ADB 유무와 관계없이 지도 전달을 중단한다. */
+internal suspend fun confirmUnlockedDestination(isUnlocked: () -> Boolean, beforeLaunch: suspend () -> Unit) {
+    currentCoroutineContext().ensureActive()
+    check(isUnlocked()) { "다시 잠겨 목적지 실행을 취소했어요" }
+    beforeLaunch()
+    currentCoroutineContext().ensureActive()
+    check(isUnlocked()) { "다시 잠겨 목적지 실행을 취소했어요" }
+}
 
 /** 메인 스레드에서 인증 요청 한 건의 만료·취소·늦은 콜백을 함께 관리한다. */
 internal class SafeDriveUnlockGate(private val nowMillis: () -> Long) {

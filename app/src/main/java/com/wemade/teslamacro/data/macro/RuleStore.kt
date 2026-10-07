@@ -6,6 +6,7 @@ import com.wemade.teslamacro.domain.macro.MacroFolder
 import com.wemade.teslamacro.domain.macro.defaultMacroFolders
 import com.wemade.teslamacro.domain.macro.saveMacroFolder
 import com.wemade.teslamacro.domain.macro.moveMacroToFolder
+import com.wemade.teslamacro.domain.macro.restoreMacroFolders
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.wemade.teslamacro.domain.macro.MacroRule
@@ -39,7 +40,7 @@ class RuleStore(context: Context) {
     /** 한 번이라도 깔아준 프리셋 id 목록. 지운 프리셋이 재시작마다 부활하는 걸 막는다 */
     private val seenPresetsFile = File(context.filesDir, "macro_presets_seen.json")
     /** 이 버전이 읽지 못한 매크로 원문. 새 버전을 다시 깔면 되살린다 */
-    private val rejectedFile = File(context.filesDir, "macros.rejected.json")
+    private val rejectedFile = AtomicFile(File(context.filesDir, "macros.rejected.json"))
     private val json = Json {
         prettyPrint = true
         ignoreUnknownKeys = true   // 앱 업데이트로 필드가 늘어도 옛 파일을 계속 읽는다
@@ -55,7 +56,8 @@ class RuleStore(context: Context) {
             decodeRules(file.readFully().decodeToString())
         } else null
         // 예전에 못 읽어 격리한 매크로를 이번 버전이 읽을 수 있으면 목록에 되돌린다
-        val recovered = stored?.let { recoverRejected(it.map { rule -> rule.id }.toSet()) }.orEmpty()
+        val recovery = stored?.let { recoverRejected(it.map { rule -> rule.id }.toSet()) }
+        val recovered = recovery?.first.orEmpty()
         val loaded = stored?.let { it + recovered }
 
         // 업데이트로 새 프리셋이 생겨도 기존 사용자에게 깔린다.
@@ -77,6 +79,11 @@ class RuleStore(context: Context) {
             if (missing.isEmpty() && existing.size == loaded.size && recovered.isEmpty()) existing
             else (existing + missing).also { persist(it) }
         } ?: MacroPresets.defaults().also { persist(it) }
+        // 본 파일 저장이 끝난 뒤에만 격리 원본을 정리해 저장 실패 시 다음 시작에서 다시 복구한다.
+        recovery?.let {
+            runCatching { writeRejected(it.second) }
+                .onFailure { com.wemade.teslable.DiagLog.add("복구한 매크로의 격리 원본 정리는 다음 시작에서 다시 시도해요") }
+        }
         _rules.value = updated
 
         folderLock.withLock {
@@ -113,9 +120,9 @@ class RuleStore(context: Context) {
     }
 
     // 격리 매크로 복구 (격리 원문 -> 지금 읽히는 매크로)
-    private fun recoverRejected(existingIds: Set<String>): List<MacroRule> {
+    private fun recoverRejected(existingIds: Set<String>): Pair<List<MacroRule>, List<kotlinx.serialization.json.JsonElement>> {
         val kept = readRejected()
-        if (kept.isEmpty()) return emptyList()
+        if (kept.isEmpty()) return emptyList<MacroRule>() to emptyList()
         val recovered = mutableListOf<MacroRule>()
         val still = kept.filter { element ->
             val rule = runCatching { json.decodeFromJsonElement(MacroRule.serializer(), element) }.getOrNull()
@@ -123,19 +130,29 @@ class RuleStore(context: Context) {
             if (rule.id !in existingIds && recovered.none { it.id == rule.id }) recovered += rule
             false
         }
-        writeRejected(still)
-        return recovered
+        return recovered to still
     }
 
-    private fun readRejected(): List<kotlinx.serialization.json.JsonElement> = runCatching {
-        if (rejectedFile.exists()) json.parseToJsonElement(rejectedFile.readText()).jsonArray.toList() else emptyList()
-    }.getOrDefault(emptyList())
+    /** 격리 파일이 깨졌을 때 빈 목록으로 덮지 않고 원문을 보존한다. */
+    private fun readRejected(): List<kotlinx.serialization.json.JsonElement> =
+        if (rejectedFile.baseFile.exists() || File(rejectedFile.baseFile.path + ".bak").exists()) {
+            json.parseToJsonElement(rejectedFile.readFully().decodeToString()).jsonArray.toList()
+        } else emptyList()
 
+    /** 새 격리 원본이 안전하게 저장돼야 읽을 수 있는 매크로의 편집을 허용한다. */
     private fun writeRejected(elements: List<kotlinx.serialization.json.JsonElement>) {
-        runCatching {
-            if (elements.isEmpty()) rejectedFile.delete()
-            else rejectedFile.writeText(json.encodeToString(kotlinx.serialization.json.JsonArray.serializer(),
-                kotlinx.serialization.json.JsonArray(elements)))
+        if (elements.isEmpty()) {
+            rejectedFile.delete()
+            return
+        }
+        val output = rejectedFile.startWrite()
+        try {
+            output.write(json.encodeToString(kotlinx.serialization.json.JsonArray.serializer(),
+                kotlinx.serialization.json.JsonArray(elements)).encodeToByteArray())
+            rejectedFile.finishWrite(output)
+        } catch (error: Exception) {
+            rejectedFile.failWrite(output)
+            throw error
         }
     }
 
@@ -148,6 +165,11 @@ class RuleStore(context: Context) {
     suspend fun moveToFolder(ruleId: String, folderId: String?) = mutateFolders {
         require(_rules.value.any { rule -> rule.id == ruleId }) { "매크로를 찾을 수 없어요." }
         moveMacroToFolder(it, ruleId, folderId)
+    }
+
+    /** 백업 매크로의 분류만 복원하고 이 기기의 다른 매크로와 폴더는 보존한다. */
+    suspend fun restoreFolders(folders: List<MacroFolder>, restoredRuleIds: Set<String>) = mutateFolders {
+        restoreMacroFolders(it, folders, restoredRuleIds.intersect(_rules.value.map { rule -> rule.id }.toSet()))
     }
 
     /** 연속 이동·이름 변경을 직렬화하고 저장 완료 뒤에만 화면에 반영한다. */
@@ -185,7 +207,7 @@ class RuleStore(context: Context) {
      */
     suspend fun restore(rules: List<MacroRule>) = mutate { current ->
         val incoming = rules.associateBy { it.id }
-        current.filterNot { it.id in incoming } + rules
+        current.filterNot { it.id in incoming } + incoming.values
     }
 
     suspend fun setEnabled(id: String, enabled: Boolean) = mutate { current ->

@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.MaterialTheme
 import com.wemade.teslamacro.ui.component.DraftField
 import androidx.compose.material3.Text
@@ -313,9 +311,10 @@ private fun NearLocationEditor(
         Spacer(Modifier.height(Space.md))
         // 미리 정해둔 100·400·1000·3000m로는 실차에서 필요한 값을 못 맞춘다.
         // 진단 로그가 실제 거리를 m로 찍어주므로 그 숫자를 그대로 넣을 수 있게 직접 입력으로 둔다
-        RadiusField(
-            meters = condition.radiusMeters,
-            onChange = { onChange(condition.copy(radiusMeters = it)) },
+        com.wemade.teslamacro.ui.component.NumberSettingRow(
+            label = "허용 반경", value = condition.radiusMeters.toDouble(),
+            min = 1.0, max = 99_999.0, step = 1.0, unit = "m",
+            onChange = { onChange(condition.copy(radiusMeters = it.toInt())) },
         )
 
         Spacer(Modifier.height(Space.md))
@@ -417,43 +416,6 @@ private fun CurrentLocationPanel(condition: Condition.NearLocation) {
                 color = if (passes) T.OkText else T.WarnText,
             )
         }
-    }
-}
-
-/**
- * 허용 반경을 m 단위로 직접 받는다.
- *
- * 지하주차장에서는 마지막 지상 측위 좌표가 쓰여서 실제 주차 자리와 수백 m씩 어긋난다.
- * 그 어긋난 값은 차마다·주차장마다 달라 고정 선택지로는 못 맞춘다.
- * 매크로가 막히면 진단 로그에 `거리 1671m / 반경 1000m`처럼 실제 거리가 찍히니 그 값을 보고 넣으면 된다.
- */
-@Composable
-private fun RadiusField(meters: Int, onChange: (Int) -> Unit) {
-    // 타이핑 중간 상태("", "5")를 그대로 두려고 화면용 문자열을 따로 들고 있는다.
-    // 조건 값에 바로 물리면 지우는 순간 0으로 튄다
-    var text by rememberSaveable { mutableStateOf(meters.toString()) }
-
-    Column {
-        DraftField(
-            value = text,
-            onValueChange = { input ->
-                // 숫자만. 5자리면 99km라 실수로 긴 값이 들어갈 여지를 없앤다
-                val digits = input.filter(Char::isDigit).take(5)
-                text = digits
-                digits.toIntOrNull()?.takeIf { it > 0 }?.let(onChange)
-            },
-            label = "허용 반경 (m)",
-            suffix = "m",
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(Space.xs))
-        Text(
-            text = "GPS가 닿지 않는 곳에서는 마지막 측위 좌표를 사용해요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.InkMuted,
-        )
     }
 }
 

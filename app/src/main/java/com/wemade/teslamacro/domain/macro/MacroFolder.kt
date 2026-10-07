@@ -27,6 +27,21 @@ fun moveMacroToFolder(folders: List<MacroFolder>, ruleId: String, folderId: Stri
     return folders.map { folder -> folder.copy(ruleIds = if (folder.id == folderId) folder.ruleIds + ruleId else folder.ruleIds - ruleId) }
 }
 
+/** 이름이 같은 다른 기기 폴더는 합치고 백업 밖 매크로의 소속은 유지한다. */
+fun restoreMacroFolders(current: List<MacroFolder>, restored: List<MacroFolder>, restoredRuleIds: Set<String>): List<MacroFolder> {
+    var folders = current.map { it.copy(ruleIds = it.ruleIds - restoredRuleIds) }
+    for (folder in restored) {
+        val name = folder.name.trim()
+        val targetId = folders.firstOrNull { it.name.equals(name, ignoreCase = true) }?.id ?: folder.id
+        require(targetId.isNotBlank()) { "폴더 식별자가 비어 있어요." }
+        folders = saveMacroFolder(folders, targetId, name)
+        for (ruleId in folder.ruleIds.intersect(restoredRuleIds)) {
+            folders = moveMacroToFolder(folders, ruleId, targetId)
+        }
+    }
+    return folders
+}
+
 /** 홈에는 미분류만, 폴더 안에는 그 폴더의 항목만 원래 순서대로 표시한다. */
 fun macroRulesInFolder(rules: List<MacroRule>, folders: List<MacroFolder>, folderId: String?): List<MacroRule> {
     val selected = folders.firstOrNull { it.id == folderId }

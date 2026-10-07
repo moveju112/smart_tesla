@@ -74,11 +74,12 @@ fun TimeSettingRow(label: String, minutesOfDay: Int, onChange: (Int) -> Unit) {
 /** 선택지는 필요할 때만 열고 선택 즉시 저장한 뒤 현재 값으로 돌아온다. */
 @Composable
 fun ChoiceSettingRow(label: String, options: List<Pair<String, String>>, selected: String,
+    enabled: Boolean = true,
     onSelect: (String) -> Unit) {
     var editing by rememberSaveable { mutableStateOf(false) }
     SettingRow(label, options.firstOrNull { it.first == selected }?.second ?: selected,
-        onClick = { editing = true })
-    if (editing) {
+        onClick = { editing = true }, enabled = enabled)
+    if (editing && enabled) {
         PickerSheet(label, onDismiss = { editing = false }) {
             PickerList(options) { option ->
                 PickerRow(label = option.second, value = if (option.first == selected) "선택됨" else null,

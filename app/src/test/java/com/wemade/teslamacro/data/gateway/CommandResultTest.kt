@@ -46,9 +46,23 @@ class CommandResultTest {
         assertEquals("차량이 거부함 (사유 없음)", infotainmentRejection(bytes))
     }
 
+    // 본문 해석 실패가 명령 성공 기록과 확인음으로 이어지지 않게 한다.
     @Test
-    fun `해석 불가 바이트는 판정하지 않는다`() {
-        assertNull(infotainmentRejection(ByteArray(5) { 0x7F }))
+    fun `해석 불가 바이트는 실행 결과 확인 실패다`() {
+        assertEquals(
+            "차량 응답을 해석하지 못해 실행 결과를 확인할 수 없어요",
+            infotainmentRejection(ByteArray(5) { 0x7F }),
+        )
+    }
+
+    // 새 펌웨어의 알 수 없는 결과 코드를 성공으로 추측하지 않는다.
+    @Test
+    fun `알 수 없는 실행 상태는 성공으로 판정하지 않는다`() {
+        val bytes = CarServer.Response.newBuilder()
+            .setActionStatus(CarServer.ActionStatus.newBuilder().setResultValue(99))
+            .build().toByteArray()
+
+        assertEquals("차량 응답의 실행 결과를 확인할 수 없어요", infotainmentRejection(bytes))
     }
 
     // ---- VCSEC (잠금·트렁크). 봉투 fault만 보면 본문의 거부를 놓친다 ----
@@ -69,6 +83,16 @@ class CommandResultTest {
             "차량이 아직 준비되지 않았어요",
             vcsecRejection(commandStatus(Vcsec.OperationStatus_E.OPERATIONSTATUS_WAIT)),
         )
+    }
+
+    // 잠금·개폐 응답도 알 수 없는 명시적 상태를 받으면 성공 확인을 보류한다.
+    @Test
+    fun `VCSEC 알 수 없는 상태를 성공으로 기록하지 않는다`() {
+        val response = Vcsec.FromVCSECMessage.newBuilder()
+            .setCommandStatus(Vcsec.CommandStatus.newBuilder().setOperationStatusValue(99))
+            .build()
+
+        assertEquals("차량 응답의 실행 결과를 확인할 수 없어요", vcsecRejection(response))
     }
 
     @Test

@@ -47,14 +47,16 @@ class OpenMeteoClient(private val fetch: (String) -> String = ::httpGet) {
         return WeatherForecast(
             todayMinTempC = daily.firstNumber("temperature_2m_min"),
             todayMaxTempC = daily.firstNumber("temperature_2m_max"),
-            rainChancePercent = daily.firstNumber("precipitation_probability_max")?.toInt(),
+            rainChancePercent = daily.firstNumber("precipitation_probability_max")
+                ?.takeIf { it in 0.0..100.0 }?.toInt(),
             fetchedAtMillis = nowMillis,
         )
     }
 
-    /** 하루치만 요청하므로 배열의 첫 값이 오늘이다. 없으면 null을 유지한다 */
+    /** 숫자가 아니거나 무한대로 넘친 예보는 자동 조건을 충족하지 않도록 누락값으로 남긴다. */
     private fun JsonObject.firstNumber(key: String): Double? =
-        ((this[key] as? JsonArray)?.firstOrNull() as? JsonPrimitive)?.content?.toDoubleOrNull()
+        ((this[key] as? JsonArray)?.firstOrNull() as? JsonPrimitive)
+            ?.takeUnless { it.isString }?.content?.toDoubleOrNull()?.takeIf { it.isFinite() }
 
     private companion object {
         const val BASE = "https://api.open-meteo.com/v1/forecast"

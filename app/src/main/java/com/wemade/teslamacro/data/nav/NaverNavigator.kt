@@ -118,12 +118,16 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                     val installed = installedPackage(app) ?: error("네이버 지도 앱을 설치해 주세요")
                     val uri = place.naverUri(context.packageName)
                     val intent = Intent(Intent.ACTION_VIEW, uri).setPackage(installed).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val keyguard = context.getSystemService(KeyguardManager::class.java)
                     val launch: suspend (Activity?) -> Unit = { activity ->
                         launchFirst(app.label, listOf(intent),
-                            backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(), activity, beforeLaunch,
+                            backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(), activity,
+                            beforeLaunch = {
+                                confirmUnlockedDestination(
+                                    { isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked) }, beforeLaunch)
+                            },
                             allowShell = true)
                     }
-                    val keyguard = context.getSystemService(KeyguardManager::class.java)
                     if (!isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked)) {
                         check(hasOverlayPermission) { "잠금 인증 화면을 열려면 다른 앱 위에 표시 권한을 허용해 주세요" }
                         val unlocked = SafeDriveUnlockActivity.runWhenUnlocked(context, app.label,
@@ -459,9 +463,11 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
 
         // sender 권한은 PendingIntent 생성 때 넣으면 Android 14+가 예외로 거부한다.
         val senderOptions = ActivityOptions.makeBasic().apply {
-            setPendingIntentBackgroundActivityStartMode(
-                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                setPendingIntentBackgroundActivityStartMode(
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+                )
+            }
         }
         val creatorOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             ActivityOptions.makeBasic().apply {

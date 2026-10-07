@@ -65,7 +65,6 @@ class MacroService : LifecycleService() {
 
     private var safeDriveTestJob: Job? = null
     private var stealthChargeWakeLock: PowerManager.WakeLock? = null
-    private var activityUpdates: PendingIntent? = null
     private val carAudioConnected = MutableStateFlow(false)
     private val portableGuidanceActive = MutableStateFlow(false)
     private var carAudioProfile: BluetoothProfile? = null
@@ -261,16 +260,7 @@ class MacroService : LifecycleService() {
     private val overlay by lazy { SpeedOverlay(this) }
 
 
-    /**
-     * 주행 중 속도를 좇는다.
-     *
-     * **과속 판정과 HUD 창은 별개다.** 전에는 둘이 한 덩어리라 "속도를 다른 앱 위에 표시"를
-     * 꺼두면 과속 감지 자체가 안 돌았다 — 과속 안내만 켠 사람에겐 기능이 통째로 없는 것과 같았다.
-     * 그래서 GPS는 **둘 중 하나라도 켜져 있으면** 구독하고, 창은 HUD 설정일 때만 올린다.
-     * 둘 다 꺼져 있으면 위성을 아예 안 쓴다.
-     *
-     * 창은 **정지하면 내린다** — 주차된 차 위에 떠 있는 "0"은 정보가 아니라 방해다.
-     */
+    /** HUD를 켠 동안만 GPS를 구독하고 정차·위치 만료 때 창을 내린다. */
     private fun watchSpeedOverlay() {
         val app = application as TeslaMacroApplication
         lifecycleScope.launch {
@@ -279,15 +269,15 @@ class MacroService : LifecycleService() {
             // 권한 신호를 함께 묶는다 — 허용하고 돌아온 순간 스트림을 다시 연다.
             // 휴대 모드는 오디오 연결이 끊기면 위치 구독 자체를 취소한다.
             combine(
-                container.settingsStore.settings.map { Triple(it.hudOverlay, false, it.deviceMode) },
+                container.settingsStore.settings.map { it.hudOverlay to it.deviceMode },
                 container.locationPermissionRevision,
                 portableGuidanceActive,
             ) { toggles, revision, connected ->
                 (toggles to revision) to
-                    shouldMonitorGuidance(toggles.third, toggles.first || toggles.second, connected)
+                    shouldMonitorGuidance(toggles.second, toggles.first, connected)
             }.distinctUntilChanged()
                 .collectLatest { (toggles, active) ->
-                    val (showOverlay, safeDrive, mode) = toggles.first
+                    val (showOverlay, mode) = toggles.first
                     overlay.hide()
                     if (!active) return@collectLatest
 
@@ -345,13 +335,17 @@ class MacroService : LifecycleService() {
     /** 설정 해제·권한 상실·서비스 종료 시 등록을 해제하고 저장된 주행 증거를 버린다. */
     private fun stopActivityUpdates() {
         // 프로세스 강제 종료 뒤에도 Play 서비스에 남을 수 있는 등록을 같은 토큰으로 해제한다.
-        val pending = activityUpdates ?: activityPendingIntent(PendingIntent.FLAG_NO_CREATE)
-        activityUpdates = null
+        val pending = activityPendingIntent(PendingIntent.FLAG_NO_CREATE)
         pending?.let {
-            runCatching {
+            try {
                 ActivityRecognition.getClient(this).removeActivityUpdates(it)
-                    .addOnCompleteListener { _ -> if (activityUpdates == null) it.cancel() }
-            }.onFailure { _ -> if (activityUpdates == null) it.cancel() }
+                    .addOnCompleteListener { _ -> it.cancel() }
+            } catch (_: SecurityException) {
+                // 권한이 회수됐어도 이전 등록의 전달 토큰은 반드시 무효화한다.
+                it.cancel()
+            } catch (_: Exception) {
+                it.cancel()
+            }
         }
     }
 

@@ -91,7 +91,7 @@ object AppUpdater {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!isCheckDue(prefs.getLong(KEY_LAST_CHECK, 0), System.currentTimeMillis())) return null
 
-        check(currentVersion)
+        if (!check(currentVersion)) return null
 
         // 실패엔 도장을 찍지 않는다 — 망이 없었던 것뿐이라 다음 기회에 다시 해본다
         val found = state.value
@@ -113,33 +113,53 @@ object AppUpdater {
         nowMillis - lastCheckMillis >= CHECK_INTERVAL_MS
 
     /** 최신 릴리스를 조회해 지금 버전과 견준다 */
-    suspend fun check(currentVersion: String) {
-        state.value = UpdateState.Checking
-        state.value = withContext(Dispatchers.IO) {
-            runCatching {
-                // 응답이 안 오면 "확인 중"에 영원히 매달린다 — 연결·읽기 5초씩에 끊는다
-                val connection = URL(RELEASE_API).openConnection() as HttpURLConnection
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = Json.parseToJsonElement(body) as JsonObject
+    suspend fun check(currentVersion: String): Boolean = checkRelease {
+        withContext(Dispatchers.IO) {
+            // 응답이 안 오면 "확인 중"에 영원히 매달린다 — 연결·읽기 5초씩에 끊는다
+            val connection = URL(RELEASE_API).openConnection() as HttpURLConnection
+            connection.connectTimeout = 5_000
+            connection.readTimeout = 5_000
+            val body = try {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                connection.disconnect()
+            }
+            val json = Json.parseToJsonElement(body) as JsonObject
 
-                val latest = (json["tag_name"] as? JsonPrimitive)?.content.orEmpty().removePrefix("v")
-                val apkUrl = (json["assets"] as? JsonArray)?.firstNotNullOfOrNull { asset ->
-                    ((asset as JsonObject)["browser_download_url"] as? JsonPrimitive)
-                        ?.content?.takeIf { it.endsWith(".apk") }
-                }
+            val latest = (json["tag_name"] as? JsonPrimitive)?.content.orEmpty().removePrefix("v")
+            val apkUrl = (json["assets"] as? JsonArray)?.firstNotNullOfOrNull { asset ->
+                ((asset as JsonObject)["browser_download_url"] as? JsonPrimitive)
+                    ?.content?.takeIf { it.endsWith(".apk") }
+            }
 
-                // 릴리스 본문은 이미 받아온 응답 안에 있다. 안 쓰면 버리는 정보다
-                val notes = (json["body"] as? JsonPrimitive)?.content?.let(::tidyNotes)
+            // 릴리스 본문은 이미 받아온 응답 안에 있다. 안 쓰면 버리는 정보다
+            val notes = (json["body"] as? JsonPrimitive)?.content?.let(::tidyNotes)
 
-                // "다르면 새 버전"이 아니라 실제로 높은지 본다.
-                // 릴리스보다 앞선 로컬 빌드에서 옛 APK를 새 버전이라고 안내하는 사고를 막는다
-                if (isNewer(latest, currentVersion)) UpdateState.Available(latest, apkUrl, notes)
-                else UpdateState.UpToDate
-            }.getOrElse { UpdateState.Failed("새 버전을 확인하지 못했어요.\n인터넷 연결을 봐주세요.") }
+            // "다르면 새 버전"이 아니라 실제로 높은지 본다.
+            // 릴리스보다 앞선 로컬 빌드에서 옛 APK를 새 버전이라고 안내하는 사고를 막는다
+            if (isNewer(latest, currentVersion)) UpdateState.Available(latest, apkUrl, notes)
+            else UpdateState.UpToDate
         }
-        lastAvailable = state.value as? UpdateState.Available
+    }
+
+    /** 중복 조회는 진행 상태를 보존하고, 조회 취소 시 직전 상태로 돌아가 재시도를 허용한다. */
+    internal suspend fun checkRelease(fetchRelease: suspend () -> UpdateState): Boolean {
+        val previous = state.value
+        if (previous is UpdateState.Checking || previous is UpdateState.Downloading || previous is UpdateState.Installing) {
+            return false
+        }
+        if (!state.compareAndSet(previous, UpdateState.Checking)) return false
+        val checked = try {
+            fetchRelease()
+        } catch (cancelled: CancellationException) {
+            state.compareAndSet(UpdateState.Checking, previous)
+            throw cancelled
+        } catch (_: Exception) {
+            UpdateState.Failed("새 버전을 확인하지 못했어요.\n인터넷 연결을 봐주세요.")
+        }
+        lastAvailable = checked as? UpdateState.Available
+        state.value = checked
+        return true
     }
 
     /** 설치 화면에서 돌아왔을 때 설치 대상을 되살리거나, 재시작 후에는 재확인을 안내한다. */

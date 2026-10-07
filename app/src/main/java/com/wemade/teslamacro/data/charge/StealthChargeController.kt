@@ -123,7 +123,6 @@ class StealthChargeController(
     /** 충전 중에는 시간대와 실제 상한을 매 스텝 다시 확인한다. */
     private suspend fun runLoop() {
         try {
-            var current = poller.snapshot.value.chargingAmps ?: currentMaxAmps()
             var stepCount = 0
             var waitingLogged = false
             var ampsWaitLogged = false
@@ -143,7 +142,6 @@ class StealthChargeController(
                         val restored = restoreOriginalAmps(settings)
                         if (restored) {
                             settingsStore.markStealthRestored()
-                            current = settings.stealthChargeOriginalAmps ?: current
                         } else {
                             // 연결은 놓되 원래 전류는 기억해 다음 연결·완료·해제 때 다시 되돌린다
                             settingsStore.markStealthRestorePending()
@@ -176,7 +174,6 @@ class StealthChargeController(
                         continue
                     }
                     ampsWaitLogged = false
-                    current = originalAmps
                     settingsStore.beginStealthCharge(originalAmps)
                     com.wemade.teslable.DiagLog.add(
                         "스텔스 충전 1회 시작 — 원래 전류 ${originalAmps}A"
@@ -196,7 +193,6 @@ class StealthChargeController(
                 val sent = sendWithRetry(step.amps)
                 stepCount++
                 if (sent.isSuccess) {
-                    current = step.amps
                     settingsStore.setStealthChargeModified(
                         step.amps != settings.stealthChargeOriginalAmps
                     )

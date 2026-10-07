@@ -49,6 +49,37 @@ class OpenMeteoClientTest {
         assertNull(forecast.rainChancePercent)
     }
 
+    /** 잘못된 응답 숫자가 비교식에서 참이 되어 차량 자동 동작을 시작하지 않게 한다. */
+    @Test
+    fun `무한대와 숫자 문자열은 예보 조건을 충족하지 않는다`() {
+        listOf("1e309", "-1e309", "\"Infinity\"", "\"NaN\"", "\"-3.4\"").forEach { invalid ->
+            val forecast = client.parse("""{"daily":{"temperature_2m_min":[$invalid],"temperature_2m_max":[$invalid]}}""", 0L)
+            assertNull(forecast.todayMinTempC)
+            assertNull(forecast.todayMaxTempC)
+            assertFalse(ConditionEvaluator.holds(
+                Condition.ForecastInRange(ForecastMetric.MIN_TEMP, lte = 0.0), readingWith(forecast)))
+            assertFalse(ConditionEvaluator.holds(
+                Condition.ForecastInRange(ForecastMetric.MAX_TEMP, gte = 30.0), readingWith(forecast)))
+        }
+    }
+
+    /** 강수확률 범위를 벗어난 응답은 비가 온다거나 오지 않는다는 근거가 아니다. */
+    @Test
+    fun `범위 밖 강수확률은 조건에 사용하지 않고 경계값은 유지한다`() {
+        listOf("-1", "101", "1e309", "\"70\"").forEach { invalid ->
+            val forecast = client.parse("""{"daily":{"precipitation_probability_max":[$invalid]}}""", 0L)
+            assertNull(forecast.rainChancePercent)
+            assertFalse(ConditionEvaluator.holds(
+                Condition.ForecastInRange(ForecastMetric.RAIN_CHANCE, lte = 10.0), readingWith(forecast)))
+            assertFalse(ConditionEvaluator.holds(
+                Condition.ForecastInRange(ForecastMetric.RAIN_CHANCE, gte = 60.0), readingWith(forecast)))
+        }
+        listOf(0, 100).forEach { boundary ->
+            val forecast = client.parse("""{"daily":{"precipitation_probability_max":[$boundary]}}""", 0L)
+            assertEquals(boundary, forecast.rainChancePercent)
+        }
+    }
+
     /** 집 앞 주차 칸까지 남의 서버에 알릴 이유가 없다 — 소수 2자리(약 1km)로 자른다 */
     @Test
     fun `좌표는 소수 두 자리까지만 보낸다`() {

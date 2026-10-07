@@ -105,6 +105,30 @@ class MacroDraftTest {
         assertNull(saved.blockReason)
     }
 
+    /** 백업에서 한쪽 좌표가 빠져도 실행 불가능한 위치 조건을 그대로 저장하지 않는다. */
+    @Test
+    fun `좌표 일부가 없는 위치 조건은 저장할 수 없다`() {
+        val missingLongitude = Condition.NearLocation(latitude = 37.5)
+        val missingLatitude = Condition.NearLocation(longitude = 127.0)
+        for (condition in listOf(missingLongitude, missingLatitude)) {
+            assertNotNull(validDraft().addCondition(condition).blockReason)
+            assertNotNull(validDraft().addAction(ActionStep.WaitUntil(condition)).blockReason)
+        }
+    }
+
+    /** 반경이 0 이하인 조건은 거리를 검사할 수 없으므로 추가 조건과 대기 모두 막는다. */
+    @Test
+    fun `위치 반경은 양수여야 저장할 수 있다`() {
+        val location = Condition.NearLocation(latitude = 37.5, longitude = 127.0)
+        for (meters in listOf(0, -1)) {
+            val invalid = location.copy(radiusMeters = meters)
+            assertNotNull(validDraft().addCondition(invalid).blockReason)
+            assertNotNull(validDraft().addAction(ActionStep.WaitUntil(invalid)).blockReason)
+        }
+        assertNull(validDraft().addCondition(location.copy(radiusMeters = 1)).blockReason)
+        assertNull(validDraft().addCondition(location.copy(radiusMeters = 99_999)).blockReason)
+    }
+
     @Test
     fun `조건이 없어도 저장할 수 있다`() {
         // 조건은 선택이다. 트리거만으로 무조건 실행하는 매크로도 정상이다

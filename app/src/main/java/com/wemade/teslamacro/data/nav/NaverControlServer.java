@@ -11,10 +11,12 @@ import android.os.Parcel;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.net.LocalServerSocket;
+import androidx.annotation.RequiresApi;
 import java.io.PrintStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** 준비 때 얻은 셸 권한을 유지하며 같은 앱 UID의 지도 요청만 받는다. */
+@RequiresApi(Build.VERSION_CODES.S)
 public final class NaverControlServer {
     private static final AtomicBoolean active = new AtomicBoolean();
     private static LocalServerSocket lock;

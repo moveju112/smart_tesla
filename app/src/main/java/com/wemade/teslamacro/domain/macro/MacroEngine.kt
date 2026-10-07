@@ -115,7 +115,14 @@ class MacroEngine {
             // 어떤 조건이 막았는지 알려준다 — 진단 로그 없이는 "왜 안 터졌는지" 알 길이 없다
             // 자정을 넘겨 늦게 처리한 시각 예약은 요일·시간대 조건도 예약 시각 기준으로 본다
             val conditionReading = scheduledTime(firedTriggers, current)?.let { current.copy(time = it) } ?: current
-            val unmet = rule.conditions.filter { !holds(it, conditionReading) }
+            val unmet = rule.conditions.filter { condition ->
+                // GPS 신선도는 실제 관측 시각으로 판단해야 지연 예약이 현재 위치를 미래로 오인하지 않는다.
+                val reading = when (condition) {
+                    is Condition.TimeWindow, is Condition.OnDays -> conditionReading
+                    else -> current
+                }
+                !holds(condition, reading)
+            }
             if (unmet.isNotEmpty()) {
                 // 위치·예보 미확인만 잠시 기다린다. 범위 밖·시간·기어 등 실제 불충족은 소급하지 않는다.
                 val missingContextOnly = unmet.all {

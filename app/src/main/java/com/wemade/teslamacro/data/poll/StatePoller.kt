@@ -7,6 +7,7 @@ import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
 import com.wemade.teslamacro.data.settings.SettingsStore
 import com.wemade.teslamacro.domain.gateway.LinkState
+import com.wemade.teslamacro.domain.gateway.VehicleConnectionUnavailableException
 import com.wemade.teslamacro.domain.gateway.VehicleGateway
 import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
@@ -81,6 +82,9 @@ class StatePoller(
     /** 요청별 토큰을 비교해 이전 전원 연결의 늦은 응답이 새 확인 창을 끝내지 못하게 한다. */
     private val vehiclePowerWakeCheck =
         java.util.concurrent.atomic.AtomicReference<VehiclePowerWakeCheck?>(null)
+
+    /** 거치 기기의 목적지 수신만 확인 창 사이에 휴지 시간을 두고 복구한다. */
+    private val destinationRecoveryAt = java.util.concurrent.atomic.AtomicLong(0L)
 
     /** 사용자가 끊기 버튼을 누르면 다음 명시적 사용 전까지 자동 재연결을 막는다. */
     private val manualConnectionPause = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -189,6 +193,7 @@ class StatePoller(
         }
 
         var previous: Reading? = null
+        var lastUnavailableConnectionCheck: VehiclePowerWakeCheck? = null
         var doorLocationRead: Deferred<GeoPoint?>? = null
         var doorLocation: GeoPoint? = null
         var doorLocationReadAt = 0L
@@ -212,13 +217,28 @@ class StatePoller(
             // 주기에서 빼지 않으면 15초 주기가 읽기 시간만큼 들쭉날쭉해진다 (실차 로그 제보)
             val cycleStart = now()
             val settings = settingsStore.settings.first()
-            val wakeCheck = vehiclePowerWakeCheck.get()
+            var wakeCheck = vehiclePowerWakeCheck.get()
             val doorMacroCheck = needsDoorMacroWakeCheck(settings, ruleStore.rules.value)
             if ((settings.deviceMode == DeviceMode.PORTABLE || settings.needsBoardingNavigation || doorMacroCheck) &&
                 wakeCheck?.expired(now()) == true
             ) {
                 finishPowerWakeCheck(wakeCheck, "60초 확인 시간 종료")
             }
+            if (settings.deviceMode == DeviceMode.MOUNTED && settings.destinationReceiveEnabled &&
+                settings.isReady && vehiclePowerConnected && !manualConnectionPause.get() &&
+                _snapshot.value.isUserPresent != true && destinationRecoveryAt.get() > 0L &&
+                now() >= destinationRecoveryAt.get()
+            ) {
+                val recovery = VehiclePowerWakeCheck(now())
+                if (vehiclePowerWakeCheck.compareAndSet(null, recovery)) {
+                    destinationRecoveryAt.set(0L)
+                    reconnectStrikes = 0
+                    reconnectHoldUntil = 0L
+                    com.wemade.teslable.DiagLog.add("목적지 수신 복구 — 착석 확인 재시작")
+                }
+            }
+            wakeCheck = vehiclePowerWakeCheck.get()
+
             // 거치 모드도 전원 직후 미착석 응답 한 번으로 끝내지 않고 같은 확인 예산을 쓴다.
             val boardingCheck = wakeCheck?.takeIf {
                 !it.expired(now()) && when (connectionDecision(settings).reason) {
@@ -274,6 +294,18 @@ class StatePoller(
                     // 전원 해제·재연결 또는 수동 해제 중 끝난 이전 연결은 새 확인으로 쓰지 않는다.
                     if (boardingCheck != null && vehiclePowerWakeCheck.get() !== boardingCheck) {
                         enforceConnectionGuard()
+                        continue
+                    }
+                    if (boardingCheck != null &&
+                        connected?.exceptionOrNull() is VehicleConnectionUnavailableException
+                    ) {
+                        // 블루투스가 켜지는 대기는 차량 접속 2회를 쓰지 않되 기존 60초 창은 연장하지 않는다.
+                        boardingCheck.refundUnavailableConnection()
+                        if (lastUnavailableConnectionCheck !== boardingCheck) {
+                            lastUnavailableConnectionCheck = boardingCheck
+                            com.wemade.teslable.DiagLog.add("전원 상승 확인 대기 — Bluetooth 준비 중 · 최대 60초")
+                        }
+                        sleep(boardingCheck.remainingMillis(now()).coerceAtMost(2_000L).coerceAtLeast(1L))
                         continue
                     }
                     if (connected?.isSuccess == true) {
@@ -630,6 +662,7 @@ class StatePoller(
         vehiclePowerConnected = connected
         if (connected) {
             if (!wasConnected) {
+                destinationRecoveryAt.set(0L)
                 vehiclePowerWakeCheck.set(VehiclePowerWakeCheck(now()))
                 manualConnectionPause.set(false)
             }
@@ -646,6 +679,7 @@ class StatePoller(
                 )
             }
         } else {
+            destinationRecoveryAt.set(0L)
             vehiclePowerWakeCheck.set(null)
             // 동일한 해제 방송이 반복돼도 최초 시각을 지킨다. 매번 갱신하면 실제 하차가
             // 오래 이어져도 마지막 방송 기준 10분을 못 채워 다음 탑승을 놓칠 수 있다
@@ -660,6 +694,7 @@ class StatePoller(
     /** 완료한 요청만 비워 전원 재연결로 만들어진 새 확인 창을 보존한다. */
     private fun finishPowerWakeCheck(check: VehiclePowerWakeCheck, reason: String) {
         if (vehiclePowerWakeCheck.compareAndSet(check, null)) {
+            destinationRecoveryAt.set(now() + 60_000L)
             com.wemade.teslable.DiagLog.add("전원 상승 탑승 확인 종료 — $reason")
         }
     }
@@ -1021,6 +1056,11 @@ internal class VehiclePowerWakeCheck(startedAtMillis: Long) {
         if (!canConnect(nowMillis)) return false
         connectionAttempts++
         return true
+    }
+
+    /** 접속을 시작하지 못한 예약만 돌려주고 확인 마감은 그대로 유지한다. */
+    fun refundUnavailableConnection() {
+        connectionAttempts = (connectionAttempts - 1).coerceAtLeast(0)
     }
 }
 

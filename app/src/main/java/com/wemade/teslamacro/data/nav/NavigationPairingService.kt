@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import com.wemade.teslamacro.TeslaMacroApplication
@@ -29,6 +30,10 @@ class NavigationPairingService : Service() {
 
     /** 재전송된 이전 알림과 중복 제출을 버리고 현재 설정 요청만 진행한다. */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == BEGIN) {
             if (session != null) return START_NOT_STICKY
             session = UUID.randomUUID().toString()
@@ -72,7 +77,7 @@ class NavigationPairingService : Service() {
             .setContentText(message).setStyle(Notification.BigTextStyle().bigText(message))
             .setContentIntent(content).setOnlyAlertOnce(true).setAutoCancel(session == null)
             .setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(session != null)
-        if (input) {
+        if (input && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             builder.addAction(Notification.Action.Builder(null, "코드 입력", action(REPLY, mutable = true))
                 .addRemoteInput(RemoteInput.Builder(CODE).setLabel("페어링 코드 6자리").build())
                 .setAuthenticationRequired(true).build())
@@ -120,6 +125,10 @@ class NavigationPairingService : Service() {
 
         /** 필수 설정과 인증 복구를 확인한 화면에서 새 코드 입력을 시작한다. */
         fun begin(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                android.widget.Toast.makeText(context, "Android 12 이상에서 사용할 수 있어요", android.widget.Toast.LENGTH_SHORT).show()
+                return
+            }
             if (!notificationsEnabled(context)) {
                 context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

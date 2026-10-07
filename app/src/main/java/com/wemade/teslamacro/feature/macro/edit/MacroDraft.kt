@@ -44,8 +44,10 @@ data class MacroDraft(
             actions.any { it is ActionStep.Navigate && it.address.isBlank() } ->
                 "지도 안내의 주소를 입력해 주세요"
             // 위치가 비어 있는 조건은 절대 충족되지 않아 매크로가 영영 안 돈다
-            checkedConditions.any { it is Condition.NearLocation && it.latitude == null } ->
+            checkedConditions.any { it is Condition.NearLocation && (it.latitude == null || it.longitude == null) } ->
                 "\"출발지 근처\" 조건에 현재 위치를 저장해 주세요"
+            checkedConditions.any { it is Condition.NearLocation && it.radiusMeters <= 0 } ->
+                "\"출발지 근처\" 조건의 허용 반경을 1m 이상으로 입력해 주세요"
             // 시작이 끝보다 큰 구간은 어떤 값도 들어가지 못한다
             checkedConditions.any { it is Condition.InRange && it.gte != null && it.lte != null && it.gte > it.lte } ->
                 "\"사이\" 조건의 시작 값을 끝 값 이하로 맞춰 주세요"

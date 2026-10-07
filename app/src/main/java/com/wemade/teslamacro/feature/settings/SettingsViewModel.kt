@@ -324,6 +324,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     appVersion = com.wemade.teslamacro.BuildConfig.VERSION_NAME,
                     macros = container.ruleStore.rules.value,
                     settings = container.settingsStore.settings.first().toBackup(),
+                    folders = container.ruleStore.folders.value,
                 )
                 withContext(Dispatchers.IO) {
                     container.appContext.contentResolver.openOutputStream(uri, "wt")?.use { out ->
@@ -350,6 +351,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 }
                 val backup = decodeBackupFile(text)
                 container.ruleStore.restore(backup.macros)
+                backup.folders?.let { folders ->
+                    container.ruleStore.restoreFolders(folders, backup.macros.map { rule -> rule.id }.toSet())
+                }
                 container.settingsStore.restore(backup.settings)
                 backup.macros.size
             }

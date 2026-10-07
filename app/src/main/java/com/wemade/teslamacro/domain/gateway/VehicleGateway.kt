@@ -23,6 +23,9 @@ sealed interface EnrollmentState {
     data class Failed(val reason: String) : EnrollmentState
 }
 
+/** 로컬 연결 수단이 준비되지 않아 스캔·차량 접속을 시작하지 못한 실패다. */
+class VehicleConnectionUnavailableException(message: String) : IllegalStateException(message)
+
 /**
  * 차량과 통신하는 유일한 창구.
  *

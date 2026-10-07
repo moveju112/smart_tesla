@@ -26,6 +26,8 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
     private var pairOnly = false
     private var recoveryOnly = false
     private var serverOnly = false
+    private var tcpOnly = false
+    private var unavailableOnly = false
 
     /** 별도 계측 실행기로만 테스트를 시작하며 일반 앱 실행에는 포함하지 않는다. */
     override fun onCreate(arguments: Bundle?) {
@@ -36,6 +38,8 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         pairOnly = arguments?.getString("pairOnly") == "true"
         recoveryOnly = arguments?.getString("recoveryOnly") == "true"
         serverOnly = arguments?.getString("serverOnly") == "true"
+        tcpOnly = arguments?.getString("tcpOnly") == "true"
+        unavailableOnly = arguments?.getString("unavailableOnly") == "true"
         start()
     }
 
@@ -59,7 +63,21 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 }
                 if (setupOnly) { verifySetup(navigation); return@runBlocking }
                 if (serverOnly) { verifyServerVersions(navigation); return@runBlocking }
+                if (unavailableOnly) {
+                    check(com.wemade.teslamacro.data.nav.localAdbTcpPort(shell("getprop")) == null)
+                    check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) == 0)
+                    withTimeout(8_000) {
+                        withContext(Dispatchers.Main) { navigation.prepare() }?.join()
+                    }
+                    check(!navigation.state.value.prepared && !navigation.state.value.busy)
+                    check(navigation.state.value.message == "로컬 연결 준비가 필요해요 · Wi-Fi에서 연결 준비를 다시 해 주세요")
+                    return@runBlocking
+                }
+                if (tcpOnly) { verifyTcpRecovery(navigation); return@runBlocking }
                 if (pairOnly) {
+                    // 실제 설정 버튼처럼 전면 Activity에서 시작해 백그라운드 화면 실행 제한을 피한다.
+                    startActivitySync(android.content.Intent(targetContext, com.wemade.teslamacro.MainActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                     // 이전 계측에서 남은 하위 설정 화면을 재사용하지 않는다.
                     shell("am force-stop com.android.settings")
                     val automation = getUiAutomation()
@@ -118,7 +136,9 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     reply(action, "000000")
                     withTimeout(65_000) { navigation.state.first { it.prepared && !it.busy } }
                     check(navigation.state.value.message.startsWith("페어링·준비 완료")) { navigation.state.value.message }
-                    check(navigation.state.value.port.isNotEmpty())
+                    check(com.wemade.teslamacro.data.nav.localAdbTcpPort(shell("getprop")) != null) {
+                        "TLS pairing did not prepare a local TCP port"
+                    }
                     check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
                     withTimeout(5000) {
                         while (manager.activeNotifications.any { it.notification.channelId == "navigation_pairing" && !it.notification.actions.isNullOrEmpty() }) delay(100)
@@ -133,37 +153,27 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                         check(NavigationSetup.resolve(targetContext) == NavigationSetup.Step.READY)
                         preparation?.join()
                     }
-                    // 이미 준비된 Binder를 재사용할 때도 켜져 있던 무선 디버깅을 닫는다.
+                    // 사용자가 켠 무선 디버깅은 Binder 재사용이 임의로 닫지 않는다.
                     shell("settings put global adb_wifi_enabled 1")
                     withContext(Dispatchers.Main) { navigation.prepare() }?.join()
-                    check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
+                    check(wirelessDebuggingEnabled())
+                    shell("settings put global adb_wifi_enabled 0")
                     // 이 일회용 에뮬레이터에서 만든 셸 프로세스만 종료해 실제 재준비를 검증한다.
-                    val process = shell("ps -A -o PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+")) }
-                        .single { it.size == 5 && it[1] == "app_process" && it[3] == "com.wemade.teslamacro.data.nav.NaverControlServer" && it[4] == android.os.Process.myUid().toString() }
-                    check(process[0].all(Char::isDigit))
-                    shell("kill " + process[0])
-                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for helper termination") })
-                    withTimeout(5000) {
-                        while (com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge?.pingBinder() == true) delay(100)
-                    }
-                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for on-demand debugging") })
+                    stopPreparedHelper()
+                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for authenticated TCP recovery") })
                     val recovery = withContext(Dispatchers.Main) { navigation.prepare() }
-                    withTimeout(5000) {
-                        while (android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0) delay(20)
-                    }
-                    sendStatus(0, Bundle().apply { putString("phase", "Waiting for recovery completion") })
                     recovery?.join()
                     check(navigation.state.value.prepared)
                     check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
                     check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.status() } == "AVAILABLE")
                     sendStatus(0, Bundle().apply { putString("phase", "Checking failure and cancellation cleanup") })
                     // 실패한 재페어링도 디버깅을 남기지 않는다.
-                    shell("settings put global adb_wifi_enabled 1")
+                    shell("settings put global adb_wifi_enabled 0")
                     withContext(Dispatchers.Main) { navigation.pair("65534", "000000") }?.join()
                     check(!navigation.state.value.busy)
                     check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
                     // 코드 입력 대기를 취소할 때도 권한을 얻은 기기의 무선 디버깅을 닫는다.
-                    shell("settings put global adb_wifi_enabled 1")
+                    shell("settings put global adb_wifi_enabled 0")
                     withContext(Dispatchers.Main) {
                         com.wemade.teslamacro.data.nav.NavigationPairingService.begin(targetContext)
                     }
@@ -171,6 +181,7 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     withTimeout(5000) {
                         while (manager.activeNotifications.none { !it.notification.actions.isNullOrEmpty() }) delay(100)
                     }
+                    shell("settings put global adb_wifi_enabled 1")
                     sendStatus(0, Bundle().apply { putString("phase", "Stopping pairing service; busy=${navigation.state.value.busy}") })
                     targetContext.stopService(android.content.Intent(targetContext, com.wemade.teslamacro.data.nav.NavigationPairingService::class.java))
                     withTimeout(5000) {
@@ -185,12 +196,17 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 }
                 if (recoveryOnly) {
                     check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) == 0)
+                    check(com.wemade.teslamacro.data.nav.localAdbTcpPort(shell("getprop")) == null) {
+                        "Run recoveryOnly before TCP conversion; use tcpOnly after pairing"
+                    }
                     withContext(Dispatchers.Main) { navigation.setEnabled(true) }
                     withTimeout(40_000) { navigation.state.first { !it.busy && !it.prepared } }
                     val automation = getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
                     android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("svc wifi enable")).use { it.readBytes() }
                     withTimeout(45_000) { navigation.state.first { it.prepared && !it.busy } }
-                    check(navigation.state.value.port != "65534")
+                    check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use {
+                        it.status() == "AVAILABLE" && it.serverVersionCode() == com.wemade.teslamacro.BuildConfig.VERSION_CODE
+                    })
                     check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
                     return@runBlocking
                 }
@@ -199,34 +215,30 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                     check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.serverVersionCode() } == com.wemade.teslamacro.BuildConfig.VERSION_CODE)
                     return@runBlocking
                 }
-                // 무선 디버깅을 끈 뒤 불가능한 포트에서도 명령 전 활성화와 Binder 재사용을 확인한다.
-                check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) != 0)
-                check(android.provider.Settings.Global.getInt(targetContext.contentResolver, "adb_wifi_enabled", 0) == 0)
+                // 살아 있는 Binder는 무선 디버깅과 TLS 후보 포트 없이 실행·심박·종료를 처리한다.
+                check(!wirelessDebuggingEnabled())
+                val preparedBridge = com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge
                 withContext(Dispatchers.Main) {
                     navigation.setPort("65534")
                     navigation.setEnabled(true)
                 }
                 withTimeout(10_000) { navigation.state.first { it.prepared && !it.busy } }
-                withContext(Dispatchers.Main) {
-                    navigation.vehicleChanged(true)
-                }
+                check(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge === preparedBridge)
+                withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
                 withTimeout(30_000) { navigation.state.first { it.running } }
-                check(wirelessDebuggingEnabled())
-                // 주행 중 설정이 꺼져도 다음 심박 명령 전에 다시 켠다.
-                shell("settings put global adb_wifi_enabled 0")
-                withTimeout(10_000) { while (!wirelessDebuggingEnabled()) delay(50) }
-                check(navigation.state.value.running)
+                check(!wirelessDebuggingEnabled())
+                // 한 번 이상의 3초 심박을 지나도 무선 디버깅을 다시 켜지 않는다.
+                delay(3_500)
+                check(navigation.state.value.running && !wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.closeWirelessDebugging() }
-                check(wirelessDebuggingEnabled())
+                check(!wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.vehicleChanged(false) }
                 delay(1_000)
-                check(wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
-                check(navigation.state.value.running)
-                // 수동 종료 후에도 탑승 유지 설정은 디버깅을 끄지 않는다.
+                check(navigation.state.value.running && !wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.stop() }
                 withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
-                check(wirelessDebuggingEnabled())
+                check(!wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.start(false) }
                 withTimeout(20_000) { navigation.state.first { it.running } }
                 withContext(Dispatchers.Main) { navigation.vehicleChanged(false) }
@@ -236,40 +248,29 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 repeat(2) {
                     withContext(Dispatchers.Main) { navigation.start(false) }
                     withTimeout(20_000) { navigation.state.first { it.running } }
-                    check(wirelessDebuggingEnabled())
-                    // 종료 명령도 디버깅이 꺼져 있으면 복구한 뒤 전송한다.
-                    shell("settings put global adb_wifi_enabled 0")
+                    check(!wirelessDebuggingEnabled())
                     withContext(Dispatchers.Main) { navigation.stop() }
                     withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
-                    check(navigation.state.value.message == "실험 종료 완료") { navigation.state.value.message }
                     check(!wirelessDebuggingEnabled())
                 }
-                // 실행 작업 없이 탑승만 남은 상태도 자동 실행 해제 시 정리한다.
-                withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
-                withTimeout(20_000) { navigation.state.first { it.running } }
-                withContext(Dispatchers.Main) { navigation.stop() }
-                withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
-                check(wirelessDebuggingEnabled())
-                // 유예 중 수동 종료를 다시 눌러도 하차 정리 타이머는 유지한다.
                 withContext(Dispatchers.Main) {
-                    navigation.vehicleChanged(false)
-                    navigation.stop()
+                    navigation.vehicleChanged(true)
+                    navigation.start(false)
                 }
-                check(wirelessDebuggingEnabled())
-                withTimeout(35_000) { while (wirelessDebuggingEnabled()) delay(100) }
-                withContext(Dispatchers.Main) { navigation.vehicleChanged(true) }
                 withTimeout(20_000) { navigation.state.first { it.running } }
                 withContext(Dispatchers.Main) { navigation.stop() }
                 withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
-                check(wirelessDebuggingEnabled())
+                check(!wirelessDebuggingEnabled())
                 withContext(Dispatchers.Main) { navigation.setEnabled(false) }
                 check(!wirelessDebuggingEnabled())
             }
             result.putString("result", if (panelOnly) "PASS: no inline action result, repeated result Toasts from worker thread, silent progress, management/test sheets, active stop, unprepared setup"
                 else if (setupOnly) "PASS: real setup button opens blocked notification settings, unchanged back does not loop, permission grant continues to pairing, Wi-Fi settings route and resume" else if (recoveryOnly) "PASS: helper absent, Wi-Fi arrival automatically restores helper through TLS, wireless debugging restored off"
-                else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing, pairing/connect port discovery, detached helper, saved-auth reuse, debugging on-demand and off after success/failure/cancel"
-                else if (serverOnly) "PASS: current helper reused without ADB, boarding safe drive delegated only to current helper while enabled, legacy and mismatched active helpers preserved, stale helper rejected when ADB unavailable"
-                else if (prepareOnly) "PASS: detached helper prepared with current APK version" else "PASS: debugging enabled before commands, retained during ride and reconnect grace, heartbeat recovery, manual stop retention, departure and disable cleanup, repeated start/stop")
+                else if (pairOnly) "PASS: no accessibility, invalid/replayed reply rejected, notification TLS pairing and authenticated TCP conversion, detached helper, saved-auth reuse, user debugging preserved, owned debugging cleaned after failure/cancel"
+                else if (unavailableOnly) "PASS: no TCP and no Wi-Fi returns actionable unavailable state within 8 seconds"
+                else if (tcpOnly) "PASS: Wi-Fi off Binder reuse and helper recovery through local TCP; negative-path limits reported in phase messages"
+                else if (serverOnly) "PASS: current helper reused without ADB, boarding safe drive delegated only to current helper while enabled, legacy and mismatched active helpers preserved, idle legacy helper uses TCP recovery or requests Wi-Fi preparation"
+                else if (prepareOnly) "PASS: detached helper prepared with current APK version" else "PASS: Binder start/heartbeat/stop while wireless debugging remains off, reconnect grace, departure cleanup, repeated start/stop")
         } catch (error: Throwable) {
             status = Activity.RESULT_CANCELED
             result.putString("result", "FAIL: ${error.javaClass.simpleName}: ${error.message}; ${error.stackTrace.firstOrNull { it.className.contains("WirelessNavigationSmoke") }}")
@@ -280,12 +281,78 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
         }
         finish(status, result)
     }
+
+    /** 최초 페어링 이후 Wi-Fi 없이 기존 Binder와 인증된 TCP 복구·실행을 검사한다. */
+    private suspend fun verifyTcpRecovery(navigation: WirelessNavigation) {
+        val wifiWasEnabled = android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) == 1
+        val debuggingWasEnabled = wirelessDebuggingEnabled()
+        check(com.wemade.teslamacro.data.nav.localAdbTcpPort(shell("getprop")) != null) {
+            "Run pairOnly first to prepare authenticated local TCP"
+        }
+        try {
+            withContext(Dispatchers.Main) { navigation.setEnabled(false); navigation.prepare() }?.join()
+            check(navigation.state.value.prepared) { navigation.state.value.message }
+            val originalBridge = requireNotNull(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge)
+            val savedTlsPort = navigation.state.value.port
+            shell("svc wifi disable")
+            shell("settings put global adb_wifi_enabled 0")
+            val connectivity = targetContext.getSystemService(android.net.ConnectivityManager::class.java)
+            withTimeout(10_000) {
+                while (connectivity.allNetworks.any {
+                    connectivity.getNetworkCapabilities(it)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                }) delay(100)
+            }
+            withContext(Dispatchers.Main) { navigation.prepare() }?.join()
+            check(navigation.state.value.prepared) { navigation.state.value.message }
+            check(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge === originalBridge)
+            check(!wirelessDebuggingEnabled())
+            sendStatus(0, Bundle().apply { putString("phase", "PASS: existing Binder reused with Wi-Fi and wireless debugging off") })
+            stopPreparedHelper()
+            withContext(Dispatchers.Main) { navigation.prepare() }?.join()
+            check(navigation.state.value.prepared && !navigation.state.value.busy) { navigation.state.value.message }
+            check(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge !== originalBridge)
+            check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use {
+                it.status() == "AVAILABLE" && it.serverVersionCode() == com.wemade.teslamacro.BuildConfig.VERSION_CODE
+            })
+            check(navigation.state.value.port == savedTlsPort) { "TCP recovery replaced the saved TLS candidate" }
+            check(!wirelessDebuggingEnabled())
+            withContext(Dispatchers.Main) { navigation.start(false) }
+            withTimeout(20_000) { navigation.state.first { it.running } }
+            delay(3_500)
+            check(navigation.state.value.running && !wirelessDebuggingEnabled())
+            withContext(Dispatchers.Main) { navigation.stop() }
+            withTimeout(20_000) { navigation.state.first { !it.running && !it.busy } }
+            check(!wirelessDebuggingEnabled())
+            sendStatus(0, Bundle().apply {
+                putString("phase", "PASS: helper restored through TCP and start/PING/STOP completed with Wi-Fi off; " +
+                    "SKIP: unavailable TCP listener preserved for host ADB; unauthorized TCP unverified (ro.adb.secure=${shell("getprop ro.adb.secure").trim()})")
+            })
+        } finally {
+            withContext(Dispatchers.Main) { navigation.setEnabled(false) }
+            if (wifiWasEnabled) shell("svc wifi enable")
+            shell("settings put global adb_wifi_enabled ${if (debuggingWasEnabled) 1 else 0}")
+        }
+    }
+
+    /** 현재 앱 UID로 띄운 셸 helper만 종료하고 Binder 사망을 기다린다. */
+    private suspend fun stopPreparedHelper() {
+        val process = shell("ps -A -o PID,ARGS").lineSequence().map { it.trim().split(Regex("\\s+")) }
+            .single { it.size == 5 && it[1] == "app_process" &&
+                it[3] == "com.wemade.teslamacro.data.nav.NaverControlServer" && it[4] == android.os.Process.myUid().toString() }
+        check(process[0].all(Char::isDigit))
+        shell("kill ${process[0]}")
+        withTimeout(5_000) {
+            while (com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge?.pingBinder() == true) delay(100)
+        }
+    }
+
     /** 실제 Binder 버전과 구버전 주행 보호를 검사하고 최신 준비는 ADB 없이 재사용한다. */
     private suspend fun verifyServerVersions(navigation: WirelessNavigation) {
         withTimeout(10_000) {
             while (com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge?.isBinderAlive != true) delay(100)
         }
-        val real = com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge
+        var real = com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge
+        val wifiWasEnabled = android.provider.Settings.Global.getInt(targetContext.contentResolver, "wifi_on", 0) == 1
         check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.serverVersionCode() } == com.wemade.teslamacro.BuildConfig.VERSION_CODE)
         // 자동 실행이 꺼져 있으면 탑승 안심운전은 항상 기존 방식이 맡는다.
         check(!navigation.ownsBoardingSafeDrive())
@@ -311,17 +378,25 @@ class WirelessNavigationSmokeInstrumentation : Instrumentation() {
                 check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use { it.serverVersionCode() } == version)
                 // 현재 버전 준비 프로세스만 실험이 탑승 안심운전을 대신 실행한다.
                 check(navigation.ownsBoardingSafeDrive() == (version == com.wemade.teslamacro.BuildConfig.VERSION_CODE))
-                // 로컬 ADB 계측 연결은 유지하고 제품의 포트 탐색·접속만 불가능하게 만든다.
+                // Wi-Fi가 없어도 기존 TCP가 있으면 유휴 구버전 helper를 재생성한다.
+                val tcpRecoveryExpected = !active && version == null &&
+                    com.wemade.teslamacro.data.nav.localAdbTcpPort(shell("getprop")) != null
                 if (!active && version == null) shell("svc wifi disable")
                 withContext(Dispatchers.Main) { navigation.setPort("65534"); navigation.prepare() }?.join()
                 check(!navigation.state.value.busy)
-                check(navigation.state.value.prepared == (!active && version != null))
-                check(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge === bridge)
+                check(navigation.state.value.prepared == ((!active && version != null) || tcpRecoveryExpected))
+                if (tcpRecoveryExpected) {
+                    check(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge !== bridge)
+                    check(com.wemade.teslamacro.data.nav.NavigationChannel().connect().use {
+                        it.status() == "AVAILABLE" && it.serverVersionCode() == com.wemade.teslamacro.BuildConfig.VERSION_CODE
+                    })
+                    real = com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge
+                } else check(com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge === bridge)
                 if (active) check(navigation.state.value.message == "이전 안심주행 실험을 종료한 뒤 준비를 다시 해 주세요")
-                else if (version == null) check(navigation.state.value.message == "준비 필요 · Wi-Fi와 무선 디버깅 설정을 확인해 주세요")
+                else if (version == null && !tcpRecoveryExpected) check(navigation.state.value.message == "로컬 연결 준비가 필요해요 · Wi-Fi에서 연결 준비를 다시 해 주세요")
             }
         } finally {
-            shell("svc wifi enable")
+            if (wifiWasEnabled) shell("svc wifi enable")
             com.wemade.teslamacro.data.nav.NavigationBridgeProvider.bridge = real
             withContext(Dispatchers.Main) { navigation.setEnabled(false) }
         }

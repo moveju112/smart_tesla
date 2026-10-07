@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.backup
 
 import com.wemade.teslamacro.data.settings.AppSettings
+import com.wemade.teslamacro.domain.macro.MacroFolder
 import com.wemade.teslamacro.domain.macro.MacroRule
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -25,10 +26,12 @@ data class BackupFile(
     val appVersion: String = "",
     val macros: List<MacroRule> = emptyList(),
     val settings: BackupSettings = BackupSettings(),
+    /** 구백업의 누락은 기존 분류를 보존하고, 빈 목록은 백업 당시 미분류 상태를 복원한다. */
+    val folders: List<MacroFolder>? = null,
 ) {
     companion object {
-        /** 7 — 카메라 접근 음성과 독립적인 안내 시작 음성 선택을 백업한다. */
-        const val CURRENT_VERSION = 7
+        /** 8 — 매크로의 폴더와 분류를 함께 백업해 기기 이전 후에도 목록을 유지한다. */
+        const val CURRENT_VERSION = 8
 
         /** 파일 이름. 날짜를 붙이는 건 저장 다이얼로그에서 사람이 한다 */
         const val DEFAULT_FILE_NAME = "smart-tesla-backup.json"

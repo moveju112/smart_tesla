@@ -8,6 +8,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class MacroFolderTest {
+    /** 다른 기기의 같은 이름 폴더는 합치고 백업에 없는 로컬 분류는 그대로 둔다. */
+    @Test fun `backup folders merge without moving unrelated local macros`() {
+        val current = listOf(
+            MacroFolder("local", "출근", setOf("local-only", "restored-outside")),
+            MacroFolder("renamed", "옛 이름", setOf("retained")),
+        )
+        val restored = listOf(
+            MacroFolder("remote", "출근", setOf("restored-inside", "not-in-backup")),
+            MacroFolder("renamed", "새 이름"),
+            MacroFolder("empty", "빈 폴더"),
+        )
+        val result = restoreMacroFolders(current, restored, setOf("restored-inside", "restored-outside"))
+        assertEquals(listOf("출근", "새 이름", "빈 폴더"), result.map { it.name })
+        assertEquals(setOf("local-only", "restored-inside"), result.first().ruleIds)
+        assertEquals(setOf("retained"), result[1].ruleIds)
+        assertTrue(result[2].ruleIds.isEmpty())
+        assertTrue(result.none { "restored-outside" in it.ruleIds || "not-in-backup" in it.ruleIds })
+        assertEquals(result, restoreMacroFolders(result, restored, setOf("restored-inside", "restored-outside")))
+    }
+
+    /** 같은 식별자의 다른 이름과 이름 충돌이 있어도 폴더를 중복 생성하지 않는다. */
+    @Test fun `backup folder name collision keeps unique names and one membership`() {
+        val current = listOf(MacroFolder("a", "기존", setOf("local")), MacroFolder("b", "복원"))
+        val result = restoreMacroFolders(current, listOf(MacroFolder("a", "복원", setOf("restored"))), setOf("restored"))
+        assertEquals(listOf("기존", "복원"), result.map { it.name })
+        assertEquals(setOf("local"), result.first().ruleIds)
+        assertEquals(setOf("restored"), result.last().ruleIds)
+    }
+
     /** 기본 통풍 6개·열선 2개만 분류하고 하차 종료는 밖에 둔다. */
     @Test fun `default seats are grouped without changing execution`() {
         val rules = MacroPresets.defaults()

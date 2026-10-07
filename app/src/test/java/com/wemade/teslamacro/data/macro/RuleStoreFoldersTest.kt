@@ -115,6 +115,80 @@ class RuleStoreFoldersTest {
         assertEquals(original.rules.value, restarted.rules.value)
     }
 
+    /** 복구 내용을 저장하지 못하면 격리 원문을 남겨 재시작에서 다시 복구한다. */
+    @Test fun `failed recovery write retains quarantined macro for retry`() = runBlocking {
+        val original = store()
+        original.load()
+        val recoveredRule = original.rules.value.first().copy(id = "recover-after-write-failure")
+        val rejected = java.io.File(temporary.root, "macros.rejected.json")
+        val encoded = kotlinx.serialization.json.Json.encodeToString(
+            com.wemade.teslamacro.domain.macro.MacroRule.serializer(), recoveredRule,
+        )
+        rejected.writeText("[$encoded]")
+        val blockingDirectory = java.io.File(temporary.root, "macros.json.new")
+        assertTrue(blockingDirectory.mkdir())
+        // AtomicFile의 읽기 전 임시 파일 정리가 실패하도록 디렉터리를 비워 두지 않는다.
+        val blocker = java.io.File(blockingDirectory, "blocker")
+        blocker.writeText("keep write blocked")
+
+        assertTrue(runCatching { store().load() }.isFailure)
+        assertTrue(rejected.exists())
+        assertEquals("[$encoded]", rejected.readText())
+
+        assertTrue(blocker.delete())
+        assertTrue(blockingDirectory.delete())
+        val restarted = store()
+        restarted.load()
+        assertEquals(recoveredRule, restarted.rules.value.single { it.id == recoveredRule.id })
+        assertFalse(rejected.exists())
+    }
+
+    /** 격리 파일 저장에 실패하면 본 파일을 편집 가능한 축약 목록으로 열지 않는다. */
+    @Test fun `failed quarantine write keeps the original macro file intact`() = runBlocking {
+        store().load()
+        val file = java.io.File(temporary.root, "macros.json")
+        val parsed = kotlinx.serialization.json.Json.parseToJsonElement(file.readText()).jsonArray
+        val unknown = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"id":"future","name":"미래 매크로","triggers":[],"actions":[{"type":"future.Action"}]}""",
+        )
+        val original = kotlinx.serialization.json.JsonArray(parsed + unknown).toString()
+        file.writeText(original)
+        assertTrue(java.io.File(temporary.root, "macros.rejected.json.new").mkdir())
+        val restarted = store()
+        assertTrue(runCatching { restarted.load() }.isFailure)
+        assertTrue(restarted.rules.value.isEmpty())
+        assertEquals(original, file.readText())
+    }
+
+    /** 손상된 격리 파일은 빈 목록으로 덮거나 지우지 않고 수리할 원문을 남긴다. */
+    @Test fun `corrupt quarantine is preserved for repair`() = runBlocking {
+        store().load()
+        val rejected = java.io.File(temporary.root, "macros.rejected.json")
+        rejected.writeText("{broken")
+        assertTrue(runCatching { store().load() }.isFailure)
+        assertEquals("{broken", rejected.readText())
+    }
+
+    /** 백업 매크로와 분류를 저장한 뒤 재시작해도 복원 결과와 기존 매크로가 함께 남는다. */
+    @Test fun `restored folders and deduplicated macros survive restart`() = runBlocking {
+        val first = store()
+        first.load()
+        val originalRules = first.rules.value
+        val restored = originalRules.first().copy(id = "backup-rule", name = "복원 매크로")
+        first.restore(listOf(restored.copy(name = "중복 이전 값"), restored))
+        val folder = com.wemade.teslamacro.domain.macro.MacroFolder("backup-folder", "복원 폴더", setOf(restored.id))
+        first.restoreFolders(listOf(folder), setOf(restored.id))
+        val restarted = store()
+        restarted.load()
+        assertEquals(originalRules + restored, restarted.rules.value)
+        assertEquals(folder, restarted.folders.value.single { it.id == folder.id })
+
+        val saved = restarted.folders.value
+        assertTrue(java.io.File(temporary.root, "macro_folders.json.new").mkdir())
+        assertTrue(runCatching { restarted.restoreFolders(emptyList(), setOf(restored.id)) }.isFailure)
+        assertEquals(saved, restarted.folders.value)
+    }
+
     /** 이 버전이 모르는 매크로 하나가 앱 시작을 막지 않고, 다시 읽히면 목록에 되돌아온다. */
     @Test fun `unknown macro is quarantined and recovered later`() = runBlocking {
         val first = store()

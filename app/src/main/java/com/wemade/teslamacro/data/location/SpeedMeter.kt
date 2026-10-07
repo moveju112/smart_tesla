@@ -42,14 +42,20 @@ class SpeedMeter(private val context: Context) {
         }
 
         val listener = LocationListener { location -> trySend(location) }
-        val started = runCatching {
+        val started = try {
             manager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
                 UPDATE_INTERVAL_MS,
                 0f,
                 listener,
             )
-        }.isSuccess
+            true
+        } catch (_: SecurityException) {
+            // 권한 확인 직후 회수된 경우에도 GPS 구독을 실패로 종료한다.
+            false
+        } catch (_: Exception) {
+            false
+        }
         if (!started) {
             com.wemade.teslable.DiagLog.add("HUD 속도 · GPS를 열지 못했어요")
             close()

@@ -59,6 +59,7 @@ internal fun DestinationWidgetAppearanceScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     BackHandler { if (!busy) onBack() }
+    com.wemade.teslamacro.ui.component.ActionFeedback(error, onDismiss = { error = null }, useSnackbar = true)
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(Space.lg),
         verticalArrangement = Arrangement.spacedBy(Space.sm),
@@ -67,7 +68,8 @@ internal fun DestinationWidgetAppearanceScreen(
         Text("홈 화면의 모든 목적지 위젯에 적용해요. 입력창은 앱 테마를 따라요.",
             style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         DestinationWidgetPreview(appearance)
-        ChoiceSettingRow("배경 색상", DestinationWidgetTheme.entries.map { it.name to it.label }, theme) { theme = it }
+        ChoiceSettingRow("배경 색상", DestinationWidgetTheme.entries.map { it.name to it.label }, theme,
+            enabled = !busy) { theme = it }
         Text("배경 투명도 $transparency%", style = MaterialTheme.typography.bodyMedium, color = T.Ink)
         Slider(
             value = transparency.toFloat(), onValueChange = { transparency = it.roundToInt() },
@@ -76,9 +78,9 @@ internal fun DestinationWidgetAppearanceScreen(
         )
         Text("0% 불투명 · 100% 완전 투명", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
         TButton("완전 투명", tone = ButtonTone.Secondary, enabled = !busy, onClick = { transparency = 100 })
-        ChoiceSettingRow("글자 색상", DestinationWidgetText.entries.map { it.name to it.label }, text) { text = it }
-        SettingToggleRow("기능 이름 표시", showTitle, { showTitle = it })
-        error?.let { Text(it, color = T.Danger, style = MaterialTheme.typography.bodySmall) }
+        ChoiceSettingRow("글자 색상", DestinationWidgetText.entries.map { it.name to it.label }, text,
+            enabled = !busy) { text = it }
+        SettingToggleRow("기능 이름 표시", showTitle, { showTitle = it }, enabled = !busy)
         TButton(if (busy) "적용 중…" else "저장", enabled = !busy, onClick = {
             busy = true
             error = null

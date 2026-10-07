@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.SystemClock
+import com.wemade.teslable.DiagLog
 import androidx.core.content.ContextCompat
 import com.wemade.teslamacro.data.safety.DeviceApiClient
 import com.wemade.teslamacro.data.settings.AppSettings
@@ -94,9 +95,20 @@ internal class DestinationCoordinator(
         ContextCompat.registerReceiver(context, unlocked, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_EXPORTED)
         var failures = 0
         var retryAt = 0L
+        var lastGate: String? = null
         try {
             while (isActive) {
                 val active = ready()
+                val gate = when {
+                    !settings.destinationReceiveEnabled -> null
+                    !active -> "착석 응답 대기"
+                    !online() -> "인터넷 연결 대기"
+                    else -> "착석 확인 · 수신 확인 중"
+                }
+                if (gate != lastGate) {
+                    if (gate != null) DiagLog.add("목적지 수신 — $gate")
+                    lastGate = gate
+                }
                 if (active && online() && SystemClock.elapsedRealtime() >= retryAt) {
                     try {
                         val handled = receiver.receive { ready() && online() }
@@ -108,6 +120,7 @@ internal class DestinationCoordinator(
                         retryAt = 0L
                     } catch (error: Exception) {
                         if (error is CancellationException) throw error
+                        DiagLog.add("목적지 수신 확인 실패 — ${error.javaClass.simpleName}")
                         failures = (failures + 1).coerceAtMost(4)
                         retryAt = SystemClock.elapsedRealtime() + (5_000L shl failures)
                         message.value = error.message ?: "연결 후 목적지를 다시 확인해요"

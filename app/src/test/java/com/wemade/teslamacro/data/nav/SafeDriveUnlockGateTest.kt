@@ -1,6 +1,7 @@
 package com.wemade.teslamacro.data.nav
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceTimeBy
@@ -22,6 +23,55 @@ class SafeDriveUnlockGateTest {
         assertFalse(isSafeDriveUnlocked(keyguardLocked = true, deviceLocked = true))
         assertFalse(isSafeDriveUnlocked(keyguardLocked = false, deviceLocked = true))
         assertTrue(isSafeDriveUnlocked(keyguardLocked = false, deviceLocked = false))
+    }
+
+    /** 이미 잠겼다면 목적지 인계부터 막아 다음 잠금 해제 뒤 정상 수신할 여지를 남긴다. */
+    @Test
+    fun `다시 잠긴 목적지는 서버 인계를 시작하지 않는다`() = runTest {
+        var claims = 0
+        val result = runCatching { confirmUnlockedDestination({ false }) { claims++ } }
+        assertTrue(result.exceptionOrNull() is IllegalStateException)
+        assertEquals(0, claims)
+    }
+
+    /** 인계 응답 대기 중 키가드 또는 보안 잠금이 생기면 비ADB 경로도 지도에 전달하지 않는다. */
+    @Test
+    fun `목적지 인계 대기 중 다시 잠기면 전달하지 않는다`() = runTest {
+        listOf(true to false, false to true).forEach { (keyguardLocked, deviceLocked) ->
+            val claimed = CompletableDeferred<Unit>()
+            var unlocked = true
+            var launches = 0
+            val result = async {
+                runCatching {
+                    confirmUnlockedDestination({ unlocked }) { claimed.await() }
+                    launches++
+                }
+            }
+            runCurrent()
+            unlocked = isSafeDriveUnlocked(keyguardLocked, deviceLocked)
+            claimed.complete(Unit)
+            assertTrue(result.await().exceptionOrNull() is IllegalStateException)
+            assertEquals(0, launches)
+        }
+    }
+
+    /** 정상 인계는 한 번 이어가며 취소는 새 지도 전달로 바꾸지 않는다. */
+    @Test
+    fun `잠금 해제 상태를 유지한 요청만 인계 뒤 전달한다`() = runTest {
+        var claims = 0
+        var launches = 0
+        confirmUnlockedDestination({ true }) { claims++ }
+        launches++
+        val claimed = CompletableDeferred<Unit>()
+        val cancelled = async {
+            confirmUnlockedDestination({ true }) { claimed.await() }
+            launches++
+        }
+        runCurrent()
+        cancelled.cancelAndJoin()
+        claimed.complete(Unit)
+        assertEquals(1, claims)
+        assertEquals(1, launches)
     }
 
     /** 보안 인증만 풀린 콜백은 성공으로 처리하지 않아 배경 직접 실행으로 새지 않는다. */

@@ -18,14 +18,6 @@ class VehicleAudioGuideGateTest {
         assertFalse(shouldMonitorGuidance(DeviceMode.MOUNTED, false, true))
     }
 
-    // 권한 변경 이벤트에도 거치 모드에만 활동 인식을 재등록한다.
-    @Test fun permissionRefreshNeverSubscribesActivityInPortableMode() {
-        assertFalse(shouldSubscribeDrivingActivity(DeviceMode.PORTABLE, true, true))
-        assertTrue(shouldSubscribeDrivingActivity(DeviceMode.MOUNTED, true, true))
-        assertFalse(shouldSubscribeDrivingActivity(DeviceMode.MOUNTED, false, true))
-        assertFalse(shouldSubscribeDrivingActivity(DeviceMode.MOUNTED, true, false))
-    }
-
     // 등록 차량 별칭이 있으면 다른 자동차나 다른 테슬라의 음악 연결은 무시한다.
     @Test fun registeredVehicleNameIsExactAndUnambiguous() {
         val bonded = listOf(

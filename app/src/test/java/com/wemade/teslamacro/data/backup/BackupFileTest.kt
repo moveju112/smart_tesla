@@ -4,11 +4,13 @@ import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.MacroFolder
 import com.wemade.teslamacro.domain.macro.MacroRule
 import com.wemade.teslamacro.domain.macro.Trigger
 import com.wemade.teslamacro.domain.model.Signal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,6 +40,7 @@ class BackupFileTest {
             createdAtMillis = 1_700_000_000_000L,
             appVersion = "0.9.1",
             macros = listOf(rule),
+            folders = listOf(MacroFolder("boarding", "탑승", setOf(rule.id)), MacroFolder("empty", "빈 폴더")),
             settings = BackupSettings(protectPhoneKey = false, safeDriveWarningSound = "beep",
                 safeDriveVoice = false, safeDriveStartVoice = true),
         )
@@ -50,6 +53,19 @@ class BackupFileTest {
         assertFalse(restored.settings.protectPhoneKey)
         assertTrue(restored.settings.safeDriveStartVoice)
         assertFalse(restored.settings.safeDriveVoice)
+        assertEquals(setOf(rule.id), restored.folders?.first()?.ruleIds)
+        assertTrue(restored.folders?.last()?.ruleIds?.isEmpty() == true)
+    }
+
+    /** 옛 백업의 분류 누락과 새 백업의 명시적 미분류를 구별해야 기존 폴더를 지우지 않는다. */
+    @Test
+    fun `폴더가 없는 구백업과 빈 폴더 백업을 구별한다`() {
+        val legacy = BackupFile.json.decodeFromString(BackupFile.serializer(), """{"version":7,"macros":[]}""")
+        assertNull(legacy.folders)
+        val emptyFolders = BackupFile(folders = emptyList())
+        val encoded = BackupFile.json.encodeToString(BackupFile.serializer(), emptyFolders)
+        val restored = BackupFile.json.decodeFromString(BackupFile.serializer(), encoded)
+        assertEquals(emptyList<MacroFolder>(), restored.folders)
     }
 
     /** 차를 특정하거나 여는 정보는 파일에 한 글자도 없어야 한다 */

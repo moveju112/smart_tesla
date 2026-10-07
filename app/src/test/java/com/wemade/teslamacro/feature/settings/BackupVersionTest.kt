@@ -9,7 +9,7 @@ import org.junit.Test
 class BackupVersionTest {
     @Test
     fun `legacy and current backup versions remain restorable`() {
-        for (version in listOf(1, 5, BackupFile.CURRENT_VERSION)) {
+        for (version in listOf(1, 5, 7, BackupFile.CURRENT_VERSION)) {
             requireSupportedBackupVersion(version)
         }
     }

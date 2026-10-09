@@ -23,6 +23,8 @@ import com.wemade.teslamacro.domain.macro.GeoPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import java.util.Locale
 
@@ -576,6 +578,50 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
     /** 주소를 좌표로. "출발지 근처" 조건이 주소 입력으로 위치를 찍을 때도 쓴다 */
     suspend fun geocodePoint(address: String): GeoPoint? = withContext(Dispatchers.IO) {
         geocode(address)?.let { GeoPoint(it.latitude, it.longitude) }
+    }
+
+    /** 여러 주소를 유지하고 현재 위치 검색을 보완해 일부 도로명의 첫 결과를 확정하지 않는다. */
+    internal suspend fun teslaDestinationCandidates(query: String, near: GeoPoint?): List<TeslaDestinationCandidate> {
+        val global = teslaGeocodeAddresses(query, null)
+        val nearby = if (near != null && !qualifiedTeslaRoadAddress(query)) teslaGeocodeAddresses(query, near) else emptyList()
+        return rankedTeslaCandidates((global + nearby).mapNotNull { address ->
+            val text = address.getAddressLine(0)?.let(::canonicalTeslaAddress) ?: return@mapNotNull null
+            if (!address.hasLatitude() || !address.hasLongitude()) return@mapNotNull null
+            TeslaDestinationCandidate(text, GeoPoint(address.latitude, address.longitude))
+        }, near)
+    }
+
+    /** 새 OS는 제한 시간 콜백, 구형 OS는 작업 스레드에서만 지오코더를 호출한다. */
+    private suspend fun teslaGeocodeAddresses(query: String, near: GeoPoint?): List<android.location.Address> {
+        if (!Geocoder.isPresent()) return emptyList()
+        return try {
+            withTimeoutOrNull(4_000) {
+                val geocoder = Geocoder(context, Locale.KOREA)
+                if (Build.VERSION.SDK_INT >= 33) suspendCancellableCoroutine { continuation ->
+                    val listener = object : Geocoder.GeocodeListener {
+                        /** 취소된 조회의 늦은 응답은 다음 목적지를 덮어쓰지 않는다. */
+                        override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                            if (continuation.isActive) continuation.resume(addresses) { _, _, _ -> }
+                        }
+                        /** 제공자 오류는 후보 없음으로 돌려 주소 보완을 요청한다. */
+                        override fun onError(errorMessage: String?) {
+                            if (continuation.isActive) continuation.resume(emptyList()) { _, _, _ -> }
+                        }
+                    }
+                    if (near == null) geocoder.getFromLocationName(query, 5, listener)
+                    else geocoder.getFromLocationName(query, 5, (near.latitude - 0.35).coerceAtLeast(-90.0),
+                        (near.longitude - 0.45).coerceAtLeast(-180.0), (near.latitude + 0.35).coerceAtMost(90.0),
+                        (near.longitude + 0.45).coerceAtMost(180.0), listener)
+                } else kotlinx.coroutines.runInterruptible(Dispatchers.IO) {
+                    @Suppress("DEPRECATION")
+                    if (near == null) geocoder.getFromLocationName(query, 5).orEmpty()
+                    else geocoder.getFromLocationName(query, 5, (near.latitude - 0.35).coerceAtLeast(-90.0),
+                        (near.longitude - 0.45).coerceAtLeast(-180.0), (near.latitude + 0.35).coerceAtMost(90.0),
+                        (near.longitude + 0.45).coerceAtMost(180.0)).orEmpty()
+                }
+            }.orEmpty()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { emptyList() }
     }
 
     /** 좌표를 사람이 읽는 주소로. 저장한 출발지가 어디인지 확인시켜줄 때 쓴다 */

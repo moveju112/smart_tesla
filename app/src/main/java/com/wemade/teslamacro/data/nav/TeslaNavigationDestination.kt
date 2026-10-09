@@ -59,6 +59,9 @@ internal class TeslaNavigationDestination {
     /** 설정 OFF는 화면 캐시와 전송 예약까지 제거한다. */
     fun clear() { candidates.clear(); guidance.clear() }
 
+    /** 화면 후보가 보완한 안내를 정확한 알림 키와 연결한다. */
+    fun activeKey(packageName: String): String? = guidance[packageName]?.key
+
     /** 실행 전에 예약해 응답 유실이나 반복 알림이 같은 목적지를 다시 보내지 못하게 한다. */
     private fun reserve(active: Guidance, text: String): String? {
         if (active.sent == text) return null
@@ -74,8 +77,11 @@ internal class TeslaNavigationDestination {
 
         /** 자리표시자·제어문자·과도한 입력을 목적지로 보내지 않는다. */
         fun normalize(value: String): String? {
+            if (value.any { it.code < 32 && it !in "\n\r\t" }) return null
             val text = value.trim().replace(Regex("\\s+"), " ")
-            if (text.length !in 1..200 || value.any { it.code < 32 && it !in "\n\r\t" }) return null
+            // 긴 목적지 링크도 좌표를 먼저 확인해 장소명·경로 옵션 없이 고정된 위치만 남긴다.
+            if (text.length <= 2048) teslaDestinationPoint(text)?.let { return "${it.latitude},${it.longitude}" }
+            if (text.length !in 1..200) return null
             if (text in setOf("출발", "도착", "경유", "출발지 입력", "도착지 입력", "경유지 입력", "현재 위치", "내 위치", "길찾기", "내비게이션 - 안내 중", "안심주행")) return null
             return text
         }

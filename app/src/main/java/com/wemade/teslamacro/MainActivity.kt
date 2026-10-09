@@ -267,6 +267,9 @@ private fun AppRoot(factory: ViewModelFactory) {
     BackHandler(enabled = current == Destination.Settings && settingsTarget != null, onBack = backFromSettings)
     val context = LocalContext.current
 
+    com.wemade.teslamacro.feature.settings.TeslaDestinationDialog(
+        (context.applicationContext as TeslaMacroApplication).container.teslaNavigationShare)
+
     // 실제 등록 해제에만 건너뛰기를 초기화한다. 미등록 기기의 회전·복원은 현재 기능을 유지한다.
     var wasPaired by rememberSaveable { mutableStateOf(settings.isPaired) }
     LaunchedEffect(settings.isPaired) {

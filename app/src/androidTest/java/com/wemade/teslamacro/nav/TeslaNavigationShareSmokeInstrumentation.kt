@@ -86,9 +86,9 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                     check(count() == 4)
                     store.setTeslaNavigationLaunchMode(TeslaNavigationLaunchMode.STANDARD)
                     store.setTeslaNavigationShareEnabled(true)
-                    sharing.notification("com.skt.tmap.ku", "route", "경로주행", "현재 위치 > Coordinator smoke")
+                    sharing.notification("com.skt.tmap.ku", "route", "경로주행", "현재 위치 > 37.56,126.97")
                     waitForCount(5)
-                    sharing.notification("com.skt.tmap.ku", "route", "경로주행", "현재 위치 > Coordinator smoke")
+                    sharing.notification("com.skt.tmap.ku", "route", "경로주행", "현재 위치 > 37.56,126.97")
                     check(count() == 5)
                     check(store.settings.first().teslaNavigationLaunchMode == TeslaNavigationLaunchMode.STANDARD)
                     store.setTeslaNavigationShareEnabled(false)
@@ -96,7 +96,59 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                     sharing.notification("com.nhn.android.nmap", "naver", "네이버 지도", "내비게이션 - 안내 중")
                     check(count() == 5)
                     sendStatus(0, Bundle().apply { putString("phase", "PASS OFF, persisted mode, coordinator duplicate protection") })
-                    result.putString("result", "PASS: real ADB, normal fallback, unavailable permissions, old server, uncertain result, OFF, duplicate protection; receipts=5")
+                    val north = TeslaDestinationCandidate("서울 종로구 북지길 13", com.wemade.teslamacro.domain.macro.GeoPoint(37.56, 126.97))
+                    val south = TeslaDestinationCandidate("부산 중구 북지길 13", com.wemade.teslamacro.domain.macro.GeoPoint(35.1, 129.0))
+                    val entered = CompletableDeferred<Unit>()
+                    val release = CompletableDeferred<Unit>()
+                    val resolving = TeslaNavigationShare(targetContext, store, navigator, app.container.appScope,
+                        currentPoint = { north.point }, lookup = { query, _ ->
+                            when (query) {
+                                "북지길 13" -> listOf(south, north)
+                                "Slow" -> withContext(NonCancellable) { entered.complete(Unit); release.await(); listOf(south) }
+                                else -> listOf(north)
+                            }
+                        })
+                    store.setTeslaNavigationShareEnabled(true)
+                    resolving.notification("com.skt.tmap.ku", "partial", "경로주행", "현재 위치 > 북지길 13")
+                    val partial = withTimeout(3_000) { resolving.selection.first { it != null }!! }
+                    check(partial.candidates == listOf(north, south) && count() == 5)
+                    resolving.confirm(partial.id, south)
+                    waitForCount(6)
+                    check(receipts().contains("q=35.1%2C129.0"))
+                    resolving.confirm(partial.id, north)
+                    check(count() == 6)
+
+                    resolving.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > 북지길 14")
+                    val single = withTimeout(3_000) { resolving.selection.first { it != null }!! }
+                    check(single.candidates.size == 1 && count() == 6)
+                    store.setTeslaNavigationShareEnabled(false)
+                    resolving.confirm(single.id, north)
+                    check(resolving.selection.value == null && count() == 6)
+                    store.setTeslaNavigationShareEnabled(true)
+                    resolving.notification("com.skt.tmap.ku", "slow", "경로주행", "현재 위치 > Slow")
+                    withTimeout(3_000) { entered.await() }
+                    resolving.removed("com.skt.tmap.ku", "slow")
+                    resolving.notification("com.skt.tmap.ku", "new", "경로주행", "현재 위치 > 북지길 15")
+                    val latest = withTimeout(3_000) { resolving.selection.first { it != null }!! }
+                    release.complete(Unit)
+                    resolving.confirm(single.id, north)
+                    check(resolving.selection.value?.id == latest.id && count() == 6)
+                    resolving.search(latest.id, north.address)
+                    val refined = withTimeout(3_000) { resolving.selection.first { it != null && !it.searching }!! }
+                    check(count() == 6 && refined.candidates == listOf(north))
+                    resolving.confirm(refined.id, north)
+                    waitForCount(7)
+                    resolving.notification("com.skt.tmap.ku", "exact", "경로주행", "현재 위치 > 서울특별시 종로구 북지길 13")
+                    waitForCount(8)
+                    check(resolving.selection.value == null)
+                    resolving.notification("com.skt.tmap.ku", "remove", "경로주행", "현재 위치 > 북지길 16")
+                    val removed = withTimeout(3_000) { resolving.selection.first { it != null }!! }
+                    resolving.removed("com.skt.tmap.ku", "remove")
+                    resolving.confirm(removed.id, north)
+                    check(count() == 8 && resolving.selection.value == null)
+                    resolving.clear()
+                    sendStatus(0, Bundle().apply { putString("phase", "PASS partial road, single-result confirmation, coordinate receipt, OFF, stale lookup, refined address, exact automatic, removed selection") })
+                    result.putString("result", "PASS: ADB/normal/failure paths, coordinate sharing, region selection, single result, OFF, stale response, duplicate protection; receipts=8")
                 } finally {
                     NavigationBridgeProvider.bridge = real
                     if (sourceSmoke) app.container.settingsStore.setTeslaNavigationLaunchMode(TeslaNavigationLaunchMode.ADB_FIRST)

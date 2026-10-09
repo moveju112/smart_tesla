@@ -582,13 +582,14 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
 
     /** 여러 주소를 유지하고 현재 위치 검색을 보완해 일부 도로명의 첫 결과를 확정하지 않는다. */
     internal suspend fun teslaDestinationCandidates(query: String, near: GeoPoint?): List<TeslaDestinationCandidate> {
-        val global = teslaGeocodeAddresses(query, null)
-        val nearby = if (near != null && !qualifiedTeslaRoadAddress(query)) teslaGeocodeAddresses(query, near) else emptyList()
-        return rankedTeslaCandidates((global + nearby).mapNotNull { address ->
+        val normalized = normalizeTeslaRoadSpacing(query)
+        val global = teslaGeocodeAddresses(normalized, null)
+        val nearby = if (near != null && !qualifiedTeslaRoadAddress(normalized)) teslaGeocodeAddresses(normalized, near) else emptyList()
+        return rankedTeslaCandidates(matchingTeslaAddressCandidates(normalized, (global + nearby).mapNotNull { address ->
             val text = address.getAddressLine(0)?.let(::canonicalTeslaAddress) ?: return@mapNotNull null
             if (!address.hasLatitude() || !address.hasLongitude()) return@mapNotNull null
             TeslaDestinationCandidate(text, GeoPoint(address.latitude, address.longitude))
-        }, near)
+        }), near)
     }
 
     /** 새 OS는 제한 시간 콜백, 구형 OS는 작업 스레드에서만 지오코더를 호출한다. */

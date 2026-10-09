@@ -71,7 +71,7 @@ internal class TeslaDestinationOverlay(
         scope.launch(Dispatchers.Main.immediate) {
             combine(sharing.selection, settingsStore.settings, refreshes) { pending, settings, _ ->
                 theme.value = settings.themeMode
-                pending.takeIf { settings.teslaNavigationShareEnabled }
+                pending.takeIf { settings.teslaNavigationShareEnabled || settings.teslaNavigationTestMode }
             }.collect { pending -> present(pending) }
         }
     }

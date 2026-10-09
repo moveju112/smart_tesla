@@ -16,6 +16,7 @@ internal data class TeslaDestinationSelection(
     val candidates: List<TeslaDestinationCandidate> = emptyList(),
     val searching: Boolean = false,
     val error: String? = null,
+    val testMode: Boolean = false,
 )
 
 /** 목적지 자체의 좌표만 읽고 지도 중심·출발 좌표·짧은 링크를 좌표로 추측하지 않는다. */
@@ -63,7 +64,7 @@ internal fun qualifiedTeslaRoadAddress(value: String): Boolean {
 
 /** 행정구역 표기만 통일하고 도로명·건물번호를 흐리게 비교하지 않는다. */
 internal fun canonicalTeslaAddress(value: String): String {
-    var text = value.trim().removePrefix("대한민국 ").replace(Regex("\\s+"), " ")
+    var text = normalizeTeslaRoadSpacing(value.trim().removePrefix("대한민국 ").replace(Regex("\\s+"), " "))
     val regions = mapOf("서울특별시" to "서울", "부산광역시" to "부산", "대구광역시" to "대구", "인천광역시" to "인천",
         "광주광역시" to "광주", "대전광역시" to "대전", "울산광역시" to "울산", "세종특별자치시" to "세종",
         "경기도" to "경기", "강원특별자치도" to "강원", "강원도" to "강원", "충청북도" to "충북", "충청남도" to "충남",
@@ -71,6 +72,24 @@ internal fun canonicalTeslaAddress(value: String): String {
         "제주특별자치도" to "제주")
     for ((full, short) in regions) if (text.startsWith("$full ")) { text = short + text.removePrefix(full); break }
     return text
+}
+
+/** 도로명과 숫자 번길 사이 공백만 합쳐 장소명의 일반 공백은 유지한다. */
+internal fun normalizeTeslaRoadSpacing(value: String): String =
+    value.replace(Regex("([가-힣A-Za-z0-9·]+(?:대로|로))\\s+(\\d+(?:번)?길)(?=\\s|$)"), "$1$2")
+
+/** 도로명주소는 건물번호·명시한 지역까지 맞는 후보만 유지해 단일 오검색도 자동 공유하지 않는다. */
+internal fun matchingTeslaAddressCandidates(query: String, candidates: List<TeslaDestinationCandidate>): List<TeslaDestinationCandidate> {
+    val roadPattern = Regex("(?:^|\\s)([^ ]+(?:대로|로|길))\\s+(\\d+(?:-\\d+)?)(?=\\s|$)")
+    val address = canonicalTeslaAddress(query)
+    val requested = roadPattern.find(address) ?: return candidates
+    val regions = address.substring(0, requested.range.first).trim().split(' ').filter { it.isNotEmpty() }
+    return candidates.filter { candidate ->
+        val result = canonicalTeslaAddress(candidate.address)
+        val found = roadPattern.find(result)
+        found != null && found.groupValues.drop(1) == requested.groupValues.drop(1) &&
+            regions.all { it in result.substring(0, found.range.first).trim().split(' ') }
+    }
 }
 
 /** 가까운 후보는 먼저 보여주되 위치와 첫 결과를 자동 확정 근거로 사용하지 않는다. */

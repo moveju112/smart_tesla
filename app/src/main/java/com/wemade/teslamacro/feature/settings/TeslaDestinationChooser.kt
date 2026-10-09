@@ -26,7 +26,7 @@ internal fun TeslaDestinationChooser(request: TeslaDestinationSelection, sharing
     Surface(shape = RoundedCornerShape(Radius.card), color = T.Carbon,
         border = BorderStroke(Stroke.thin, T.Hairline)) {
         Column(Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()).padding(Space.md)) {
-            Text("테슬라 목적지 선택", style = MaterialTheme.typography.titleLarge, color = T.Ink)
+            Text(if (request.testMode) "테스트 목적지 확인" else "테슬라 목적지 선택", style = MaterialTheme.typography.titleLarge, color = T.Ink)
             Spacer(Modifier.height(Space.sm))
             DraftField(query, { query = it }, label = "전체 주소 또는 장소", enabled = !request.searching,
                 isError = request.error != null, note = request.error, placeholder = "시·군·구를 포함한 주소")

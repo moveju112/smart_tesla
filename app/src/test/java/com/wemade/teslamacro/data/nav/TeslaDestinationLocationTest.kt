@@ -5,6 +5,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TeslaDestinationLocationTest {
+    /** 공백 보정은 숫자 번길에 한정해 일반 장소명은 유지한다. */
+    @Test fun `숫자 번길 도로명의 띄어쓰기만 보정한다`() {
+        assertEquals("청마로34번길 6", TeslaNavigationDestination.normalize("청마로 34번길 6"))
+        assertEquals("청마로34번길 6", normalizeTeslaRoadSpacing("청마로34번길 6"))
+        assertEquals("위메이드 본사", normalizeTeslaRoadSpacing("위메이드 본사"))
+        assertTrue(qualifiedTeslaRoadAddress("인천 서구 청마로 34번길 6"))
+        assertFalse(qualifiedTeslaRoadAddress("청마로 34번길 6"))
+    }
+
+    /** 단일 검색 결과도 요청한 도로명·건물번호·지역이 다르면 공유 후보에서 제외한다. */
+    @Test fun `주소 검색의 오검색과 번호 일부 일치를 제외한다`() {
+        val correct = TeslaDestinationCandidate("인천 서구 청마로34번길 6", GeoPoint(37.5, 126.6))
+        val wrongNumber = correct.copy(address = "인천 서구 청마로34번길 60")
+        val wrongRoad = correct.copy(address = "인천 서구 다른로34번길 6")
+        val wrongDistrict = correct.copy(address = "인천 부평구 청마로34번길 6")
+        assertEquals(listOf(correct, wrongDistrict), matchingTeslaAddressCandidates("청마로 34번길 6",
+            listOf(correct, wrongNumber, wrongRoad, wrongDistrict)))
+        assertEquals(listOf(correct), matchingTeslaAddressCandidates("인천 서구 청마로 34번길 6",
+            listOf(correct, wrongDistrict)))
+        assertTrue(matchingTeslaAddressCandidates("청마로34번길 6", listOf(wrongNumber)).isEmpty())
+        assertEquals(listOf(correct), matchingTeslaAddressCandidates("위메이드", listOf(correct)))
+    }
+
     /** 목적지 좌표만 읽고 출발지·지도 중심을 목적지로 바꾸지 않는다. */
     @Test fun `원본 목적지 좌표와 지도 검색 좌표를 읽는다`() {
         val point = GeoPoint(37.56, 126.97)

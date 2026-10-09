@@ -72,6 +72,8 @@ data class AppSettings(
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
     val smartThingsEnabled: Boolean = false,
     val teslaNavigationShareEnabled: Boolean = false,
+    /** 임시 검증판은 기존 설정과 무관하게 처음부터 차량 공유를 차단한다. */
+    val teslaNavigationTestMode: Boolean = true,
     val teslaNavigationLaunchMode: com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode =
         com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.ADB_FIRST,
     val fleetApiEnabled: Boolean = false,
@@ -182,6 +184,7 @@ class SettingsStore(
             protectPhoneKey = prefs[KeyProtectPhoneKey] ?: true,
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             teslaNavigationShareEnabled = prefs[KeyTeslaNavigationShareEnabled] ?: false,
+            teslaNavigationTestMode = prefs[KeyTeslaNavigationTestMode] ?: true,
             teslaNavigationLaunchMode = com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.of(prefs[KeyTeslaNavigationLaunchMode]),
             destinationReceiveEnabled = prefs[KeyDestinationReceiveEnabled] ?: false,
             destinationSetupStarted = prefs[KeyDestinationSetupStarted]
@@ -283,6 +286,9 @@ class SettingsStore(
 
     /** 내비 자동 공유는 사용자 선택 전까지 꺼진 상태로 유지한다. */
     suspend fun setTeslaNavigationShareEnabled(enabled: Boolean) = edit { it[KeyTeslaNavigationShareEnabled] = enabled }
+
+    /** 테스트 모드를 저장해 재시작 뒤에도 실제 목적지 공유 차단을 유지한다. */
+    suspend fun setTeslaNavigationTestMode(enabled: Boolean) = edit { it[KeyTeslaNavigationTestMode] = enabled }
 
     /** ADB 우선과 일반 실행 선택을 재시작 뒤에도 보존한다. */
     suspend fun setTeslaNavigationLaunchMode(mode: com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode) =
@@ -592,6 +598,7 @@ class SettingsStore(
         val KeySmartThingsValiditySeconds = intPreferencesKey("smartthings_validity_seconds")
         val KeySmartThingsEnabled = booleanPreferencesKey("smartthings_enabled")
         val KeyTeslaNavigationShareEnabled = booleanPreferencesKey("tesla_navigation_share_enabled")
+        val KeyTeslaNavigationTestMode = booleanPreferencesKey("tesla_navigation_test_mode")
         val KeyTeslaNavigationLaunchMode = stringPreferencesKey("tesla_navigation_launch_mode")
         val KeySmartThingsCommandTexts = stringPreferencesKey("smartthings_command_texts")
         // 0.9.36 설정은 새 다중 명령 설정의 초기값으로만 읽는다.

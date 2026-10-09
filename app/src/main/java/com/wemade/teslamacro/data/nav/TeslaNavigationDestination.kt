@@ -30,13 +30,7 @@ internal class TeslaNavigationDestination {
     /** 안내 상태가 확인된 알림만 목적지로 해석하며 앱 이름이나 회전 안내는 전송하지 않는다. */
     fun notification(packageName: String, key: String, title: String, text: String, now: Long): String? {
         if (!supports(packageName)) return null
-        val navigating = when (packageName) {
-            "com.skt.tmap.ku", "com.skt.skaf.l001mtm091" -> title == "경로주행" && text != "안심주행"
-            "com.locnall.KimGiSa" -> title in listOf("길안내 주행 중", "보험을 켜고 길안내 주행 중")
-            "com.nhn.android.nmap" -> text == "내비게이션 - 안내 중"
-            else -> false
-        }
-        if (!navigating) return null
+        if (!isTeslaNavigationGuidance(packageName, title, text)) return null
         val active = guidance[packageName]?.takeIf { it.key == key }
             ?: Guidance(key, now).also { guidance[packageName] = it }
         val direct = when (packageName) {
@@ -78,17 +72,25 @@ internal class TeslaNavigationDestination {
         /** 자리표시자·제어문자·과도한 입력을 목적지로 보내지 않는다. */
         fun normalize(value: String): String? {
             if (value.any { it.code < 32 && it !in "\n\r\t" }) return null
-            val text = value.trim().replace(Regex("\\s+"), " ")
+            val text = normalizeTeslaRoadSpacing(value.trim().replace(Regex("\\s+"), " "))
             // 긴 목적지 링크도 좌표를 먼저 확인해 장소명·경로 옵션 없이 고정된 위치만 남긴다.
             if (text.length <= 2048) teslaDestinationPoint(text)?.let { return "${it.latitude},${it.longitude}" }
             if (text.length !in 1..200) return null
-            if (text in setOf("출발", "도착", "경유", "출발지 입력", "도착지 입력", "경유지 입력", "현재 위치", "내 위치", "길찾기", "내비게이션 - 안내 중", "안심주행")) return null
+            if (text in setOf("출발", "도착", "경유", "출발지 입력", "도착지 입력", "경유지 입력", "현재 위치", "내 위치", "길찾기", "내비게이션 - 안내 중", "안심주행", "출입구 변경", "출입구 선택", "출발지와 도착지 바꾸기", "경유지 추가")) return null
             return text
         }
     }
 }
 
-internal data class NavigationScreenText(val text: String, val top: Int, val left: Int)
+internal data class NavigationScreenText(val text: String, val top: Int, val left: Int, val isButton: Boolean = false)
+
+/** 실제 안내 판정을 공유해 테스트 보조창도 검색·안심주행 알림에는 뜨지 않게 한다. */
+internal fun isTeslaNavigationGuidance(packageName: String, title: String, text: String): Boolean = when (packageName) {
+    "com.skt.tmap.ku", "com.skt.skaf.l001mtm091" -> title == "경로주행" && text != "안심주행"
+    "com.locnall.KimGiSa" -> title in listOf("길안내 주행 중", "보험을 켜고 길안내 주행 중")
+    "com.nhn.android.nmap" -> text == "내비게이션 - 안내 중"
+    else -> false
+}
 
 /** 내비별 고정 화면 영역에서 도착지를 읽으며 출발지와 입력 자리표시자는 제외한다. */
 internal fun teslaDestinationFromScreen(packageName: String, entries: List<NavigationScreenText>): String? {
@@ -103,7 +105,12 @@ internal fun teslaDestinationFromScreen(packageName: String, entries: List<Navig
     // 도착지가 비어 있으면 출발지를 마지막 필드라고 오인하지 않는다.
     if (entries.any { it.text.trim() in setOf("도착지 입력", "Enter destination", "目的地入力", "输入目的地") }) return null
     val boundary = entries.filter { it.text.trim() in placeholders }.minOfOrNull { it.top }
-    return entries.filter { boundary == null || it.top < boundary }
+    val fields = entries.filter { !it.isButton && (boundary == null || it.top < boundary) }
         .sortedWith(compareBy<NavigationScreenText> { it.top }.thenBy { it.left })
-        .mapNotNull { TeslaNavigationDestination.normalize(it.text) }.lastOrNull()
+        .mapNotNull { entry -> TeslaNavigationDestination.normalize(entry.text)?.let { entry.copy(text = it) } }
+    // 도착 라벨이 노출된 화면은 그 행만 읽고, 라벨 없는 구형 화면은 출발·도착 두 필드일 때만 허용한다.
+    val destinationLabel = entries.firstOrNull { it.text.trim() == "도착" }
+    if (destinationLabel != null) return fields.filter { it.top == destinationLabel.top }.map { it.text }.distinct().singleOrNull()
+    val values = fields.map { it.text }.distinct()
+    return values.takeIf { it.size <= 2 }?.lastOrNull()
 }

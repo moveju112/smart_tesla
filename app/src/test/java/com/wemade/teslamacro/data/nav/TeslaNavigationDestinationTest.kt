@@ -95,6 +95,37 @@ class TeslaNavigationDestinationTest {
     }
 
     /** 예외적인 입력과 알 수 없는 실행 방식은 제한된 기본값으로 처리한다. */
+    @Test fun `네이버 도착지 뒤 출입구 버튼과 다른 버튼은 목적지가 아니다`() {
+        assertEquals("위메이드", teslaDestinationFromScreen(naver, listOf(
+            NavigationScreenText("현재 위치", 0, 0), NavigationScreenText("위메이드", 60, 0),
+            NavigationScreenText("출입구 변경", 60, 100), NavigationScreenText("경로 옵션", 80, 0, true))))
+        assertEquals("청마로34번길 6", teslaDestinationFromScreen(naver, listOf(
+            NavigationScreenText("현재 위치", 0, 0), NavigationScreenText("청마로 34번길 6", 60, 0),
+            NavigationScreenText("출입구 변경", 80, 0))))
+        assertNull(TeslaNavigationDestination.normalize("출입구 변경"))
+        assertNull(teslaDestinationFromScreen(naver, listOf(NavigationScreenText("출입구 변경", 0, 0))))
+    }
+
+    /** 명시한 도착 행과 모호한 다중 필드를 구분해 임의의 마지막 글자를 고르지 않는다. */
+    @Test fun `네이버 도착 라벨과 모호한 영역을 구분한다`() {
+        assertEquals("위메이드", teslaDestinationFromScreen(naver, listOf(
+            NavigationScreenText("출발", 0, 0), NavigationScreenText("다른 출발지", 0, 100),
+            NavigationScreenText("도착", 60, 0), NavigationScreenText("위메이드", 60, 100),
+            NavigationScreenText("경로 옵션", 100, 0))))
+        assertNull(teslaDestinationFromScreen(naver, listOf(
+            NavigationScreenText("출발지", 0, 0), NavigationScreenText("도착지", 60, 0), NavigationScreenText("다른 글자", 100, 0))))
+    }
+
+    /** 공유와 보조창이 동일하게 실제 길안내 알림만 인정한다. */
+    @Test fun `보조창은 검색과 안심주행 알림에는 표시하지 않는다`() {
+        assertTrue(isTeslaNavigationGuidance(naver, "네이버 지도", "내비게이션 - 안내 중"))
+        assertFalse(isTeslaNavigationGuidance(naver, "네이버 지도", "검색 결과"))
+        assertTrue(isTeslaNavigationGuidance(tmap, "경로주행", "현재 위치 > 서울역"))
+        assertFalse(isTeslaNavigationGuidance(tmap, "경로주행", "안심주행"))
+        assertFalse(isTeslaNavigationGuidance("untrusted", "경로주행", "서울역"))
+    }
+
+    /** 예외적인 입력과 알 수 없는 실행 방식은 제한된 기본값으로 처리한다. */
     @Test fun `입력 검증과 실행 방식 복원은 안전한 기본값을 쓴다`() {
         assertNull(TeslaNavigationDestination.normalize(""))
         assertNull(TeslaNavigationDestination.normalize("a".repeat(201)))

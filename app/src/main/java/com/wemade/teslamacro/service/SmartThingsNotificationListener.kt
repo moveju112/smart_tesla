@@ -26,6 +26,7 @@ class SmartThingsNotificationListener : NotificationListenerService() {
                 val app = application as TeslaMacroApplication
                 app.ready.first { it }
                 val extras = sbn.notification.extras
+                app.container.navigationTestOverlay.notification(sbn)
                 app.container.teslaNavigationShare.notification(sbn.packageName, sbn.key,
                     extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
                     extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty())
@@ -74,13 +75,32 @@ class SmartThingsNotificationListener : NotificationListenerService() {
             val app = application as TeslaMacroApplication
             app.ready.first { it }
             app.container.teslaNavigationShare.removed(sbn.packageName, sbn.key, reason)
+            app.container.navigationTestOverlay.removed(sbn.key)
         }
     }
 
     /** 시스템이 리스너 연결을 끊으면 대기 중인 설정 조회도 함께 정리한다. */
     override fun onDestroy() {
+        val app = application as TeslaMacroApplication
+        if (app.ready.value) app.container.navigationTestOverlay.clear()
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    /** 재연결 때 활성 알림을 다시 읽어 이미 시작된 안내도 같은 테스트창에 표시한다. */
+    override fun onListenerConnected() {
+        serviceScope.launch {
+            val app = application as TeslaMacroApplication
+            app.ready.first { it }
+            activeNotifications.orEmpty().filter { com.wemade.teslamacro.data.nav.TeslaNavigationDestination.supports(it.packageName) }
+                .forEach { app.container.navigationTestOverlay.notification(it) }
+        }
+    }
+
+    /** 알림 접근이 끊기면 갱신할 수 없는 마지막 안내창을 즉시 닫는다. */
+    override fun onListenerDisconnected() {
+        val app = application as TeslaMacroApplication
+        if (app.ready.value) app.container.navigationTestOverlay.clear()
     }
 
     /** 알림 양식이 바뀌어도 제목·본문·확장 본문 중 한 칸의 정확한 일치를 찾는다. */

@@ -33,7 +33,8 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             val app = application as TeslaMacroApplication
             app.ready.first { it }
-            if (!app.container.settingsStore.settings.first().teslaNavigationShareEnabled) return@launch
+            val settings = app.container.settingsStore.settings.first()
+            if (!settings.teslaNavigationShareEnabled && !settings.teslaNavigationTestMode) return@launch
             val root = rootInActiveWindow ?: return@launch
             try {
                 if (root.packageName?.toString() != packageName) return@launch
@@ -58,7 +59,8 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
         if (depth > 16 || visited[0]++ >= 200) return
         val bounds = Rect().also(node::getBoundsInScreen)
         listOfNotNull(node.text, node.contentDescription).map { it.toString() }.distinct().forEach {
-            entries.add(NavigationScreenText(it, bounds.top, bounds.left))
+            entries.add(NavigationScreenText(it, bounds.top, bounds.left,
+                node.className?.toString()?.endsWith("Button") == true))
         }
         for (index in 0 until node.childCount.coerceAtMost(100)) {
             val child = node.getChild(index) ?: continue

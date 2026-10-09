@@ -161,6 +161,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** 모드를 바꿀 때 이전 안내 예약을 지워 테스트 후보가 실제 공유로 이어지지 않게 한다. */
+    fun setTeslaNavigationTestMode(enabled: Boolean) {
+        viewModelScope.launch {
+            container.teslaNavigationShare.setTestMode(enabled)
+        }
+    }
+
     /** 공식 앱 공유에 사용할 로컬 실행 경로만 바꾸며 Fleet 설정은 건드리지 않는다. */
     fun setTeslaNavigationLaunchMode(value: String) {
         viewModelScope.launch { container.settingsStore.setTeslaNavigationLaunchMode(com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.of(value)) }

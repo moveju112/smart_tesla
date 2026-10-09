@@ -57,6 +57,13 @@ internal class TeslaNavigationShare(
     /** OFF는 화면 캐시·위치 조회·선택 대기까지 함께 제거한다. */
     suspend fun clear() = lock.withLock { tracker.clear(); invalidate("연동 설정 OFF") }
 
+    /** 모드 저장과 예약 취소를 같은 잠금에서 처리해 테스트 후보가 실제 공유로 바뀌지 않게 한다. */
+    suspend fun setTestMode(enabled: Boolean) = lock.withLock {
+        tracker.clear()
+        invalidate("테스트 모드 변경")
+        settingsStore.setTeslaNavigationTestMode(enabled)
+    }
+
     /** 늦은 조회 응답과 이전 선택 버튼을 현재 요청에 적용하지 않는다. */
     private fun invalidate(reason: String) {
         if (mutableSelection.value != null || resolution?.isActive == true) {
@@ -71,48 +78,53 @@ internal class TeslaNavigationShare(
 
     /** OFF 이후 이벤트는 조회와 전송 권한을 얻지 못한다. */
     private suspend fun enabled(): Boolean {
-        if (settingsStore.settings.first().teslaNavigationShareEnabled) return true
+        val settings = settingsStore.settings.first()
+        if (settings.teslaNavigationShareEnabled || settings.teslaNavigationTestMode) return true
         tracker.clear()
         invalidate("연동 설정 OFF")
         return false
     }
 
     /** 조회는 알림 잠금 밖에서 실행하고 새 안내·OFF가 이전 결과를 폐기할 수 있게 한다. */
-    private fun resolve(query: String, packageName: String, key: String) {
+    private suspend fun resolve(query: String, packageName: String, key: String) {
         invalidate("새 길안내 수신")
         source = packageName to key
         startedAt = SystemClock.elapsedRealtime()
         val id = revision
-        resolution = scope.launch { findCandidates(id, query) }
+        val testRequest = settingsStore.settings.first().teslaNavigationTestMode
+        resolution = scope.launch { findCandidates(id, query, testRequest) }
     }
 
     /** 원본 좌표·단일 후보는 공유하고 복수 후보와 조회 실패는 오버레이 선택으로 넘긴다. */
-    private suspend fun findCandidates(id: Long, query: String) {
+    private suspend fun findCandidates(id: Long, query: String, testRequest: Boolean) {
         try {
             val sourcePoint = teslaDestinationPoint(query)
             val near = if (sourcePoint == null) currentPoint() else null
             val candidates = if (sourcePoint != null) listOf(TeslaDestinationCandidate(query, sourcePoint))
-                else rankedTeslaCandidates(lookup(query, near), near).ifEmpty {
+                else rankedTeslaCandidates(matchingTeslaAddressCandidates(query, lookup(query, near)), near).ifEmpty {
                     if (qualifiedTeslaRoadAddress(query)) listOf(TeslaDestinationCandidate(query)) else emptyList()
                 }
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
                 val exact = automaticTeslaCandidate(candidates)
-                if (exact != null) {
+                val testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode
+                if (exact != null && !testMode) {
                     mutableSelection.value = null
                     share(exact.shareText, id)
                 }
                 else {
                     DiagLog.add("테슬라 내비 연동 — 목적지 주소 확인 필요 · 후보=${candidates.size}")
                     mutableSelection.value = TeslaDestinationSelection(id, query, candidates,
-                        error = if (candidates.isEmpty()) "시·군·구를 포함한 주소로 다시 검색해 주세요" else null)
+                        error = if (candidates.isEmpty()) "시·군·구를 포함한 주소로 다시 검색해 주세요" else null,
+                        testMode = testMode)
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             lock.withLock {
                 if (id == revision && enabled() && fresh()) {
-                    mutableSelection.value = TeslaDestinationSelection(id, query, error = "주소를 조회하지 못했어요 · 전체 주소로 다시 검색해 주세요")
+                    mutableSelection.value = TeslaDestinationSelection(id, query, error = "주소를 조회하지 못했어요 · 전체 주소로 다시 검색해 주세요",
+                        testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode)
                     DiagLog.add("테슬라 내비 연동 — 주소 조회 실패 · 목적지 확인 대기")
                 }
             }
@@ -133,8 +145,9 @@ internal class TeslaNavigationShare(
         }
         resolution?.cancel()
         val nextId = ++revision
-        mutableSelection.value = TeslaDestinationSelection(nextId, normalized, searching = true)
-        resolution = scope.launch { findCandidates(nextId, normalized) }
+        val testRequest = mutableSelection.value?.testMode == true || settingsStore.settings.first().teslaNavigationTestMode
+        mutableSelection.value = TeslaDestinationSelection(nextId, normalized, searching = true, testMode = testRequest)
+        resolution = scope.launch { findCandidates(nextId, normalized, testRequest) }
     }
 
     /** 선택창이 닫혀도 공유가 취소되지 않도록 앱 수명의 작업으로 넘긴다. */
@@ -148,7 +161,7 @@ internal class TeslaNavigationShare(
         if (current.id != id || current.searching || candidate !in current.candidates || !enabled()) return@withLock
         if (!fresh()) { invalidate("확인 시간 만료"); feedback("길안내를 다시 시작해 주세요"); return@withLock }
         mutableSelection.value = null
-        share(candidate.shareText, id)
+        share(candidate.shareText, id, current.testMode)
     }
 
     /** 선택 취소는 자동 재전송 없이 해당 안내의 대기를 끝낸다. */
@@ -160,12 +173,18 @@ internal class TeslaNavigationShare(
     }
 
     /** 전달 직전에 설정·잠금을 재검사하고 접수와 차량 수신을 구분한다. */
-    private suspend fun share(destination: String, id: Long) {
+    private suspend fun share(destination: String, id: Long, testRequest: Boolean = false) {
         try {
             val settings = settingsStore.settings.first()
+            if (testRequest || settings.teslaNavigationTestMode) {
+                DiagLog.add("테슬라 내비 테스트 — 목적지 확인 완료 · 실제 공유 차단")
+                feedback("테스트 목적지 확인 완료 · 차량에 보내지 않았어요")
+                return
+            }
             navigator.shareTeslaDestination(destination, settings.teslaNavigationLaunchMode == TeslaNavigationLaunchMode.ADB_FIRST) {
                 check(id == revision && fresh()) { "길안내를 다시 시작해 주세요" }
                 check(settingsStore.settings.first().teslaNavigationShareEnabled) { "테슬라 내비 연동이 꺼져 있어요" }
+                check(!settingsStore.settings.first().teslaNavigationTestMode) { "테스트 모드에서는 차량에 보내지 않아요" }
                 val keyguard = context.getSystemService(KeyguardManager::class.java)
                 check(!keyguard.isKeyguardLocked && !keyguard.isDeviceLocked) { "휴대폰 잠금을 해제하고 길안내를 다시 시작해 주세요" }
             }.getOrThrow()

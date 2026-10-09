@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 app.ready.first { it }
                 if (!activityVisible) return@launch
                 app.container.teslaDestinationOverlay.refresh()
+                app.container.navigationTestOverlay.refresh()
                 app.container.poller.setAppVisible(true)
 
             }
@@ -436,6 +437,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                     val wirelessNavigationState by settingsViewModel.wirelessNavigation.state.collectAsState()
                     val navigationControls = com.wemade.teslamacro.feature.settings.NavigationControls(
                         onTeslaNavigationShareEnabled = settingsViewModel::setTeslaNavigationShareEnabled,
+                        onTeslaNavigationTestMode = settingsViewModel::setTeslaNavigationTestMode,
                         onTeslaNavigationLaunchMode = settingsViewModel::setTeslaNavigationLaunchMode,
                         notificationAccessGranted = notificationAccessGranted,
                         onRequestNotificationAccess = { openNotificationListenerSettings(context) },

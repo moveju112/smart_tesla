@@ -5,6 +5,18 @@ public final class Fixture extends android.app.Activity {
         super.onCreate(state);
         if (getIntent().getBooleanExtra("finish", false)) { finishAndRemoveTask(); return; }
         android.util.Log.i("NavFixture", "DISPLAY=" + getDisplay().getDisplayId());
+        String destination = getIntent().getStringExtra("destination");
+        if (destination != null) {
+            android.widget.LinearLayout fields = new android.widget.LinearLayout(this);
+            fields.setOrientation(android.widget.LinearLayout.VERTICAL);
+            fields.setId(getResources().getIdentifier("route_search_bar", "id", getPackageName()));
+            android.widget.TextView origin = new android.widget.TextView(this);
+            origin.setText("현재 위치"); fields.addView(origin);
+            android.widget.TextView target = new android.widget.TextView(this);
+            target.setText(destination); fields.addView(target);
+            setContentView(fields);
+            return;
+        }
         android.widget.TextView text = new android.widget.TextView(this);
         text.setText("Navigation session fixture");
         setContentView(text);
@@ -18,8 +30,11 @@ public final class Fixture extends android.app.Activity {
                 String channel = "navigation_fixture";
                 getSystemService(android.app.NotificationManager.class).createNotificationChannel(
                     new android.app.NotificationChannel(channel, "Navigation fixture", android.app.NotificationManager.IMPORTANCE_LOW));
+                boolean guidance = intent.getBooleanExtra("guidance", false);
                 startForeground(1, new android.app.Notification.Builder(this, channel)
-                    .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("Navigation fixture").build());
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle(guidance ? "네이버 지도" : "Navigation fixture")
+                    .setContentText(guidance ? "내비게이션 - 안내 중" : "").build());
             }
             return START_NOT_STICKY;
         }

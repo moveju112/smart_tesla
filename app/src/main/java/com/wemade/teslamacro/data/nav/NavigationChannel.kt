@@ -48,6 +48,12 @@ internal class NavigationChannel : Closeable {
     fun launchDestination(packageName: String, uri: String): String =
         transact(4, { it.writeString(packageName); it.writeString(uri) }) { it.readString().orEmpty() }
 
+    /** 공유 지원·잠금·앱 설치 상태를 읽기만 하며 구형 서버는 일반 실행으로 돌린다. */
+    fun canShareTeslaDestination(text: String): Boolean = transact(7, { it.writeString(text) }) { it.readInt() == 1 }
+
+    /** 공식 앱 공유를 한 번만 전달하고 응답 유실을 다른 통로의 재실행으로 바꾸지 않는다. */
+    fun shareTeslaDestination(text: String): String = transact(8, { it.writeString(text) }) { it.readString().orEmpty() }
+
     /** 같은 프로토콜의 고정 명령만 전달하고 오류는 호출자에게 반환한다. */
     private fun <T> transact(code: Int, write: (Parcel) -> Unit = {}, read: (Parcel) -> T): T {
         val data = Parcel.obtain()

@@ -168,6 +168,7 @@ fun SettingsScreen(
                                 NavigatorPanel(settings, navigation)
                             }
                             if (navigation != null && focusedFeature == null) {
+                                TeslaNavigationPanel(settings, navigation)
                                 WirelessNavigationPanel(settings, navigation)
                             }
                         }
@@ -819,6 +820,10 @@ internal fun SmartThingsCommandSheet(
 
 /** 길안내를 넘길 내비 앱, HUD 속도 표시, 과속·단속 안내와 그 소리 */
 data class NavigationControls(
+    val onTeslaNavigationShareEnabled: (Boolean) -> Unit = {},
+    val onTeslaNavigationLaunchMode: (String) -> Unit = {},
+    val notificationAccessGranted: Boolean = false,
+    val onRequestNotificationAccess: () -> Unit = {},
     val wirelessState: com.wemade.teslamacro.data.nav.WirelessNavigationState = com.wemade.teslamacro.data.nav.WirelessNavigationState(),
     val onWirelessEnabled: (Boolean) -> Unit = {},
     val onWirelessPort: (String) -> Unit = {},

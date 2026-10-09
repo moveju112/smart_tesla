@@ -294,6 +294,26 @@ class WirelessNavigation(private val context: Context) {
             .onFailure { DiagLog.add("안심주행 · 무선 디버깅 종료 실패 ${it.javaClass.simpleName}") }
     }
 
+    /** 실제 ADB 준비와 공식 앱 지원을 확인한 뒤 공유하며 전송 이후의 실패는 대체 실행하지 않는다. */
+    internal suspend fun tryShareTeslaDestination(text: String, beforeLaunch: suspend () -> Unit): Boolean = withContext(Dispatchers.IO) {
+        require(TeslaShareIntent.accepts(text))
+        val channel = runCatching { NavigationChannel().connect() }.getOrNull() ?: return@withContext false
+        channel.use {
+            if (!runCatching { channel.canShareTeslaDestination(text) }.getOrDefault(false)) return@withContext false
+            beforeLaunch()
+            currentCoroutineContext().ensureActive()
+            try {
+                val result = runInterruptible { channel.shareTeslaDestination(text) }
+                if (result == "NOT_STARTED") throw DestinationLaunchException("실행 조건이 바뀌었어요 · 길안내를 다시 시작해 주세요")
+                if (result != "DELIVERED") throw DestinationLaunchException("공유 결과를 확인하지 못했어요 · 테슬라 앱에서 목적지를 확인해 주세요", uncertain = true)
+            } catch (error: Exception) {
+                if (error is CancellationException || error is DestinationLaunchException) throw error
+                throw DestinationLaunchException("공유 결과를 확인하지 못했어요 · 테슬라 앱에서 목적지를 확인해 주세요", error, uncertain = true)
+            }
+            true
+        }
+    }
+
     /** 준비된 권한 서버가 없으면 즉시 기존 방식으로 돌리고 전송 이후에는 중복 실행하지 않는다. */
     internal suspend fun tryLaunchDestination(intent: Intent, beforeLaunch: suspend () -> Unit): Boolean = withContext(Dispatchers.IO) {
         val packageName = intent.`package` ?: return@withContext false

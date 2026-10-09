@@ -50,6 +50,19 @@ public final class NaverControlServer {
                     } else if (code == 6) {
                         // 앱 업데이트 뒤에도 남은 셸은 자신이 로드한 APK 버전을 반환한다.
                         reply.writeNoException(); reply.writeInt(com.wemade.teslamacro.BuildConfig.VERSION_CODE);
+                    } else if (code == 7 || code == 8) {
+                        String text = data.readString();
+                        Intent intent = TeslaShareIntent.accepts(text) ? new Intent(Intent.ACTION_SEND)
+                            .setComponent(new android.content.ComponentName(TeslaShareIntent.PACKAGE, TeslaShareIntent.ACTIVITY))
+                            .setType("text/plain").putExtra(Intent.EXTRA_TEXT, text) : null;
+                        boolean available = intent != null && destinationUnlocked(context) &&
+                            context.getPackageManager().resolveActivity(intent, 0) != null;
+                        if (code == 7) {
+                            reply.writeNoException(); reply.writeInt(available ? 1 : 0);
+                        } else {
+                            String result = available ? shareTeslaDestination(context, uid / 100000, text) : "NOT_STARTED";
+                            reply.writeNoException(); reply.writeString(result);
+                        }
                     } else if (code == 3 || code == 4) {
                         String packageName = data.readString();
                         String address = data.readString();
@@ -83,6 +96,16 @@ public final class NaverControlServer {
             }
         });
         android.os.Looper.loop();
+    }
+
+    /** 목적지는 별도 명령 인자로 전달하며 잠금 해제와 고정된 공식 앱 대상만 허용한다. */
+    private static String shareTeslaDestination(Context context, int user, String text) throws Exception {
+        if (!destinationUnlocked(context) || !TeslaShareIntent.accepts(text)) return "NOT_STARTED";
+        String result = NaverDisplaySession.command("am", "start", "--user", Integer.toString(user),
+            "-n", TeslaShareIntent.PACKAGE + "/" + TeslaShareIntent.ACTIVITY,
+            "-a", Intent.ACTION_SEND, "-t", "text/plain", "--es", Intent.EXTRA_TEXT, text);
+        return result.contains("Starting: Intent") && !result.contains("Error:") && !result.contains("Exception") &&
+            !result.contains("Background activity start") && !result.contains("Abort") ? "DELIVERED" : "UNKNOWN";
     }
 
     /** 수신 문자열은 셸 문법으로 해석하지 않고 허용된 지도 인텐트만 구성한다. */

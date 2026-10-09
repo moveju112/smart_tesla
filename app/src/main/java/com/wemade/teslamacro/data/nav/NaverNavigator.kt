@@ -333,6 +333,19 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
         }
     }
 
+    /** ADB 준비 부재만 기존 오버레이 실행으로 전환하며 두 통로 모두 같은 공식 앱 인텐트를 사용한다. */
+    internal suspend fun shareTeslaDestination(destination: String, preferAdb: Boolean, beforeLaunch: suspend () -> Unit): Result<Unit> = runCatching {
+        val intent = TeslaShareIntent.create(destination)
+        check(context.packageManager.resolveActivity(intent, 0) != null) { "테슬라 앱을 설치하고 로그인해 주세요" }
+        val text = checkNotNull(intent.getStringExtra(Intent.EXTRA_TEXT))
+        if (preferAdb && wirelessNavigation?.tryShareTeslaDestination(text, beforeLaunch) == true) {
+            com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — ADB로 공식 앱 공유 요청 전달")
+        } else {
+            com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 일반 방식으로 공식 앱 공유 요청")
+            launchFromBackground(intent, "테슬라 목적지 공유", BackgroundLaunchMethod.DIRECT_ACTIVITY, beforeLaunch)
+        }
+    }
+
     /** 준비된 인텐트 후보를 순서대로 같은 실행 통로에 전달한다. */
     private suspend fun launchFirst(
         appLabel: String,

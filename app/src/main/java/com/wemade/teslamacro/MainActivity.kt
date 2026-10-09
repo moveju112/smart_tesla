@@ -429,6 +429,10 @@ private fun AppRoot(factory: ViewModelFactory) {
                     )
                     val wirelessNavigationState by settingsViewModel.wirelessNavigation.state.collectAsState()
                     val navigationControls = com.wemade.teslamacro.feature.settings.NavigationControls(
+                        onTeslaNavigationShareEnabled = settingsViewModel::setTeslaNavigationShareEnabled,
+                        onTeslaNavigationLaunchMode = settingsViewModel::setTeslaNavigationLaunchMode,
+                        notificationAccessGranted = notificationAccessGranted,
+                        onRequestNotificationAccess = { openNotificationListenerSettings(context) },
                         wirelessState = wirelessNavigationState,
                         onWirelessEnabled = settingsViewModel.wirelessNavigation::setEnabled,
                         onWirelessPort = settingsViewModel.wirelessNavigation::setPort,

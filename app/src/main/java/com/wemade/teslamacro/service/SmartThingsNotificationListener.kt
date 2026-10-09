@@ -21,6 +21,17 @@ class SmartThingsNotificationListener : NotificationListenerService() {
 
     /** 스마트싱스 알림의 출처·문구·중복을 확인한 뒤 연결된 빠른 차량 동작으로 넘긴다. */
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        if (com.wemade.teslamacro.data.nav.TeslaNavigationDestination.supports(sbn.packageName)) {
+            serviceScope.launch {
+                val app = application as TeslaMacroApplication
+                app.ready.first { it }
+                val extras = sbn.notification.extras
+                app.container.teslaNavigationShare.notification(sbn.packageName, sbn.key,
+                    extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+                    extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty())
+            }
+            return
+        }
         if (sbn.packageName != SMARTTHINGS_PACKAGE_NAME) return
 
         val receivedAt = android.os.SystemClock.elapsedRealtime()
@@ -53,6 +64,16 @@ class SmartThingsNotificationListener : NotificationListenerService() {
                 .onFailure { error ->
                     DiagLog.add("스마트싱스 $label 명령 전달 실패 — ${error.message}")
                 }
+        }
+    }
+
+    /** 안내 알림 종료를 전송 예약기에 알려 다음 안내에 과거 목적지가 남지 않게 한다. */
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (!com.wemade.teslamacro.data.nav.TeslaNavigationDestination.supports(sbn.packageName)) return
+        serviceScope.launch {
+            val app = application as TeslaMacroApplication
+            app.ready.first { it }
+            app.container.teslaNavigationShare.removed(sbn.packageName, sbn.key)
         }
     }
 

@@ -153,6 +153,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** OFF 저장을 먼저 끝내 늦은 이벤트가 실행을 시작하지 못하게 한다. */
+    fun setTeslaNavigationShareEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsStore.setTeslaNavigationShareEnabled(enabled)
+            if (!enabled) container.teslaNavigationShare.clear()
+        }
+    }
+
+    /** 공식 앱 공유에 사용할 로컬 실행 경로만 바꾸며 Fleet 설정은 건드리지 않는다. */
+    fun setTeslaNavigationLaunchMode(value: String) {
+        viewModelScope.launch { container.settingsStore.setTeslaNavigationLaunchMode(com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.of(value)) }
+    }
+
     fun setSmartThingsEnabled(enabled: Boolean) {
         viewModelScope.launch { container.settingsStore.setSmartThingsEnabled(enabled) }
     }

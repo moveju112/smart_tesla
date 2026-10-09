@@ -30,12 +30,12 @@ fun openOverlayPermissionSettings(context: Context) {
     }
 }
 
-/** 스마트싱스 알림을 받을 이 앱의 리스너 권한 화면을 열고, 구형 기기는 목록으로 보낸다. */
+/** 기본 Android 설정은 서비스 이름을 문자열로만 읽어 객체를 보내면 상세 화면이 즉시 닫히므로 문자열로 보낸다. */
 fun openNotificationListenerSettings(context: Context) {
     val component = ComponentName(context, SmartThingsNotificationListener::class.java)
     val direct = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
-            .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component)
+            .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component.flattenToString())
     } else {
         Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
     }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

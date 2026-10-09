@@ -30,8 +30,8 @@ internal class DiagnosticUploader(
     private val mutex = Mutex()
     private var loop: Job? = null
 
-    // 주기 전송 시작 (앱 준비 -> 즉시 1회 -> 5분마다)
-    /** 앱 프로세스가 사는 동안 5분마다 새 줄만 보낸다. */
+    // 주기 전송 시작 (앱 준비 -> 즉시 1회 -> 30초마다, 새 줄 있을 때만)
+    /** 앱 프로세스가 사는 동안 30초마다 확인하고 새 줄이 없으면 요청하지 않는다. */
     fun start() {
         if (loop?.isActive == true) return
         loop = scope.launch {
@@ -62,7 +62,7 @@ internal class DiagnosticUploader(
     }
 
     private companion object {
-        const val INTERVAL_MILLIS = 5 * 60_000L
+        const val INTERVAL_MILLIS = 30_000L
         const val KEY_CURSOR = "last_line"
     }
 }

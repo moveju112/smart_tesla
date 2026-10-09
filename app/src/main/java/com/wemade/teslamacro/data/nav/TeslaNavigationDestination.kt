@@ -42,6 +42,12 @@ internal class TeslaNavigationDestination {
         return (direct ?: cached)?.let { reserve(active, it) }
     }
 
+    /** 같은 안내 알림이 유지된 채 목적지만 바뀌면 직전 전송값과 다를 때만 다시 예약한다. */
+    fun reroute(packageName: String, text: String): String? {
+        val active = guidance[packageName] ?: return null
+        return reserve(active, normalize(text) ?: return null)
+    }
+
     /** 해당 안내 알림이 사라지면 새 안내에서 과거 목적지를 재사용하지 않는다. */
     fun removed(packageName: String, key: String) {
         if (guidance[packageName]?.key == key) {
@@ -92,6 +98,16 @@ internal fun isTeslaNavigationGuidance(packageName: String, title: String, text:
     "com.locnall.KimGiSa" -> title in listOf("길안내 주행 중", "보험을 켜고 길안내 주행 중")
     "com.nhn.android.nmap" -> text == "내비게이션 - 안내 중"
     else -> false
+}
+
+/** 네이버 안내 중 경로 미리보기(안내시작 버튼)의 상단 출발·도착 칸만 골라 새 도착지를 읽는다. */
+internal fun naverGuidanceRouteDestination(entries: List<NavigationScreenText>): String? {
+    if (entries.none { it.text.trim() == "안내시작" }) return null
+    // 상단 닫기·더보기 버튼 간격으로 출발·도착 칸 영역을 정해 지도 글자와 하단 경로 카드를 뺀다.
+    val close = entries.filter { it.text.trim() == "닫기" }.minByOrNull { it.top } ?: return null
+    val more = entries.filter { it.text.trim() == "더보기" && it.top > close.top }.minByOrNull { it.top } ?: return null
+    val bottom = more.top + (more.top - close.top)
+    return teslaDestinationFromScreen("com.nhn.android.nmap", entries.filter { it.top in close.top..bottom })
 }
 
 /** 내비별 고정 화면 영역에서 도착지를 읽으며 출발지와 입력 자리표시자는 제외한다. */

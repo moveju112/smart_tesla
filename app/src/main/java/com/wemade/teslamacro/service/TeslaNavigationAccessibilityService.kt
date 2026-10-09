@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.NavigationScreenText
+import com.wemade.teslamacro.data.nav.naverGuidanceRouteDestination
 import com.wemade.teslamacro.data.nav.teslaDestinationFromScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +26,7 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
     private var lastSummary: String? = null
     private var lastSummaryAt = 0L
     private var lastGuidingLog: String? = null
+    private var pendingRoute: String? = null
 
     /** 화면 후보를 보관하되 실제 안내 알림과 결합하기 전에는 차량에 보내지 않는다. */
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -35,6 +37,8 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
         // 안내 중 목적지 변경 화면 구조를 모르므로 누른 글자를 기록해 다음 판독 근거로 쓴다.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             val clicked = event.text.joinToString(" ").ifBlank { event.contentDescription?.toString().orEmpty() }.take(30)
+            // 미리보기·확인창을 닫거나 나중에 출발하면 기존 안내가 이어지므로 바꾼 목적지를 버린다.
+            if (clicked.trim() in setOf("닫기", "나중에 출발")) pendingRoute = null
             // 목적지 변경 버튼은 화면이 바뀌기 전에 장소 카드를 칸 ID와 함께 남겨 새 목적지 위치를 찾는다.
             val card = if (clicked.trim() in setOf("도착지로", "안내시작", "출발지로", "경유지로")) dumpScreen() else emptyList()
             if (clicked.isNotBlank()) serviceScope.launch {
@@ -74,11 +78,19 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                     com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $summary")
                 }
                 destination?.let { app.container.teslaNavigationShare.screen(packageName, it) }
-                if (nodes.isEmpty() && windowChanged) {
-                    val screen = mutableListOf<NavigationScreenText>()
-                    collectTexts(root, screen, intArrayOf(0), 0)
-                    logWhileGuiding(packageName, "안내 중 화면 · " + screen.map { it.text.trim().take(20) }
+                if (nodes.isEmpty() && packageName == "com.nhn.android.nmap" && app.container.teslaNavigationShare.guiding(packageName)) {
+                    val screen = screenTexts(root)
+                    if (windowChanged) logWhileGuiding(packageName, "안내 중 화면 · " + screen.map { it.text.trim().take(20) }
                         .filter { it.isNotEmpty() }.distinct().take(14).joinToString(" | "))
+                    // 안내 중 목적지 변경 (경로 미리보기 판독 -> 미리보기·확인창이 사라지고 안내 재개 -> 공유)
+                    val preview = naverGuidanceRouteDestination(screen)
+                    if (preview != null) {
+                        if (preview != pendingRoute) com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 중 경로 미리보기 · $preview")
+                        pendingRoute = preview
+                    } else if (screen.none { it.text.trim() == "안내시작" }) {
+                        pendingRoute?.let { app.container.teslaNavigationShare.reroute(packageName, it) }
+                        pendingRoute = null
+                    }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) {
@@ -101,25 +113,43 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
     /** 진단 전용으로 글자가 있는 칸만 최대 40개 읽고 서버 한 줄 상한 아래로 나눈다. */
     private fun dumpScreen(): List<String> {
         val root = rootInActiveWindow ?: return emptyList()
-        val items = mutableListOf<String>()
-        val nodes = java.util.ArrayDeque<Pair<AccessibilityNodeInfo, Int>>().apply { add(root to 0) }
-        var visited = 0
-        while (nodes.isNotEmpty() && visited++ < 300 && items.size < 40) {
-            val (node, depth) = nodes.removeFirst()
-            val text = listOfNotNull(node.text, node.contentDescription).joinToString("/").trim()
-            if (text.isNotEmpty()) {
-                val bounds = Rect().also(node::getBoundsInScreen)
-                items += "${node.viewIdResourceName?.substringAfter(":id/") ?: "-"}@${bounds.top}:${text.take(25)}"
-            }
-            if (depth < 20) for (index in 0 until node.childCount.coerceAtMost(60)) node.getChild(index)?.let { nodes.add(it to depth + 1) }
-            if (node !== root) node.recycle()
-        }
-        nodes.forEach { if (it.first !== root) it.first.recycle() }
-        root.recycle()
+        val items = try { screenTexts(root, withIds = true).take(40).map { "${it.viewId ?: "-"}@${it.top}:${it.text.take(25)}" } }
+            finally { root.recycle() }
         return items.fold(mutableListOf<String>()) { parts, item ->
             if (parts.isEmpty() || parts.last().length + item.length > 800) parts += item else parts[parts.lastIndex] = parts.last() + " | " + item
             parts
         }
+    }
+
+    private class ScreenText(text: String, top: Int, left: Int, isButton: Boolean, val viewId: String?) {
+        val entry = NavigationScreenText(text, top, left, isButton)
+        val text get() = entry.text
+        val top get() = entry.top
+    }
+
+    // 전체 창 글자 수집 (넓이 우선 -> 최대 400칸 -> 자식 즉시 반환)
+    /** 안내 중 경로 미리보기 상단 칸이 트리 뒤쪽에 있어 진단 덤프와 같은 넓이 우선 순회로 읽는다. */
+    private fun screenTexts(root: AccessibilityNodeInfo): List<NavigationScreenText> = screenTexts(root, false).map { it.entry }
+
+    /** 칸 ID는 진단 덤프에서만 읽어 판독 경로의 비용을 늘리지 않는다. */
+    private fun screenTexts(root: AccessibilityNodeInfo, withIds: Boolean): List<ScreenText> {
+        val items = mutableListOf<ScreenText>()
+        val nodes = java.util.ArrayDeque<Pair<AccessibilityNodeInfo, Int>>().apply { add(root to 0) }
+        var visited = 0
+        while (nodes.isNotEmpty() && visited++ < 400) {
+            val (node, depth) = nodes.removeFirst()
+            val texts = listOfNotNull(node.text, node.contentDescription).map { it.toString().trim() }.filter { it.isNotEmpty() }.distinct()
+            if (texts.isNotEmpty()) {
+                val bounds = Rect().also(node::getBoundsInScreen)
+                val button = node.className?.toString()?.endsWith("Button") == true
+                val id = if (withIds) node.viewIdResourceName?.substringAfter(":id/") else null
+                texts.forEach { items += ScreenText(it, bounds.top, bounds.left, button, id) }
+            }
+            if (depth < 24) for (index in 0 until node.childCount.coerceAtMost(60)) node.getChild(index)?.let { nodes.add(it to depth + 1) }
+            if (node !== root) node.recycle()
+        }
+        nodes.forEach { if (it.first !== root) it.first.recycle() }
+        return items
     }
 
     /** 화면 트리가 커도 제한된 영역·깊이만 읽고 자식 객체는 즉시 반환한다. */

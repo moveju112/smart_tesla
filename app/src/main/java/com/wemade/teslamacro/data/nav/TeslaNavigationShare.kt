@@ -91,6 +91,16 @@ internal class TeslaNavigationShare(
         if (source == (packageName to key)) invalidate("안내 알림 종료 · 사유=${reason ?: -1}")
     }
 
+    /** 안내 중 경로 미리보기에서 바꾼 목적지로 안내가 이어지면 새 안내처럼 조회·공유한다. */
+    suspend fun reroute(packageName: String, destination: String) = lock.withLock {
+        if (!enabled()) return@withLock
+        val key = tracker.activeKey(packageName) ?: return@withLock
+        tracker.reroute(packageName, destination)?.let {
+            DiagLog.add("테슬라 내비 연동 — 안내 중 목적지 변경 감지 · $it")
+            resolve(it, packageName, key)
+        }
+    }
+
     /** 진단 기록을 안내 중으로 한정하기 위해 해당 내비의 안내 알림이 살아 있는지 알려준다. */
     suspend fun guiding(packageName: String): Boolean = lock.withLock { tracker.activeKey(packageName) != null }
 

@@ -237,6 +237,16 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             check(unread.query.isEmpty() && unread.error != null && unread.testMode && dispatches == 0 && count() == 0)
             sharing.removed("com.nhn.android.nmap", "unread")
             check(sharing.selection.value == null)
+            // 안내 중 목적지 변경: 같은 알림이 유지돼도 새 목적지만 다시 표시하고 같은 목적지는 반복하지 않는다.
+            sharing.notification("com.nhn.android.nmap", "reroute", "네이버 지도", "내비게이션 - 안내 중")
+            sharing.reroute("com.nhn.android.nmap", "37.6,126.7")
+            val rerouted = withTimeout(4_000) { sharing.selection.first { it?.preview?.shareText == "37.6,126.7" }!! }
+            sharing.dismiss(rerouted.id)
+            sharing.reroute("com.nhn.android.nmap", "37.6,126.7")
+            check(sharing.selection.value == null && dispatches == 0 && count() == 0)
+            sharing.removed("com.nhn.android.nmap", "reroute")
+            sharing.reroute("com.nhn.android.nmap", "37.7,126.8")
+            check(sharing.selection.value == null)
             sendStatus(0, Bundle().apply { putString("phase", "PASS test preview after choice, automatic coordinate preview, dispatch blocked") })
         } finally {
             app.container.teslaNavigationShare.clear()

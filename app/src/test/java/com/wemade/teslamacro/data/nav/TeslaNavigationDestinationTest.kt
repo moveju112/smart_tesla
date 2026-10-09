@@ -134,6 +134,24 @@ class TeslaNavigationDestinationTest {
             NavigationScreenText(" 응급실입구", 415, 96), NavigationScreenText("출입구 변경", 415, 778))))
     }
 
+    /** 실기기 안내 중 경로 미리보기 덤프에서 상단 도착 칸만 읽고 확인창·일반 안내 화면은 무시한다. */
+    @Test fun `네이버 안내 중 경로 미리보기의 새 도착지를 읽는다`() {
+        val preview = listOf(
+            NavigationScreenText("지도", 0, 0), NavigationScreenText("나중에 출발", 2189, 100),
+            NavigationScreenText("안내시작", 2188, 600), NavigationScreenText("10", 2200, 900),
+            NavigationScreenText("실시간 추천", 1812, 100), NavigationScreenText("4분", 1868, 100),
+            NavigationScreenText("757m", 1987, 100), NavigationScreenText("내 위치 보기", 1647, 900),
+            NavigationScreenText("테슬라", 1659, 300), NavigationScreenText("경유지 추가", 183, 738),
+            NavigationScreenText("닫기", 130, 882), NavigationScreenText("더보기", 235, 882),
+            NavigationScreenText("내위치", 168, 243), NavigationScreenText("마전초등학교", 285, 243))
+        assertEquals("마전초등학교", naverGuidanceRouteDestination(preview))
+        assertNull(naverGuidanceRouteDestination(listOf(
+            NavigationScreenText("영업 종료가 예상됩니다.", 1677, 0), NavigationScreenText("오전 12시 56분 도착 예상", 1929, 0),
+            NavigationScreenText("안내시작", 2100, 0), NavigationScreenText("닫기", 1493, 0))))
+        assertNull(naverGuidanceRouteDestination(listOf(
+            NavigationScreenText("262 m", 100, 0), NavigationScreenText("안동포사거리", 160, 0), NavigationScreenText("검색", 900, 0))))
+    }
+
     /** 공유와 보조창이 동일하게 실제 길안내 알림만 인정한다. */
     @Test fun `보조창은 검색과 안심주행 알림에는 표시하지 않는다`() {
         assertTrue(isTeslaNavigationGuidance(naver, "네이버 지도", "내비게이션 - 안내 중"))

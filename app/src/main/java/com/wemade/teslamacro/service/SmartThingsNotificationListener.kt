@@ -68,12 +68,12 @@ class SmartThingsNotificationListener : NotificationListenerService() {
     }
 
     /** 안내 알림 종료를 전송 예약기에 알려 다음 안내에 과거 목적지가 남지 않게 한다. */
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+    override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap, reason: Int) {
         if (!com.wemade.teslamacro.data.nav.TeslaNavigationDestination.supports(sbn.packageName)) return
         serviceScope.launch {
             val app = application as TeslaMacroApplication
             app.ready.first { it }
-            app.container.teslaNavigationShare.removed(sbn.packageName, sbn.key)
+            app.container.teslaNavigationShare.removed(sbn.packageName, sbn.key, reason)
         }
     }
 

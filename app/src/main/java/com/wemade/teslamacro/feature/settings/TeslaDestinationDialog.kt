@@ -11,6 +11,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.wemade.teslable.DiagLog
 import com.wemade.teslamacro.data.nav.TeslaDestinationCandidate
 import com.wemade.teslamacro.data.nav.TeslaNavigationShare
 import com.wemade.teslamacro.ui.component.DraftField
@@ -22,7 +25,14 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun TeslaDestinationDialog(sharing: TeslaNavigationShare) {
     val pending by sharing.selection.collectAsState()
+    val owner = LocalLifecycleOwner.current
+    val lifecycleState by owner.lifecycle.currentStateFlow.collectAsState()
+    // 다른 앱 위에 창을 만들지 않고 실제 앱 복귀 때 새 창을 구성한다.
+    if (lifecycleState != Lifecycle.State.RESUMED) return
     val request = pending ?: return
+    LaunchedEffect(request.id) {
+        DiagLog.add("테슬라 내비 연동 — 목적지 선택창 표시 요청 · 후보=${request.candidates.size}")
+    }
     val scope = rememberCoroutineScope()
     var query by remember(request.id) { mutableStateOf(request.query) }
     var selected by remember(request.id) { mutableStateOf<TeslaDestinationCandidate?>(null) }

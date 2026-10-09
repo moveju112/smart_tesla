@@ -49,16 +49,19 @@ internal class TeslaNavigationShare(
     }
 
     /** 안내 종료는 조회와 선택도 무효화해 과거 안내를 뒤늦게 전송하지 않는다. */
-    suspend fun removed(packageName: String, key: String) = lock.withLock {
+    suspend fun removed(packageName: String, key: String, reason: Int? = null) = lock.withLock {
         tracker.removed(packageName, key)
-        if (source == (packageName to key)) invalidate()
+        if (source == (packageName to key)) invalidate("안내 알림 종료 · 사유=${reason ?: -1}")
     }
 
     /** OFF는 화면 캐시·위치 조회·선택 대기까지 함께 제거한다. */
-    suspend fun clear() = lock.withLock { tracker.clear(); invalidate() }
+    suspend fun clear() = lock.withLock { tracker.clear(); invalidate("연동 설정 OFF") }
 
     /** 늦은 조회 응답과 이전 선택 버튼을 현재 요청에 적용하지 않는다. */
-    private fun invalidate() {
+    private fun invalidate(reason: String) {
+        if (mutableSelection.value != null || resolution?.isActive == true) {
+            DiagLog.add("테슬라 내비 연동 — 목적지 확인 대기 종료 · $reason")
+        }
         revision++
         resolution?.cancel()
         resolution = null
@@ -70,13 +73,13 @@ internal class TeslaNavigationShare(
     private suspend fun enabled(): Boolean {
         if (settingsStore.settings.first().teslaNavigationShareEnabled) return true
         tracker.clear()
-        invalidate()
+        invalidate("연동 설정 OFF")
         return false
     }
 
     /** 조회는 알림 잠금 밖에서 실행하고 새 안내·OFF가 이전 결과를 폐기할 수 있게 한다. */
     private fun resolve(query: String, packageName: String, key: String) {
-        invalidate()
+        invalidate("새 길안내 수신")
         source = packageName to key
         startedAt = SystemClock.elapsedRealtime()
         val id = revision
@@ -97,7 +100,7 @@ internal class TeslaNavigationShare(
                 val exact = if (automatic) sourcePoint?.let { candidates.single() } ?: automaticTeslaCandidate(query, candidates) else null
                 if (exact != null) share(exact.shareText, id)
                 else {
-                    DiagLog.add("테슬라 내비 연동 — 목적지 주소 확인 필요")
+                    DiagLog.add("테슬라 내비 연동 — 목적지 주소 확인 필요 · 후보=${candidates.size}")
                     mutableSelection.value = TeslaDestinationSelection(id, query, candidates,
                         error = if (candidates.isEmpty()) "시·군·구를 포함한 주소로 다시 검색해 주세요" else null)
                     if (automatic) feedback("Smart Tesla에서 목적지 주소를 확인해 주세요")
@@ -120,7 +123,7 @@ internal class TeslaNavigationShare(
     /** 선택창에서 보완한 주소만 다시 조회하고 자동 확정하지 않는다. */
     suspend fun search(id: Long, query: String) = lock.withLock {
         if (mutableSelection.value?.id != id || !enabled()) return@withLock
-        if (!fresh()) { invalidate(); feedback("길안내를 다시 시작해 주세요"); return@withLock }
+        if (!fresh()) { invalidate("확인 시간 만료"); feedback("길안내를 다시 시작해 주세요"); return@withLock }
         val normalized = TeslaNavigationDestination.normalize(query)
         if (normalized == null) {
             mutableSelection.value = mutableSelection.value?.copy(error = "주소를 1~200자로 입력해 주세요")
@@ -136,13 +139,13 @@ internal class TeslaNavigationShare(
     suspend fun confirm(id: Long, candidate: TeslaDestinationCandidate) = lock.withLock {
         val current = mutableSelection.value ?: return@withLock
         if (current.id != id || current.searching || candidate !in current.candidates || !enabled()) return@withLock
-        if (!fresh()) { invalidate(); feedback("길안내를 다시 시작해 주세요"); return@withLock }
+        if (!fresh()) { invalidate("확인 시간 만료"); feedback("길안내를 다시 시작해 주세요"); return@withLock }
         mutableSelection.value = null
         share(candidate.shareText, id)
     }
 
     /** 선택 취소는 자동 재전송 없이 해당 안내의 대기를 끝낸다. */
-    suspend fun dismiss(id: Long) = lock.withLock { if (mutableSelection.value?.id == id) invalidate() }
+    suspend fun dismiss(id: Long) = lock.withLock { if (mutableSelection.value?.id == id) invalidate("선택창 취소") }
 
     /** 백그라운드 선택 요청도 레이아웃을 늘리지 않는 일시 알림으로 전달한다. */
     private suspend fun feedback(message: String) = withContext(Dispatchers.Main) {

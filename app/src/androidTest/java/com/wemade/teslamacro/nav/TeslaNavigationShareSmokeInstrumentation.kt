@@ -13,8 +13,13 @@ import kotlinx.coroutines.flow.first
 /** 공식 앱 대역과 실제 셸 서버로 공유 전달·미준비·응답 유실을 관측한다. */
 class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
     private var sourceSmoke = false
+    private var dialogSmoke = false
     /** 명시한 에뮬레이터 계측에서만 테스트를 실행한다. */
-    override fun onCreate(arguments: Bundle?) { sourceSmoke = arguments?.getString("sourceSmoke") == "true"; super.onCreate(arguments); start() }
+    override fun onCreate(arguments: Bundle?) {
+        sourceSmoke = arguments?.getString("sourceSmoke") == "true"
+        dialogSmoke = arguments?.getString("dialogSmoke") == "true"
+        super.onCreate(arguments); start()
+    }
 
     /** 실제 전달 횟수로 대체 실행과 설정 OFF가 중복 공유를 만들지 않는지 확인한다. */
     override fun onStart() {
@@ -25,6 +30,11 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             runBlocking {
                 val app = targetContext.applicationContext as TeslaMacroApplication
                 app.ready.first { it }
+                if (dialogSmoke) {
+                    verifyDialogLifecycle(app)
+                    result.putString("result", "PASS background pending, foreground dialog, repeated resume, cancellation and ended guidance")
+                    return@runBlocking
+                }
                 withTimeout(15_000) { while (NavigationBridgeProvider.bridge?.pingBinder() != true) delay(100) }
                 val real = NavigationBridgeProvider.bridge
                 val controller = withContext(Dispatchers.Main) { WirelessNavigation(targetContext) }
@@ -160,6 +170,71 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             result.putString("error", error.stackTraceToString())
         }
         finish(status, result)
+    }
+
+    /** 실제 앱을 두 번 왕복해 백그라운드 대기가 복귀 때마다 선택창으로 이어지는지 확인한다. */
+    private suspend fun verifyDialogLifecycle(app: TeslaMacroApplication) {
+        val sharing = app.container.teslaNavigationShare
+        val store = app.container.settingsStore
+        try {
+            shell("input keyevent KEYCODE_WAKEUP")
+            shell("wm dismiss-keyguard")
+            sharing.clear()
+            store.setTeslaNavigationShareEnabled(true)
+            shell("am start -n com.wemade.teslamacro/.MainActivity")
+            withTimeout(10_000) { while (!focusedApp().contains("com.wemade.teslamacro")) delay(100) }
+            shell("input keyevent KEYCODE_HOME")
+            withTimeout(5_000) { while (focusedApp().contains("com.wemade.teslamacro")) delay(100) }
+            sendStatus(0, Bundle().apply { putString("phase", "PASS app background before destination") })
+            sharing.notification("com.skt.tmap.ku", "dialog", "경로주행", "현재 위치 > 북지길 13")
+            val pending = withTimeout(25_000) { sharing.selection.first { it != null }!! }
+            check(!dialogTexts().contains("테슬라 목적지 확인"))
+            sendStatus(0, Bundle().apply { putString("phase", "PASS background pending without dialog") })
+            repeat(2) {
+                shell("am start -n com.wemade.teslamacro/.MainActivity")
+                withTimeout(10_000) { while (!dialogTexts().contains("테슬라 목적지 확인")) delay(100) }
+                check(sharing.selection.value?.id == pending.id && dialogTexts().contains("북지길 13"))
+                shell("input keyevent KEYCODE_HOME")
+                withTimeout(5_000) { while (dialogTexts().contains("테슬라 목적지 확인")) delay(100) }
+                check(sharing.selection.value?.id == pending.id)
+            }
+            sharing.dismiss(pending.id)
+            check(sharing.selection.value == null)
+            sharing.notification("com.skt.tmap.ku", "ended", "경로주행", "현재 위치 > 북지길 14")
+            withTimeout(25_000) { sharing.selection.first { it != null } }
+            sharing.removed("com.skt.tmap.ku", "ended", 8)
+            check(sharing.selection.value == null)
+        } finally {
+            store.setTeslaNavigationShareEnabled(false)
+            sharing.clear()
+        }
+    }
+
+    /** 계측 셸은 파이프를 실행하지 않으므로 창 덤프에서 포커스 행만 직접 읽는다. */
+    private fun focusedApp(): String = shell("dumpsys window").lineSequence().firstOrNull { it.contains("mCurrentFocus=") }.orEmpty()
+
+    /** 화면 캡처 대신 보이는 Android 창의 한정된 접근성 텍스트만 읽는다. */
+    private fun dialogTexts(): String {
+        val automation = uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                android.accessibilityservice.AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+        }
+        val texts = StringBuilder()
+        automation.windows.forEach { window ->
+            val nodes = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+            window.root?.let(nodes::add)
+            var visited = 0
+            while (nodes.isNotEmpty() && visited++ < 300) {
+                val node = nodes.removeFirst()
+                node.text?.let { texts.append(it).append('\n') }
+                for (index in 0 until node.childCount.coerceAtMost(50)) node.getChild(index)?.let(nodes::add)
+                node.recycle()
+            }
+            nodes.forEach { it.recycle() }
+            window.recycle()
+        }
+        return texts.toString()
     }
 
     /** 대역 Activity의 로그만 읽어 실제 Android 실행 요청 도착을 센다. */

@@ -91,6 +91,9 @@ internal class TeslaNavigationShare(
         if (source == (packageName to key)) invalidate("안내 알림 종료 · 사유=${reason ?: -1}")
     }
 
+    /** 진단 기록을 안내 중으로 한정하기 위해 해당 내비의 안내 알림이 살아 있는지 알려준다. */
+    suspend fun guiding(packageName: String): Boolean = lock.withLock { tracker.activeKey(packageName) != null }
+
     /** OFF는 화면 캐시·위치 조회·선택 대기까지 함께 제거한다. */
     suspend fun clear() = lock.withLock { tracker.clear(); invalidate("연동 설정 OFF") }
 

@@ -24,8 +24,8 @@ android {
         applicationId = "com.wemade.teslamacro"
         minSdk = 26
         targetSdk = 35
-        versionCode = 314
-        versionName = "0.9.201"
+        versionCode = 315
+        versionName = "0.9.202"
         testInstrumentationRunner = providers.gradleProperty("smokeRunner")
             .orElse("com.wemade.teslamacro.history.HistorySmokeInstrumentation").get()
     }

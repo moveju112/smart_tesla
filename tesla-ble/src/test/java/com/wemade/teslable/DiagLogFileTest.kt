@@ -74,6 +74,18 @@ class DiagLogFileTest {
         assertFalse(DiagLog.dump().contains("지난 실행의 마지막 줄"))
     }
 
+    /** 5분 복사는 방금 재현한 구간만 담고 그 앞 기록은 뺀다. */
+    @Test
+    fun `dumpRecent는 지정 시간 이내 줄만 담는다`() {
+        val now = System.currentTimeMillis()
+        current.writeText("${timestamp(now - 6 * 60_000L)} 오래된 줄\n${timestamp(now - 4 * 60_000L)} 최근 줄\n")
+        DiagLog.attachFile(current, previous, nowMillis = now)
+
+        val recent = DiagLog.dumpRecent(5 * 60_000L, now)
+        assertFalse(recent.contains("오래된 줄"))
+        assertTrue(recent.contains("최근 줄"))
+    }
+
     /** 화면과 파일 모두 마지막 100줄만 남겨 저장량이 다시 커지지 않아야 한다. */
     @Test
     fun `100줄을 넘으면 가장 오래된 줄부터 지운다`() {

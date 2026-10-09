@@ -18,6 +18,7 @@ class SmartThingsNotificationListener : NotificationListenerService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val receiptGuard = NotificationReceiptGuard()
+    private var lastNavigationDetail: String? = null
 
     /** 스마트싱스 알림의 출처·문구·중복을 확인한 뒤 연결된 빠른 차량 동작으로 넘긴다. */
     override fun onNotificationPosted(sbn: StatusBarNotification) {
@@ -26,6 +27,13 @@ class SmartThingsNotificationListener : NotificationListenerService() {
                 val app = application as TeslaMacroApplication
                 app.ready.first { it }
                 val extras = sbn.notification.extras
+                // 안내 중 목적지 변경이 알림 보조 문구에 드러나는지 확인하려고 바뀔 때만 기록한다.
+                val detail = listOf(Notification.EXTRA_SUB_TEXT, Notification.EXTRA_BIG_TEXT, Notification.EXTRA_INFO_TEXT, Notification.EXTRA_SUMMARY_TEXT)
+                    .mapNotNull { extras.getCharSequence(it)?.toString()?.trim()?.takeIf(String::isNotEmpty)?.take(40) }.joinToString(" / ")
+                if (detail.isNotEmpty() && detail != lastNavigationDetail && app.container.teslaNavigationShare.guiding(sbn.packageName)) {
+                    lastNavigationDetail = detail
+                    com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 알림 보조 문구 · $detail")
+                }
                 app.container.teslaNavigationShare.notification(sbn.packageName, sbn.key,
                     extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
                     extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty())

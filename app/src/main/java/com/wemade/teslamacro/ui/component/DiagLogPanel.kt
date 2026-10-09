@@ -95,6 +95,14 @@ fun DiagLogPanel(
                 onClick = { clipboard.setText(AnnotatedString(DiagLog.dumpAll() + "\n\n" + com.wemade.teslamacro.data.nav.DestinationDiagnostics.current.snapshot())) },
             )
             TButton(
+                text = "5분로그복사",
+                tone = ButtonTone.Secondary,
+                fillWidth = false,
+                small = true,
+                enabled = lines.isNotEmpty(),
+                onClick = { clipboard.setText(AnnotatedString(DiagLog.dumpRecent(5 * 60_000L) + "\n\n" + com.wemade.teslamacro.data.nav.DestinationDiagnostics.current.snapshot())) },
+            )
+            TButton(
                 text = "지우기",
                 tone = ButtonTone.Ghost,
                 fillWidth = false,

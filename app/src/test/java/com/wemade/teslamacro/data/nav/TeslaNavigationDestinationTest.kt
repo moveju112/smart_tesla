@@ -125,6 +125,15 @@ class TeslaNavigationDestinationTest {
             NavigationScreenText("입구", 415, 100), NavigationScreenText("출입구 변경", 415, 300))))
     }
 
+    /** 출입구 이름이 장소마다 달라도 출입구 변경 행 전체를 목적지에서 뺀다. */
+    @Test fun `네이버 출입구 행의 장소별 입구 이름을 목적지로 보지 않는다`() {
+        assertEquals("검단탑병원", teslaDestinationFromScreen(naver, listOf(
+            NavigationScreenText("출발지 도착지 전환", 183, 42), NavigationScreenText("인천 검단구 청마로34번길 6", 168, 243),
+            NavigationScreenText("검단탑병원", 285, 243), NavigationScreenText("경유지 추가", 183, 738),
+            NavigationScreenText("닫기", 130, 882), NavigationScreenText("더보기", 235, 882),
+            NavigationScreenText(" 응급실입구", 415, 96), NavigationScreenText("출입구 변경", 415, 778))))
+    }
+
     /** 공유와 보조창이 동일하게 실제 길안내 알림만 인정한다. */
     @Test fun `보조창은 검색과 안심주행 알림에는 표시하지 않는다`() {
         assertTrue(isTeslaNavigationGuidance(naver, "네이버 지도", "내비게이션 - 안내 중"))

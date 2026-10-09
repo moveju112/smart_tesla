@@ -107,9 +107,13 @@ internal fun teslaDestinationFromScreen(packageName: String, entries: List<Navig
     // 도착지가 비어 있으면 출발지를 마지막 필드라고 오인하지 않는다.
     if (entries.any { it.text.trim() in setOf("도착지 입력", "Enter destination", "目的地入力", "输入目的地") }) return null
     val boundary = entries.filter { it.text.trim() in placeholders }.minOfOrNull { it.top }
-    val fields = entries.filter { !it.isButton && (boundary == null || it.top < boundary) }
+    val allFields = entries.filter { !it.isButton && (boundary == null || it.top < boundary) }
         .sortedWith(compareBy<NavigationScreenText> { it.top }.thenBy { it.left })
         .mapNotNull { entry -> TeslaNavigationDestination.normalize(entry.text)?.let { entry.copy(text = it) } }
+    // 도착지 아래 별도 출입구 행(응급실입구 등 장소마다 다른 이름)은 행 전체를 뺀다.
+    // 구형 화면처럼 출입구 버튼이 도착지와 같은 행이면 그 행이 유일한 후보라 그대로 둔다.
+    val entranceRows = entries.filter { it.text.trim() in setOf("출입구 변경", "출입구 선택") }.map { it.top }.toSet()
+    val fields = allFields.filter { it.top !in entranceRows }.ifEmpty { allFields }
     // 도착 라벨이 노출된 화면은 그 행만 읽고, 라벨 없는 구형 화면은 출발·도착 두 필드일 때만 허용한다.
     val destinationLabel = entries.firstOrNull { it.text.trim() == "도착" }
     if (destinationLabel != null) return fields.filter { it.top == destinationLabel.top }.map { it.text }.distinct().singleOrNull()

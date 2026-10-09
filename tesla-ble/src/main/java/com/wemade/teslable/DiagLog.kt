@@ -140,6 +140,17 @@ object DiagLog {
         }
     }
 
+    /** 최근 구간 복사 (전체 로그 -> 지정 시간 이내 줄만) — 방금 재현한 문제만 짧게 보낸다. */
+    fun dumpRecent(windowMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
+        val cutoff = nowMillis - windowMillis
+        var keep = false
+        // 시각이 없는 이어진 줄은 바로 앞 줄의 포함 여부를 따른다.
+        return dumpAll().lineSequence().filter { line ->
+            timestampOf(line, nowMillis)?.let { keep = it >= cutoff }
+            keep
+        }.joinToString("\n")
+    }
+
     /** 파일에 실제로 남아 있는 줄 수를 돌려준다. */
     fun storedLineCount(): Int = synchronized(fileLock) { fileLineCount }
 

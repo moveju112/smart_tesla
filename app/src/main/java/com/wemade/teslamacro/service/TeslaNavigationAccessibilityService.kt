@@ -24,13 +24,20 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
     private var lastReadAt = -1_000L
     private var lastSummary: String? = null
     private var lastSummaryAt = 0L
+    private var lastGuidingLog: String? = null
 
     /** 화면 후보를 보관하되 실제 안내 알림과 결합하기 전에는 차량에 보내지 않는다. */
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
         if (packageName !in setOf("com.nhn.android.nmap", "com.locnall.KimGiSa")) return
         val now = SystemClock.elapsedRealtime()
-        if (now - lastReadAt < 250) return
+        val windowChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        // 안내 중 목적지 변경 화면 구조를 모르므로 누른 글자를 기록해 다음 판독 근거로 쓴다.
+        if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            val clicked = event.text.joinToString(" ").ifBlank { event.contentDescription?.toString().orEmpty() }.take(30)
+            if (clicked.isNotBlank()) serviceScope.launch { logWhileGuiding(packageName, "안내 중 누름 · $clicked") }
+        }
+        if (!windowChanged && now - lastReadAt < 250) return
         lastReadAt = now
         serviceScope.launch {
             val app = application as TeslaMacroApplication
@@ -62,11 +69,27 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                     com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $summary")
                 }
                 destination?.let { app.container.teslaNavigationShare.screen(packageName, it) }
+                if (nodes.isEmpty() && windowChanged) {
+                    val screen = mutableListOf<NavigationScreenText>()
+                    collectTexts(root, screen, intArrayOf(0), 0)
+                    logWhileGuiding(packageName, "안내 중 화면 · " + screen.map { it.text.trim().take(20) }
+                        .filter { it.isNotEmpty() }.distinct().take(14).joinToString(" | "))
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) {
                 com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 목적지 화면을 읽지 못함")
             } finally { root.recycle() }
         }
+    }
+
+    // 안내 중 진단 기록 (안내 활성 -> 직전과 다른 내용만 기록)
+    /** 안내 중일 때만 화면 전환·누름을 남겨 일반 지도 탐색으로 로그가 넘치지 않게 한다. */
+    private suspend fun logWhileGuiding(packageName: String, message: String) {
+        val app = application as TeslaMacroApplication
+        app.ready.first { it }
+        if (message == lastGuidingLog || !app.container.teslaNavigationShare.guiding(packageName)) return
+        lastGuidingLog = message
+        com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $message")
     }
 
     /** 화면 트리가 커도 제한된 영역·깊이만 읽고 자식 객체는 즉시 반환한다. */

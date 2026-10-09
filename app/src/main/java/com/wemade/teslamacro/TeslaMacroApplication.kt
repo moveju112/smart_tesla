@@ -37,6 +37,7 @@ class TeslaMacroApplication : Application() {
             try {
                 container.initialize()
                 _ready.value = true
+                container.diagnosticUploader.start()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

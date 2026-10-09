@@ -81,6 +81,8 @@ class AppContainer(private val context: Context) {
     val navigator = com.wemade.teslamacro.data.nav.NaverNavigator(context, wirelessNavigation)
     internal val teslaNavigationShare = com.wemade.teslamacro.data.nav.TeslaNavigationShare(appContext, settingsStore, navigator, appScope,
         currentPoint = { tabletLocation.read() })
+    internal val diagnosticUploader = com.wemade.teslamacro.data.diag.DiagnosticUploader(appContext, settingsStore,
+        com.wemade.teslamacro.data.safety.DeviceApiClient(appContext), appScope)
     internal val teslaDestinationOverlay = com.wemade.teslamacro.service.TeslaDestinationOverlay(appContext, teslaNavigationShare, settingsStore, appScope)
     internal val destinations = com.wemade.teslamacro.data.nav.DestinationCoordinator(appContext, settingsStore, navigator) { poller.confirmDestinationPresence() }
 

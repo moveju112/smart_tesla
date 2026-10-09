@@ -74,6 +74,8 @@ data class AppSettings(
     val teslaNavigationShareEnabled: Boolean = false,
     /** 임시 검증판은 기존 설정과 무관하게 처음부터 차량 공유를 차단한다. */
     val teslaNavigationTestMode: Boolean = true,
+    /** 정식 오픈 전 진단 로그 서버 전송. 기본 ON */
+    val diagnosticUploadEnabled: Boolean = true,
     val teslaNavigationLaunchMode: com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode =
         com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.ADB_FIRST,
     val fleetApiEnabled: Boolean = false,
@@ -185,6 +187,7 @@ class SettingsStore(
             deviceMode = DeviceMode.of(prefs[KeyDeviceMode]),
             teslaNavigationShareEnabled = prefs[KeyTeslaNavigationShareEnabled] ?: false,
             teslaNavigationTestMode = prefs[KeyTeslaNavigationTestMode] ?: true,
+            diagnosticUploadEnabled = prefs[KeyDiagnosticUploadEnabled] ?: true,
             teslaNavigationLaunchMode = com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.of(prefs[KeyTeslaNavigationLaunchMode]),
             destinationReceiveEnabled = prefs[KeyDestinationReceiveEnabled] ?: false,
             destinationSetupStarted = prefs[KeyDestinationSetupStarted]
@@ -289,6 +292,9 @@ class SettingsStore(
 
     /** 테스트 모드를 저장해 재시작 뒤에도 실제 목적지 공유 차단을 유지한다. */
     suspend fun setTeslaNavigationTestMode(enabled: Boolean) = edit { it[KeyTeslaNavigationTestMode] = enabled }
+
+    /** 진단 로그 서버 전송을 끄면 다음 주기부터 보내지 않는다. */
+    suspend fun setDiagnosticUploadEnabled(enabled: Boolean) = edit { it[KeyDiagnosticUploadEnabled] = enabled }
 
     /** ADB 우선과 일반 실행 선택을 재시작 뒤에도 보존한다. */
     suspend fun setTeslaNavigationLaunchMode(mode: com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode) =
@@ -599,6 +605,7 @@ class SettingsStore(
         val KeySmartThingsEnabled = booleanPreferencesKey("smartthings_enabled")
         val KeyTeslaNavigationShareEnabled = booleanPreferencesKey("tesla_navigation_share_enabled")
         val KeyTeslaNavigationTestMode = booleanPreferencesKey("tesla_navigation_test_mode")
+        val KeyDiagnosticUploadEnabled = booleanPreferencesKey("diagnostic_upload_enabled")
         val KeyTeslaNavigationLaunchMode = stringPreferencesKey("tesla_navigation_launch_mode")
         val KeySmartThingsCommandTexts = stringPreferencesKey("smartthings_command_texts")
         // 0.9.36 설정은 새 다중 명령 설정의 초기값으로만 읽는다.

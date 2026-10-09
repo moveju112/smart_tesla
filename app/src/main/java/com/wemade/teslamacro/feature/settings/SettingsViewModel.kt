@@ -162,6 +162,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     /** 모드를 바꿀 때 이전 안내 예약을 지워 테스트 후보가 실제 공유로 이어지지 않게 한다. */
+    /** 진단 로그 서버 전송 토글 (설정 저장 -> 켜면 즉시 1회 전송) */
+    fun setDiagnosticUpload(enabled: Boolean) {
+        viewModelScope.launch {
+            container.settingsStore.setDiagnosticUploadEnabled(enabled)
+            if (enabled) container.diagnosticUploader.trigger()
+        }
+    }
+
     fun setTeslaNavigationTestMode(enabled: Boolean) {
         viewModelScope.launch {
             container.teslaNavigationShare.setTestMode(enabled)

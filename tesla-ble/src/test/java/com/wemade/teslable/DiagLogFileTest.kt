@@ -74,6 +74,23 @@ class DiagLogFileTest {
         assertFalse(DiagLog.dump().contains("지난 실행의 마지막 줄"))
     }
 
+    /** 서버 전송은 마지막 보낸 줄 뒤만 고르고, 그 줄이 정리됐으면 시각으로 이어 간다. */
+    @Test
+    fun `linesAfter는 보낸 줄 이후만 고른다`() {
+        val now = System.currentTimeMillis()
+        val first = "${timestamp(now - 3_000L)} 첫 줄"
+        val second = "${timestamp(now - 2_000L)} 둘째 줄"
+        current.writeText("$first\n$second\n")
+        DiagLog.attachFile(current, previous, nowMillis = now)
+
+        assertTrue(DiagLog.linesAfter(null, now).contains(first))
+        val afterFirst = DiagLog.linesAfter(first, now)
+        assertFalse(afterFirst.contains(first))
+        assertTrue(afterFirst.contains(second))
+        val removedCursor = "${timestamp(now - 2_500L)} 정리된 줄"
+        assertEquals(listOf(second), DiagLog.linesAfter(removedCursor, now).filter { it.contains("줄") })
+    }
+
     /** 5분 복사는 방금 재현한 구간만 담고 그 앞 기록은 뺀다. */
     @Test
     fun `dumpRecent는 지정 시간 이내 줄만 담는다`() {

@@ -77,6 +77,7 @@ fun SettingsScreen(
     onStealthStartMinutesChange: (Int) -> Unit = {},
     onStealthEndMinutesChange: (Int) -> Unit = {},
     onProtectPhoneKeyChange: (Boolean) -> Unit = {},
+    onDiagnosticUploadChange: (Boolean) -> Unit = {},
     onDeviceModeChange: (DeviceMode) -> Unit = {},
     onUnpair: () -> Unit,
     onStartPairing: () -> Unit,
@@ -299,6 +300,12 @@ fun SettingsScreen(
                                 showLines = false,
                                 shareExtra = { settingsDump(settings) },
                             )
+                            // 정식 오픈 전까지 공유 없이도 로그를 받으려고 서버 전송을 기본으로 켠다.
+                            Spacer(Modifier.height(Space.sm))
+                            TCard {
+                                com.wemade.teslamacro.ui.component.DraftToggle(settings.diagnosticUploadEnabled,
+                                    onDiagnosticUploadChange, label = "서버로 로그 보내기")
+                            }
                         }
                     }
                 },

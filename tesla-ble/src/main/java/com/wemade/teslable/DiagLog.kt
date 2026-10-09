@@ -140,6 +140,16 @@ object DiagLog {
         }
     }
 
+    /** 서버 전송 위치 이후 (마지막 보낸 줄 -> 그 뒤 줄) — 보낸 줄이 정리됐으면 그 시각 이후 줄을 고른다. */
+    fun linesAfter(cursor: String?, nowMillis: Long = System.currentTimeMillis()): List<String> {
+        val all = dumpAll().lines()
+        if (cursor == null) return all
+        val index = all.lastIndexOf(cursor)
+        if (index >= 0) return all.drop(index + 1)
+        val sentAt = timestampOf(cursor, nowMillis) ?: return all
+        return all.filter { line -> timestampOf(line, nowMillis)?.let { it > sentAt } ?: false }
+    }
+
     /** 최근 구간 복사 (전체 로그 -> 지정 시간 이내 줄만) — 방금 재현한 문제만 짧게 보낸다. */
     fun dumpRecent(windowMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
         val cutoff = nowMillis - windowMillis

@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 app.ready.first { it }
                 if (!activityVisible) return@launch
                 app.container.teslaDestinationOverlay.refresh()
+                app.container.diagnosticUploader.trigger()
                 app.container.poller.setAppVisible(true)
 
             }
@@ -527,6 +528,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                                 onStealthStartMinutesChange = settingsViewModel::setStealthStartMinutes,
                                 onStealthEndMinutesChange = settingsViewModel::setStealthEndMinutes,
                                 onProtectPhoneKeyChange = settingsViewModel::setProtectPhoneKey,
+                                onDiagnosticUploadChange = settingsViewModel::setDiagnosticUpload,
                                 onDeviceModeChange = settingsViewModel::setDeviceMode,
                                 onUnpair = settingsViewModel::unpair,
                                 onStartPairing = { skippedPairing = false },

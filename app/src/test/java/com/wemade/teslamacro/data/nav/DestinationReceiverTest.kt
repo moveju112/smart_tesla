@@ -15,6 +15,17 @@ import org.junit.Test
 class DestinationReceiverTest {
     private val place = DestinationPlace("서울시청", "서울 중구 세종대로 110", 37.5663, 126.9779)
 
+    /** 업데이트 전 기록은 불명확 상태로 보존하고 새 실행 전 기록은 재시작 후에도 구별한다. */
+    @Test fun receiptStageSurvivesSerializationAndLegacyUpgrade() {
+        val legacy = Json.decodeFromString<DestinationReceipt>("""{"requestId":"previous-request"}""")
+        assertTrue(legacy.launchAttempted)
+        assertNull(legacy.delivered)
+        val beforeClaim = DestinationReceipt("current-request", launchAttempted = false)
+        val restored = Json.decodeFromString<DestinationReceipt>(Json.encodeToString(beforeClaim))
+        assertEquals(beforeClaim, restored)
+        assertFalse(restored.launchAttempted)
+    }
+
     /** 실제 인계 상태 전환과 결과 응답 유실을 주입하는 작은 서버 대역이다. */
     private inner class Scenario {
         var destination = place
@@ -28,6 +39,7 @@ class DestinationReceiverTest {
         var claims = 0
         var failComplete = false
         var failClaim = false
+        var loseClaimReply = false
         var selfTest = false
         var before: () -> Unit = {}
         var launchFailure = false
@@ -44,6 +56,7 @@ class DestinationReceiverTest {
                     if (failClaim || status != "pending") throw DestinationApiException(409, "cancelled")
                     status = "claimed"
                     claims++
+                    if (loseClaimReply) throw DestinationApiException(503, "reply lost")
                 }
                 "complete" -> {
                     if (failComplete) throw DestinationApiException(503, "offline")
@@ -106,10 +119,10 @@ class DestinationReceiverTest {
     @Test fun searchRequestUsesExistingHandoffOnce() = runTest {
         val scenario = Scenario().apply { destination = DestinationPlace("서울시청") }
         val receiver = scenario.receiver()
-        assertTrue(receiver.receive { true })
+        assertEquals(DestinationReceiveResult.DISPATCHED, receiver.receive { true })
         assertEquals(scenario.destination, scenario.launchedDestination)
         assertEquals("delivered", scenario.status)
-        assertFalse(receiver.receive { true })
+        assertEquals(DestinationReceiveResult.EMPTY, receiver.receive { true })
         assertEquals(1, scenario.launches)
     }
 
@@ -118,7 +131,7 @@ class DestinationReceiverTest {
         val scenario = Scenario().apply { status = "empty"; destination = DestinationPlace("서울시청") }
         val receiver = scenario.receiver()
         repeat(60) {
-            assertFalse(receiver.receive {
+            assertEquals(DestinationReceiveResult.EMPTY, receiver.receive {
                 destinationReady(true, true, scenario.elapsed - 1_000, scenario.elapsed)
             })
             scenario.elapsed += 5_000
@@ -126,12 +139,12 @@ class DestinationReceiverTest {
         assertEquals(0, scenario.launches)
         scenario.createdAt = 100_000 + scenario.elapsed - 1_000
         scenario.status = "pending"
-        assertTrue(receiver.receive {
+        assertEquals(DestinationReceiveResult.DISPATCHED, receiver.receive {
             destinationReady(true, true, scenario.elapsed - 1_000, scenario.elapsed)
         })
         assertEquals(scenario.destination, scenario.launchedDestination)
         assertEquals("delivered", scenario.status)
-        assertFalse(receiver.receive { true })
+        assertEquals(DestinationReceiveResult.EMPTY, receiver.receive { true })
         assertEquals(1, scenario.launches)
         assertEquals(1, scenario.claims)
     }
@@ -153,7 +166,7 @@ class DestinationReceiverTest {
         scenario.receiver().receive { true }
         assertEquals(true, scenario.receipt?.delivered)
         scenario.failComplete = false
-        assertFalse(scenario.receiver().receive { true })
+        assertEquals(DestinationReceiveResult.EMPTY, scenario.receiver().receive { true })
         assertEquals(1, scenario.launches)
         assertEquals("delivered", scenario.status)
     }
@@ -161,7 +174,7 @@ class DestinationReceiverTest {
     /** 기록은 있지만 실행 결과가 없으면 재시작 뒤 자동 재실행하지 않는다. */
     @Test fun unknownHandoffNeverReplays() = runTest {
         val scenario = Scenario().apply { status = "claimed"; receipt = DestinationReceipt(request.id) }
-        assertFalse(scenario.receiver().receive { true })
+        assertEquals(DestinationReceiveResult.UNKNOWN, scenario.receiver().receive { true })
         assertEquals(0, scenario.launches)
         assertNull(scenario.receipt?.delivered)
     }
@@ -196,7 +209,7 @@ class DestinationReceiverTest {
         val receiver = scenario.receiver()
         receiver.receive { true }
         assertEquals("failed", scenario.status)
-        assertFalse(receiver.receive { true })
+        assertEquals(DestinationReceiveResult.EMPTY, receiver.receive { true })
         assertEquals(1, scenario.claims)
     }
 
@@ -229,17 +242,102 @@ class DestinationReceiverTest {
         assertNull(destinationDeadline(1, 9_000_000, 1_000))
     }
 
+    /** 오래된 착석이어도 수신함을 읽고 요청이 있을 때만 차량을 다시 확인한다. */
+    @Test fun pendingRequestRefreshesPresenceAfterFortyAndNinetySeconds() = runTest {
+        for (delayMillis in listOf(40_000L, 90_000L)) {
+            val scenario = Scenario().apply { elapsed = delayMillis + 1_000; createdAt += delayMillis }
+            var observedAt = 1_000L
+            var confirmations = 0
+            val result = scenario.receiver().receive(prepare = {
+                confirmations++
+                observedAt = scenario.elapsed
+                true
+            }) { destinationReady(true, true, observedAt, scenario.elapsed) }
+            assertEquals(DestinationReceiveResult.DISPATCHED, result)
+            assertEquals(1, scenario.launches)
+            assertEquals(2, confirmations)
+        }
+    }
+
+    /** 인증에 35초가 걸려도 claim 직전 새 착석으로 안전하게 이어간다. */
+    @Test fun unlockRefreshesExpiredPresenceBeforeClaim() = runTest {
+        val scenario = Scenario().apply { before = { elapsed += 35_000 } }
+        var observedAt = scenario.elapsed
+        val result = scenario.receiver().receive(prepare = {
+            observedAt = scenario.elapsed
+            true
+        }) { destinationReady(true, true, observedAt, scenario.elapsed) }
+        assertEquals(DestinationReceiveResult.DISPATCHED, result)
+        assertEquals(1, scenario.claims)
+    }
+
+    /** 차량 미응답은 목적지 발견·전달로 소비하지 않으며 요청을 그대로 남긴다. */
+    @Test fun failedPresenceConfirmationKeepsRequestPending() = runTest {
+        val scenario = Scenario()
+        assertEquals(DestinationReceiveResult.WAITING_FOR_CONDITIONS,
+            scenario.receiver().receive(prepare = { false }) { false })
+        assertEquals("pending", scenario.status)
+        assertEquals(0, scenario.claims)
+    }
+
+    /** 빈 수신함 확인에는 BLE 연결이나 착석을 요구하지 않는다. */
+    @Test fun emptyInboxDoesNotConnectVehicle() = runTest {
+        val scenario = Scenario().apply { status = "empty" }
+        assertEquals(DestinationReceiveResult.EMPTY, scenario.receiver().receive(prepare = {
+            error("빈 수신함은 차량을 확인하면 안 됨")
+        }) { false })
+    }
+
+    /** claim 응답 유실 전의 기록으로 미실행을 실패 처리하고 중복 실행하지 않는다. */
+    @Test fun lostClaimReplyRecoversWithoutLaunching() = runTest {
+        val scenario = Scenario().apply { loseClaimReply = true }
+        assertEquals(DestinationReceiveResult.FAILED, scenario.receiver().receive { true })
+        assertEquals("failed", scenario.status)
+        assertEquals(0, scenario.launches)
+        assertNull(scenario.receipt)
+    }
+
+    /** 이전 전달 결과가 불명확하면 새 요청으로 영속 기록을 덮어쓰지 않는다. */
+    @Test fun unresolvedReceiptBlocksNewRequest() = runTest {
+        val scenario = Scenario().apply { receipt = DestinationReceipt("previous-request") }
+        assertEquals(DestinationReceiveResult.UNKNOWN, scenario.receiver().receive { true })
+        assertEquals("previous-request", scenario.receipt?.requestId)
+        assertEquals(0, scenario.claims)
+    }
+
+    /** 지도 전달 이후 complete 응답이 없어도 실행 실패로 되돌리지 않는다. */
+    @Test fun lostCompletionIsStillDispatched() = runTest {
+        val scenario = Scenario().apply { failComplete = true }
+        assertEquals(DestinationReceiveResult.DISPATCHED, scenario.receiver().receive { true })
+        assertEquals(true, scenario.receipt?.delivered)
+        assertEquals(1, scenario.launches)
+    }
+
+    /** 사용자 확인으로만 불명확한 기록을 완료하고 이전 목적지를 재실행하지 않는다. */
+    @Test fun explicitReceiptConfirmationDoesNotReplay() = runTest {
+        for (delivered in listOf(true, false)) {
+            val scenario = Scenario().apply { status = "claimed"; receipt = DestinationReceipt(request.id) }
+            val receiver = scenario.receiver()
+            assertNotNull(receiver.unresolvedRequestId())
+            receiver.resolveReceipt(delivered)
+            assertNull(receiver.unresolvedRequestId())
+            assertEquals(if (delivered) "delivered" else "failed", scenario.status)
+            assertEquals(0, scenario.launches)
+            assertEquals(DestinationReceiveResult.EMPTY, receiver.receive { true })
+        }
+    }
+
     /** 잠금 해제를 거절한 요청은 사용자가 잠금을 풀 때까지 5초마다 인증 화면을 다시 띄우지 않는다. */
     @Test fun declinedUnlockWaitsForUserUnlock() = runTest {
         val scenario = Scenario().apply { declineUnlock = true }
         val receiver = scenario.receiver()
-        assertTrue(receiver.receive { true })
-        assertTrue(receiver.receive { true })
+        assertEquals(DestinationReceiveResult.WAITING_FOR_CONDITIONS, receiver.receive { true })
+        assertEquals(DestinationReceiveResult.WAITING_FOR_CONDITIONS, receiver.receive { true })
         assertEquals(1, scenario.attempts)
         assertEquals("pending", scenario.status)
         receiver.retryDeclined()
         scenario.declineUnlock = false
-        assertTrue(receiver.receive { true })
+        assertEquals(DestinationReceiveResult.DISPATCHED, receiver.receive { true })
         assertEquals(2, scenario.attempts)
         assertEquals(1, scenario.launches)
         assertEquals("delivered", scenario.status)

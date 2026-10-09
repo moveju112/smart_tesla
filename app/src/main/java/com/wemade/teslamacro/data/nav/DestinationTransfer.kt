@@ -116,7 +116,7 @@ internal class DestinationClient(private val api: DeviceApiClient) {
 }
 
 @Serializable
-internal data class DestinationReceipt(val requestId: String, val delivered: Boolean? = null)
+internal data class DestinationReceipt(val requestId: String, val delivered: Boolean? = null, val launchAttempted: Boolean = true)
 
 /** 앱 종료 직전 인계를 디스크에 남겨 결과가 불명확한 요청을 자동 재실행하지 않는다. */
 internal class DestinationJournal(context: Context) {

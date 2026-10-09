@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -96,7 +97,7 @@ class PortableBoardingPollTest {
         fixture.settings.setDestinationReceiveEnabled(true)
         fixture.gateway.onRead = { fixture.snapshot(true) }
         val presence = mutableListOf<Boolean>()
-        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it } }
+        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it.present } }
         fixture.start()
         advanceTimeBy(5_000)
         runCurrent()
@@ -111,6 +112,48 @@ class PortableBoardingPollTest {
         runCurrent()
         assertEquals(reads, fixture.gateway.reads.size)
         fixture.poller.stop()
+    }
+
+    /** 휴대 모드의 최초 착석 뒤 40초·90초가 지나도 단발 확인만으로 새 요청을 실행할 수 있다. */
+    @Test fun portableDestinationRechecksAfterIdleAndReleasesConnection() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.start()
+        for (wait in listOf(40_000L, 90_000L)) {
+            advanceTimeBy(wait)
+            runCurrent()
+            val observation = fixture.poller.confirmDestinationPresence()
+            assertEquals(true, observation?.present)
+            assertEquals(testScheduler.currentTime, observation?.observedAt)
+            assertEquals(setOf(StateCategory.BODY_CONTROLLER), fixture.gateway.reads.last())
+            assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        }
+        assertEquals(0, fixture.locationReads)
+        assertEquals(0, fixture.forecastReads)
+        fixture.poller.stop()
+    }
+
+    /** 사용자 연결 해제는 목적지 자동 재확인으로 취소하지 않는다. */
+    @Test fun destinationConfirmationRespectsManualDisconnect() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.start()
+        fixture.poller.disconnectUntilNextUse()
+        val connections = fixture.gateway.connections
+        assertNull(fixture.poller.confirmDestinationPresence())
+        assertEquals(connections, fixture.gateway.connections)
+        fixture.poller.stop()
+    }
+
+    /** 연결 지연이 예산을 넘으면 확인을 중단하고 휴대 모드 연결 소유권을 반환한다. */
+    @Test fun destinationConfirmationTimeoutReleasesConnection() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.gateway.onConnect = { delay(30_000L); Result.success(Unit) }
+        assertNull(fixture.poller.confirmDestinationPresence())
+        assertEquals(20_000L, testScheduler.currentTime)
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
     }
 
     /** 목적지 수신도 빈 차에서는 60초 확인만 하고 전원 유지로 다시 연결하지 않는다. */
@@ -148,7 +191,7 @@ class PortableBoardingPollTest {
         }
         fixture.gateway.onRead = { fixture.snapshot(true) }
         val presence = mutableListOf<Boolean>()
-        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it } }
+        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it.present } }
         fixture.start()
         advanceTimeBy(5_999)
         runCurrent()
@@ -178,7 +221,7 @@ class PortableBoardingPollTest {
         }
         fixture.gateway.onRead = { fixture.snapshot(true) }
         val presence = mutableListOf<Boolean>()
-        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it } }
+        backgroundScope.launch { fixture.poller.freshPresence.collect { presence += it.present } }
         fixture.start()
         advanceTimeBy(60_000)
         runCurrent()
@@ -963,6 +1006,7 @@ class PortableBoardingPollTest {
             runner = runner,
             latestReading = reading,
             now = { epoch + scope.testScheduler.currentTime },
+            presenceClock = { scope.testScheduler.currentTime },
             locationReader = {
                 locationReads++
                 delay(locationDelayMillis)

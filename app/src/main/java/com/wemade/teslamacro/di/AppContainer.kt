@@ -78,7 +78,7 @@ class AppContainer(private val context: Context) {
     /** 매크로의 "지도 안내" 걸음을 처리한다 */
     val wirelessNavigation = com.wemade.teslamacro.data.nav.WirelessNavigation(appContext)
     val navigator = com.wemade.teslamacro.data.nav.NaverNavigator(context, wirelessNavigation)
-    internal val destinations = com.wemade.teslamacro.data.nav.DestinationCoordinator(appContext, settingsStore, navigator)
+    internal val destinations = com.wemade.teslamacro.data.nav.DestinationCoordinator(appContext, settingsStore, navigator) { poller.confirmDestinationPresence() }
 
     /** HUD 속도. 차량 폴링보다 빠르고 차를 안 깨운다 */
     val speedMeter = com.wemade.teslamacro.data.location.SpeedMeter(context)

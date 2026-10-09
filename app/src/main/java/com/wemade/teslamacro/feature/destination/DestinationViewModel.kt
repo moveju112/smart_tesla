@@ -137,7 +137,21 @@ class DestinationViewModel(private val container: AppContainer) : ViewModel() {
     fun stopObserving() { observation?.cancel(); observation = null }
 
     /** 수동 새로고침은 통신 오류 후 전달 여부를 확인하는 복구 동작이다. */
-    fun refresh() = act { markSetupStarted(); refreshState() }
+    fun refresh() = act {
+        markSetupStarted()
+        val unresolved = coordinator.unresolvedRequestId()
+        if (unresolved != null) mutableState.update { it.copy(receiptConfirmationId = unresolved) }
+        else refreshState()
+    }
+
+    /** 실제 지도 상태에 대한 사용자 확인만 저장하고 이전 요청을 다시 전달하지 않는다. */
+    fun confirmReceipt(delivered: Boolean) = act {
+        coordinator.resolveReceipt(delivered)
+        mutableState.update { it.copy(receiptConfirmationId = null, notice = "이전 전달 결과를 반영했어요") }
+    }
+
+    /** 확인을 미루면 불명확한 기록을 보존해 자동 재실행을 막는다. */
+    fun dismissReceiptConfirmation() { mutableState.update { it.copy(receiptConfirmationId = null) } }
 
     /** 요청 성공 직후 앱이 종료돼도 다음 실행에서 기존 연결을 다시 확인한다. */
     private suspend fun markSetupStarted() {

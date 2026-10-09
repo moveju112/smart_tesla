@@ -1,4 +1,4 @@
-"""운영 서버 원본에 패치를 적용한 HTTP 경계·인증·재기동 수신을 로컬에서 확인한다."""
+"""검토한 패치 기준 원본에 HTTP 경계·인증·재기동 수신을 로컬에서 확인한다."""
 import hashlib
 import http.client
 import importlib.util
@@ -73,18 +73,18 @@ class RelayHttpTest(unittest.TestCase):
         self.assertEqual(401, self.post(self.phone + "forged", "status")[0])
         self.assertEqual(200, self.post(self.phone, "status")[0])
 
-    # 폰 전송 뒤 저장소를 다시 열어도 태블릿만 한 번 인계하고 발신 상태가 바뀐다.
+    # 현재 앱의 검색어 전송은 selfTest 없이도 재기동 뒤 수신·인계·완료된다.
     def test_real_http_send_restart_receive(self):
         code = self.post(self.tablet, "pairCode", name="테스트 태블릿")[1]["code"]
         self.assertEqual(200, self.post(self.phone, "pair", code=code)[0])
         identifier = str(uuid.uuid4())
-        status, _ = self.post(self.phone, "send", requestId=identifier, selfTest=False, validityMinutes=1,
-            destination={"name": "서울시청", "address": "서울 중구 세종대로 110", "latitude": 37.5663, "longitude": 126.9779})
+        status, _ = self.post(self.phone, "send", requestId=identifier, validityMinutes=1,
+            destination={"name": "서울시청"})
         self.assertEqual(200, status)
         self.app.destination_relay = self.module.DestinationRelay(self.app.destination_relay.path)
-        self.assertIsNone(self.post(self.phone, "inbox", selfTest=False)[1]["request"])
-        self.assertEqual(identifier, self.post(self.tablet, "inbox", selfTest=False)[1]["request"]["id"])
-        self.assertEqual(200, self.post(self.tablet, "claim", requestId=identifier, selfTest=False)[0])
-        self.assertEqual(409, self.post(self.tablet, "claim", requestId=identifier, selfTest=False)[0])
+        self.assertIsNone(self.post(self.phone, "inbox")[1]["request"])
+        self.assertEqual(identifier, self.post(self.tablet, "inbox")[1]["request"]["id"])
+        self.assertEqual(200, self.post(self.tablet, "claim", requestId=identifier)[0])
+        self.assertEqual(409, self.post(self.tablet, "claim", requestId=identifier)[0])
         self.assertEqual(200, self.post(self.tablet, "complete", requestId=identifier, delivered=True)[0])
         self.assertEqual("delivered", self.post(self.phone, "status")[1]["request"]["status"])

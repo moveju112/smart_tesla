@@ -68,6 +68,17 @@ internal class DestinationLaunchException(message: String, cause: Throwable? = n
 internal class DestinationUnlockDeclinedException :
     IllegalStateException("잠금을 해제하면 목적지를 열어요")
 
+/** 전달 전 실패만 탑승 요청의 제한 재시도를 허용한다. */
+internal class SafeDrivePreflightException(message: String) : IllegalStateException(message)
+
+/** 기존 세션의 종료 응답까지 기다린 뒤 새 안내를 허용한다. */
+internal suspend fun stopNavigationForDestination(operation: Job?, hasSession: Boolean, stopped: () -> Boolean) {
+    if (!hasSession) return
+    operation?.cancel()
+    val finished = withTimeoutOrNull(15_000L) { operation?.join(); true } == true
+    if (!finished || !stopped()) throw DestinationLaunchException("안심주행 종료를 확인하지 못했어요 · 지도 상태를 확인해 주세요")
+}
+
 /** 종료 정리 중 들어온 새 요청만 보관하며 정상 종료·실패를 자동 재시도로 바꾸지 않는다. */
 internal class NavigationRestartRequest(private val scope: CoroutineScope) {
     private var pending: Any? = null
@@ -104,6 +115,9 @@ class WirelessNavigation(private val context: Context) {
     private val restartRequest = NavigationRestartRequest(scope)
     private var disconnect: Job? = null
     private var connected = false
+    @Volatile private var destinationTransition = false
+    @Volatile private var destinationOwnsRide = false
+    @Volatile private var sessionStopConfirmed = true
     @Volatile private var keepWirelessDebugging = false
     @Volatile private var navigationSessionActive = false
     private val destinationCommands = AtomicInteger()
@@ -341,12 +355,41 @@ class WirelessNavigation(private val context: Context) {
         if (!enabled) stop() else if (connected) start(delayed = false) else prepare()
     }
 
-    /** 실험 자동 실행이 켜져 있고 현재 버전 준비 프로세스가 살아 있을 때만 탑승 안심운전을 실험에 맡긴다. */
-    internal suspend fun ownsBoardingSafeDrive(): Boolean = state.value.enabled && withContext(Dispatchers.IO) {
+    /** 차량 오디오 연결과 현재 버전의 실제 실행을 확인한 때만 탑승 안심운전을 실험에 맡긴다. */
+    internal suspend fun ownsBoardingSafeDrive(): Boolean = state.value.enabled && connected && withContext(Dispatchers.IO) {
+        val pending = operation
+        withTimeoutOrNull(25_000L) {
+            while (pending?.isActive == true && !state.value.running) delay(100L)
+        }
+        if (!connected || !state.value.running) return@withContext false
         NavigationBridgeProvider.request()
         runCatching { NavigationChannel().connect().use {
-            it.status() in setOf("AVAILABLE", "ACTIVE") && it.serverVersionCode() == BuildConfig.VERSION_CODE
+            it.status() == "ACTIVE" && it.serverVersionCode() == BuildConfig.VERSION_CODE
         } }.getOrDefault(false)
+    }
+
+    /** 인증 여부와 무관하게 기존 실험 정리를 끝내며 전환 중 오디오 이벤트의 재시작을 막는다. */
+    internal suspend fun prepareDestination() {
+        destinationTransition = true
+        destinationCommands.incrementAndGet()
+        restartRequest.cancel()
+        stopNavigationForDestination(operation, navigationSessionActive) { sessionStopConfirmed }
+        if (hasPairing) NavigationBridgeProvider.request()
+        val status = withContext(Dispatchers.IO) {
+            runCatching { NavigationChannel().connect().use { it.status() } }.getOrNull()
+        }
+        if (status == "ACTIVE" || (!sessionStopConfirmed && status != "AVAILABLE")) {
+            throw DestinationLaunchException("기존 안심주행 종료를 확인해 주세요")
+        }
+        if (status == "AVAILABLE") sessionStopConfirmed = true
+    }
+
+    /** 한 번 전달한 목적지는 같은 오디오 연결 세션의 실험 재시작으로 덮어쓰지 않는다. */
+    internal fun destinationFinished(dispatched: Boolean) {
+        if (dispatched) destinationOwnsRide = connected
+        destinationTransition = false
+        destinationCommands.decrementAndGet()
+        closeWirelessDebugging()
     }
 
     /** 안심운전 앱은 실행 중 바꾸지 않아 종료 정리가 다른 앱을 강제 종료하지 않게 한다. */
@@ -411,6 +454,7 @@ class WirelessNavigation(private val context: Context) {
     fun vehicleChanged(value: Boolean) {
         if (connected == value) return
         connected = value
+        if (!value && !state.value.enabled) destinationOwnsRide = false
         disconnect?.cancel()
         if (!value) restartRequest.cancel()
         if (value) {
@@ -419,6 +463,7 @@ class WirelessNavigation(private val context: Context) {
         } else if (state.value.enabled) {
             disconnect = scope.launch {
                 delay(30_000)
+                destinationOwnsRide = false
                 keepWirelessDebugging = false
                 stop()
             }
@@ -427,6 +472,7 @@ class WirelessNavigation(private val context: Context) {
 
     /** 잠금 테스트 예약부터 세션 종료까지 하나의 작업으로 묶어 중복 실행을 막는다. */
     fun start(delayed: Boolean = true) {
+        if (destinationTransition || destinationOwnsRide) return
         operation?.takeUnless { it.isCompleted }?.let { previous ->
             restartRequest.afterCancellation(previous) {
                 if (delayed || (state.value.enabled && connected)) start(delayed)
@@ -439,11 +485,13 @@ class WirelessNavigation(private val context: Context) {
             return
         }
         val app = state.value.app
-        operation = scope.launch {
+        operation = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var sessionRequested = false
             val wake = context.getSystemService(PowerManager::class.java)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SmartTesla:WirelessNavigation")
             mutableState.value = state.value.copy(busy = true)
             navigationSessionActive = true
+            sessionStopConfirmed = false
             try {
                 wake.acquire(12 * 60 * 60 * 1000L)
                 if (app.packages.none { runCatching { context.packageManager.getPackageInfo(it, 0) }.isSuccess }) {
@@ -460,6 +508,7 @@ class WirelessNavigation(private val context: Context) {
                         try {
                             sessionApp = app
                             logLaunchEnvironment("전달 직전", app)
+                            sessionRequested = true
                             active.send(app.safeDriveCommand)
                             needsStop = runSession(active, app)
                         } finally { if (needsStop) finishSession(active, app) }
@@ -471,6 +520,7 @@ class WirelessNavigation(private val context: Context) {
                 DiagLog.add("안심주행 · 실행 예외 ${error.javaClass.simpleName}")
             } finally {
                 if (wake.isHeld) wake.release()
+                if (!sessionRequested) sessionStopConfirmed = true
                 sessionApp = null
                 navigationSessionActive = false
                 closeWirelessDebugging()
@@ -516,6 +566,7 @@ class WirelessNavigation(private val context: Context) {
                         return false
                     }
                     if (message == "NAVER_CLOSED") {
+                        sessionStopConfirmed = true
                         report("실험 종료 완료")
                         return false
                     }
@@ -557,6 +608,7 @@ class WirelessNavigation(private val context: Context) {
                 false
             }
         }.getOrDefault(false)
+        sessionStopConfirmed = acknowledged
         report(if (acknowledged) "실험 종료 완료" else "종료 확인 실패 · ${app.label} 상태를 확인해 주세요")
     }
 
@@ -576,6 +628,7 @@ class WirelessNavigation(private val context: Context) {
     /** 서비스가 다시 시작되면 현재 오디오 상태를 새 탑승 근거로 받을 수 있게 초기화한다. */
     fun serviceStopped() {
         connected = false
+        destinationOwnsRide = false
         keepWirelessDebugging = false
         stop()
     }

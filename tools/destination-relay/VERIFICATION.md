@@ -1,3 +1,37 @@
+# 목적지 수신 복구 검증 — 2026-10-09
+
+앱 0.9.185 / versionCode 298. 아래 2026-10-03 기록은 당시 검증이며 이번 작업은 원격 변경 없이 수행했다.
+
+## 수정 범위
+
+- 휴대·거치 수신함 조회와 착석 실행 조건 분리. 대기 목적지에만 차체를 최대 20초 확인하고 기존 BLE 연결 보호로 복귀. 수동 해제 유지.
+- 실제 관측 시작 시각을 전달하고 잠금 인증·실험 종료 후 착석·유효시간 재검증.
+- 기존 실험의 종료 응답과 준비 서버의 실행 상태 확인 후 새 실행. 인증 화면을 거치는 경로에도 같은 순서 적용. 차량 오디오 세션이 끝나면 전환 소유권 해제.
+- EMPTY / WAITING_FOR_CONDITIONS / DISPATCHED / FAILED / UNKNOWN 분리. 서버 조회 결과가 없으면 탑승 8초 이후 목적지 없는 안심운전 허용. 명확한 전달 전 실패만 최대 두 번, 탑승 요청은 90초 유지.
+- claim 전 기록과 실행 직전 기록 구분. 완료 응답 유실은 재동기화만 수행. 불명확한 전달은 새 요청을 막고 수신기의 상태 새로고침에서 사용자 확인으로 완료하며 이전 요청은 재실행하지 않음.
+- 네트워크 검증 상실과 회복을 구별하고 회복 때 재시도 대기 초기화. 요청 ID의 짧은 식별자와 단계별 진단 로그 추가.
+- 로컬 배포용 릴레이·검색 테스트를 읽기 전용으로 확인한 운영 소스에 동기화. selfTest 없는 현재 JSON과 검색어 목적지를 지원.
+
+## 관측한 검증
+
+- 필수 `./gradlew test :app:assembleRelease` 성공. 후속 종료 상태·네트워크 복구·기록 직렬화 보완 후 영향 범위 `:app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleRelease` 재검증 성공.
+- 앱 debug/release 각각 582개 중 569개 통과, 기존 13개 기본 제외. BLE debug/release 각각 30개 통과. 실패 0개.
+- DestinationReceiverTest 25개, PortableBoardingPollTest 29개 실행/13개 제외, DestinationNavigationTransitionTest 8개 통과.
+- 휴대 모드 착석 확인 후 40초·90초 경과, 짧은 재연결과 해제, 수동 연결 해제, 연결 시간 초과를 실제 StatePoller와 테스트 Gateway로 실행.
+- 인증 대기 후 재확인, 종료 정리 완료 전 대기/종료 실패/15초 시간 초과, 오프라인 대기 예산, 제한 재시도, claim·complete 응답 유실, 불명확한 기록과 구버전 JSON 복구를 검증.
+- Python 릴레이 27개 모두 통과. GitHub osrm main의 패치 전 기준 원본을 일시 준비해 로컬 HTTP 서명 인증·이름만 있는 send/inbox/claim/complete·저장소 재생성을 실행. 실제 운영 API에 쓰기 요청 없음. 임시 원본·생성 파일은 검증 후 제거.
+- `git diff --check` 성공. 화면 캡처·실기기 설치·실차 재현은 수행하지 않음.
+
+## 재사용과 제외
+
+- StatePoller.kt:728,1134의 차체 조회와 기존 연결 정책, NaverNavigator.kt:105의 실행 mutex·잠금 인증·백그라운드 전달을 사용.
+- WirelessNavigation.kt:591의 NonCancellable 종료 정리와 DestinationTransfer.kt:122,133의 noBackup AtomicFile을 확장. 별도 실행·인증·저장소 구현을 만들지 않음.
+- 상시 BLE 유지, 착석 유효시간 확대, 상시 WakeLock, 신규 푸시 인프라, 공통 HTTP 타임아웃 변경은 근거 부족·불필요한 범위 확대로 제외.
+- 운영 목적지 API는 현재 앱 계약을 이미 지원해 원격 파일·서비스·DB를 변경하지 않음. osrm main과 운영 소스의 차이는 남아 있으므로 운영 저장소 정식 반영은 별도 승인 범위.
+- 실제 제조사 절전·Android 화면 표시·차량 BLE·안내 시작 여부는 미확인. 실차 확인은 설정 → 기기 → 진단 로그 → 공유.
+
+---
+
 # 목적지 전송 검증 — 2026-10-03
 
 로컬 구현·검증과 오라클 도쿄 서버 적용 완료. 앱 릴리스 대상은 v0.9.127이다.

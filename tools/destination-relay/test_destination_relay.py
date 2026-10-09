@@ -27,7 +27,7 @@ class DestinationRelayTest(unittest.TestCase):
 
     # 재시도는 동일 ID를 재사용하고 새 전송은 새 ID를 만든다.
     def send(self, device="phone", **overrides):
-        fields = dict(requestId=str(uuid.uuid4()), destination=self.destination, validityMinutes=10, selfTest=False)
+        fields = dict(requestId=str(uuid.uuid4()), destination=self.destination, validityMinutes=10)
         fields.update(overrides)
         return self.call(device, "send", **fields)["request"]
 
@@ -36,10 +36,10 @@ class DestinationRelayTest(unittest.TestCase):
         request = self.send()
         self.relay = DestinationRelay(self.path, lambda: self.now)
         self.now += 9 * 60000
-        self.assertEqual(request["id"], self.call("tablet", "inbox", selfTest=False)["request"]["id"])
-        self.call("tablet", "claim", requestId=request["id"], selfTest=False)
+        self.assertEqual(request["id"], self.call("tablet", "inbox")["request"]["id"])
+        self.call("tablet", "claim", requestId=request["id"])
         with self.assertRaises(RelayError):
-            self.call("tablet", "claim", requestId=request["id"], selfTest=False)
+            self.call("tablet", "claim", requestId=request["id"])
         self.call("tablet", "complete", requestId=request["id"], delivered=True)
         self.assertEqual("delivered", self.call("phone", "status")["request"]["status"])
 
@@ -56,20 +56,20 @@ class DestinationRelayTest(unittest.TestCase):
     def test_expiry_at_exact_boundary(self):
         request = self.send()
         self.now = request["expiresAt"]
-        self.assertIsNone(self.call("tablet", "inbox", selfTest=False)["request"])
+        self.assertIsNone(self.call("tablet", "inbox")["request"])
         self.assertEqual("expired", self.call("phone", "status")["request"]["status"])
         with self.assertRaises(RelayError):
-            self.call("tablet", "claim", requestId=request["id"], selfTest=False)
+            self.call("tablet", "claim", requestId=request["id"])
 
     # 잠든 동안 교체·취소한 목적지는 깨어난 뒤 재생하지 않는다.
     def test_replace_and_cancel_while_offline(self):
         first = self.send()
         second = self.send()
-        self.assertEqual(second["id"], self.call("tablet", "inbox", selfTest=False)["request"]["id"])
+        self.assertEqual(second["id"], self.call("tablet", "inbox")["request"]["id"])
         with self.assertRaises(RelayError):
-            self.call("tablet", "claim", requestId=first["id"], selfTest=False)
+            self.call("tablet", "claim", requestId=first["id"])
         self.call("phone", "cancel", requestId=second["id"])
-        self.assertIsNone(self.call("tablet", "inbox", selfTest=False)["request"])
+        self.assertIsNone(self.call("tablet", "inbox")["request"])
 
     # 같은 가입 토큰 소유자라도 연결하지 않은 기기는 인계·취소·결과 변경을 못 한다.
     def test_unpaired_device_and_other_owner_are_isolated(self):
@@ -97,14 +97,12 @@ class DestinationRelayTest(unittest.TestCase):
         with self.assertRaises(RelayError):
             self.call("phone", "pair", code=code)
 
-    # 폰 한 대 테스트는 자기 요청만 가져오며 자동 수신 경로와 섞이지 않는다.
-    def test_one_phone_test_is_explicit_and_keeps_pairing(self):
-        request = self.send(selfTest=True)
-        self.assertIsNone(self.call("phone", "inbox", selfTest=False)["request"])
-        self.assertEqual(request["id"], self.call("phone", "inbox", selfTest=True)["request"]["id"])
+    # 삭제된 자기 수신 시험은 거부하고 기존 일반 전송의 false만 호환한다.
+    def test_legacy_self_test_is_rejected_and_pairing_is_preserved(self):
         with self.assertRaises(RelayError):
-            self.call("phone", "claim", requestId=request["id"], selfTest=False)
-        self.call("phone", "claim", requestId=request["id"], selfTest=True)
+            self.send(selfTest=True)
+        request = self.send(selfTest=False)
+        self.assertEqual(request["id"], self.call("tablet", "inbox")["request"]["id"])
         self.assertEqual("차량 태블릿", self.call("phone", "status")["receiverName"])
 
     # 중복 이벤트가 동시에 도착해도 한 호출만 목적지를 인계받는다.
@@ -114,7 +112,7 @@ class DestinationRelayTest(unittest.TestCase):
         # 경쟁에서 패배한 인계는 성공으로 보고하지 않는다.
         def claim(_):
             try:
-                self.call("tablet", "claim", requestId=request["id"], selfTest=False)
+                self.call("tablet", "claim", requestId=request["id"])
                 return True
             except RelayError:
                 return False
@@ -125,7 +123,7 @@ class DestinationRelayTest(unittest.TestCase):
     # 취소와 인계 중 먼저 확정된 동작만 유효하다.
     def test_cancel_after_claim_reports_too_late(self):
         request = self.send()
-        self.call("tablet", "claim", requestId=request["id"], selfTest=False)
+        self.call("tablet", "claim", requestId=request["id"])
         with self.assertRaises(RelayError):
             self.call("phone", "cancel", requestId=request["id"])
         self.assertEqual("claimed", self.call("phone", "status")["request"]["status"])
@@ -134,7 +132,7 @@ class DestinationRelayTest(unittest.TestCase):
     def test_unlink_cancels_pending(self):
         self.send()
         self.call("phone", "unlink")
-        self.assertIsNone(self.call("tablet", "inbox", selfTest=False)["request"])
+        self.assertIsNone(self.call("tablet", "inbox")["request"])
         self.assertIsNone(self.call("phone", "status")["receiverName"])
 
     # 범위 밖 좌표·불명 필드·잘못된 타입을 저장하지 않는다.
@@ -154,12 +152,28 @@ class DestinationRelayTest(unittest.TestCase):
         self.now += 86400001
         self.assertIsNone(self.call("phone", "status")["request"])
 
-    # 같은 태블릿의 임시 테스트 전송은 실제 폰에서 보낸 목적지를 교체하지 않는다.
-    def test_tablet_self_test_preserves_real_inbox(self):
+    # 자기 수신 시도로 실제 폰의 대기 목적지를 교체할 수 없다.
+    def test_rejected_self_test_preserves_real_inbox(self):
         real = self.send()
-        test = self.send(device="tablet", selfTest=True)
-        self.assertEqual(real["id"], self.call("tablet", "inbox", selfTest=False)["request"]["id"])
-        self.assertEqual(test["id"], self.call("tablet", "inbox", selfTest=True)["request"]["id"])
+        with self.assertRaises(RelayError):
+            self.send(device="tablet", selfTest=True)
+        self.assertEqual(real["id"], self.call("tablet", "inbox")["request"]["id"])
+
+    # 현재 앱이 보내는 검색어 JSON을 전송부터 완료까지 같은 서버에서 처리한다.
+    def test_current_app_json_contract(self):
+        request = self.send(destination={"name": "서울역"})
+        self.assertEqual(request["id"], self.call("tablet", "inbox")["request"]["id"])
+        self.call("tablet", "claim", requestId=request["id"])
+        self.call("tablet", "complete", requestId=request["id"], delivered=True)
+        self.assertEqual("delivered", self.call("phone", "status")["request"]["status"])
+
+    # claimed는 유효시간 경과로 pending에 되돌려 중복 실행하지 않는다.
+    def test_claimed_request_does_not_reenter_inbox_after_expiry(self):
+        request = self.send(destination={"name": "서울역"})
+        self.call("tablet", "claim", requestId=request["id"])
+        self.now = request["expiresAt"] + 1
+        self.assertIsNone(self.call("tablet", "inbox")["request"])
+        self.assertEqual("claimed", self.call("phone", "status")["request"]["status"])
 
 
 if __name__ == "__main__":

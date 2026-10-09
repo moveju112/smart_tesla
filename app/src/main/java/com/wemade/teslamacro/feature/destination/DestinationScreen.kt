@@ -34,6 +34,7 @@ import com.wemade.teslamacro.ui.theme.T
 data class DestinationUiState(
     val query: String = "", val minutes: Int = 10,
     val request: DestinationRequest? = null, val receiverName: String? = null,
+    val receiptConfirmationId: String? = null,
     val pairingCode: String = "", val receiverCode: String? = null,
     val receiving: Boolean = false, val senderCount: Int = 0,
     val overlayAllowed: Boolean = false, val busy: Boolean = false,
@@ -75,6 +76,24 @@ fun DestinationRoute(
         viewModel::refresh, viewModel::pairingCodeChanged, viewModel::pair, viewModel::unlink,
         viewModel::createPairCode, viewModel::receivingChanged, viewModel::allowOverlay,
         settingsOnly = settingsOnly, onOpenSettings = onOpenSettings, onDismissFeedback = viewModel::clearFeedback)
+    if (state.receiptConfirmationId != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!state.busy) viewModel.dismissReceiptConfirmation() },
+            title = { Text("이전 목적지 전달 확인") },
+            text = { Text("네이버지도에 이전 목적지가 전달됐나요?") },
+            confirmButton = {
+                Column {
+                    TButton("전달됨", fillWidth = false, enabled = !state.busy, onClick = { viewModel.confirmReceipt(true) })
+                    TButton("전달 안 됨", fillWidth = false, tone = ButtonTone.Ghost, enabled = !state.busy,
+                        onClick = { viewModel.confirmReceipt(false) })
+                }
+            },
+            dismissButton = {
+                TButton("나중에", fillWidth = false, tone = ButtonTone.Ghost, enabled = !state.busy,
+                    onClick = viewModel::dismissReceiptConfirmation)
+            },
+        )
+    }
 }
 
 /** 위젯 입력창도 기존 화면과 같은 수명 동안만 전송 결과를 조회한다. */

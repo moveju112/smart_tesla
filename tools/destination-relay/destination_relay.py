@@ -88,45 +88,53 @@ class DestinationRelay:
             self.fields(data, set())
             self.unlink(database, owner, device)
             return {}
+        if operation == "disconnect":
+            self.fields(data, set())
+            self.unlink(database, owner, device)
+            database.execute("DELETE FROM links WHERE owner=? AND receiver=?", (owner, device))
+            database.execute("UPDATE requests SET status='cancelled' WHERE owner=? AND receiver=? AND status='pending'",
+                (owner, device))
+            database.execute("UPDATE receivers SET code_hash=NULL,code_expires=NULL WHERE owner=? AND device=?",
+                (owner, device))
+            return {}
         if operation == "status":
             self.fields(data, set())
             target = database.execute("""SELECT r.name FROM links l JOIN receivers r
                 ON r.owner=l.owner AND r.device=l.receiver WHERE l.owner=? AND l.sender=?""", (owner, device)).fetchone()
             sent = database.execute("SELECT * FROM requests WHERE owner=? AND sender=? ORDER BY created_at DESC,rowid DESC LIMIT 1",
                 (owner, device)).fetchone()
-            return {"receiverName": target["name"] if target else None, "request": self.record(sent)}
+            senders = database.execute("SELECT COUNT(*) FROM links WHERE owner=? AND receiver=?", (owner, device)).fetchone()[0]
+            return {"receiverName": target["name"] if target else None, "senderCount": senders, "request": self.record(sent)}
         if operation == "send":
-            self.fields(data, {"requestId", "destination", "validityMinutes", "selfTest"})
+            self.fields(data, {"requestId", "destination", "validityMinutes"})
             request_id = self.identifier(data["requestId"])
             destination = self.destination(data["destination"])
-            minutes, self_test = data["validityMinutes"], data["selfTest"]
-            if type(minutes) is not int or not 1 <= minutes <= 120 or type(self_test) is not bool:
+            minutes = data["validityMinutes"]
+            if type(minutes) is not int or not 1 <= minutes <= 120:
                 raise RelayError(400, "invalid_request")
             target = database.execute("SELECT receiver FROM links WHERE owner=? AND sender=?", (owner, device)).fetchone()
-            receiver = device if self_test else target["receiver"] if target else None
+            receiver = target["receiver"] if target else None
             if receiver is None:
                 raise RelayError(409, "receiver_not_paired")
             payload = json.dumps(destination, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
             existing = database.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone()
             if existing:
                 if (existing["owner"], existing["sender"], existing["receiver"], existing["payload"], existing["self_test"],
-                    existing["expires_at"] - existing["created_at"]) != (owner, device, receiver, payload, int(self_test), minutes * 60000):
+                    existing["expires_at"] - existing["created_at"]) != (owner, device, receiver, payload, 0, minutes * 60000):
                     raise RelayError(409, "request_conflict")
                 return {"request": self.record(existing)}
             database.execute("UPDATE requests SET status='replaced' WHERE owner=? AND receiver=? AND self_test=? AND status='pending'",
-                (owner, receiver, int(self_test)))
+                (owner, receiver, 0))
             database.execute("INSERT INTO requests VALUES(?,?,?,?,?,?,?,?,?)",
-                (request_id, owner, device, receiver, payload, now, now + minutes * 60000, "pending", int(self_test)))
+                (request_id, owner, device, receiver, payload, now, now + minutes * 60000, "pending", 0))
             return {"request": self.record(database.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone())}
         if operation == "inbox":
-            self.fields(data, {"selfTest"})
-            if type(data["selfTest"]) is not bool:
-                raise RelayError(400, "invalid_request")
+            self.fields(data, set())
             request = database.execute("""SELECT * FROM requests WHERE owner=? AND receiver=? AND self_test=?
-                AND status='pending' ORDER BY created_at DESC,rowid DESC LIMIT 1""", (owner, device, int(data["selfTest"]))).fetchone()
+                AND status='pending' ORDER BY created_at DESC,rowid DESC LIMIT 1""", (owner, device, 0)).fetchone()
             return {"request": self.record(request)}
         if operation in ("cancel", "claim", "complete"):
-            expected = {"requestId"} | ({"selfTest"} if operation == "claim" else {"delivered"} if operation == "complete" else set())
+            expected = {"requestId"} | ({"delivered"} if operation == "complete" else set())
             self.fields(data, expected)
             request_id = self.identifier(data["requestId"])
             request = database.execute("SELECT * FROM requests WHERE id=? AND owner=?", (request_id, owner)).fetchone()
@@ -138,7 +146,7 @@ class DestinationRelay:
                     raise RelayError(409, "request_not_pending")
                 status = "cancelled"
             elif operation == "claim":
-                if type(data["selfTest"]) is not bool or request["self_test"] != int(data["selfTest"]):
+                if request["self_test"] != 0:
                     raise RelayError(400, "invalid_request")
                 if request["status"] != "pending" or request["expires_at"] <= now:
                     raise RelayError(409, "request_not_pending")
@@ -168,6 +176,11 @@ class DestinationRelay:
 
     # 정의되지 않은 필드는 목적지 API를 다른 데이터 보관 통로로 쓰지 못하게 거부한다.
     def fields(self, data, expected):
+        # 이전 앱의 일반 전송만 호환하고 자기 수신 요청은 더 이상 허용하지 않는다.
+        if data.get("operation") in ("send", "inbox", "claim") and "selfTest" in data:
+            if data["selfTest"] is not False:
+                raise RelayError(400, "invalid_request")
+            expected = expected | {"selfTest"}
         if set(data) != expected | {"operation"}:
             raise RelayError(400, "invalid_request")
 
@@ -183,9 +196,13 @@ class DestinationRelay:
             raise RelayError(400, "invalid_request")
         return value
 
-    # 네이버 연동 범위 밖 좌표와 NaN을 실행 전에 차단한다.
+    # 이름만 담은 검색어와 기존 좌표형만 허용하고 불완전한 좌표는 검색으로 바꾸지 않는다.
     def destination(self, value):
-        if not isinstance(value, dict) or set(value) != {"name", "address", "latitude", "longitude"}:
+        if not isinstance(value, dict):
+            raise RelayError(400, "invalid_destination")
+        if set(value) == {"name"}:
+            return {"name": self.label(value["name"], 120)}
+        if set(value) != {"name", "address", "latitude", "longitude"}:
             raise RelayError(400, "invalid_destination")
         for key, lower, upper in (("latitude", 31.43, 44.35), ("longitude", 122.37, 132.00)):
             number = value[key]

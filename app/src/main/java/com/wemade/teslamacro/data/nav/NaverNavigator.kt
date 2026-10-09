@@ -111,11 +111,15 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
     suspend fun navigateDestination(place: DestinationPlace, beforeLaunch: suspend () -> Unit): Result<Unit> =
         withContext(Dispatchers.IO) {
             if (!safeDriveLaunchMutex.tryLock()) return@withContext Result.failure(IllegalStateException("다른 내비 실행을 처리 중이에요"))
+            var dispatched = false
+            var destinationPrepared = false
             try {
                 runCatching {
                     require(place.valid()) { "목적지 정보가 유효하지 않아요" }
                     val app = NavigatorApp.NAVER
                     val installed = installedPackage(app) ?: error("네이버 지도 앱을 설치해 주세요")
+                    destinationPrepared = wirelessNavigation != null
+                    wirelessNavigation?.prepareDestination()
                     val uri = place.naverUri(context.packageName)
                     val intent = Intent(Intent.ACTION_VIEW, uri).setPackage(installed).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     val keyguard = context.getSystemService(KeyguardManager::class.java)
@@ -125,6 +129,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                             beforeLaunch = {
                                 confirmUnlockedDestination(
                                     { isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked) }, beforeLaunch)
+                                dispatched = true
                             },
                             allowShell = true)
                     }
@@ -140,7 +145,11 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 }.onFailure {
                     if (it is kotlinx.coroutines.CancellationException || it is DestinationLaunchException && it.uncertain) throw it
                 }
-            } finally { safeDriveLaunchMutex.unlock() }
+            } finally {
+                // 준비 호출 전 실패는 전환 소유권을 만들지 않으므로 실제 준비 여부를 아래에서 가른다.
+                if (wirelessNavigation != null && destinationPrepared) wirelessNavigation.destinationFinished(dispatched)
+                safeDriveLaunchMutex.unlock()
+            }
         }
 
     // 1. 권한 확인 → 2. 주소를 좌표로 → 3. 고른 내비 앱에 길안내 인텐트
@@ -178,24 +187,31 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
     suspend fun startSafeDrive(
         app: NavigatorApp,
         launchMode: SafeDriveLaunchMode = SafeDriveLaunchMode.DEFAULT,
+        beforeLaunch: suspend () -> Unit = {},
     ): Result<Unit> = withContext(Dispatchers.IO) {
         // 인증 대기 중 들어온 요청은 줄 세우지 않아 뒤늦게 지도가 다시 열리지 않게 한다.
         if (!safeDriveLaunchMutex.tryLock()) {
-            return@withContext Result.failure(IllegalStateException("이미 안심운전 실행을 처리하고 있어요"))
+            return@withContext Result.failure(SafeDrivePreflightException("이미 안심운전 실행을 처리하고 있어요"))
         }
+        var prepared = false
+        var dispatched = false
         try {
             runCatching {
                 logSafeDriveState("실행 시작", app, launchMode)
                 if (!hasOverlayPermission) {
-                    error("'다른 앱 위에 표시' 권한이 없어요.\n설정 → 주행에서 허용해 주세요")
+                    throw SafeDrivePreflightException("'다른 앱 위에 표시' 권한이 없어요.\n설정 → 주행에서 허용해 주세요")
                 }
                 val packageName = installedPackage(app)
-                    ?: error("${app.label} 앱이 설치되어 있지 않아요")
+                    ?: throw SafeDrivePreflightException("${app.label} 앱이 설치되어 있지 않아요")
                 val uri = app.safeDriveUri(context.packageName)
-                    ?: error("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
+                    ?: throw SafeDrivePreflightException("${app.label}는 안심운전 자동 실행을 지원하지 않아요")
 
+                prepared = wirelessNavigation != null
+                wirelessNavigation?.prepareDestination()
                 val intents = safeDriveIntents(app, packageName, uri)
                 val launch: suspend (Activity?) -> Unit = { activity ->
+                    beforeLaunch()
+                    dispatched = true
                     if (launchMode == SafeDriveLaunchMode.ALL) {
                         launchSafeDriveForDiagnostics(app.label, intents, activity)
                     } else {
@@ -228,6 +244,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 throw throwable
             }.map { }
         } finally {
+            if (prepared) wirelessNavigation?.destinationFinished(dispatched)
             safeDriveLaunchMutex.unlock()
         }
     }

@@ -326,8 +326,8 @@ class MacroService : LifecycleService() {
         val app = application as TeslaMacroApplication
         lifecycleScope.launch {
             app.ready.first { it }
-            app.container.poller.freshPresence.collect { present ->
-                app.container.destinations.observePresence(present)
+            app.container.poller.freshPresence.collect { observation ->
+                app.container.destinations.observePresence(observation.present, observation.observedAt)
             }
         }
     }
@@ -364,13 +364,6 @@ class MacroService : LifecycleService() {
             app.container.poller.boardingEvents.collect {
                 val settings = app.container.settingsStore.settings.first()
                 if (!settings.autoStartNavigatorSafeDrive) return@collect
-                // 두 경로가 같은 탑승에 내비를 따로 열면 BUSY·음성 겹침·종료 시 강제 종료가 생긴다.
-                // 준비 프로세스가 없으면 실험이 실행되지 않으므로 기존 방식을 그대로 쓴다.
-                if (settings.vehicleAudioAddress.isNotBlank() && app.container.wirelessNavigation.ownsBoardingSafeDrive()) {
-                    com.wemade.teslable.DiagLog.add("탑승 안심운전 — 안심주행 실험 자동 실행이 준비되어 기존 방식 건너뜀")
-                    return@collect
-                }
-
                 val navigatorApp = NavigatorApp.of(settings.navigatorApp)
                 val configuredLaunchMode = com.wemade.teslamacro.data.nav.SafeDriveLaunchMode
                     .of(settings.navigatorSafeDriveLaunchMode)
@@ -382,13 +375,23 @@ class MacroService : LifecycleService() {
                     )
                 }
                 app.container.navigator.logSafeDriveState("탑승 자동 실행", navigatorApp, automaticLaunchMode)
-                val start: suspend () -> Unit = {
-                    app.container.navigator.startSafeDrive(app = navigatorApp, launchMode = automaticLaunchMode)
-                        .onFailure { com.wemade.teslable.DiagLog.add("안심운전 자동 실행 실패") }
+                val start: suspend () -> Result<Unit> = {
+                    if (settings.vehicleAudioAddress.isNotBlank() && app.container.wirelessNavigation.ownsBoardingSafeDrive()) {
+                        com.wemade.teslable.DiagLog.add("탑승 안심운전 — 실험 실행 확인, 기존 방식 건너뜀")
+                        Result.success(Unit)
+                    } else if (!app.container.destinations.prepareBoarding()) {
+                        Result.failure(com.wemade.teslamacro.data.nav.SafeDrivePreflightException("착석 재확인이 필요해요"))
+                    } else {
+                        app.container.navigator.startSafeDrive(app = navigatorApp, launchMode = automaticLaunchMode) {
+                            val current = app.container.settingsStore.settings.first()
+                            if (!current.autoStartNavigatorSafeDrive || current.navigatorApp != settings.navigatorApp ||
+                                !app.container.destinations.prepareBoarding()) {
+                                throw com.wemade.teslamacro.data.nav.SafeDrivePreflightException("탑승 실행 조건이 바뀌었어요")
+                            }
+                        }.onFailure { com.wemade.teslable.DiagLog.add("안심운전 자동 실행 실패 — ${it.javaClass.simpleName}") }
+                    }
                 }
-                if (settings.destinationReceiveEnabled) {
-                    app.container.destinations.afterBoardingWhenEmpty(start)
-                } else start()
+                app.container.destinations.afterBoardingWhenEmpty(start)
             }
         }
     }

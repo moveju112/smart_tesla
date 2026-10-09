@@ -45,7 +45,14 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Calendar
+
+/** 착석의 실제 조회 시작 시각을 전달해 다른 조회 지연을 신선한 응답으로 오인하지 않는다. */
+data class VehiclePresenceObservation(val present: Boolean, val observedAt: Long)
 
 /**
  * 차량 상태를 주기적으로 읽어 매크로 엔진에 먹인다.
@@ -73,6 +80,7 @@ class StatePoller(
     private val chargeHistory: com.wemade.teslamacro.data.charge.ChargeHistoryStore? = null,
     private val vehicleHistory: com.wemade.teslamacro.data.history.VehicleHistoryStore? = null,
     private val historyIsRealVehicle: () -> Boolean = { false },
+    private val presenceClock: () -> Long = android.os.SystemClock::elapsedRealtime,
 ) {
     private var job: Job? = null
 
@@ -104,6 +112,8 @@ class StatePoller(
 
     /** 빅스비처럼 화면 밖에서 연결을 빌려 쓰는 요청 수 */
     private val commandConnections = java.util.concurrent.atomic.AtomicInteger(0)
+    private val destinationChecks = java.util.concurrent.atomic.AtomicInteger(0)
+    private val destinationCheckMutex = Mutex()
 
     private val historyDriveObservation = java.util.concurrent.atomic.AtomicReference<Pair<String, VehicleSnapshot>?>(null)
 
@@ -115,8 +125,8 @@ class StatePoller(
     val boardingEvents: Flow<Unit> = boardingChannel.receiveAsFlow()
 
     /** 병합된 옛 스냅샷이 아닌 이번 VCSEC 응답의 탑승값만 주행 음성 게이트에 전달한다. */
-    private val _freshPresence = MutableSharedFlow<Boolean>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    val freshPresence: Flow<Boolean> = _freshPresence.asSharedFlow()
+    private val _freshPresence = MutableSharedFlow<VehiclePresenceObservation>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val freshPresence: Flow<VehiclePresenceObservation> = _freshPresence.asSharedFlow()
 
     /**
      * 주차가 시작된 시각과 그때 배터리. 타고 있는 동안은 null.
@@ -410,6 +420,7 @@ class StatePoller(
             }
 
             // 3. 한 번에 묶어 읽는다. 게이트웨이가 응답 크기를 보고 알아서 나눈다
+            val presenceStartedAt = presenceClock()
             val result = if (boardingCheck != null) {
                 withTimeoutOrNull(boardingCheck.remainingMillis(now())) {
                     gateway.readBundle(categories)
@@ -545,7 +556,7 @@ class StatePoller(
             val observedPresence = fresh
                 ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
                 ?.isUserPresent
-            observedPresence?.let { _freshPresence.tryEmit(it) }
+            observedPresence?.let { _freshPresence.tryEmit(VehiclePresenceObservation(it, presenceStartedAt)) }
             // 문 매크로는 착석 여부와 무관하게 60초 동안 변화를 기다린다.
             // 자동 안심운전만 쓰는 경우에는 기존처럼 착석 확인 즉시 종료한다.
             if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
@@ -713,6 +724,28 @@ class StatePoller(
         nudge()
     }
 
+    /** 목적지 실행에 필요한 차체만 최대 20초 확인하고 기존 연결 보호 정책으로 복귀한다. */
+    suspend fun confirmDestinationPresence(): VehiclePresenceObservation? = destinationCheckMutex.withLock {
+        val settings = settingsStore.settings.first()
+        if (!settings.needsBoardingNavigation || !settings.isReady || manualConnectionPause.get()) return@withLock null
+        destinationChecks.incrementAndGet()
+        try {
+            withTimeoutOrNull(20_000L) {
+                if (gateway.linkState.value !is LinkState.Ready && gateway.connect(settings.vin).isFailure) return@withTimeoutOrNull null
+                val startedAt = presenceClock()
+                val response = gateway.readBundle(setOf(StateCategory.BODY_CONTROLLER)).getOrNull()
+                val currentSettings = settingsStore.settings.first()
+                if (manualConnectionPause.get() || !currentSettings.needsBoardingNavigation ||
+                    currentSettings.vin != settings.vin || response?.categoryReadAt?.keys?.any(::ownsPresence) != true
+                ) return@withTimeoutOrNull null
+                response.isUserPresent?.let { VehiclePresenceObservation(it, startedAt) }
+            }
+        } finally {
+            destinationChecks.decrementAndGet()
+            withContext(NonCancellable) { enforceConnectionGuard() }
+        }
+    }
+
     // 사용자가 직접 부른 매크로의 연결 유지 (실행 시작 -> 종료까지 사용권)
     // 휴대 모드는 자동 매크로를 연결 사유로 쓰지 않는다. 빅스비·지금 실행은 단발 명령처럼 끝날 때까지 붙잡아
     // "창문 열기 → 대기 → 닫기"의 뒤 단계가 보호 해제로 끊기지 않게 한다
@@ -783,6 +816,7 @@ class StatePoller(
             vehicleUserPresent = _snapshot.value.isUserPresent,
             appVisible = now() < appVisibleUntil,
             commandActive = commandConnections.get() > 0,
+            destinationCheckActive = destinationChecks.get() > 0,
             macroRunning = runner.running.value.isNotEmpty(),
             stealthChargeNeedsConnection = stealthChargeNeedsConnection(
                 modified = settings.stealthChargeModified,
@@ -1073,6 +1107,7 @@ internal enum class VehicleConnectionReason(val keep: Boolean, val label: String
     MOUNTED_UNCONFIRMED(false, "거치 모드 전원은 있으나 탑승 미확인"),
     NO_ACTIVE_USE(false, "차량 전원·앱·명령·매크로 사용 없음"),
     DIRECT_COMMAND(true, "직접 명령 실행 중"),
+    DESTINATION_CHECK(true, "목적지 착석 재확인 (최대 20초)"),
     APP_VISIBLE(true, "앱 화면 사용 중"),
     PORTABLE_SAFE_DRIVE_CHECK(true, "휴대 모드 안심운전 탑승 확인 중 (최대 60초)"),
     STEALTH_CHARGING(true, "스텔스 충전 1회 대기·실행·원복 중"),
@@ -1109,10 +1144,12 @@ internal fun decideVehicleConnection(
     stealthChargeNeedsConnection: Boolean,
     manuallyPaused: Boolean,
     historyDriving: Boolean = false,
+    destinationCheckActive: Boolean = false,
 ): VehicleConnectionDecision = VehicleConnectionDecision(
     when {
         manuallyPaused -> VehicleConnectionReason.USER_PAUSED
         commandActive -> VehicleConnectionReason.DIRECT_COMMAND
+        destinationCheckActive -> VehicleConnectionReason.DESTINATION_CHECK
         appVisible -> VehicleConnectionReason.APP_VISIBLE
         historyDriving -> VehicleConnectionReason.HISTORY_DRIVING
         deviceMode == DeviceMode.PORTABLE && autoStartNavigatorSafeDrive &&

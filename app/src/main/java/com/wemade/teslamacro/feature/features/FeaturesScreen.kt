@@ -66,14 +66,13 @@ internal fun requiredFeatureSettings(
     notificationAccessGranted: Boolean,
 ): FeatureSettings? = when {
     feature in listOf(AppFeature.STEALTH_CHARGE, AppFeature.SMARTTHINGS, AppFeature.HISTORY) && !settings.isReady -> FeatureSettings.VEHICLE
-    feature == AppFeature.SMARTTHINGS && (!notificationAccessGranted ||
-        settings.smartThingsCommandTexts.values.none { it.isNotBlank() }) -> FeatureSettings.SMARTTHINGS
+    feature == AppFeature.SMARTTHINGS && settings.smartThingsCommandTexts.values.none { it.isNotBlank() } -> FeatureSettings.SMARTTHINGS
     else -> null
 }
 
 /** 기능에서 넘어온 설정은 필요한 항목에 바로 진입한다. */
 enum class FeatureSettings(val label: String) {
-    VEHICLE("차량"), DESTINATION("목적지 전송"),
+    VEHICLE("차량"), DESTINATION("목적지 전송"), PERMISSIONS("권한 점검"),
     STEALTH_CHARGE("스텔스 충전"), SMARTTHINGS("스마트싱스"),
 }
 

@@ -6,6 +6,10 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import com.wemade.teslamacro.ui.component.TButton
+import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.MainActivity
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.NavigationPairingService
@@ -71,7 +75,9 @@ class PermissionCheckSmokeInstrumentation : Instrumentation() {
             val after = runBlocking { app.container.settingsStore.settings.first() }
             check(before.historyEnabled == after.historyEnabled && before.teslaNavigationShareEnabled == after.teslaNavigationShareEnabled)
             check(!app.container.wirelessNavigation.state.value.enabled)
-            result.putString("result", "PASS permission menu, runtime denial/grant, overlay settings return, ADB settings without implicit authorization, feature settings unchanged")
+            shell("input keyevent KEYCODE_BACK")
+            checkFeatureGates(screen, before)
+            result.putString("result", "PASS permission gates and centralized settings; permission menu, runtime denial/grant, overlay settings return, ADB settings without implicit authorization, feature settings unchanged")
         } catch (error: Throwable) {
             code = Activity.RESULT_CANCELED
             result.putString("error", "${error.javaClass.simpleName}: ${error.message}")
@@ -80,6 +86,86 @@ class PermissionCheckSmokeInstrumentation : Instrumentation() {
             activity?.let { runOnMainSync { it.finish() } }
         }
         finish(code, result)
+    }
+
+    /** 실제 Android 권한 회수·허용과 모달 이동에서 ON 저장·OFF 허용 계약을 확인한다. */
+    private fun checkFeatureGates(screen: MainActivity, before: AppSettings) {
+        val changes = java.util.concurrent.atomic.AtomicIntegerArray(PermissionFeature.entries.size)
+        val enabled = java.util.concurrent.atomic.AtomicIntegerArray(PermissionFeature.entries.size)
+        shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW deny")
+        runOnMainSync { screen.setContent {
+            var permissions by remember { mutableStateOf(false) }
+            TeslaMacroTheme(dark = false) {
+                CompositionLocalProvider(LocalOpenPermissionCheck provides { permissions = true }) {
+                    if (permissions) SettingsScreen(before, onUnpair = {}, onStartPairing = {},
+                        initialGroup = SettingsGroup.DEVICE, openPermissionCheck = true,
+                        onBackToFeature = { permissions = false },
+                        navigation = NavigationControls(onAppChange = {}, onHudOverlayChange = {}))
+                    else Column {
+                        PermissionFeature.entries.forEach { feature ->
+                            val toggle = rememberPermissionToggle(feature) { value ->
+                                enabled.set(feature.ordinal, if (value) 1 else 0)
+                                changes.incrementAndGet(feature.ordinal)
+                            }
+                            Row {
+                                TButton("ON ${feature.name}", fillWidth = false, onClick = { toggle(true) })
+                                TButton("OFF ${feature.name}", fillWidth = false, onClick = { toggle(false) })
+                            }
+                        }
+                    }
+                }
+            }
+        } }
+        clickText("ON HUD")
+        waitText("필수 권한 확인")
+        check(hasText("다른 앱 위에 표시"))
+        check(changes.get(PermissionFeature.HUD.ordinal) == 0)
+        clickText("취소")
+        clickText("ON HUD")
+        clickText("권한 점검")
+        waitText("부족한 권한 준비")
+        check(enabled.get(PermissionFeature.HUD.ordinal) == 0)
+        shell("input keyevent KEYCODE_BACK")
+        clickText("기능으로 돌아가기")
+        shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW allow")
+        clickText("ON HUD")
+        waitForIdleSync()
+        check(enabled.get(PermissionFeature.HUD.ordinal) == 1)
+        shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW deny")
+        clickText("OFF HUD")
+        waitForIdleSync()
+        check(enabled.get(PermissionFeature.HUD.ordinal) == 0)
+        check(changes.get(PermissionFeature.HUD.ordinal) == 2)
+        clickText("ON TESLA_SHARE")
+        waitText("필수 권한 확인")
+        check(hasText("알림 접근") && hasText("내비 목적지 읽기") && hasText("다른 앱 위에 표시"))
+        check(changes.get(PermissionFeature.TESLA_SHARE.ordinal) == 0)
+        clickText("취소")
+        clickText("ON WIRELESS")
+        waitText("무선 ADB 연결 준비")
+        check(changes.get(PermissionFeature.WIRELESS.ordinal) == 0)
+        clickText("취소")
+        clickText("ON UPDATE")
+        waitText("필수 권한 확인")
+        check(hasText("앱 업데이트 설치"))
+        check(changes.get(PermissionFeature.UPDATE.ordinal) == 0)
+        clickText("취소")
+        // 오버레이 거부는 필요 없는 차량 기록의 ON까지 막지 않는다.
+        clickText("ON HISTORY")
+        waitForIdleSync()
+        check(enabled.get(PermissionFeature.HISTORY.ordinal) == 1)
+        val shareChanges = java.util.concurrent.atomic.AtomicInteger(0)
+        runOnMainSync { screen.setContent { TeslaMacroTheme(dark = false) {
+            SettingsScreen(before.copy(teslaNavigationShareEnabled = true), onUnpair = {}, onStartPairing = {},
+                initialGroup = SettingsGroup.DRIVING,
+                navigation = NavigationControls(onAppChange = {}, onHudOverlayChange = {},
+                    onTeslaNavigationShareEnabled = { check(!it); shareChanges.incrementAndGet() }))
+        } } }
+        waitText("테슬라 내비 연동")
+        check(!hasText("목적지 화면 읽기") && !hasText("목적지 선택창 권한") && !hasText("알림 접근"))
+        clickText("자동 목적지 공유")
+        waitForIdleSync()
+        check(shareChanges.get() == 1)
     }
 
     /** 화면 텍스트를 기다려 임의 지연 없이 모달 표시를 관측한다. */
@@ -123,7 +209,7 @@ class PermissionCheckSmokeInstrumentation : Instrumentation() {
         while (pending.isNotEmpty() && visited++ < 200) {
             val node = pending.removeFirst()
             for (index in 0 until node.childCount) node.getChild(index)?.let { pending.add(it) }
-            if (node.text?.toString()?.contains(text) == true) matched.add(node) else node.recycle()
+            if (node.text?.toString()?.contains(text) == true || node.contentDescription?.toString()?.contains(text) == true) matched.add(node) else node.recycle()
         }
         pending.forEach { it.recycle() }
         return matched

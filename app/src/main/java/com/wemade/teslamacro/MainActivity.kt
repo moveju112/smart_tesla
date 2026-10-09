@@ -306,6 +306,11 @@ private fun AppRoot(factory: ViewModelFactory) {
     // 차내 태블릿은 세로로 세워도 폭이 600dp를 넘어 레일로 잡혔다. 메뉴가 2개뿐이라 세로에선 레일이 본문 폭만 먹는다
     val portrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
 
+    CompositionLocalProvider(com.wemade.teslamacro.feature.settings.LocalOpenPermissionCheck provides {
+        returnToFeature = current == Destination.Features || returnToFeature
+        settingsTarget = FeatureSettings.PERMISSIONS
+        current = Destination.Settings
+    }) {
     ResponsiveScaffold(
         bottomNav = portrait,
         current = current,
@@ -495,15 +500,17 @@ private fun AppRoot(factory: ViewModelFactory) {
                             )
                         }
                     } else {
-                        val focusedSettings = settingsTarget?.takeUnless { it == FeatureSettings.DESTINATION }
-                        settingsState.SaveableStateProvider(focusedSettings?.name ?: "settings") {
+                        val focusedSettings = settingsTarget?.takeUnless { it == FeatureSettings.DESTINATION || it == FeatureSettings.PERMISSIONS }
+                        settingsState.SaveableStateProvider(if (settingsTarget == FeatureSettings.PERMISSIONS) "permissions" else focusedSettings?.name ?: "settings") {
                             SettingsScreen(
                                 settings = settings,
                                 onSendDestination = { settingsTarget = FeatureSettings.DESTINATION },
                                 focusedFeature = focusedSettings,
+                                openPermissionCheck = settingsTarget == FeatureSettings.PERMISSIONS,
                                 onBackToFeature = if (returnToFeature) backFromSettings else null,
                                 initialGroup = when (settingsTarget) {
                                     FeatureSettings.VEHICLE -> SettingsGroup.VEHICLE
+                                    FeatureSettings.PERMISSIONS -> SettingsGroup.DEVICE
                                     // 기능에서 온 경우만 초기 칸을 지정해 일반 설정의 선택 칸이 시트 닫기로 초기화되지 않게 한다.
                                     FeatureSettings.DESTINATION -> if (returnToFeature) SettingsGroup.DRIVING else null
                                     FeatureSettings.STEALTH_CHARGE, FeatureSettings.SMARTTHINGS -> SettingsGroup.AUTOMATION
@@ -575,6 +582,7 @@ private fun AppRoot(factory: ViewModelFactory) {
         }
     }
 }
+}
 
 
 /** 매크로 목록·편집은 기존 ViewModel 동작을 유지한 채 기능 안에서 연다. */
@@ -590,11 +598,13 @@ private fun MacroRoute(factory: ViewModelFactory) {
     val folderError by vm.folderError.collectAsState()
     val running by vm.running.collectAsState()
     val progress by vm.progress.collectAsState()
+    val permissions = com.wemade.teslamacro.feature.settings.rememberPermissionGuard(
+        com.wemade.teslamacro.feature.settings.PermissionFeature.MACROS)
     MacroListScreen(
         rules = rules,
         runningIds = running,
         progress = progress,
-        onToggle = vm::setEnabled,
+        onToggle = { id, enabled -> permissions(enabled) { vm.setEnabled(id, enabled) } },
         onStopAll = vm::stopAll,
         onEdit = vm::editMacro,
         onDuplicate = vm::duplicate,
@@ -610,8 +620,10 @@ private fun MacroRoute(factory: ViewModelFactory) {
     draft?.let { editing ->
         MacroEditScreen(
             draft = editing,
-            onChange = vm::updateDraft,
-            onSave = vm::saveDraft,
+            onChange = { changed ->
+                permissions(!editing.enabled && changed.enabled) { vm.updateDraft(changed) }
+            },
+            onSave = { permissions(editing.enabled) { vm.saveDraft() } },
             onDelete = vm::deleteDraft,
             onCancel = vm::cancelEdit,
             saveError = saveError,

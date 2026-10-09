@@ -86,7 +86,8 @@ internal fun HistoryScreen(state: HistoryUiState, onEnabled: (Boolean) -> Unit,
                 HelpTitle("주행 기록", "이 기기에 저장된 이동 경로와 배터리·충전 기록이에요.\n앱 삭제 시 기록도 삭제되며 설정 백업에는 포함되지 않아요.\n오른쪽 스위치로 기록을 켜고 꺼요. 앱에서 연결한 뒤 주행이 확인되면 화면 밖에서도 기록해요.",
                     modifier = Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
                 if (state.ready && state.detail.session == null) com.wemade.teslamacro.ui.component.DraftToggle(
-                    state.enabled, onEnabled, modifier = Modifier.semantics { contentDescription = "주행·충전 기록" })
+                    state.enabled, com.wemade.teslamacro.feature.settings.rememberPermissionToggle(
+                        com.wemade.teslamacro.feature.settings.PermissionFeature.HISTORY, onEnabled), modifier = Modifier.semantics { contentDescription = "주행·충전 기록" })
             }
         }
         if (state.detail.session != null) {

@@ -99,6 +99,7 @@ fun SettingsScreen(
      * 기능에서 부족한 준비 항목으로 바로 이동할 때도 사용한다.
      */
     initialGroup: SettingsGroup? = null,
+    openPermissionCheck: Boolean = false,
     focusedFeature: FeatureSettings? = null,
     onBackToFeature: (() -> Unit)? = null,
 ) {
@@ -216,7 +217,7 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.DEVICE -> {
-                            PermissionCheckPanel(battery, navigation, onRequestInstallPermission)
+                            PermissionCheckPanel(battery, navigation, onRequestInstallPermission, openPermissionCheck)
                             SectionHeader("화면", topPadding = Space.sm)
                             TCard {
                                 SettingsDetails("화면 모드", settings.themeMode.label) {
@@ -232,13 +233,8 @@ fun SettingsScreen(
                                 update = update,
                                 onCheck = onCheckUpdate,
                                 onInstall = onDownloadUpdate,
-                                onRequestPermission = onRequestInstallPermission,
                             )
 
-                            if (battery?.unrestricted == false) {
-                                SectionHeader("절전")
-                                BatteryPanel(battery)
-                            }
                         }
                     }
                 },
@@ -336,7 +332,7 @@ internal fun StealthChargePanel(
             title = if (executionOnly) "충전 1회" else "스텔스 충전",
             settingsOnly = settingsOnly, executionOnly = executionOnly,
             checked = settings.stealthCharging,
-            onCheckedChange = onEnabledChange,
+            onCheckedChange = rememberPermissionToggle(PermissionFeature.STEALTH_CHARGE, onEnabledChange),
             summary = stealthSettingsSummary(settings),
             notices = {
                 if (settings.stealthCharging && secondsUntilNextChange != null) {
@@ -558,38 +554,14 @@ private fun TwoColumns(
     }
 }
 
-/**
- * 절전 제외 안내.
- *
- * 시스템 절전이 걸렸을 때만 경고와 해제 버튼을 보여 준다.
- * 이미 제한이 없으면 해결된 항목을 남기지 않아 기기 설정 화면을 짧게 유지한다.
- */
-@Composable
-private fun BatteryPanel(battery: BatteryControls) {
-    TCard {
-        Text(
-            text = "절전 제한 중 · 매크로·위치·업데이트가 지연될 수 있어요.",
-            style = MaterialTheme.typography.bodySmall,
-            color = T.WarnText,
-        )
-        Spacer(Modifier.height(Space.sm))
-        TButton(
-            text = "제한 없음으로",
-            fillWidth = false,
-            small = true,
-            onClick = battery.onOpenSettings,
-        )
-    }
-}
-
 /** 현재 버전 표시 + GitHub 최신 릴리스 확인/원클릭 설치 */
 @Composable
 private fun UpdatePanel(
     update: UpdateState?,
     onCheck: () -> Unit,
     onInstall: () -> Unit,
-    onRequestPermission: () -> Unit,
 ) {
+    val install = rememberPermissionGuard(PermissionFeature.UPDATE)
     TCard {
         SettingActionRow("현재 버전 ${com.wemade.teslamacro.BuildConfig.VERSION_NAME}") {
             TButton(if (update is UpdateState.Checking) "확인 중…" else "확인",
@@ -598,14 +570,6 @@ private fun UpdatePanel(
                 onClick = onCheck)
         }
         ActionFeedback((update as? UpdateState.Failed)?.message, actionLabel = "다시 확인", onAction = onCheck)
-        if (update is UpdateState.NeedsInstallPermission) {
-            Text(
-                text = "앱 설치 권한이 필요해요.\n허용하고 돌아오면 설치를 자동으로 이어가요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = T.WarnText,
-                modifier = Modifier.padding(vertical = Space.sm),
-            )
-        }
         if (update is UpdateState.Available || update is UpdateState.Downloading ||
             update is UpdateState.Installing || update is UpdateState.NeedsInstallPermission) SettingActionRow(
             label = when (update) {
@@ -618,11 +582,11 @@ private fun UpdatePanel(
             when (update) {
                 is UpdateState.Available ->
                     TButton("설치", icon = Icons.Rounded.SystemUpdate,
-                        fillWidth = false, small = true, onClick = onInstall)
+                        fillWidth = false, small = true, onClick = { install(true, onInstall) })
                 is UpdateState.Downloading, is UpdateState.Installing ->
                     TButton("설치", fillWidth = false, small = true, enabled = false, onClick = {})
                 is UpdateState.NeedsInstallPermission ->
-                    TButton("권한 켜기", fillWidth = false, small = true, onClick = onRequestPermission)
+                    TButton("설치", fillWidth = false, small = true, onClick = { install(true, onInstall) })
                 else -> Unit
             }
         }
@@ -712,19 +676,8 @@ internal fun SmartThingsPanel(
                 title = "알림 명령",
                 settingsOnly = settingsOnly, executionOnly = executionOnly,
                 checked = settings.smartThingsEnabled,
-                onCheckedChange = controls.onEnabledChange,
+                onCheckedChange = rememberPermissionToggle(PermissionFeature.SMARTTHINGS, controls.onEnabledChange),
                 summary = "스마트싱스 알림으로 차량 명령을 실행해요. 전달한 알림은 삭제되며 이미 전송한 명령은 취소할 수 없어요.",
-                notices = {
-                    // 실행이 막히는 권한 부족은 목록에서도 바로 해결할 수 있게 남긴다.
-                    if ((settingsOnly || settings.smartThingsEnabled) && !controls.notificationAccessGranted) {
-                        Spacer(Modifier.height(Space.md))
-                        Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            Text("명령 수신에 알림 접근 권한이 필요해요.",
-                                style = MaterialTheme.typography.bodySmall, color = T.Danger)
-                            TButton("권한 허용", fillWidth = false, small = true, onClick = controls.onRequestNotificationAccess)
-                        }
-                    }
-                },
             ) {
                 val closeSettingsSheet = LocalCloseSettingsSheet.current
                 SettingRow(
@@ -866,45 +819,21 @@ data class NavigationControls(
     val onRequestActivityPermission: () -> Unit = {},
 )
 
-/**
- * 위치 권한이 없을 때의 경고 한 줄과 받기 버튼.
- * HUD와 과속 안내가 같은 이유로 죽으므로 둘 다 이걸 쓴다.
- */
-@Composable
-private fun LocationPermissionNotice(controls: NavigationControls) {
-    Spacer(Modifier.height(Space.md))
-    Hairline()
-    Spacer(Modifier.height(Space.md))
-    Text(
-        text = "위치 권한이 없어 속도를 읽지 못해요.",
-        style = MaterialTheme.typography.bodySmall,
-        color = T.Danger,
-    )
-    Spacer(Modifier.height(Space.sm))
-    TButton(
-        text = "권한 허용",
-        fillWidth = false,
-        onClick = controls.onRequestLocationPermission,
-    )
-}
-
 /** 길안내를 넘길 내비 앱 하나 */
 @Composable
 private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) {
     var showTrustedDevicePrompt by rememberSaveable { mutableStateOf(false) }
+    val toggle = rememberPermissionToggle(PermissionFeature.SAFE_DRIVE) { enabled ->
+        controls.onAutoStartSafeDriveChange(enabled)
+        showTrustedDevicePrompt = enabled
+    }
     Column {
         TCard {
             SettingToggleRow(
                 label = "탑승 시 네이버 지도 안심운전 실행",
                 checked = settings.autoStartNavigatorSafeDrive,
-                onCheckedChange = { enabled ->
-                    controls.onAutoStartSafeDriveChange(enabled)
-                    showTrustedDevicePrompt = enabled
-                },
+                onCheckedChange = toggle,
             )
-            if (settings.autoStartNavigatorSafeDrive && !controls.overlayPermitted) {
-                OverlayPermissionNotice(controls)
-            }
             if (settings.autoStartNavigatorSafeDrive) {
                 Spacer(Modifier.height(Space.md))
                 Hairline()
@@ -965,25 +894,6 @@ internal fun TrustedDevicePrompt(onDismiss: () -> Unit, onConfirm: () -> Unit) {
     )
 }
 
-/** 배경에서 내비 화면을 띄우는 데 필요한 오버레이 권한 안내 */
-@Composable
-private fun OverlayPermissionNotice(controls: NavigationControls) {
-    Spacer(Modifier.height(Space.md))
-    Hairline()
-    Spacer(Modifier.height(Space.md))
-    Text(
-        text = "'다른 앱 위에 표시' 권한이 없어 자동으로 열 수 없어요.",
-        style = MaterialTheme.typography.bodySmall,
-        color = T.Danger,
-    )
-    Spacer(Modifier.height(Space.sm))
-    TButton(
-        text = "권한 허용",
-        fillWidth = false,
-        onClick = controls.onRequestOverlayPermission,
-    )
-}
-
 /** 탑승 감지와 안심주행이 공유하는 페어링 차량을 한 상세 시트에서 고른다. */
 @Composable
 internal fun VehicleAudioPicker(settings: AppSettings, controls: NavigationControls) {
@@ -1019,16 +929,8 @@ private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
         SettingToggleRow(
             label = "다른 앱 위에 실시간 속도 표시",
             checked = settings.hudOverlay,
-            onCheckedChange = controls.onHudOverlayChange,
+            onCheckedChange = rememberPermissionToggle(PermissionFeature.HUD, controls.onHudOverlayChange),
         )
-        // 권한이 없으면 켜도 창이 안 뜬다. 켰는데 아무 일도 안 일어나면
-        // 사용자는 앱이 고장 난 줄 안다 — 여기서 바로 받을 수 있게 한다
-        if (settings.hudOverlay && !controls.locationPermitted) {
-            LocationPermissionNotice(controls)
-        }
-        if (settings.hudOverlay && !controls.overlayPermitted) {
-            OverlayPermissionNotice(controls)
-        }
     }
 }
 
@@ -1137,9 +1039,10 @@ private fun ChoiceRow(
 
 /** 드문 설정은 현재 값을 목록에 남기고 입력만 상세 시트에서 바꾼다. */
 @Composable
-internal fun SettingsDetails(title: String, summary: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    val expandInitially = LocalExpandSettingsDetails.current
+internal fun SettingsDetails(title: String, summary: String? = null, initiallyExpanded: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val expandInitially = initiallyExpanded || LocalExpandSettingsDetails.current
     var expanded by rememberSaveable { mutableStateOf(expandInitially) }
+    LaunchedEffect(initiallyExpanded) { if (initiallyExpanded) expanded = true }
     SettingRow(
         label = title, value = summary, onClick = { expanded = true },
     )

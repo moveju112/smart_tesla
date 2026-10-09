@@ -13,6 +13,13 @@ import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.Modifier
+import com.wemade.teslamacro.ui.theme.Space
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -62,7 +69,7 @@ internal fun grantedPermissionChecks(context: Context): Set<PermissionCheck> = b
 
 /** 기기 권한 한곳에서 상태를 확인하고 빠진 항목부터 허용 화면을 연다. */
 @Composable
-internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: NavigationControls?, onRequestInstallPermission: () -> Unit) {
+internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: NavigationControls?, onRequestInstallPermission: () -> Unit, initiallyExpanded: Boolean = false) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -70,6 +77,8 @@ internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: Navigat
     val granted = key(refresh) { rememberOnResume { grantedPermissionChecks(context) } }
     val prerequisites = rememberOnResume { NavigationSetup.read(context) }
     var preparingAdb by remember { mutableStateOf(false) }
+    var pairingPort by remember { mutableStateOf("") }
+    var pairingCode by remember { mutableStateOf("") }
     val items = PermissionCheck.entries.filter { it != PermissionCheck.ACTIVITY || Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q }
     val runtimeRequest = if (LocalActivityResultRegistryOwner.current == null) null else rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -111,7 +120,7 @@ internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: Navigat
     }
     SectionHeader("권한")
     TCard {
-        SettingsDetails("권한 점검", "${items.count { it in granted }}/${items.size} 허용됨") {
+        SettingsDetails("권한 점검", "${items.count { it in granted }}/${items.size} 허용됨", initiallyExpanded = initiallyExpanded) {
             HelpTitle("권한 허용", "일반 권한은 묶어서 요청하고, 특수 권한은 각 항목에서 직접 허용해요. " +
                 "부족한 권한 준비를 누르면 다음 미허용 항목을 열어요. " +
                 "접근성이 제한되면 앱 정보의 메뉴에서 제한된 설정 허용 후 다시 시도해 주세요. " +
@@ -151,6 +160,23 @@ internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: Navigat
                             Toast.makeText(context, "ADB 연결 설정을 확인하지 못했어요 · 다시 눌러 주세요", Toast.LENGTH_LONG).show()
                         } finally { preparingAdb = false }
                     } })
+                Spacer(Modifier.height(Space.sm))
+                SettingsDetails("수동 페어링 / 연결 포트") {
+                    DraftField(pairingPort, { pairingPort = it.filter(Char::isDigit).take(5) }, "페어링 포트 · 비우면 자동 탐색",
+                        enabled = !navigation.wirelessState.busy && !navigation.wirelessState.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    Spacer(Modifier.height(Space.sm))
+                    DraftField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "페어링 코드 6자리",
+                        enabled = !navigation.wirelessState.busy && !navigation.wirelessState.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        visualTransformation = PasswordVisualTransformation())
+                    Spacer(Modifier.height(Space.sm))
+                    TButton("페어링", enabled = !navigation.wirelessState.busy && !navigation.wirelessState.running && pairingCode.length == 6) {
+                        navigation.onWirelessPair(pairingPort, pairingCode)
+                        pairingCode = ""
+                    }
+                    Spacer(Modifier.height(Space.md))
+                    DraftField(navigation.wirelessState.port, navigation.onWirelessPort, "연결 포트",
+                        enabled = !navigation.wirelessState.busy && !navigation.wirelessState.running, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                }
             }
         }
     }

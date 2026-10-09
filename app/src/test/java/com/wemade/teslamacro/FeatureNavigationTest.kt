@@ -34,11 +34,10 @@ class FeatureNavigationTest {
         assertFalse(FeatureSettings.entries.any { it.name == "SAFE_DRIVE" })
     }
 
-    /** 알림 접근 권한과 명령 문구가 준비돼야 스마트싱스를 켤 수 있다. */
-    @Test fun notificationFeaturesRequireAccessAndCommands() {
+    /** 명령 문구 설정은 유지하고 권한 부족은 ON 모달에서 처리한다. */
+    @Test fun notificationPermissionsDoNotRedirectBeforeToggle() {
         val ready = AppSettings(vin = "5YJS0000000000000", isEnrolled = true)
-        assertEquals(FeatureSettings.SMARTTHINGS, requiredFeatureSettings(AppFeature.SMARTTHINGS,
-            ready, true, true, false))
+        assertNull(requiredFeatureSettings(AppFeature.SMARTTHINGS, ready, true, true, false))
         assertEquals(FeatureSettings.SMARTTHINGS, requiredFeatureSettings(AppFeature.SMARTTHINGS,
             ready.copy(smartThingsCommandTexts = emptyMap()), true, true, true))
         assertNull(requiredFeatureSettings(AppFeature.SMARTTHINGS, ready, true, true, true))

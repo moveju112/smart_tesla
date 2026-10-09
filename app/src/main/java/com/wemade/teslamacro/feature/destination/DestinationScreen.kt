@@ -190,7 +190,9 @@ fun DestinationScreen(
                                 min = 1.0, max = 120.0, step = 1.0, unit = "분",
                                 enabled = state.canSend, onChange = { onMinutes(it.toInt()) })
                             Hairline()
-                            SettingToggleRow("이 기기 자동 수신", state.receiving, onReceiving,
+                            SettingToggleRow("이 기기 자동 수신", state.receiving,
+                                com.wemade.teslamacro.feature.settings.rememberPermissionToggle(
+                                    com.wemade.teslamacro.feature.settings.PermissionFeature.DESTINATION, onReceiving),
                                 enabled = state.canReceive,
                                 description = "보내는 기기와 연결하면 사용할 수 있어요. 탑승 중 받은 목적지를 네이버지도에서 열어요.")
                             if (state.senderCount > 0 && state.receiving) {
@@ -198,10 +200,7 @@ fun DestinationScreen(
                                     Text(state.receiveMessage, style = MaterialTheme.typography.bodyMedium,
                                         color = T.InkMuted, textAlign = TextAlign.End)
                                 })
-                                if (!state.overlayAllowed) SettingActionRow("다른 앱 위에 표시", action = {
-                                    TButton("허용", tone = ButtonTone.Secondary, enabled = state.canReceive,
-                                        fillWidth = false, small = true, onClick = onOverlay)
-                                })
+
                             }
                         }
                     } else {

@@ -36,6 +36,7 @@ internal class TeslaNavigationShare(
     private var startedAt = 0L
     private var resolution: Job? = null
     private var ignored: String? = null
+    private var repeatedAt = -30_001L
 
     /** 안내 알림에 포함된 목적지와 같은 앱의 최신 화면 후보만 결합한다. */
     suspend fun notification(packageName: String, key: String, title: String, text: String) = lock.withLock {
@@ -49,6 +50,10 @@ internal class TeslaNavigationShare(
         } else if (guiding && !known) {
             DiagLog.add("테슬라 내비 연동 — 안내 알림 감지 · 화면 목적지 대기")
             awaitScreen(packageName, key)
+        } else if (guiding && source == null && SystemClock.elapsedRealtime() - repeatedAt > 30_000) {
+            // 대기 없이 같은 안내 알림만 갱신되는 경우를 기록해 재시작 미감지를 구분한다.
+            repeatedAt = SystemClock.elapsedRealtime()
+            DiagLog.add("테슬라 내비 연동 — 같은 안내 알림 갱신 · 새 안내로 보지 않음")
         } else if (!guiding && ignored != text) {
             ignored = text
             DiagLog.add("테슬라 내비 연동 — 안내 아님 알림 무시 · ${title.take(20)} / ${text.take(30)}")
@@ -81,6 +86,7 @@ internal class TeslaNavigationShare(
 
     /** 안내 종료는 조회와 선택도 무효화해 과거 안내를 뒤늦게 전송하지 않는다. */
     suspend fun removed(packageName: String, key: String, reason: Int? = null) = lock.withLock {
+        if (tracker.activeKey(packageName) == key) DiagLog.add("테슬라 내비 연동 — 안내 알림 제거 · 사유=${reason ?: -1}")
         tracker.removed(packageName, key)
         if (source == (packageName to key)) invalidate("안내 알림 종료 · 사유=${reason ?: -1}")
     }

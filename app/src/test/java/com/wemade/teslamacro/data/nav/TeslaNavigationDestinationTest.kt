@@ -116,6 +116,15 @@ class TeslaNavigationDestinationTest {
             NavigationScreenText("출발지", 0, 0), NavigationScreenText("도착지", 60, 0), NavigationScreenText("다른 글자", 100, 0))))
     }
 
+    /** 실기기 경로 화면처럼 닫기·더보기·입구 글자가 섞여도 아래쪽 도착 칸을 읽는다. */
+    @Test fun `네이버 실제 경로 화면의 조작 글자를 목적지 후보에서 뺀다`() {
+        assertEquals("위메이드타워", teslaDestinationFromScreen(naver, listOf(
+            NavigationScreenText("출발지 도착지 전환", 183, 900), NavigationScreenText("인천 검단구 청마로34번길 6", 168, 100),
+            NavigationScreenText("위메이드타워", 285, 100), NavigationScreenText("경유지 추가", 183, 950),
+            NavigationScreenText("닫기", 130, 0), NavigationScreenText("더보기", 235, 950),
+            NavigationScreenText("입구", 415, 100), NavigationScreenText("출입구 변경", 415, 300))))
+    }
+
     /** 공유와 보조창이 동일하게 실제 길안내 알림만 인정한다. */
     @Test fun `보조창은 검색과 안심주행 알림에는 표시하지 않는다`() {
         assertTrue(isTeslaNavigationGuidance(naver, "네이버 지도", "내비게이션 - 안내 중"))

@@ -76,7 +76,9 @@ internal class TeslaNavigationDestination {
             // 긴 목적지 링크도 좌표를 먼저 확인해 장소명·경로 옵션 없이 고정된 위치만 남긴다.
             if (text.length <= 2048) teslaDestinationPoint(text)?.let { return "${it.latitude},${it.longitude}" }
             if (text.length !in 1..200) return null
-            if (text in setOf("출발", "도착", "경유", "출발지 입력", "도착지 입력", "경유지 입력", "현재 위치", "내 위치", "길찾기", "내비게이션 - 안내 중", "안심주행", "출입구 변경", "출입구 선택", "출발지와 도착지 바꾸기", "경유지 추가")) return null
+            if (text in setOf("출발", "도착", "경유", "출발지 입력", "도착지 입력", "경유지 입력", "현재 위치", "내 위치", "길찾기", "내비게이션 - 안내 중", "안심주행", "출입구 변경", "출입구 선택", "출발지와 도착지 바꾸기", "경유지 추가",
+                    // 네이버 경로 화면 0.9.200 실기기 판독에서 출발·도착 칸과 섞인 조작 글자.
+                    "출발지 도착지 전환", "닫기", "더보기", "입구", "출구")) return null
             return text
         }
     }

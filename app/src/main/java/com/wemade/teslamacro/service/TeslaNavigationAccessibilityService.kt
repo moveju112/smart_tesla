@@ -23,6 +23,7 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastReadAt = -1_000L
     private var lastSummary: String? = null
+    private var lastSummaryAt = 0L
 
     /** 화면 후보를 보관하되 실제 안내 알림과 결합하기 전에는 차량에 보내지 않는다. */
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -50,10 +51,14 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                 val summary = when {
                     destination != null -> "화면 목적지 읽음 · $destination"
                     nodes.isEmpty() -> "화면 목적지 영역 없음"
-                    else -> "화면 목적지 판독 실패 · " + entries.take(8).joinToString(" | ") { "${it.top}:${it.text.take(20)}" }
+                    else -> "화면 목적지 판독 실패 · " + entries.take(14).joinToString(" | ") {
+                        "${it.top},${it.left}${if (it.isButton) "B" else ""}:${it.text.take(20)}"
+                    }
                 }
-                if (summary != lastSummary) {
+                // 같은 결과도 30초가 지나면 다시 기록해 재시도 때 화면을 다시 읽었는지 구분한다.
+                if (summary != lastSummary || now - lastSummaryAt > 30_000) {
                     lastSummary = summary
+                    lastSummaryAt = now
                     com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $summary")
                 }
                 destination?.let { app.container.teslaNavigationShare.screen(packageName, it) }

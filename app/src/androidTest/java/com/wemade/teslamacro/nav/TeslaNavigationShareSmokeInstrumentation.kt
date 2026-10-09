@@ -127,47 +127,33 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                             }
                         })
                     store.setTeslaNavigationShareEnabled(true)
+                    // 복수 후보는 선택창 없이 현재 위치에 가까운 한 곳만 공유한다.
                     resolving.notification("com.skt.tmap.ku", "partial", "경로주행", "현재 위치 > 북지길 13")
-                    val partial = withTimeout(3_000) { resolving.selection.first { it != null }!! }
-                    check(partial.candidates == listOf(north, south) && count() == 5)
-                    resolving.confirm(partial.id, south)
                     waitForCount(6)
-                    check(receipts().contains("q=35.1%2C129.0"))
-                    resolving.confirm(partial.id, north)
-                    check(count() == 6)
+                    check(receipts().contains("q=37.56%2C126.97") && resolving.selection.value == null)
 
                     resolving.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > 북지길 14")
                     waitForCount(7)
-                    check(resolving.selection.value == null)
                     resolving.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > 북지길 14")
                     check(count() == 7)
-                    resolving.notification("com.skt.tmap.ku", "off", "경로주행", "현재 위치 > 북지길 16")
-                    val single = withTimeout(3_000) { resolving.selection.first { it != null }!! }
                     store.setTeslaNavigationShareEnabled(false)
-                    resolving.confirm(single.id, north)
+                    resolving.notification("com.skt.tmap.ku", "off", "경로주행", "현재 위치 > 북지길 16")
+                    delay(1_000)
                     check(resolving.selection.value == null && count() == 7)
                     store.setTeslaNavigationShareEnabled(true)
                     resolving.notification("com.skt.tmap.ku", "slow", "경로주행", "현재 위치 > Slow")
                     withTimeout(3_000) { entered.await() }
                     resolving.removed("com.skt.tmap.ku", "slow")
                     resolving.notification("com.skt.tmap.ku", "new", "경로주행", "현재 위치 > 북지길 15")
-                    val latest = withTimeout(3_000) { resolving.selection.first { it != null }!! }
-                    release.complete(Unit)
-                    resolving.confirm(single.id, north)
-                    check(resolving.selection.value?.id == latest.id && count() == 7)
-                    resolving.search(latest.id, north.address)
                     waitForCount(8)
-                    check(resolving.selection.value == null)
+                    release.complete(Unit)
+                    delay(1_000)
+                    check(count() == 8)
                     resolving.notification("com.skt.tmap.ku", "exact", "경로주행", "현재 위치 > 서울특별시 종로구 북지길 13")
                     waitForCount(9)
                     check(resolving.selection.value == null)
-                    resolving.notification("com.skt.tmap.ku", "remove", "경로주행", "현재 위치 > 북지길 16")
-                    val removed = withTimeout(3_000) { resolving.selection.first { it != null }!! }
-                    resolving.removed("com.skt.tmap.ku", "remove")
-                    resolving.confirm(removed.id, north)
-                    check(count() == 9 && resolving.selection.value == null)
                     resolving.clear()
-                    sendStatus(0, Bundle().apply { putString("phase", "PASS partial road choice, single-result automatic, coordinate receipt, OFF, stale lookup, refined automatic, removed selection") })
+                    sendStatus(0, Bundle().apply { putString("phase", "PASS multi automatic nearest, single automatic, coordinate receipt, OFF, stale lookup ignored") })
                     result.putString("result", "PASS: ADB/normal/failure paths, coordinate sharing, region selection, single automatic, OFF, stale response, duplicate protection; receipts=9")
                 } finally {
                     NavigationBridgeProvider.bridge = real
@@ -220,11 +206,8 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                 lookup = { _, _ -> listOf(correct, correct.copy(address = "인천 남동구 청마로34번길 6")) })
             both.screen("com.nhn.android.nmap", "청마로 34번길 6")
             both.notification("com.nhn.android.nmap", "choice", "네이버 지도", "내비게이션 - 안내 중")
-            val selected = withTimeout(4_000) { both.selection.first { it != null }!! }
-            check(selected.preview == null && selected.testMode && selected.candidates.size == 2)
-            both.confirm(selected.id, correct)
             val chosen = withTimeout(4_000) { both.selection.first { it?.preview != null }!! }
-            check(chosen.preview == correct && dispatches == 0 && count() == 0)
+            check(chosen.preview == correct && chosen.testMode && dispatches == 0 && count() == 0)
             both.clear()
             sharing.notification("com.skt.tmap.ku", "coordinates", "경로주행", "현재 위치 > 37.5,126.6")
             val coordinate = withTimeout(4_000) { sharing.selection.first { it?.preview?.shareText == "37.5,126.6" }!! }
@@ -247,7 +230,7 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             sharing.removed("com.nhn.android.nmap", "reroute")
             sharing.reroute("com.nhn.android.nmap", "37.7,126.8")
             check(sharing.selection.value == null)
-            sendStatus(0, Bundle().apply { putString("phase", "PASS test preview after choice, automatic coordinate preview, dispatch blocked") })
+            sendStatus(0, Bundle().apply { putString("phase", "PASS automatic best preview, coordinate preview, dispatch blocked") })
         } finally {
             app.container.teslaNavigationShare.clear()
             store.setTeslaNavigationShareEnabled(false)
@@ -256,7 +239,7 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
         }
     }
 
-    /** 다른 앱이 앞에 있는 상태에서 실제 오버레이 권한·선택·공유·종료를 확인한다. */
+    /** 다른 앱이 앞에 있는 상태에서 실제 오버레이 권한·주소 입력·자동 공유·종료를 확인한다. */
     private suspend fun verifyOverlay(app: TeslaMacroApplication) {
         val store = app.container.settingsStore
         val north = TeslaDestinationCandidate("서울 종로구 북지길 13", com.wemade.teslamacro.domain.macro.GeoPoint(37.56, 126.97))
@@ -272,37 +255,30 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             store.setTeslaNavigationShareEnabled(true)
             shell("am start -n com.nhn.android.nmap/.Fixture")
             withTimeout(10_000) { while (!focusedApp().contains("com.nhn.android.nmap")) delay(100) }
+            // 화면 목적지를 못 읽은 안내만 주소 입력창을 띄운다.
             shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW deny")
-            sharing.notification("com.skt.tmap.ku", "dialog", "경로주행", "현재 위치 > 북지길 13")
-            val pending = withTimeout(25_000) { sharing.selection.first { it != null }!! }
-            check(!dialogTexts().contains("테슬라 목적지 선택") && count() == 0)
+            sharing.notification("com.nhn.android.nmap", "dialog", "네이버 지도", "내비게이션 - 안내 중")
+            val pending = withTimeout(10_000) { sharing.selection.first { it != null }!! }
+            check(pending.error != null && !dialogTexts().contains("테슬라 목적지 선택") && count() == 0)
             shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW allow")
             overlay.refresh()
             waitForOverlay(true)
-            try {
-                withTimeout(5_000) { while (!dialogTexts().contains(north.address) || !dialogTexts().contains(south.address)) delay(100) }
-            } catch (error: TimeoutCancellationException) {
-                error("candidate texts missing: " + dialogTexts())
-            }
             check(shell("dumpsys window").contains("ty=APPLICATION_OVERLAY"))
             check(shell("dumpsys activity activities").lineSequence().any { it.contains("ResumedActivity") && it.contains("com.nhn.android.nmap") })
-            check(sharing.selection.value?.id == pending.id && count() == 0)
-            clickCandidate(south.address)
+            sharing.search(pending.id, "single")
             waitForCount(1)
             waitForOverlay(false)
-            check(receipts().contains("q=35.1%2C129.0"))
-            sharing.confirm(pending.id, north)
-            check(count() == 1)
-            sendStatus(0, Bundle().apply { putString("phase", "PASS overlay permission recovery, foreign app foreground, candidate tap, one coordinate delivery") })
+            check(receipts().contains("q=37.56%2C126.97"))
+            sendStatus(0, Bundle().apply { putString("phase", "PASS overlay permission recovery, foreign app foreground, typed address automatic delivery") })
 
-            sharing.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > single")
+            // 복수 후보는 선택창 없이 한 곳만 자동 공유하고 같은 안내 반복은 보내지 않는다.
+            sharing.notification("com.skt.tmap.ku", "multi", "경로주행", "현재 위치 > 북지길 13")
             waitForCount(2)
-            check(sharing.selection.value == null)
-            check(!dialogTexts().contains("테슬라 목적지 선택"))
-            sharing.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > single")
+            check(sharing.selection.value == null && !dialogTexts().contains("테슬라 목적지 선택"))
+            sharing.notification("com.skt.tmap.ku", "multi", "경로주행", "현재 위치 > 북지길 13")
             check(count() == 2)
 
-            sharing.notification("com.skt.tmap.ku", "lock", "경로주행", "현재 위치 > 북지길 13")
+            sharing.notification("com.nhn.android.nmap", "lock", "네이버 지도", "내비게이션 - 안내 중")
             waitForOverlay(true)
             shell("input keyevent KEYCODE_SLEEP")
             waitForOverlay(false)
@@ -311,21 +287,17 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             shell("wm dismiss-keyguard")
             overlay.refresh()
             waitForOverlay(true)
-            sharing.clear()
+            sharing.removed("com.nhn.android.nmap", "lock", 8)
             waitForOverlay(false)
-            sendStatus(0, Bundle().apply { putString("phase", "PASS single automatic without picker, duplicate prevention, screen-off hides overlay and retains pending") })
+            sendStatus(0, Bundle().apply { putString("phase", "PASS multi automatic without picker, duplicate prevention, screen-off hides input and guidance end closes it") })
 
-            sharing.notification("com.skt.tmap.ku", "ended", "경로주행", "현재 위치 > 북지길 14")
-            waitForOverlay(true)
-            sharing.removed("com.skt.tmap.ku", "ended", 8)
-            waitForOverlay(false)
+            // 조회 결과가 없으면 이름 그대로 넘긴다.
             sharing.notification("com.skt.tmap.ku", "empty", "경로주행", "현재 위치 > empty")
-            waitForOverlay(true)
-            check(dialogTexts().contains("시·군·구를 포함한 주소로 다시 검색해 주세요") && count() == 2)
+            waitForCount(3)
+            check(receipts().contains("q=empty") || receipts().contains("empty"))
             store.setTeslaNavigationShareEnabled(false)
             sharing.clear()
-            waitForOverlay(false)
-            check(count() == 2)
+            check(count() == 3)
         } finally {
             store.setTeslaNavigationShareEnabled(false)
             sharing.clear()
@@ -337,35 +309,6 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
         while (dialogTexts().contains("테슬라 목적지 선택") != visible) delay(100)
     }
 
-    /** 실제 접근성 버튼을 눌러 오버레이 UI에서 기존 확인 경로까지 연결한다. */
-    private fun clickCandidate(address: String) {
-        var clicked = false
-        uiAutomation.windows.forEach { window ->
-            val nodes = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
-            window.root?.let(nodes::add)
-            var visited = 0
-            while (nodes.isNotEmpty() && visited++ < 300 && !clicked) {
-                val node = nodes.removeFirst()
-                if (node.text?.toString() == address) {
-                    var parent = node.parent
-                    clicked = node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                    var ancestors = 0
-                    while (!clicked && parent != null && ancestors++ < 4) {
-                        clicked = parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
-                        val next = if (clicked) null else parent.parent
-                        parent.recycle()
-                        parent = next
-                    }
-                    parent?.recycle()
-                }
-                if (!clicked) for (index in 0 until node.childCount.coerceAtMost(50)) node.getChild(index)?.let(nodes::add)
-                node.recycle()
-            }
-            nodes.forEach { it.recycle() }
-            window.recycle()
-        }
-        check(clicked) { "candidate button not found" }
-    }
 
     /** 계측 셸은 파이프를 실행하지 않으므로 창 덤프에서 포커스 행만 직접 읽는다. */
     private fun focusedApp(): String = shell("dumpsys window").lineSequence().firstOrNull { it.contains("mCurrentFocus=") }.orEmpty()

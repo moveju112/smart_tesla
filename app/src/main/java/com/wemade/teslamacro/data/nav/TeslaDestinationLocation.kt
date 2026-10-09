@@ -123,5 +123,21 @@ internal fun withinTeslaRouteDistance(candidates: List<TeslaDestinationCandidate
     }
 }
 
-/** 조회 후보가 하나일 때만 자동 선택하고 복수 후보는 가까워도 선택받는다. */
-internal fun automaticTeslaCandidate(candidates: List<TeslaDestinationCandidate>): TeslaDestinationCandidate? = candidates.singleOrNull()
+/** 선택창 없이 보낼 후보를 고른다: 경로 거리가 있으면 직선거리가 경로의 약 1/1.3에 가장 가까운 곳, 없으면 가장 가까운 곳. */
+internal fun bestTeslaCandidate(candidates: List<TeslaDestinationCandidate>, near: GeoPoint?, routeMeters: Int?): TeslaDestinationCandidate? {
+    if (candidates.size <= 1 || near == null || !validTeslaDestinationPoint(near)) return candidates.firstOrNull()
+    // 도로는 직선보다 평균 1.3배 정도 길어 경로 거리만으로 같은 이름 후보의 실제 위치를 가늠한다.
+    val expected = routeMeters?.let { it / 1.3 }
+    return candidates.minBy { candidate ->
+        val distance = candidate.point?.let {
+            com.wemade.teslamacro.domain.macro.ConditionEvaluator.distanceMeters(near.latitude, near.longitude, it.latitude, it.longitude)
+        } ?: Double.MAX_VALUE
+        if (expected == null || distance == Double.MAX_VALUE) distance else kotlin.math.abs(distance - expected)
+    }
+}
+
+/** 후보가 없으면 시·군·구를 붙인 이름을 그대로 넘겨 테슬라 앱 검색에 맡긴다. */
+internal fun fallbackTeslaCandidate(query: String, region: String?): TeslaDestinationCandidate {
+    val prefix = region?.let(::canonicalTeslaAddress)?.split(' ')?.take(2)?.joinToString(" ")?.takeIf { it.isNotBlank() }
+    return TeslaDestinationCandidate(if (prefix == null || qualifiedTeslaRoadAddress(query) || query.startsWith(prefix)) query else "$prefix $query")
+}

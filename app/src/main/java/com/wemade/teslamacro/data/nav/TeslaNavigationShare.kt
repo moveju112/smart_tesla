@@ -26,6 +26,7 @@ internal class TeslaNavigationShare(
     private val scope: CoroutineScope,
     private val currentPoint: suspend () -> com.wemade.teslamacro.domain.macro.GeoPoint? = { null },
     private val lookup: suspend (String, com.wemade.teslamacro.domain.macro.GeoPoint?) -> List<TeslaDestinationCandidate> = navigator::teslaDestinationCandidates,
+    private val regionOf: suspend (com.wemade.teslamacro.domain.macro.GeoPoint) -> String? = { navigator.addressOf(it) },
 ) {
     private val tracker = TeslaNavigationDestination()
     private val lock = Mutex()
@@ -160,7 +161,8 @@ internal class TeslaNavigationShare(
         resolution = scope.launch { findCandidates(id, query, testRequest) }
     }
 
-    /** 원본 좌표·단일 후보는 공유하고 복수 후보와 조회 실패는 오버레이 선택으로 넘긴다. */
+    // 목적지 자동 결정 (조회 -> 경로 거리로 먼 동명 제외 -> 가장 그럴듯한 후보 -> 없으면 지역+이름)
+    /** 사용자 결정대로 선택창 없이 한 곳을 정해 공유하고, 테스트 모드는 같은 결과를 보조창에 보여준다. */
     private suspend fun findCandidates(id: Long, query: String, testRequest: Boolean) {
         try {
             val sourcePoint = teslaDestinationPoint(query)
@@ -168,26 +170,18 @@ internal class TeslaNavigationShare(
             val found = if (sourcePoint != null) listOf(TeslaDestinationCandidate(query, sourcePoint))
                 else rankedTeslaCandidates(matchingTeslaAddressCandidates(query, lookup(query, near)), near)
             val route = routeBound()
-            val candidates = withinTeslaRouteDistance(found, near, route).ifEmpty {
-                if (sourcePoint == null && qualifiedTeslaRoadAddress(query)) listOf(TeslaDestinationCandidate(query)) else emptyList()
-            }
-            if (found.size != candidates.size || route != null) {
-                DiagLog.add("테슬라 내비 연동 — 경로 거리 확인 · 경로=${route ?: -1}m · 후보 ${found.size}→${candidates.size}")
-            }
+            val bounded = withinTeslaRouteDistance(found, near, route)
+            val best = bestTeslaCandidate(bounded, near, route)
+                ?: fallbackTeslaCandidate(query, near?.let { runCatching { regionOf(it) }.getOrNull() })
+            DiagLog.add("테슬라 내비 연동 — 목적지 자동 선택 · 경로=${route ?: -1}m · 후보 ${found.size}→${bounded.size} · " +
+                "${best.address}${if (best.point == null) " (이름 검색)" else ""}")
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
-                val exact = automaticTeslaCandidate(candidates)
                 val testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode
-                if (exact != null && testMode) showPreview(id, query, exact)
-                else if (exact != null) {
-                    mutableSelection.value = null
-                    share(exact.shareText, id)
-                }
+                if (testMode) showPreview(id, query, best)
                 else {
-                    DiagLog.add("테슬라 내비 연동 — 목적지 주소 확인 필요 · 후보=${candidates.size}")
-                    mutableSelection.value = TeslaDestinationSelection(id, query, candidates,
-                        error = if (candidates.isEmpty()) "시·군·구를 포함한 주소로 다시 검색해 주세요" else null,
-                        testMode = testMode)
+                    mutableSelection.value = null
+                    share(best.shareText, id)
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }

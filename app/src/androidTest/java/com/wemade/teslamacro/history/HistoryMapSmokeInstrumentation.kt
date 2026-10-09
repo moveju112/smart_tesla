@@ -63,6 +63,7 @@ class HistoryMapSmokeInstrumentation : Instrumentation() {
             runBlocking { withTimeout(10_000) { model.state.first { it.detail.samples.size == 2 && !it.detail.loading } } }
             val webView = awaitMap(screen)
             checkMap(webView)
+            checkLayoutRecovery(webView)
             runBlocking {
                 var loadingSeen = false
                 val observer = launch(start = CoroutineStart.UNDISPATCHED) {
@@ -140,5 +141,41 @@ class HistoryMapSmokeInstrumentation : Instrumentation() {
             view.webChromeClient?.onProgressChanged(view, view.progress)
         }
         check(ready.await(15, TimeUnit.SECONDS) && valid) { "지도 경로·버튼·크기 확인 실패: $detail" }
+    }
+
+    /** 레이아웃이 잠깐 0이 돼도 맞춘 경로를 과도하게 축소하지 않는지 실제 JS로 확인한다. */
+    private fun checkLayoutRecovery(view: WebView) {
+        val measured = CountDownLatch(1)
+        runOnMainSync {
+            view.webChromeClient = object : android.webkit.WebChromeClient() {
+                /** DOM이 실제 화면 높이를 얻은 시점만 신호로 받아 초기 0 크기를 성공으로 보지 않는다. */
+                override fun onConsoleMessage(message: android.webkit.ConsoleMessage): Boolean {
+                    if (message.message() == "history-test-layout-ready") measured.countDown()
+                    return true
+                }
+            }
+            view.evaluateJavascript("""
+                (()=>{const ready=()=>{if(map.clientHeight>0){console.info('history-test-layout-ready');return true;}return false;};
+                if(!ready()){const observer=new ResizeObserver(()=>{if(ready())observer.disconnect();});observer.observe(map);}})()
+            """.trimIndent(), null)
+        }
+        check(measured.await(5, TimeUnit.SECONDS)) { "DOM 지도 높이가 0에서 복구되지 않음" }
+        val done = CountDownLatch(1)
+        var observation = "callback pending"
+        var valid = false
+        runOnMainSync {
+            view.evaluateJavascript("""
+                (()=>{const before=zoom, height=map.style.height;
+                map.style.height='0px';fit();map.style.height=height;
+                window.dispatchEvent(new Event('resize'));
+                return JSON.stringify({before:before,after:zoom,width:map.clientWidth,height:map.clientHeight});})()
+            """.trimIndent()) {
+                observation = it
+                val data = runCatching { org.json.JSONObject(org.json.JSONArray("[$it]").getString(0)) }.getOrNull()
+                valid = data != null && data.optInt("before") > 8 && data.optInt("before") == data.optInt("after")
+                done.countDown()
+            }
+        }
+        check(done.await(5, TimeUnit.SECONDS) && valid) { "크기 없는 지도 맞춤 후 경로 축소: $observation" }
     }
 }

@@ -38,17 +38,45 @@ class SeatComfortPresetsTest {
         assertNull(recommendedSeatCoolingLevel(Double.NaN, 30.0))
     }
 
-    /** 좌석별 문이 열릴 때 해당 좌석의 높은 단계 한 개만 켠다. */
+    /** 문·기어 변화 없이 단계 문턱마다 양 좌석을 한 번 조절하고 미확인은 실행하지 않는다. */
     @Test
-    fun `boarding is per seat and restart is not a door event`() {
+    fun `temperature following changes both seats without door or park events`() {
         val engine = MacroEngine()
-        assertTrue(engine.evaluate(rules, null, reading(driver = true), emptyMap()).isEmpty())
-        val driver = engine.evaluate(rules, reading(), reading(driver = true), emptyMap())
-        assertEquals(listOf("preset-seat-driver-cool-3"), driver.map { it.id })
-        val passenger = engine.evaluate(rules, reading(), reading(passenger = true, inside = 25.0), emptyMap())
-        assertEquals(listOf("preset-seat-passenger-cool-2"), passenger.map { it.id })
-        assertEquals(2, engine.evaluate(rules, reading(), reading(driver = true, passenger = true), emptyMap()).size)
-        assertTrue(engine.evaluate(rules, reading(), reading(driver = true, inside = null), emptyMap()).isEmpty())
+        val hot = reading(shift = ShiftState.DRIVE)
+        assertEquals(setOf("preset-seat-driver-cool-3", "preset-seat-passenger-cool-3"),
+            engine.evaluate(rules, null, hot, emptyMap()).map { it.id }.toSet())
+        assertTrue(engine.evaluate(rules, hot, hot, emptyMap()).isEmpty())
+        val medium = reading(inside = 25.0, shift = ShiftState.DRIVE)
+        assertEquals(setOf("preset-seat-driver-cool-2", "preset-seat-passenger-cool-2"),
+            engine.evaluate(rules, hot, medium, emptyMap()).map { it.id }.toSet())
+        assertTrue(engine.evaluate(rules, medium, medium.copy(snapshot = medium.snapshot.copy(insideTempC = 26.0)), emptyMap()).isEmpty())
+        val low = reading(inside = 22.0, shift = ShiftState.REVERSE)
+        assertEquals(2, engine.evaluate(rules, medium, low, emptyMap()).size)
+        val cold = reading(inside = 20.0)
+        val off = engine.evaluate(rules, low, cold, emptyMap())
+        assertEquals(2, off.size)
+        assertTrue(off.all { ((it.actions.single() as ActionStep.Run).command as VehicleCommand.SetSeatCooler).level == Level.OFF })
+        assertTrue(engine.evaluate(rules, cold, cold, emptyMap()).isEmpty())
+        assertEquals(2, engine.evaluate(rules, cold, hot, emptyMap()).size)
+        listOf(reading(present = false), reading(driver = true), reading(inside = null), reading(outside = null)).forEach {
+            assertTrue(MacroEngine().evaluate(rules, null, it, emptyMap()).isEmpty())
+        }
+    }
+
+    /** 변경한 사용자 규칙과 꺼둔 상태·삭제는 보존하며 기존 기본값만 갱신한다. */
+    @Test
+    fun `upgrade preserves edited disabled and deleted presets`() {
+        val legacy = SeatComfortPresets.defaults(temperatureFollowing = false)
+        val disabled = legacy.first().copy(enabled = false)
+        val edited = legacy[1].copy(name = "내 통풍", cooldownSeconds = 45)
+        val input = listOf(disabled, edited, legacy[2])
+        val upgraded = SeatComfortPresets.upgradeTemperatureFollowing(input)
+        assertEquals(3, upgraded.size)
+        assertFalse(upgraded[0].enabled)
+        assertEquals(listOf(Trigger.Always), upgraded[0].triggers)
+        assertEquals(edited, upgraded[1])
+        assertEquals(listOf(Trigger.Always), upgraded[2].triggers)
+        assertEquals(upgraded, SeatComfortPresets.upgradeTemperatureFollowing(upgraded))
     }
 
     /** 추울 때만 양 좌석 열선이 켜지고 15분 뒤 같은 좌석을 끈다. */
@@ -80,24 +108,25 @@ class SeatComfortPresetsTest {
         val fired = engine.evaluate(rules, park, exit, emptyMap())
         assertEquals(listOf("preset-seat-exit-off"), fired.map { it.id })
         assertEquals(4, fired.single().actions.size)
-        assertEquals(8, fired.single().cancelRunningIds.size)
+        assertEquals(10, fired.single().cancelRunningIds.size)
         val emptyCar = reading(present = false)
         engine.evaluate(rules, exit, emptyCar, emptyMap())
-        assertEquals(listOf("preset-seat-driver-cool-3"),
-            engine.evaluate(rules, emptyCar, reading(driver = true), emptyMap()).map { it.id })
+        assertEquals(2, engine.evaluate(rules, emptyCar, reading(), emptyMap()).size)
     }
 
     /** 새 필드는 저장·편집 왕복을 견디며 P 판정과 두 좌석의 상태를 폴링한다. */
     @Test
     fun `presets survive serialization and editing`() {
-        assertEquals(9, rules.size)
+        assertEquals(11, rules.size)
         assertTrue(rules.all { it.enabled })
         assertEquals(rules.size, rules.map { it.id }.toSet().size)
         assertFalse(MacroPresets.defaults().any { it.id == "preset-summer-boarding" || it.id == "preset-winter-boarding" })
         rules.forEach { rule ->
             assertEquals(rule, Json.decodeFromString<MacroRule>(Json.encodeToString(rule)))
             assertEquals(rule, MacroDraft.from(rule).toRule())
-            assertTrue(rule.requiredCategories.containsAll(setOf(StateCategory.DRIVE, StateCategory.BODY_CONTROLLER)))
+            assertTrue(StateCategory.BODY_CONTROLLER in rule.requiredCategories)
+            if (rule.triggers == listOf(Trigger.Always)) assertTrue(StateCategory.CLIMATE in rule.requiredCategories)
+            else assertTrue(StateCategory.DRIVE in rule.requiredCategories)
         }
     }
 }

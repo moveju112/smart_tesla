@@ -73,10 +73,16 @@ class RuleStore(context: Context) {
         val obsolete = listOf(MacroPresets.summerBoarding(), MacroPresets.winterBoarding())
         val updated = loaded?.filterNot { rule ->
             rule.id == REMOVED_AFTER_BLOW_PRESET_ID || obsolete.any { rule == it || rule == it.copy(enabled = false) }
-        }?.let { existing ->
+        }?.let { remaining ->
+            val existing = SeatComfortPresets.upgradeTemperatureFollowing(remaining)
             val knownIds = existing.map { it.id }.toSet() + seen
-            val missing = MacroPresets.defaults().filter { it.id !in knownIds }
-            if (missing.isEmpty() && existing.size == loaded.size && recovered.isEmpty()) existing
+            val missing = MacroPresets.defaults().filter { it.id !in knownIds }.map { preset ->
+                // 해당 좌석의 통풍을 모두 껐거나 지웠으면 새 끄기 규칙도 자동으로 켜지 않는다.
+                if (preset.id.endsWith("-cool-0")) preset.copy(enabled = existing.any {
+                    it.id.startsWith(preset.id.removeSuffix("0")) && it.enabled
+                }) else preset
+            }
+            if (missing.isEmpty() && existing == loaded && recovered.isEmpty()) existing
             else (existing + missing).also { persist(it) }
         } ?: MacroPresets.defaults().also { persist(it) }
         // 본 파일 저장이 끝난 뒤에만 격리 원본을 정리해 저장 실패 시 다음 시작에서 다시 복구한다.
@@ -89,7 +95,12 @@ class RuleStore(context: Context) {
         folderLock.withLock {
             // 이미 저장된 폴더가 있으면 사용자의 이동·이름 변경을 다시 분류하지 않는다.
             _folders.value = if (folderFile.baseFile.exists() || File(folderFile.baseFile.path + ".bak").exists()) {
-                json.decodeFromString<List<MacroFolder>>(folderFile.readFully().decodeToString())
+                val folders = json.decodeFromString<List<MacroFolder>>(folderFile.readFully().decodeToString())
+                // 처음 소개하는 끄기 프리셋만 통풍 폴더에 넣고 기존 사용자 이동은 보존한다.
+                val newCoolingIds = updated.filter { it.id !in seen && it.id !in loaded.orEmpty().map { rule -> rule.id } &&
+                    it.id.matches(Regex("preset-seat-(driver|passenger)-cool-0")) }.map { it.id }.toSet()
+                folders.map { if (it.id == "seat-cooling") it.copy(ruleIds = it.ruleIds + newCoolingIds) else it }
+                    .also { if (it != folders) persistFolders(it) }
             } else defaultMacroFolders(_rules.value).also { persistFolders(it) }
         }
 

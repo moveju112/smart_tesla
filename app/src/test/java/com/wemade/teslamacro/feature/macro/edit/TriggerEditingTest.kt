@@ -43,7 +43,16 @@ class TriggerEditingTest {
     fun `each requirement can be changed cleared saved and reopened`() {
         SeatComfortPresets.defaults().forEach { original ->
             val draft = MacroDraft.from(original)
-            val event = original.triggers.single() as Trigger.SignalBecomes
+            val event = original.triggers.single() as? Trigger.SignalBecomes
+            if (event == null) {
+                assertEquals(Trigger.Always, original.triggers.single())
+                val edited = draft.replaceTrigger(0, Trigger.Manual)
+                assertTrue(edited.canSave)
+                val saved = Json.decodeFromString<MacroRule>(Json.encodeToString(edited.toRule()))
+                assertEquals(original.copy(triggers = listOf(Trigger.Manual)), saved)
+                assertEquals(original, MacroDraft.from(saved).replaceTrigger(0, Trigger.Always).toRule())
+                return@forEach
+            }
             listOf<Boolean?>(null, false, true).forEach { requirement ->
                 val changed = event.copy(afterDriving = requirement)
                 val edited = draft.replaceTrigger(0, changed)
@@ -61,7 +70,16 @@ class TriggerEditingTest {
     @Test
     fun `manual addition can reproduce every preset trigger`() {
         SeatComfortPresets.defaults().forEach { preset ->
-            val expected = preset.triggers.single() as Trigger.SignalBecomes
+            val expected = preset.triggers.single() as? Trigger.SignalBecomes
+            if (expected == null) {
+                val empty = MacroDraft.blank().addTrigger(Trigger.Always)
+                assertFalse(empty.canSave)
+                val draft = empty.copy(name = preset.name, conditions = preset.conditions, actions = preset.actions)
+                assertTrue(draft.canSave)
+                assertEquals(preset.triggers, draft.toRule().triggers)
+                assertEquals(preset.conditions, draft.toRule().conditions)
+                return@forEach
+            }
             val added = Trigger.SignalBecomes(expected.signal, to = true)
             val draft = MacroDraft.blank().addTrigger(added)
                 .replaceTrigger(0, added.copy(to = expected.to, afterDriving = expected.afterDriving))

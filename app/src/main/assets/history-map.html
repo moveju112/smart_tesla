@@ -13,7 +13,7 @@ svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}path{fi
 <div id="status" role="status"></div><a id="credit" href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a></div>
 <script>
 const samples=__POINTS__, map=document.getElementById('map'), tiles=document.getElementById('tiles');
-let zoom=12, centerX=0.5, centerY=0.5, drag=null, tileFailures=0;
+let zoom=12, centerX=0.5, centerY=0.5, drag=null, tileFailures=0, fitted=false;
 // 경도 날짜변경선에서도 가까운 좌표끼리 이어지도록 펼친다.
 function project(sample) {
     const latitude=Math.max(-85.05112878,Math.min(85.05112878,sample[0]));
@@ -26,6 +26,7 @@ const points=samples.map(project);
 // 현재 화면에 보이는 타일만 요청하고 같은 타일 DOM은 유지해 재다운로드를 줄인다.
 function render() {
     const width=map.clientWidth,height=map.clientHeight,scale=256*Math.pow(2,zoom),count=Math.pow(2,zoom);
+    if(!width||!height)return;
     const left=centerX*scale-width/2,top=centerY*scale-height/2,wanted=new Set();
     for(let x=Math.floor(left/256);x<=Math.floor((left+width)/256);x++) {
         for(let y=Math.floor(top/256);y<=Math.floor((top+height)/256);y++) {
@@ -49,6 +50,8 @@ function render() {
 }
 // 전체 경로는 저장된 좌표만으로 맞추고 도로 매칭 서버로 보내지 않는다.
 function fit() {
+    if(!map.clientWidth||!map.clientHeight)return;
+    fitted=true;
     if(!points.length){render();return;}
     let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
     points.forEach(point=>{minX=Math.min(minX,point[0]);maxX=Math.max(maxX,point[0]);minY=Math.min(minY,point[1]);maxY=Math.max(maxY,point[1]);});
@@ -64,5 +67,10 @@ document.getElementById('fit').onclick=fit;
 map.onpointerdown=event=>{if(event.target.closest('button,a'))return;drag=[event.clientX,event.clientY,centerX,centerY];map.setPointerCapture(event.pointerId);};
 map.onpointermove=event=>{if(!drag)return;const scale=256*Math.pow(2,zoom);centerX=drag[2]-(event.clientX-drag[0])/scale;centerY=Math.max(0,Math.min(1,drag[3]-(event.clientY-drag[1])/scale));render();};
 map.onpointerup=()=>{drag=null;};map.onpointercancel=()=>{drag=null;};
-window.onresize=render;fit();
+// WebView 크기가 정해진 뒤 최초 경로 맞춤을 하고 이후 화면 변화는 사용자 확대를 보존한다.
+function resizeMap(){if(!fitted)fit();else render();}
+window.onresize=resizeMap;
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(resizeMap).observe(map);
+requestAnimationFrame(resizeMap);
+resizeMap();
 </script></body></html>

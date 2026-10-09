@@ -2,6 +2,7 @@ package com.wemade.teslamacro.feature.history
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -36,7 +37,14 @@ internal fun HistoryMap(samples: List<HistorySample>, modifier: Modifier = Modif
     val html = remember(samples, background, ink, route) { historyMapHtml(template, samples, background, ink, route) }
     AndroidView(
         modifier = modifier,
-        factory = { WebView(it).apply {
+        factory = { object : WebView(it) {
+            /** 스크롤 안에서 Compose 높이와 WebView 문서 높이가 달라져도 실제 지도 크기를 맞춘다. */
+            override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+                super.onSizeChanged(width, height, oldWidth, oldHeight)
+                post { updateHistoryMapViewport(this) }
+            }
+        }.apply {
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
@@ -44,6 +52,11 @@ internal fun HistoryMap(samples: List<HistorySample>, modifier: Modifier = Modif
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.userAgentString = "SmartTesla/${BuildConfig.VERSION_NAME} (+https://github.com/moveju112/smart_tesla)"
             webViewClient = object : WebViewClient() {
+                /** 문서가 크기 변경보다 늦게 만들어져도 실제 픽셀 높이로 최초 경로를 맞춘다. */
+                override fun onPageFinished(view: WebView, url: String?) {
+                    updateHistoryMapViewport(view)
+                }
+
                 /** 출처 링크만 외부 브라우저로 열고 지도 안의 임의 탐색은 막는다. */
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     if (request.url.toString() == "https://www.openstreetmap.org/copyright") {
@@ -59,4 +72,14 @@ internal fun HistoryMap(samples: List<HistorySample>, modifier: Modifier = Modif
         } },
         onRelease = { it.stopLoading(); it.destroy() },
     )
+}
+
+/** 100% 높이가 0으로 계산되는 WebView에서는 Native 뷰 높이를 CSS 픽셀로 직접 전달한다. */
+private fun updateHistoryMapViewport(view: WebView) {
+    if (view.width <= 0 || view.height <= 0) return
+    view.evaluateJavascript("""
+        (()=>{const element=document.getElementById('map');if(!element)return;
+        element.style.height=(${view.height}/(window.devicePixelRatio||1))+'px';
+        if(typeof resizeMap==='function')resizeMap();})()
+    """.trimIndent(), null)
 }

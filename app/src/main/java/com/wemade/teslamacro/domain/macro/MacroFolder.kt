@@ -8,7 +8,7 @@ data class MacroFolder(val id: String, val name: String, val ruleIds: Set<String
 
 /** 최초 업데이트에서 기본 좌석 프리셋만 분류하고 공통 하차 종료는 밖에 둔다. */
 fun defaultMacroFolders(rules: List<MacroRule>): List<MacroFolder> = listOf(
-    MacroFolder("seat-cooling", "통풍", rules.filter { it.id.matches(Regex("preset-seat-(driver|passenger)-cool-[123]")) }.map { it.id }.toSet()),
+    MacroFolder("seat-cooling", "통풍", rules.filter { it.id.matches(Regex("preset-seat-(driver|passenger)-cool-[0123]")) }.map { it.id }.toSet()),
     MacroFolder("seat-heating", "열선", rules.filter { it.id in setOf("preset-seat-driver-heat", "preset-seat-passenger-heat") }.map { it.id }.toSet()),
 )
 

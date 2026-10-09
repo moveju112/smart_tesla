@@ -118,12 +118,24 @@ object SnapshotDecoder {
         },
     )
 
+    /** WGS 좌표 한 쌍만 선택하고 GCJ·다른 좌표계의 위경도를 섞어 경로를 만들지 않는다. */
     private fun VehicleSnapshot.withLocation(
         location: Vehicle.LocationState,
-    ): VehicleSnapshot = copy(
-        vehicleLatitude = location.takeIf { it.hasLatitude() }?.latitude?.toDouble(),
-        vehicleLongitude = location.takeIf { it.hasLongitude() }?.longitude?.toDouble(),
-    )
+    ): VehicleSnapshot {
+        val native = location.nativeType.hasWGS() && location.hasNativeLatitude() && location.hasNativeLongitude()
+        val plain = location.hasLatitude() && location.hasLongitude()
+        val raw = location.hasGeoLatitude() && location.hasGeoLongitude()
+        val candidates = listOfNotNull(
+            if (native) location.nativeLatitude.toDouble() to location.nativeLongitude.toDouble() else null,
+            if (plain) location.latitude.toDouble() to location.longitude.toDouble() else null,
+            if (raw) location.geoLatitude.toDouble() to location.geoLongitude.toDouble() else null,
+        )
+        val point = candidates.firstOrNull { (latitude, longitude) ->
+            latitude.isFinite() && longitude.isFinite() && latitude in -90.0..90.0 && longitude in -180.0..180.0 &&
+                !(latitude == 0.0 && longitude == 0.0)
+        }
+        return copy(vehicleLatitude = point?.first, vehicleLongitude = point?.second)
+    }
 
     /**
      * 차량 소프트웨어 상태. 상태를 못 읽으면 null로 두고 화면에서 `--`로 나간다 —

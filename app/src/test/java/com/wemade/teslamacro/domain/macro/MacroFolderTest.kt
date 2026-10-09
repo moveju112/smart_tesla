@@ -37,12 +37,12 @@ class MacroFolderTest {
         assertEquals(setOf("restored"), result.last().ruleIds)
     }
 
-    /** 기본 통풍 6개·열선 2개만 분류하고 하차 종료는 밖에 둔다. */
+    /** 기본 통풍 8개·열선 2개만 분류하고 하차 종료는 밖에 둔다. */
     @Test fun `default seats are grouped without changing execution`() {
         val rules = MacroPresets.defaults()
         val folders = defaultMacroFolders(rules)
         assertEquals(listOf("통풍", "열선"), folders.map { it.name })
-        assertEquals(listOf(6, 2), folders.map { it.ruleIds.size })
+        assertEquals(listOf(8, 2), folders.map { it.ruleIds.size })
         assertFalse(folders.any { "preset-seat-exit-off" in it.ruleIds })
         assertEquals(folders, Json.decodeFromString<List<MacroFolder>>(Json.encodeToString(folders)))
     }

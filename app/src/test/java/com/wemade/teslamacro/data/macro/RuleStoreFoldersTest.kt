@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
@@ -24,12 +25,46 @@ class RuleStoreFoldersTest {
         override fun getFilesDir() = temporary.root
     })
 
+    /** 옛 기본 통풍만 교체하고 수정·삭제·끄기 상태와 폴더 이동을 보존한다. */
+    @Test fun `legacy cooling migration persists without losing user changes`() = runBlocking {
+        val first = store()
+        first.load()
+        first.saveFolder("seat-cooling", "내 통풍")
+        first.moveToFolder("preset-seat-driver-cool-3", null)
+        val old = SeatComfortPresets.defaults(temperatureFollowing = false)
+        val stored = old.filterNot { it.id == "preset-seat-passenger-cool-3" }.map {
+            when (it.id) {
+                "preset-seat-driver-cool-2" -> it.copy(name = "내 조건", cooldownSeconds = 15)
+                "preset-seat-passenger-cool-1", "preset-seat-passenger-cool-2" -> it.copy(enabled = false)
+                else -> it
+            }
+        }
+        java.io.File(temporary.root, "macros.json").writeText(kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(com.wemade.teslamacro.domain.macro.MacroRule.serializer()), stored))
+        java.io.File(temporary.root, "macro_presets_seen.json").writeText(kotlinx.serialization.json.Json.encodeToString(
+            kotlinx.serialization.builtins.ListSerializer(String.serializer()), old.map { it.id }))
+        val restarted = store()
+        restarted.load()
+        val rules = restarted.rules.value
+        assertEquals(listOf(com.wemade.teslamacro.domain.macro.Trigger.Always), rules.single { it.id == "preset-seat-driver-cool-3" }.triggers)
+        assertEquals(stored.single { it.id == "preset-seat-driver-cool-2" }, rules.single { it.id == "preset-seat-driver-cool-2" })
+        assertFalse(rules.any { it.id == "preset-seat-passenger-cool-3" })
+        assertFalse(rules.single { it.id == "preset-seat-passenger-cool-0" }.enabled)
+        assertEquals("내 통풍", restarted.folders.value.first().name)
+        assertFalse("preset-seat-driver-cool-3" in restarted.folders.value.first().ruleIds)
+        assertTrue("preset-seat-driver-cool-0" in restarted.folders.value.first().ruleIds)
+        val again = store()
+        again.load()
+        assertEquals(rules, again.rules.value)
+        assertEquals(restarted.folders.value, again.folders.value)
+    }
+
     /** 최초 분류 후 사용자가 옮긴 항목과 빈 폴더는 재시작에도 보존한다. */
     @Test fun `restart preserves renamed empty folders and moved macros`() = runBlocking {
         val first = store()
         first.load()
         val rules = first.rules.value
-        assertEquals(listOf(6, 2), first.folders.value.map { it.ruleIds.size })
+        assertEquals(listOf(8, 2), first.folders.value.map { it.ruleIds.size })
         first.saveFolder(null, "내 폴더")
         first.saveFolder("seat-cooling", "여름")
         first.moveToFolder("preset-seat-driver-cool-3", null)

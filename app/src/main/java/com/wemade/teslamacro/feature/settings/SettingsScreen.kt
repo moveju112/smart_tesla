@@ -216,6 +216,7 @@ fun SettingsScreen(
                         }
 
                         SettingsGroup.DEVICE -> {
+                            PermissionCheckPanel(battery, navigation, onRequestInstallPermission)
                             SectionHeader("화면", topPadding = Space.sm)
                             TCard {
                                 SettingsDetails("화면 모드", settings.themeMode.label) {

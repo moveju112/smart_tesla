@@ -72,7 +72,7 @@ internal class DestinationReceiver(
     }
 
     /** 수신함은 착석과 무관하게 확인하고 목적지가 있을 때만 차량 확인을 요청한다. */
-    suspend fun receive(prepare: (suspend () -> Boolean)? = null, ready: () -> Boolean): DestinationReceiveResult = mutex.withLock {
+    suspend fun receive(prepare: (suspend () -> Boolean)? = null, onDispatch: () -> Unit = {}, ready: () -> Boolean): DestinationReceiveResult = mutex.withLock {
         waitingDeadline = null
         if (!reconcileReceipt()) return@withLock receiptState() ?: DestinationReceiveResult.WAITING_FOR_CONDITIONS
         val started = elapsed()
@@ -104,6 +104,7 @@ internal class DestinationReceiver(
                 claimed = true
                 deadline = destinationDeadline(reply.serverNow, request.expiresAt, claimStarted) ?: 0
                 check(canContinue() && ready() && elapsed() < deadline) { "실행 조건이 바뀌었거나 유효시간이 지났어요" }
+                onDispatch()
                 saveReceipt(DestinationReceipt(request.id))
                 report("목적지 수신 · $trace · 지도 실행 요청")
             }

@@ -1,3 +1,34 @@
+# 탑승 간 늦은 응답 경합 검증 — 0.9.189 / 302
+
+기준 main `2b26969` (0.9.188 / 301). 기존 승인 수정의 후속 제보를 확인하고 필요한 앱 수정만 수행했다.
+
+## 확인·수정
+
+0.9.188은 이전 탑승의 조회 캐시는 무시하지만 `receiver.receive()` 종료 뒤 `destinationSeen = true`, `fallback = null`을 세션 검사 없이 수행했다. 지도 전달 뒤 complete를 기다리는 동안 전원 해제·새 탑승 요청이 생기면 이전 완료 응답이 새 요청을 지우는 경합이 코드상 가능했다.
+
+- `watch()`에서 실제 사용하는 `DestinationBoardingState`에 세션·조회·대기 요청·목적지 실행 상태 갱신을 모았다. 하차·전원 해제·대기 등록·응답 반영은 같은 모니터에서 검사와 변경을 함께 수행하며 서버 대기 중에는 모니터를 잡지 않는다.
+- 조회 시작 세션과 실행 직전 세션을 구분한다. 기존 `DestinationReceiver.receive()`의 착석·인증·claim 응답 검증 직후에 실행 소유 세션을 기록하고 완료 응답은 그 세션에만 반영한다. A에서 조회하고 B에서 실제 전달하면 B의 중복 안심운전을 막는다.
+- 안심운전 대기 등록 자체는 현재 탑승 세션을 바꾸지 않는다. 실제 하차·전원 해제에서만 새 세션으로 넘어간다.
+- 늦은 UNKNOWN도 새 탑승의 대기 요청을 삭제하지 않는다. 영속 기록은 기존 `receiptState()`로 독립적으로 실행을 막으며, 그 기록을 다시 읽었다는 이유로 새 탑승을 목적지 실행 완료로 취급하지 않는다.
+- 대기 요청 소비는 요청 객체 일치로 보호하고 사용자 확인 뒤 상태 갱신도 세션을 검사한다.
+- 재사용: `app/src/main/java/com/wemade/teslamacro/data/nav/DestinationReceiver.kt:75`의 `receive()` 및 같은 파일 `:65`의 `receiptState()`, `DestinationInboxObservation.resultFor()`, `BoardingNavigationRequest.canExecute()`/`execute()`. 새 범용 계층·서버 API·BLE 연결 정책 변경 없음.
+
+## 관측한 검증
+
+- 기존 Scenario의 complete 응답을 CompletableDeferred로 지연하고 실제 Receiver와 watch에서 호출하는 탑승 상태 코드를 함께 실행했다. 새로운 5개 회귀: 늦은 complete 뒤 B 요청 보존·8초 오프라인 실행, 조회 A/실행 B, 같은 탑승의 대기 등록, 늦은 UNKNOWN 및 반복 조회의 영속 보호, 이전 요청 소비·사용자 확인.
+- 첫 시나리오: 목적지 전달 1회, 서버 delivered, 로컬 전달 기록 정리, B의 대기 요청 유지, 이전 캐시 무시, B 안심운전 1회 확인.
+- `./gradlew test :app:assembleRelease` 성공. 앱 debug/release 각각 612개 중 599개 통과·기존 제외 13개, BLE 각각 33개 통과, 실패 0개.
+- DestinationReceiverTest 37개, DestinationNavigationTransitionTest 10개, SafeDriveUnlockGateTest 16개가 debug/release에서 통과했다.
+- release APK 버전 0.9.189/302 및 서명 확인. 전체 Android 서비스 이벤트 루프·실기기·실차 실행을 재현한 결과는 아니다. 서버 코드가 바뀌지 않아 0.9.188 서버 검증은 재실행하지 않았다.
+
+## 범위·미확인
+
+이번 수정은 앱의 탑승 상태 경합만 다룬다. 운영 서버 파일·서비스·DB 변경 없음. 사용자 기존 규칙·문서 변경은 그대로 보존했다.
+
+원래 ‘앱을 열어야 목적지가 동작’ 증상은 아직 실기기 미확인이다. 신규 푸시·상시 WakeLock 추가 없음. 화면을 오래 끈 수신기에서 수신함 조회 → 착석 재확인 → 지도 실행 요청 로그를 비교해야 한다. 로그 공유: 설정 → 기기 → 진단 로그 → 공유.
+
+---
+
 # 목적지 수신 경계조건 검증 — 0.9.188 / 301
 
 기준 main `abbab85` (0.9.187 / 300). 이전 수정 세션 종료 확인 후 작업. 사용자 기존 규칙·문서 변경은 포함하지 않았다.

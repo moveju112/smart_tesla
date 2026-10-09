@@ -3,6 +3,8 @@ package com.wemade.teslamacro.data.nav
 import com.wemade.teslamacro.data.poll.needsBoardingNavigation
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -43,6 +45,7 @@ class DestinationReceiverTest {
         var receipt: DestinationReceipt? = null
         var launches = 0
         var claims = 0
+        var beforeComplete: suspend () -> Unit = {}
         var failComplete = false
         var failClaim = false
         var loseClaimReply = false
@@ -72,6 +75,7 @@ class DestinationReceiverTest {
                     if (loseClaimReply) throw DestinationApiException(503, "reply lost")
                 }
                 "complete" -> {
+                    beforeComplete()
                     if (failComplete) throw DestinationApiException(503, "offline")
                     completeError?.let { throw it }
                     completionReply?.let { return it }
@@ -101,6 +105,121 @@ class DestinationReceiverTest {
                     launchedDestination = destination
                 }
             }.onFailure { if (it is DestinationLaunchException && it.uncertain) throw it } }, {})
+    }
+
+    /** A의 지도 전달 후 늦은 complete는 B의 안심운전 요청과 탑승 상태를 바꾸지 않는다. */
+    @Test fun lateCompletionCannotConsumeNextBoardingRequest() = runTest {
+        val scenario = Scenario()
+        val boarding = DestinationBoardingState()
+        val receiver = scenario.receiver()
+        val completeEntered = CompletableDeferred<Unit>()
+        val completeReply = CompletableDeferred<Unit>()
+        scenario.beforeComplete = { completeEntered.complete(Unit); completeReply.await() }
+        val receive = async { boarding.receive(receiver, { true }, { true }, { scenario.elapsed }) }
+        completeEntered.await()
+        assertEquals(1, scenario.launches)
+        boarding.reset() // 전원 해제·탑승 B
+        var safeDriveLaunches = 0
+        boarding.queue(scenario.elapsed) { safeDriveLaunches++; Result.success(Unit) }
+        val nextRequest = boarding.fallback!!
+        completeReply.complete(Unit)
+        receive.await()
+        assertEquals("delivered", scenario.status)
+        assertNull(scenario.receipt)
+        assertNull(boarding.result(scenario.elapsed))
+        assertFalse(boarding.destinationSeen)
+        assertSame(nextRequest, boarding.fallback)
+        scenario.elapsed += 8_000L
+        assertTrue(nextRequest.canExecute(receiver.receiptState() ?: boarding.result(scenario.elapsed),
+            boarding.destinationSeen, scenario.elapsed))
+        assertTrue(nextRequest.execute(scenario.elapsed))
+        boarding.consume(nextRequest)
+        assertEquals(1, safeDriveLaunches)
+        assertNull(boarding.fallback)
+    }
+
+    /** 조회는 A에서 시작했어도 착석·인계가 B에서 이루어지면 B의 목적지 실행으로 반영한다. */
+    @Test fun dispatchAfterNewBoardingBelongsToActualExecutionSession() = runTest {
+        val scenario = Scenario()
+        val boarding = DestinationBoardingState()
+        val firstSession = boarding.session
+        scenario.before = {
+            boarding.reset()
+            boarding.queue(scenario.elapsed) { error("B에서 목적지를 실행했으므로 안심운전 중복 실행 금지") }
+        }
+        boarding.receive(scenario.receiver(), { true }, { true }, { scenario.elapsed })
+        assertTrue(boarding.session > firstSession)
+        assertEquals(1, scenario.launches)
+        assertEquals("delivered", scenario.status)
+        assertTrue(boarding.destinationSeen)
+        assertNull(boarding.fallback)
+        assertEquals(DestinationReceiveResult.DISPATCHED, boarding.result(scenario.elapsed))
+    }
+
+    /** 같은 탑승의 대기 요청 등록은 실행 소유 세션을 바꾸지 않아 중복 안심운전을 막는다. */
+    @Test fun sameBoardingQueueDoesNotChangeDispatchSession() = runTest {
+        val scenario = Scenario()
+        val boarding = DestinationBoardingState()
+        val reply = CompletableDeferred<Unit>()
+        scenario.beforeComplete = { reply.await() }
+        val receive = async { boarding.receive(scenario.receiver(), { true }, { true }, { scenario.elapsed }) }
+        runCurrent()
+        assertEquals(1, scenario.launches)
+        val session = boarding.session
+        boarding.queue(scenario.elapsed) { error("같은 탑승의 목적지 전달과 중복 실행 금지") }
+        assertEquals(session, boarding.session)
+        reply.complete(Unit)
+        receive.await()
+        assertTrue(boarding.destinationSeen)
+        assertNull(boarding.fallback)
+    }
+
+    /** 이전 실행의 늦은 UNKNOWN은 새 요청을 삭제하지 않되 영속 기록으로 실행을 계속 막는다. */
+    @Test fun oldUnknownPreservesNextBoardingAndPersistentDuplicateGuard() = runTest {
+        val scenario = Scenario()
+        val boarding = DestinationBoardingState()
+        val unknownReply = CompletableDeferred<Unit>()
+        scenario.launchThrough = { action ->
+            action()
+            unknownReply.await()
+            throw DestinationLaunchException("unknown", uncertain = true)
+        }
+        val receiver = scenario.receiver()
+        val receive = async { boarding.receive(receiver, { true }, { true }, { scenario.elapsed }) }
+        runCurrent()
+        assertEquals(1, scenario.launches)
+        boarding.reset()
+        boarding.queue(scenario.elapsed) { error("UNKNOWN 자동 우회 금지") }
+        val nextRequest = boarding.fallback!!
+        unknownReply.complete(Unit)
+        receive.await()
+        assertFalse(boarding.destinationSeen)
+        assertSame(nextRequest, boarding.fallback)
+        assertNull(boarding.result(scenario.elapsed))
+        assertEquals(DestinationReceiveResult.UNKNOWN, receiver.receiptState())
+        assertFalse(nextRequest.canExecute(receiver.receiptState(), boarding.destinationSeen, scenario.elapsed + 8_000L))
+        assertNotNull(scenario.receipt)
+        assertEquals(1, scenario.claims)
+        // 다음 수신에서 영속 UNKNOWN을 읽어도 새 탑승 요청은 삭제하지 않는다.
+        boarding.receive(receiver, { true }, { true }, { scenario.elapsed })
+        assertSame(nextRequest, boarding.fallback)
+        assertFalse(boarding.destinationSeen)
+        assertFalse(nextRequest.canExecute(receiver.receiptState(), false, scenario.elapsed + 8_000L))
+    }
+
+    /** 이전 요청 소비·사용자 확인 역시 새 탑승의 대기 요청을 지우지 않는다. */
+    @Test fun staleConsumptionAndReceiptConfirmationPreserveNextRequest() {
+        val boarding = DestinationBoardingState()
+        boarding.queue(0L) { Result.success(Unit) }
+        val previous = boarding.fallback!!
+        val previousSession = boarding.session
+        boarding.reset()
+        boarding.queue(1_000L) { Result.success(Unit) }
+        val current = boarding.fallback!!
+        boarding.consume(previous)
+        boarding.resolved(previousSession)
+        assertSame(current, boarding.fallback)
+        assertFalse(boarding.destinationSeen)
     }
 
     /** 구형 서버의 pending complete 409도 기록을 유지해 늦은 claim을 다음 수신에서 정리한다. */

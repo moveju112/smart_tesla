@@ -37,10 +37,7 @@ internal class DestinationCoordinator(
     @Volatile private var present: Boolean? = null
     @Volatile private var presenceAt = -1L
     @Volatile private var settings = AppSettings()
-    @Volatile private var destinationSeen = false
-    @Volatile private var fallback: BoardingNavigationRequest? = null
-    private val boardingSession = java.util.concurrent.atomic.AtomicLong(0L)
-    @Volatile private var inboxObservation: DestinationInboxObservation? = null
+    private val boarding = DestinationBoardingState()
     private val networkRecovered = java.util.concurrent.atomic.AtomicBoolean(false)
     private val networkValidated = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var presenceRetryAt = 0L
@@ -52,15 +49,19 @@ internal class DestinationCoordinator(
 
     /** 신선한 차량 응답만 수신 허가로 쓰고 하차 때 남은 자동 실행을 중단한다. */
     fun observePresence(value: Boolean, observedAt: Long) {
-        present = value
-        presenceAt = observedAt
-        if (!value) { resetInboxObservation(); fallback = null; destinationSeen = false; receiver.retryDeclined() }
+        synchronized(boarding) {
+            present = value
+            presenceAt = observedAt
+            if (!value) { boarding.reset(); receiver.retryDeclined() }
+        }
         nudge()
     }
 
     /** 전원 해제 때 오래된 착석값을 버리며 배터리 사용 자체를 영구 금지하지 않는다. */
     fun powerChanged(connected: Boolean) {
-        if (!connected) { resetInboxObservation(); present = null; presenceAt = -1; fallback = null; destinationSeen = false; receiver.retryDeclined() }
+        synchronized(boarding) {
+            if (!connected) { present = null; presenceAt = -1; boarding.reset(); receiver.retryDeclined() }
+        }
         presenceRetryAt = 0L
         nudge()
     }
@@ -73,9 +74,9 @@ internal class DestinationCoordinator(
 
     /** 이전 전달 결과 확인 뒤 새 목적지만 다시 허용하며 과거 요청은 재실행하지 않는다. */
     suspend fun resolveReceipt(delivered: Boolean) {
+        val session = boarding.session
         receiver.resolveReceipt(delivered)
-        destinationSeen = false
-        fallback = null
+        boarding.resolved(session)
         message.value = "이전 전달 결과를 반영했어요"
         DiagLog.add("목적지 수신 — 이전 전달 결과 사용자 확인")
         nudge()
@@ -83,16 +84,8 @@ internal class DestinationCoordinator(
 
     /** 기존 안심운전은 목적지가 없다는 응답 뒤 같은 수신 루프에서 한 번만 실행한다. */
     fun afterBoardingWhenEmpty(action: suspend () -> Result<Unit>) {
-        if (destinationSeen) return
-        resetInboxObservation()
-        fallback = BoardingNavigationRequest(SystemClock.elapsedRealtime(), action)
+        boarding.queue(SystemClock.elapsedRealtime(), action)
         nudge()
-    }
-
-    /** 하차·새 탑승은 조회 캐시만 폐기하며 디스크의 전달 기록은 건드리지 않는다. */
-    private fun resetInboxObservation() {
-        boardingSession.incrementAndGet()
-        inboxObservation = null
     }
 
     /** 수신 설정과 신선한 착석값을 실행 직전에도 다시 검사한다. */
@@ -163,20 +156,11 @@ internal class DestinationCoordinator(
                     lastGate = gate
                 }
                 if (enabled && connected && SystemClock.elapsedRealtime() >= maxOf(retryAt, nextInboxAt)) {
-                    val session = boardingSession.get()
                     try {
-                        val result = receiver.receive(prepare = {
+                        boarding.receive(receiver, prepare = {
                             settings.destinationReceiveEnabled && online() && prepareBoarding()
-                        }) { ready() && online() }
-                        inboxObservation = DestinationInboxObservation(session, result,
-                            if (result == DestinationReceiveResult.WAITING_FOR_CONDITIONS)
-                                receiver.waitingDeadline ?: SystemClock.elapsedRealtime() + 5_000L
-                            else SystemClock.elapsedRealtime() + 5_000L)
+                        }, ready = { ready() && online() }, elapsed = SystemClock::elapsedRealtime)
                         nextInboxAt = SystemClock.elapsedRealtime() + 5_000L
-                        if (result == DestinationReceiveResult.DISPATCHED || result == DestinationReceiveResult.UNKNOWN) {
-                            destinationSeen = true
-                            fallback = null
-                        }
                         failures = 0
                         retryAt = 0L
                     } catch (error: Exception) {
@@ -187,33 +171,99 @@ internal class DestinationCoordinator(
                         message.value = error.message ?: "연결 후 목적지를 다시 확인해요"
                     }
                 }
-                if (fallback?.let { SystemClock.elapsedRealtime() - it.startedAt > 90_000L } == true) {
-                    fallback = null
+                val pending = boarding.fallback
+                if (pending != null && SystemClock.elapsedRealtime() - pending.startedAt > 90_000L) {
+                    boarding.consume(pending)
                     DiagLog.add("탑승 안심운전 — 재시도 시간 종료")
                 }
-                val request = fallback
+                val request = boarding.fallback
                 val now = SystemClock.elapsedRealtime()
                 val result = receiver.receiptState() ?: if (!enabled) DestinationReceiveResult.EMPTY
-                    else inboxObservation?.resultFor(boardingSession.get(), now)
+                    else boarding.result(now)
 
-                if (request != null && settings.autoStartNavigatorSafeDrive && request.canExecute(result, destinationSeen, now) && prepareBoarding() && fallback === request
+                if (request != null && settings.autoStartNavigatorSafeDrive && request.canExecute(result, boarding.destinationSeen, now) && prepareBoarding() && boarding.fallback === request
                 ) {
-                    if (request.execute(now) && fallback === request) fallback = null
+                    if (request.execute(now)) boarding.consume(request)
                 }
-                if ((enabled && connected) || fallback != null) {
-                    val delayMillis = if (fallback != null) 1_000L else maxOf(5_000L, retryAt - SystemClock.elapsedRealtime())
+                if ((enabled && connected) || boarding.fallback != null) {
+                    val delayMillis = if (boarding.fallback != null) 1_000L else maxOf(5_000L, retryAt - SystemClock.elapsedRealtime())
                     withTimeoutOrNull(delayMillis) { events.receive() }
                 } else events.receive()
             }
         } finally {
             manager.unregisterNetworkCallback(callback)
             context.unregisterReceiver(unlocked)
-            present = null
-            presenceAt = -1
-            fallback = null
+            synchronized(boarding) {
+                present = null
+                presenceAt = -1
+                boarding.reset()
+            }
         }
     }
 
+}
+
+/** 탑승 상태 변경은 한 잠금 안에서 적용하고 서버 응답 대기 중에는 잠금을 잡지 않는다. */
+internal class DestinationBoardingState {
+    @Volatile var session = 0L
+        private set
+    @Volatile var destinationSeen = false
+        private set
+    @Volatile var fallback: BoardingNavigationRequest? = null
+        private set
+    private var inboxObservation: DestinationInboxObservation? = null
+
+    /** 하차·전원 해제는 조회·탑승 상태만 초기화하고 영속 전달 기록은 유지한다. */
+    @Synchronized fun reset() {
+        session++
+        destinationSeen = false
+        fallback = null
+        inboxObservation = null
+    }
+
+    /** 안심운전 대기 등록은 현재 탑승에 속하며 새 탑승 세션을 만들지 않는다. */
+    @Synchronized fun queue(now: Long, action: suspend () -> Result<Unit>) {
+        if (!destinationSeen) fallback = BoardingNavigationRequest(now, action)
+    }
+
+    /** 늦은 실행 완료는 그동안 교체된 다른 탑승 요청을 삭제하지 않는다. */
+    @Synchronized fun consume(request: BoardingNavigationRequest) {
+        if (fallback === request) fallback = null
+    }
+
+    /** 사용자 확인 응답도 새 탑승의 대기 상태를 덮어쓰지 않는다. */
+    @Synchronized fun resolved(ownerSession: Long) {
+        if (ownerSession == session) { destinationSeen = false; fallback = null }
+    }
+
+    /** 조회 시작과 지도 전달 직전 탑승을 구분해 완료 응답의 소유자를 정한다. */
+    suspend fun receive(receiver: DestinationReceiver, prepare: suspend () -> Boolean, ready: () -> Boolean, elapsed: () -> Long) {
+        val querySession = session
+        var dispatchSession: Long? = null
+        val result = receiver.receive(prepare = prepare, onDispatch = {
+            synchronized(this) {
+                check(ready()) { "탑승 실행 조건이 바뀌었어요" }
+                dispatchSession = session
+            }
+        }, ready = ready)
+        synchronized(this) {
+            val ownerSession = dispatchSession ?: querySession
+            if (ownerSession == session) {
+                inboxObservation = DestinationInboxObservation(ownerSession, result,
+                    if (result == DestinationReceiveResult.WAITING_FOR_CONDITIONS)
+                        receiver.waitingDeadline ?: elapsed() + 5_000L
+                    else elapsed() + 5_000L)
+                if (dispatchSession != null &&
+                    (result == DestinationReceiveResult.DISPATCHED || result == DestinationReceiveResult.UNKNOWN)) {
+                    destinationSeen = true
+                    fallback = null
+                }
+            }
+        }
+    }
+
+    /** 같은 탑승의 유효한 조회 결과만 오프라인 실행 판단에 제공한다. */
+    @Synchronized fun result(now: Long): DestinationReceiveResult? = inboxObservation?.resultFor(session, now)
 }
 
 /** 조회 결과는 관측 당시 탑승과 목적지 유효시간 안에서만 자동 실행 판단에 쓴다. */

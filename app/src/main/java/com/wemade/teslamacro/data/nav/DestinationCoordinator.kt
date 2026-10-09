@@ -39,6 +39,8 @@ internal class DestinationCoordinator(
     @Volatile private var settings = AppSettings()
     @Volatile private var destinationSeen = false
     @Volatile private var fallback: BoardingNavigationRequest? = null
+    private val boardingSession = java.util.concurrent.atomic.AtomicLong(0L)
+    @Volatile private var inboxObservation: DestinationInboxObservation? = null
     private val networkRecovered = java.util.concurrent.atomic.AtomicBoolean(false)
     private val networkValidated = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var presenceRetryAt = 0L
@@ -52,13 +54,13 @@ internal class DestinationCoordinator(
     fun observePresence(value: Boolean, observedAt: Long) {
         present = value
         presenceAt = observedAt
-        if (!value) { fallback = null; destinationSeen = false; receiver.retryDeclined() }
+        if (!value) { resetInboxObservation(); fallback = null; destinationSeen = false; receiver.retryDeclined() }
         nudge()
     }
 
     /** 전원 해제 때 오래된 착석값을 버리며 배터리 사용 자체를 영구 금지하지 않는다. */
     fun powerChanged(connected: Boolean) {
-        if (!connected) { present = null; presenceAt = -1; fallback = null; destinationSeen = false; receiver.retryDeclined() }
+        if (!connected) { resetInboxObservation(); present = null; presenceAt = -1; fallback = null; destinationSeen = false; receiver.retryDeclined() }
         presenceRetryAt = 0L
         nudge()
     }
@@ -82,8 +84,15 @@ internal class DestinationCoordinator(
     /** 기존 안심운전은 목적지가 없다는 응답 뒤 같은 수신 루프에서 한 번만 실행한다. */
     fun afterBoardingWhenEmpty(action: suspend () -> Result<Unit>) {
         if (destinationSeen) return
+        resetInboxObservation()
         fallback = BoardingNavigationRequest(SystemClock.elapsedRealtime(), action)
         nudge()
+    }
+
+    /** 하차·새 탑승은 조회 캐시만 폐기하며 디스크의 전달 기록은 건드리지 않는다. */
+    private fun resetInboxObservation() {
+        boardingSession.incrementAndGet()
+        inboxObservation = null
     }
 
     /** 수신 설정과 신선한 착석값을 실행 직전에도 다시 검사한다. */
@@ -138,7 +147,6 @@ internal class DestinationCoordinator(
         var failures = 0
         var retryAt = 0L
         var nextInboxAt = 0L
-        var lastResult: DestinationReceiveResult? = null
         var lastGate: String? = null
         try {
             while (isActive) {
@@ -154,13 +162,16 @@ internal class DestinationCoordinator(
                     if (gate != null) DiagLog.add("목적지 수신 — $gate")
                     lastGate = gate
                 }
-                var result: DestinationReceiveResult? = if (!enabled) DestinationReceiveResult.EMPTY else lastResult
                 if (enabled && connected && SystemClock.elapsedRealtime() >= maxOf(retryAt, nextInboxAt)) {
+                    val session = boardingSession.get()
                     try {
-                        result = receiver.receive(prepare = {
+                        val result = receiver.receive(prepare = {
                             settings.destinationReceiveEnabled && online() && prepareBoarding()
                         }) { ready() && online() }
-                        lastResult = result
+                        inboxObservation = DestinationInboxObservation(session, result,
+                            if (result == DestinationReceiveResult.WAITING_FOR_CONDITIONS)
+                                receiver.waitingDeadline ?: SystemClock.elapsedRealtime() + 5_000L
+                            else SystemClock.elapsedRealtime() + 5_000L)
                         nextInboxAt = SystemClock.elapsedRealtime() + 5_000L
                         if (result == DestinationReceiveResult.DISPATCHED || result == DestinationReceiveResult.UNKNOWN) {
                             destinationSeen = true
@@ -182,6 +193,8 @@ internal class DestinationCoordinator(
                 }
                 val request = fallback
                 val now = SystemClock.elapsedRealtime()
+                val result = receiver.receiptState() ?: if (!enabled) DestinationReceiveResult.EMPTY
+                    else inboxObservation?.resultFor(boardingSession.get(), now)
 
                 if (request != null && settings.autoStartNavigatorSafeDrive && request.canExecute(result, destinationSeen, now) && prepareBoarding() && fallback === request
                 ) {
@@ -201,6 +214,13 @@ internal class DestinationCoordinator(
         }
     }
 
+}
+
+/** 조회 결과는 관측 당시 탑승과 목적지 유효시간 안에서만 자동 실행 판단에 쓴다. */
+internal data class DestinationInboxObservation(val session: Long, val result: DestinationReceiveResult, val expiresAt: Long) {
+    /** 이전 탑승의 늦은 응답과 만료된 목적지 대기를 새 탑승으로 넘기지 않는다. */
+    fun resultFor(currentSession: Long, now: Long): DestinationReceiveResult? =
+        result.takeIf { session == currentSession && now < expiresAt }
 }
 
 /** 탑승 요청은 전달 전 실패만 두 번까지 재시도하고 인계·인증 취소 이후에는 소비한다. */

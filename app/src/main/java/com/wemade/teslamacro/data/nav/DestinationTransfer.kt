@@ -60,7 +60,7 @@ internal fun destinationReady(enabled: Boolean, present: Boolean?, observedAt: L
     enabled && present == true && observedAt >= 0 && now - observedAt in 0..30_000
 
 /** 서버의 고정 오류를 사용자 복구 동작으로 바꾸고 원문 응답은 노출하지 않는다. */
-internal class DestinationApiException(val code: Int, message: String) : Exception(message)
+internal class DestinationApiException(val code: Int, message: String, val reason: String? = null) : Exception(message)
 
 /** 지도 API의 기존 기기 서명·가입·세션 갱신 경로를 그대로 재사용한다. */
 internal class DestinationClient(private val api: DeviceApiClient) {
@@ -90,7 +90,7 @@ internal class DestinationClient(private val api: DeviceApiClient) {
                 in 500..599 -> "서버 오류 (${response.code}) · 잠시 후 재확인해 주세요"
                 else -> "응답 오류 (${response.code})"
             }
-            throw DestinationApiException(response.code, message)
+            throw DestinationApiException(response.code, message, reason)
         }
         val reply = runCatching { json.decodeFromString<DestinationReply>(response.body) }.getOrNull()
             ?: throw DestinationApiException(0, "서버 응답을 읽지 못했어요")

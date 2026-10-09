@@ -16,10 +16,12 @@ internal class DestinationReceiver(
     private val saveReceipt: (DestinationReceipt) -> Unit,
     private val clearReceipt: () -> Unit,
     private val elapsed: () -> Long,
-    private val launch: suspend (DestinationPlace, suspend () -> Unit) -> Result<Unit>,
+    private val launch: suspend (DestinationPlace, suspend (() -> Boolean) -> Unit) -> Result<Unit>,
     private val report: (String) -> Unit,
 ) {
     private val mutex = Mutex()
+    @Volatile var waitingDeadline: Long? = null
+        private set
     @Volatile private var declinedRequestId: String? = null
 
     /** 잠금 해제·탑승 변화 뒤에만 취소한 인증 요청을 다시 허용한다. */
@@ -32,7 +34,7 @@ internal class DestinationReceiver(
     suspend fun resolveReceipt(delivered: Boolean) = mutex.withLock {
         val receipt = readReceipt()?.takeIf { it.launchAttempted && it.delivered == null } ?: return@withLock
         saveReceipt(receipt.copy(delivered = delivered))
-        reconcileReceipt()
+        check(reconcileReceipt()) { "서버 상태 확인을 기다리고 있어요. 잠시 후 다시 확인해 주세요" }
     }
 
     /** 실행 전 중단은 실패로 정리하되 전달 여부가 불명확하면 기록을 보존한다. */
@@ -43,27 +45,47 @@ internal class DestinationReceiver(
             return false
         }
         try {
-            call("complete") { put("requestId", receipt.requestId); put("delivered", delivered) }
+            val reply = call("complete") { put("requestId", receipt.requestId); put("delivered", delivered) }
+            if (reply.request?.id != receipt.requestId || reply.request.status !in
+                setOf("delivered", "failed", "expired", "cancelled", "replaced")) return false
             clearReceipt()
         } catch (error: DestinationApiException) {
-            if (error.code == 404 || error.code == 409) clearReceipt() else throw error
+            when {
+                error.code == 404 && error.reason == "request_not_found" -> clearReceipt()
+                error.code == 409 -> {
+                    report("이전 요청의 서버 상태 확인 대기 · 요청 ${receipt.requestId.take(8)}")
+                    return false
+                }
+                else -> throw error
+            }
         }
         return true
     }
 
+    /** 탑승 캐시가 초기화돼도 영속 수신 기록은 새 자동 실행을 계속 막는다. */
+    fun receiptState(): DestinationReceiveResult? = readReceipt()?.let {
+        when {
+            it.delivered == true -> DestinationReceiveResult.DISPATCHED
+            it.launchAttempted && it.delivered == null -> DestinationReceiveResult.UNKNOWN
+            else -> DestinationReceiveResult.WAITING_FOR_CONDITIONS
+        }
+    }
+
     /** 수신함은 착석과 무관하게 확인하고 목적지가 있을 때만 차량 확인을 요청한다. */
     suspend fun receive(prepare: (suspend () -> Boolean)? = null, ready: () -> Boolean): DestinationReceiveResult = mutex.withLock {
-        if (!reconcileReceipt()) return@withLock DestinationReceiveResult.UNKNOWN
+        waitingDeadline = null
+        if (!reconcileReceipt()) return@withLock receiptState() ?: DestinationReceiveResult.WAITING_FOR_CONDITIONS
         val started = elapsed()
         val inbox = call("inbox") {}
         val request = inbox.request ?: return@withLock DestinationReceiveResult.EMPTY
+        var deadline = destinationDeadline(inbox.serverNow, request.expiresAt, started)
+            ?: return@withLock DestinationReceiveResult.FAILED
+        waitingDeadline = deadline
         if (request.legacyTestRequest || request.status != "pending") return@withLock DestinationReceiveResult.WAITING_FOR_CONDITIONS
         if (request.id == declinedRequestId) {
             report("잠금을 해제하면 목적지를 열어요")
             return@withLock DestinationReceiveResult.WAITING_FOR_CONDITIONS
         }
-        var deadline = destinationDeadline(inbox.serverNow, request.expiresAt, started)
-            ?: return@withLock DestinationReceiveResult.FAILED
         val trace = "요청 ${request.id.take(8)}"
         report("목적지 수신 · $trace · 착석 재확인")
         if (!(prepare?.invoke() ?: ready()) || !ready() || elapsed() >= deadline) return@withLock DestinationReceiveResult.WAITING_FOR_CONDITIONS
@@ -71,9 +93,9 @@ internal class DestinationReceiver(
         var claimAttempted = false
         report("목적지 수신 · $trace · 네이버지도 전달 준비")
         try {
-            val result = launch(request.destination) {
+            val result = launch(request.destination) { canContinue ->
                 // 인증·실험 종료 뒤 신선한 착석을 재확인하고 claim 전에 복구 기록부터 남긴다.
-                check(elapsed() < deadline && (prepare?.invoke() ?: ready()) && ready() && elapsed() < deadline) { "실행 조건이 바뀌었거나 유효시간이 지났어요" }
+                check(canContinue() && elapsed() < deadline && (prepare?.invoke() ?: ready()) && canContinue() && ready() && elapsed() < deadline) { "실행 조건이 바뀌었거나 유효시간이 지났어요" }
                 saveReceipt(DestinationReceipt(request.id, launchAttempted = false))
                 claimAttempted = true
                 val claimStarted = elapsed()
@@ -81,7 +103,7 @@ internal class DestinationReceiver(
                 check(reply.request?.id == request.id && reply.request.status == "claimed")
                 claimed = true
                 deadline = destinationDeadline(reply.serverNow, request.expiresAt, claimStarted) ?: 0
-                check(ready() && elapsed() < deadline) { "실행 조건이 바뀌었거나 유효시간이 지났어요" }
+                check(canContinue() && ready() && elapsed() < deadline) { "실행 조건이 바뀌었거나 유효시간이 지났어요" }
                 saveReceipt(DestinationReceipt(request.id))
                 report("목적지 수신 · $trace · 지도 실행 요청")
             }

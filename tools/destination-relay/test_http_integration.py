@@ -88,3 +88,19 @@ class RelayHttpTest(unittest.TestCase):
         self.assertEqual(409, self.post(self.tablet, "claim", requestId=identifier)[0])
         self.assertEqual(200, self.post(self.tablet, "complete", requestId=identifier, delivered=True)[0])
         self.assertEqual("delivered", self.post(self.phone, "status")[1]["request"]["status"])
+
+    # 실제 HTTP에서도 complete가 claim보다 먼저 오면 중단이 확정돼 지연 claim을 거절한다.
+    def test_abort_wins_delayed_claim_without_hiding_request(self):
+        code = self.post(self.tablet, "pairCode", name="테스트 태블릿")[1]["code"]
+        self.assertEqual(200, self.post(self.phone, "pair", code=code)[0])
+        identifier = str(uuid.uuid4())
+        self.assertEqual(200, self.post(self.phone, "send", requestId=identifier, validityMinutes=1,
+            destination={"name": "서울시청"})[0])
+        self.assertEqual(404, self.post(self.phone, "complete", requestId=identifier, delivered=False)[0])
+        self.assertEqual(409, self.post(self.tablet, "complete", requestId=identifier, delivered=True)[0])
+        status, reply = self.post(self.tablet, "complete", requestId=identifier, delivered=False)
+        self.assertEqual(200, status)
+        self.assertEqual("failed", reply["request"]["status"])
+        self.assertEqual(409, self.post(self.tablet, "claim", requestId=identifier)[0])
+        self.assertIsNone(self.post(self.tablet, "inbox")[1]["request"])
+        self.assertEqual("failed", self.post(self.phone, "status")[1]["request"]["status"])

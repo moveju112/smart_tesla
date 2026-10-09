@@ -175,6 +175,51 @@ class DestinationRelayTest(unittest.TestCase):
         self.assertIsNone(self.call("tablet", "inbox")["request"])
         self.assertEqual("claimed", self.call("phone", "status")["request"]["status"])
 
+    # 실행 전 중단과 지연 claim은 어느 순서로 처리돼도 미실행 terminal 상태로 수렴한다.
+    def test_abort_and_delayed_claim_in_both_orders(self):
+        for claim_first in (False, True):
+            with self.subTest(claim_first=claim_first):
+                request = self.send()
+                if claim_first:
+                    self.call("tablet", "claim", requestId=request["id"])
+                reply = self.call("tablet", "complete", requestId=request["id"], delivered=False)
+                self.assertEqual("failed", reply["request"]["status"])
+                with self.assertRaises(RelayError) as rejected:
+                    self.call("tablet", "claim", requestId=request["id"])
+                self.assertEqual(409, rejected.exception.status)
+                self.assertIsNone(self.call("tablet", "inbox")["request"])
+                self.assertEqual("failed", self.call("phone", "status")["request"]["status"])
+
+    # 성공 complete는 pending을 선점하지 않으며 확정된 결과는 중단 요청으로 바뀌지 않는다.
+    def test_completion_does_not_invent_or_overwrite_delivery(self):
+        request = self.send()
+        with self.assertRaises(RelayError):
+            self.call("tablet", "complete", requestId=request["id"], delivered=True)
+        self.call("tablet", "claim", requestId=request["id"])
+        self.call("tablet", "complete", requestId=request["id"], delivered=True)
+        for delivered in (False, True):
+            reply = self.call("tablet", "complete", requestId=request["id"], delivered=delivered)
+            self.assertEqual("delivered", reply["request"]["status"])
+
+    # 취소·교체·만료 응답도 요청별 종료 확인을 제공하며 원래 terminal 상태는 유지한다.
+    def test_aborting_terminal_requests_preserves_state(self):
+        cancelled = self.send()
+        self.call("phone", "cancel", requestId=cancelled["id"])
+        replaced = self.send()
+        expired = self.send()
+        self.now = expired["expiresAt"]
+        for request, expected in ((cancelled, "cancelled"), (replaced, "replaced"), (expired, "expired")):
+            reply = self.call("tablet", "complete", requestId=request["id"], delivered=False)
+            self.assertEqual(expected, reply["request"]["status"])
+
+    # 중단 확정도 실제 수신 기기·소유자 검증을 우회하지 않는다.
+    def test_abort_requires_receiver_and_owner(self):
+        request = self.send()
+        for device, owner in (("phone", "owner"), ("other", "owner"), ("tablet", "different")):
+            with self.subTest(device=device, owner=owner), self.assertRaises(RelayError):
+                self.call(device, "complete", owner=owner, requestId=request["id"], delivered=False)
+        self.assertEqual("pending", self.call("phone", "status")["request"]["status"])
+
 
 if __name__ == "__main__":
     unittest.main()

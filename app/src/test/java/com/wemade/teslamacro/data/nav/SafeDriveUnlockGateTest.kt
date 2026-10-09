@@ -2,6 +2,7 @@ package com.wemade.teslamacro.data.nav
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.advanceTimeBy
@@ -246,6 +247,48 @@ class SafeDriveUnlockGateTest {
         assertTrue(harness.gate.complete(harness.token, true))
         assertTrue(next.await())
         assertEquals(2, harness.launchCount)
+    }
+
+    /** 인증 제한 끝 직전의 성공도 별도 실행 예산 동안 화면을 유지한다. */
+    @Test fun authenticatedDeliveryCanCrossOriginalDeadline() = runTest {
+        val harness = Harness { testScheduler.currentTime }
+        val result = async { harness.run {
+            delay(10_000L)
+            assertTrue(harness.gate.isCurrent(harness.token))
+            assertFalse(harness.gate.isPending(harness.token))
+        } }
+        runCurrent()
+        advanceTimeBy(55_000L)
+        assertTrue(harness.gate.complete(harness.token, true))
+        assertTrue(result.await())
+        assertEquals(65_000L, testScheduler.currentTime)
+    }
+
+    /** 인증 후 작업도 30초에서 취소하고 화면·늦은 콜백을 함께 폐기한다. */
+    @Test fun deliveryBudgetIsBoundedAfterAuthentication() = runTest {
+        val harness = Harness { testScheduler.currentTime }
+        var delivered = false
+        val result = async { runCatching { harness.run { delay(30_001L); delivered = true } } }
+        runCurrent()
+        assertTrue(harness.gate.complete(harness.token, true))
+        assertTrue(result.await().exceptionOrNull() is DestinationLaunchException)
+        assertFalse(delivered)
+        assertFalse(harness.gate.isCurrent(harness.token))
+        assertFalse(harness.gate.complete(harness.token, true))
+        assertEquals(listOf(harness.token), harness.closedTokens)
+    }
+
+    /** 타이머가 밀려도 인증 후 실행의 실제 경과 시간 경계에서 화면 유효성이 끝난다. */
+    @Test fun deliveryExpiryUsesElapsedClockEvenBeforeTimerRuns() = runTest {
+        var offset = 0L
+        val harness = Harness { testScheduler.currentTime + offset }
+        val result = async { harness.run {
+            offset = SAFE_DRIVE_UNLOCK_DELIVERY_TIMEOUT_MILLIS
+            assertFalse(harness.gate.isCurrent(harness.token))
+        } }
+        runCurrent()
+        assertTrue(harness.gate.complete(harness.token, true))
+        assertTrue(result.await()) // 실행 콜백이 끝난 뒤에는 전달 성공을 만료로 뒤집지 않음
     }
 
     /** 실제 게이트의 화면·전달 콜백 순서만 기록하는 테스트용 주변 장치다. */

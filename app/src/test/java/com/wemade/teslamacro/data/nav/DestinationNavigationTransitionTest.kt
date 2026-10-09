@@ -105,6 +105,24 @@ class DestinationNavigationTransitionTest {
         assertFalse(request.canExecute(null, false, 91_001L))
     }
 
+    /** 이전 탑승과 늦은 조회 응답은 새 탑승의 8초·90초 오프라인 실행을 막지 않는다. */
+    @Test fun previousBoardingWaitingDoesNotBlockOfflineFallback() {
+        val previous = DestinationInboxObservation(1L, DestinationReceiveResult.WAITING_FOR_CONDITIONS, 200_000L)
+        val request = BoardingNavigationRequest(1_000L) { Result.success(Unit) }
+        for (now in listOf(9_000L, 91_000L)) {
+            assertFalse(request.canExecute(previous.resultFor(1L, now), false, now))
+            assertTrue(request.canExecute(previous.resultFor(2L, now), false, now))
+        }
+    }
+
+    /** 같은 탑승의 대기 목적지만 우선하고 목적지 유효시간 경계부터 캐시를 폐기한다. */
+    @Test fun waitingObservationExpiresWithDestination() {
+        val observed = DestinationInboxObservation(1L, DestinationReceiveResult.WAITING_FOR_CONDITIONS, 10_000L)
+        val request = BoardingNavigationRequest(0L) { Result.success(Unit) }
+        assertFalse(request.canExecute(observed.resultFor(1L, 9_999L), false, 9_999L))
+        assertTrue(request.canExecute(observed.resultFor(1L, 10_000L), false, 10_000L))
+    }
+
     /** 반복되는 전달 전 실패도 탑승 세션당 두 번에서 끝낸다. */
     @Test fun boardingRetryIsBounded() = runTest {
         val request = BoardingNavigationRequest(0L) { Result.failure(SafeDrivePreflightException("실행 중")) }

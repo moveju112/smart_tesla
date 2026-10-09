@@ -3,15 +3,20 @@ package com.wemade.teslamacro.data.nav
 import com.wemade.teslamacro.data.poll.needsBoardingNavigation
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.DeviceMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.*
 import org.junit.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class DestinationReceiverTest {
     private val place = DestinationPlace("서울시청", "서울 중구 세종대로 110", 37.5663, 126.9779)
 
@@ -32,6 +37,7 @@ class DestinationReceiverTest {
         var launchedDestination: DestinationPlace? = null
         var elapsed = 1_000L
         var createdAt = 100_000L
+        var validityMillis = 60_000L
         var ready = true
         var status = "pending"
         var receipt: DestinationReceipt? = null
@@ -41,12 +47,18 @@ class DestinationReceiverTest {
         var failClaim = false
         var loseClaimReply = false
         var selfTest = false
-        var before: () -> Unit = {}
+        var delayedClaim = false
+        var legacyComplete = false
+        var completionReply: DestinationReply? = null
+        var completeError: DestinationApiException? = null
+        var canContinue = true
+        var before: suspend () -> Unit = {}
+        var launchThrough: suspend (suspend () -> Unit) -> Unit = { it() }
         var launchFailure = false
         var uncertainLaunch = false
         var declineUnlock = false
         var attempts = 0
-        val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, createdAt, createdAt + 60_000, status, selfTest)
+        val request get() = DestinationRequest("00000000-0000-4000-8000-000000000001", destination, createdAt, createdAt + validityMillis, status, selfTest)
 
         /** 인계 이후 수신함에서 제거하고 완료 응답 유실도 재현한다. */
         suspend fun call(operation: String, fields: JsonObjectBuilder.() -> Unit): DestinationReply {
@@ -54,13 +66,21 @@ class DestinationReceiverTest {
                 "inbox" -> return DestinationReply(100_000 + elapsed - 1_000, request.takeIf { status == "pending" })
                 "claim" -> {
                     if (failClaim || status != "pending") throw DestinationApiException(409, "cancelled")
-                    status = "claimed"
                     claims++
+                    if (delayedClaim) throw DestinationApiException(0, "timeout")
+                    status = "claimed"
                     if (loseClaimReply) throw DestinationApiException(503, "reply lost")
                 }
                 "complete" -> {
                     if (failComplete) throw DestinationApiException(503, "offline")
-                    status = if (receipt?.delivered == true) "delivered" else "failed"
+                    completeError?.let { throw it }
+                    completionReply?.let { return it }
+                    val delivered = buildJsonObject(fields).getValue("delivered").jsonPrimitive.boolean
+                    if (status !in setOf("delivered", "failed", "expired", "cancelled", "replaced")) {
+                        if (status != "claimed" && (legacyComplete || status != "pending" || delivered))
+                            throw DestinationApiException(409, "request_conflict")
+                        status = if (delivered) "delivered" else "failed"
+                    }
                 }
             }
             return DestinationReply(100_000 + elapsed - 1_000, request)
@@ -71,15 +91,134 @@ class DestinationReceiverTest {
             { destination, guard -> runCatching {
                 attempts++
                 if (declineUnlock) throw DestinationUnlockDeclinedException()
-                before()
-                guard()
-                assertNotNull(receipt)
-                if (launchFailure) error("launch failed")
-                if (uncertainLaunch) throw DestinationLaunchException("unknown", uncertain = true)
-                launches++
-                launchedDestination = destination
-                Unit
+                launchThrough {
+                    before()
+                    guard { canContinue }
+                    assertNotNull(receipt)
+                    if (launchFailure) error("launch failed")
+                    if (uncertainLaunch) throw DestinationLaunchException("unknown", uncertain = true)
+                    launches++
+                    launchedDestination = destination
+                }
             }.onFailure { if (it is DestinationLaunchException && it.uncertain) throw it } }, {})
+    }
+
+    /** 구형 서버의 pending complete 409도 기록을 유지해 늦은 claim을 다음 수신에서 정리한다. */
+    @Test fun delayedClaimCannotLoseRecoveryReceipt() = runTest {
+        val scenario = Scenario().apply { delayedClaim = true; legacyComplete = true }
+        scenario.receiver().receive { true }
+        assertEquals("pending", scenario.status)
+        assertNotNull(scenario.receipt)
+        assertFalse(scenario.receipt!!.launchAttempted)
+        assertEquals(DestinationReceiveResult.WAITING_FOR_CONDITIONS, scenario.receiver().receive { true })
+        scenario.status = "claimed" // 시간 초과 뒤 원래 claim이 서버에서 처리됨
+        assertEquals(DestinationReceiveResult.EMPTY, scenario.receiver().receive { true })
+        assertEquals("failed", scenario.status)
+        assertNull(scenario.receipt)
+        assertEquals(1, scenario.claims)
+        assertEquals(0, scenario.launches)
+    }
+
+    /** 원자적 실행 전 중단이 먼저 확정되면 뒤늦은 claim이 거절된다. */
+    @Test fun abortBeforeDelayedClaimLeavesTerminalFailure() = runTest {
+        val scenario = Scenario().apply { delayedClaim = true }
+        scenario.receiver().receive { true }
+        assertEquals("failed", scenario.status)
+        assertNull(scenario.receipt)
+        assertTrue(runCatching { scenario.call("claim") {} }.exceptionOrNull() is DestinationApiException)
+        assertEquals(0, scenario.launches)
+    }
+
+    /** 응답 코드만 같아도 경로 404·잘못된 요청·미완료 응답은 기록 삭제 근거가 아니다. */
+    @Test fun onlyAuthoritativeTerminalReplyOrMissingRequestClearsReceipt() = runTest {
+        val scenario = Scenario().apply { receipt = DestinationReceipt(request.id, launchAttempted = false) }
+        val receiver = scenario.receiver()
+        scenario.completeError = DestinationApiException(404, "route missing")
+        assertTrue(runCatching { receiver.reconcileReceipt() }.isFailure)
+        assertNotNull(scenario.receipt)
+        scenario.completeError = null
+        scenario.completionReply = DestinationReply(100_000, scenario.request)
+        assertFalse(receiver.reconcileReceipt())
+        assertNotNull(scenario.receipt)
+        scenario.completionReply = DestinationReply(100_000, scenario.request.copy(id = "another", status = "failed"))
+        assertFalse(receiver.reconcileReceipt())
+        assertNotNull(scenario.receipt)
+        scenario.completeError = DestinationApiException(404, "gone", "request_not_found")
+        assertTrue(receiver.reconcileReceipt())
+        assertNull(scenario.receipt)
+    }
+
+    /** 새 탑승 캐시가 비어도 UNKNOWN 영속 기록은 안심운전을 허용하지 않는다. */
+    @Test fun persistentUnknownBlocksNewBoardingFallback() {
+        val scenario = Scenario().apply { receipt = DestinationReceipt(request.id) }
+        val boarding = BoardingNavigationRequest(0L) { Result.success(Unit) }
+        assertFalse(boarding.canExecute(scenario.receiver().receiptState(), false, 8_000L))
+        assertEquals(scenario.request.id, scenario.receipt?.requestId)
+    }
+
+    /** 55초에 인증하고 착석 재확인에 10초가 걸려도 별도 실행 예산에서 한 번 전달한다. */
+    @Test fun authenticatedRequestHasSeparateDeliveryBudget() = runTest {
+        val scenario = Scenario().apply { validityMillis = 120_000L }
+        val gate = SafeDriveUnlockGate { testScheduler.currentTime }
+        var token = ""
+        scenario.launchThrough = { action ->
+            check(gate.run(showPrompt = {
+                token = it
+                delay(55_000L)
+                gate.complete(it, true)
+            }, closePrompt = {}, launch = action))
+        }
+        var confirmations = 0
+        val receiver = DestinationReceiver(scenario::call, { scenario.receipt }, { scenario.receipt = it },
+            { scenario.receipt = null }, { 1_000L + testScheduler.currentTime },
+            { _, guard -> runCatching {
+                scenario.launchThrough {
+                    guard { gate.isCurrent(token) }
+                    scenario.launches++
+                }
+            } }, {})
+        val result = receiver.receive(prepare = {
+            confirmations++
+            if (confirmations == 2) delay(10_000L)
+            true
+        }) { true }
+        assertEquals(DestinationReceiveResult.DISPATCHED, result)
+        assertEquals(1, scenario.claims)
+        assertEquals(1, scenario.launches)
+    }
+
+    /** 지도 인계 이후 인증 실행 시간이 끝나면 실패 확정·재실행 대신 UNKNOWN을 보존한다. */
+    @Test fun deliveryTimeoutAfterClaimPreservesUnknown() = runTest {
+        val scenario = Scenario()
+        val gate = SafeDriveUnlockGate { testScheduler.currentTime }
+        scenario.launchThrough = { action ->
+            gate.run(showPrompt = { gate.complete(it, true) }, closePrompt = {}, launch = {
+                action()
+                delay(30_001L)
+            })
+        }
+        assertEquals(DestinationReceiveResult.UNKNOWN, scenario.receiver().receive { true })
+        assertEquals("claimed", scenario.status)
+        assertNull(scenario.receipt?.delivered)
+        assertEquals(DestinationReceiveResult.UNKNOWN, scenario.receiver().receive { true })
+        assertEquals(1, scenario.launches)
+        assertEquals(1, scenario.claims)
+    }
+
+    /** 재확인 중 인증 요청이 만료되거나 다시 잠기면 claim과 실행 전에 중단한다. */
+    @Test fun expiredAuthenticationAfterPresenceCheckDoesNotClaim() = runTest {
+        val scenario = Scenario()
+        var confirmations = 0
+        val result = scenario.receiver().receive(prepare = {
+            confirmations++
+            if (confirmations == 2) scenario.canContinue = false
+            true
+        }) { true }
+        assertEquals(DestinationReceiveResult.WAITING_FOR_CONDITIONS, result)
+        assertEquals("pending", scenario.status)
+        assertEquals(0, scenario.claims)
+        assertEquals(0, scenario.launches)
+        assertNull(scenario.receipt)
     }
 
     /** ADB 응답 유실은 실패로 확정하거나 다음 수신에서 다시 실행하지 않는다. */

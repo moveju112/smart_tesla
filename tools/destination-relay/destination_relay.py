@@ -155,7 +155,10 @@ class DestinationRelay:
                 if type(data["delivered"]) is not bool:
                     raise RelayError(400, "invalid_request")
                 status = "delivered" if data["delivered"] else "failed"
-                if request["status"] not in ("claimed", status):
+                # 종료 결과를 덮어쓰지 않고 실행 전 중단은 pending도 원자적으로 종료한다.
+                if request["status"] in ("delivered", "failed", "expired", "cancelled", "replaced"):
+                    return {"request": self.record(request)}
+                if request["status"] != "claimed" and not (request["status"] == "pending" and not data["delivered"]):
                     raise RelayError(409, "request_conflict")
             database.execute("UPDATE requests SET status=? WHERE id=?", (status, request_id))
             return {"request": self.record(database.execute("SELECT * FROM requests WHERE id=?", (request_id,)).fetchone())}

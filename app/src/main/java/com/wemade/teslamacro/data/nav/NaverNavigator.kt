@@ -108,7 +108,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
     val hasOverlayPermission: Boolean get() = Settings.canDrawOverlays(context)
 
     /** 잠금 해제·최종 인계 확인 뒤 검색어 또는 기존 좌표를 네이버에 전달한다. */
-    suspend fun navigateDestination(place: DestinationPlace, beforeLaunch: suspend () -> Unit): Result<Unit> =
+    suspend fun navigateDestination(place: DestinationPlace, beforeLaunch: suspend (() -> Boolean) -> Unit): Result<Unit> =
         withContext(Dispatchers.IO) {
             if (!safeDriveLaunchMutex.tryLock()) return@withContext Result.failure(IllegalStateException("다른 내비 실행을 처리 중이에요"))
             var dispatched = false
@@ -124,11 +124,16 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                     val intent = Intent(Intent.ACTION_VIEW, uri).setPackage(installed).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     val keyguard = context.getSystemService(KeyguardManager::class.java)
                     val launch: suspend (Activity?) -> Unit = { activity ->
+                        val canContinue = {
+                            activity == null || (!activity.isFinishing && !activity.isDestroyed &&
+                                (activity as? SafeDriveUnlockActivity)?.canContinue() == true)
+                        }
                         launchFirst(app.label, listOf(intent),
                             backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(), activity,
                             beforeLaunch = {
                                 confirmUnlockedDestination(
-                                    { isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked) }, beforeLaunch)
+                                    { canContinue() && isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked) },
+                                    { beforeLaunch { canContinue() && isSafeDriveUnlocked(keyguard.isKeyguardLocked, keyguard.isDeviceLocked) } })
                                 dispatched = true
                             },
                             allowShell = true)

@@ -7,6 +7,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
 internal const val SAFE_DRIVE_UNLOCK_TIMEOUT_MILLIS = 60_000L
+internal const val SAFE_DRIVE_UNLOCK_DELIVERY_TIMEOUT_MILLIS = 30_000L
 
 /** 보안 인증이 풀려도 키가드 화면이 남아 있으면 지도 전달을 기다린다. */
 internal fun isSafeDriveUnlocked(keyguardLocked: Boolean, deviceLocked: Boolean): Boolean =
@@ -24,7 +25,7 @@ internal suspend fun confirmUnlockedDestination(isUnlocked: () -> Boolean, befor
 /** 메인 스레드에서 인증 요청 한 건의 만료·취소·늦은 콜백을 함께 관리한다. */
 internal class SafeDriveUnlockGate(private val nowMillis: () -> Long) {
     private data class Request(
-        val expiresAtMillis: Long,
+        var expiresAtMillis: Long,
         val id: String = UUID.randomUUID().toString(),
         val answer: CompletableDeferred<Boolean> = CompletableDeferred(),
     )
@@ -46,7 +47,14 @@ internal class SafeDriveUnlockGate(private val nowMillis: () -> Long) {
                 request.answer.await()
             } == true
             if (!unlocked || nowMillis() >= request.expiresAtMillis) return false
-            launch()
+            // 인증 대기 60초와 별도로 착석 재확인·인계 실행 시간을 제한한다.
+            request.expiresAtMillis = nowMillis() + SAFE_DRIVE_UNLOCK_DELIVERY_TIMEOUT_MILLIS
+            val delivery = withTimeoutOrNull(SAFE_DRIVE_UNLOCK_DELIVERY_TIMEOUT_MILLIS) {
+                runCatching {
+                    launch()
+                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+            } ?: throw DestinationLaunchException("인증 후 실행 시간이 지났어요", uncertain = true)
+            delivery.getOrThrow()
             return true
         } finally {
             request.answer.complete(false)
@@ -58,7 +66,7 @@ internal class SafeDriveUnlockGate(private val nowMillis: () -> Long) {
     /** 만료된 알림·재생성된 화면은 새 탑승 요청을 이어받지 못한다. */
     fun isPending(id: String): Boolean = isCurrent(id) && active?.answer?.isCompleted == false
 
-    /** 인증 직후 화면 재생성은 허용하되 전달마다 원래 만료 시각을 지킨다. */
+    /** 인증 직후 화면 재생성은 허용하되 인증 대기와 인증 후 실행의 각 만료 시각을 지킨다. */
     fun isCurrent(id: String): Boolean = active?.let {
         it.id == id && nowMillis() < it.expiresAtMillis
     } == true

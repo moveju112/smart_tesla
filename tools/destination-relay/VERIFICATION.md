@@ -1,3 +1,40 @@
+# 목적지 수신 경계조건 검증 — 0.9.188 / 301
+
+기준 main `abbab85` (0.9.187 / 300). 이전 수정 세션 종료 확인 후 작업. 사용자 기존 규칙·문서 변경은 포함하지 않았다.
+
+## 이번 수정
+
+- `DestinationReceiver.reconcileReceipt()` 재사용: 모든 409를 완료로 취급하지 않고 복구 기록 보존. 같은 요청의 종료 상태 응답 또는 `404/request_not_found`만 기록 삭제 근거로 사용. 일반 경로 404·다른 ID·pending 응답은 삭제하지 않음.
+- 기존 `complete(false)`를 원자적 실행 전 중단으로 확장: pending/claimed → failed. 이미 종료된 요청은 상태를 덮어쓰지 않고 해당 요청의 확정 상태 반환. complete가 먼저 끝났으면 뒤늦은 claim 거절. 새 경로·DB 스키마 변경 없음.
+- 기존 서버의 pending complete 409에도 앱 기록이 남아, 지연 claim이 처리된 뒤 재확인·실패 완료로 복구 가능. UNKNOWN 기록은 자동 실행하지 않음.
+- 조회 캐시를 탑승 세션·목적지 유효시간에 연결. 전원 해제·하차·새 탑승에서 조회 캐시 초기화. 이전 세션의 늦은 조회 응답은 새 탑승의 오프라인 안심운전을 막지 않음. 영속 미확인 전달 기록은 독립적으로 중복 실행 방지.
+- `SafeDriveUnlockGate` 인증 대기 60초와 인증 후 실행 30초 분리. `confirmUnlockedDestination()`과 `SafeDriveUnlockActivity.canContinue()` 재사용, 착석 재확인 직후 claim 전에도 화면 유효성·재잠금 검사.
+- 지도 전달 이후 실행 시간 초과는 failed로 확정하지 않고 UNKNOWN 보존. 이미 끝난 전달 성공은 이후 경과 시간으로 실패 판정하지 않음.
+
+## 관측한 검증
+
+- `./gradlew test :app:assembleRelease` 성공. 앱 debug/release 각각 607개 중 594개 통과, 기존 제외 13개, 실패 0개. BLE debug/release 각각 33개 통과.
+- DestinationReceiverTest 32개, SafeDriveUnlockGateTest 16개, DestinationNavigationTransitionTest 10개, debug/release 모두 통과.
+- 서버 대역의 complete 상태 검사를 실제 릴레이와 맞춤. 구 서버 complete → 지연 claim → 앱 재시작 복구, 새 서버 complete → claim 거절, claim → complete, 일반 404, 잘못된 완료 응답, UNKNOWN 탑승 간 유지 검증.
+- 55초 인증 + 10초 착석 재확인에서 claim/전달 1회. 재확인 이후 만료·재잠금이면 claim 0회. 전달 이후 시간 초과는 기록 보존·재실행 0회.
+- Python 릴레이 19개 + 검색 계약 10개 통과. 기준 서버 원본을 준비한 뒤 실제 HTTP 통합 3개 별도 실행, 모두 통과(인증 검증, 전송·재기동·완료, complete 우선 처리 후 지연 claim 거절).
+- APK 버전 0.9.188/301 및 서명 검증 성공. 스크린샷·실차·실기기 실행 시험은 수행하지 않음.
+
+## 운영 반영
+
+사용자가 `oracle_tokyo:/home/ubuntu/project/osrm/destination_relay.py` 백업·교체와 `gps-map.service` 재시작을 명시 승인했다.
+
+- 변경 전 백업: `/home/ubuntu/project/osrm/backups/destination-relay-before-0.9.188-20261009T073448Z.py`.
+- 운영 파일·저장소 수정본 SHA-256: `d4f4c692f2fa66bf2718c02441ec27fa8d82a1ed936cdb41c94a612c79994712`.
+- 서비스 재시작 뒤 `active`, 로컬·공개 목적지 status 무인증 요청 모두 `401/authentication_required` 확인.
+- 운영 DB 데이터·스키마·인증키 변경 없음. 실제 사용자 목적지 전송·claim을 운영 서버에서 시험하지 않음.
+
+## 미확인
+
+원래 ‘앱을 열어야 동작’ 증상은 화면을 오래 끈 실제 수신기에서 확인해야 한다. 일반 수신은 서비스 반복 조회이며 신규 푸시·상시 WakeLock은 추가하지 않았다. 설정 → 기기 → 진단 로그 → 공유로 서비스·조회·착석 재확인·지도 실행 단계 비교 필요.
+
+---
+
 # 목적지 수신 복구 검증 — 2026-10-09
 
 앱 0.9.185 / versionCode 298. 아래 2026-10-03 기록은 당시 검증이며 이번 작업은 원격 변경 없이 수행했다.

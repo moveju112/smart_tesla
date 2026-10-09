@@ -119,7 +119,6 @@ class MainActivity : ComponentActivity() {
                 app.ready.first { it }
                 if (!activityVisible) return@launch
                 app.container.teslaDestinationOverlay.refresh()
-                app.container.navigationTestOverlay.refresh()
                 app.container.poller.setAppVisible(true)
 
             }

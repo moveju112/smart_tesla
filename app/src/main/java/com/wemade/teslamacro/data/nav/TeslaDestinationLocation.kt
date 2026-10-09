@@ -17,6 +17,8 @@ internal data class TeslaDestinationSelection(
     val searching: Boolean = false,
     val error: String? = null,
     val testMode: Boolean = false,
+    // 테스트 모드에서 실제로 보냈을 목적지; 값이 있으면 선택 대신 결과만 보여준다.
+    val preview: TeslaDestinationCandidate? = null,
 )
 
 /** 목적지 자체의 좌표만 읽고 지도 중심·출발 좌표·짧은 링크를 좌표로 추측하지 않는다. */

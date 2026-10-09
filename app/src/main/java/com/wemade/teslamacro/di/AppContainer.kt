@@ -82,7 +82,6 @@ class AppContainer(private val context: Context) {
     internal val teslaNavigationShare = com.wemade.teslamacro.data.nav.TeslaNavigationShare(appContext, settingsStore, navigator, appScope,
         currentPoint = { tabletLocation.read() })
     internal val teslaDestinationOverlay = com.wemade.teslamacro.service.TeslaDestinationOverlay(appContext, teslaNavigationShare, settingsStore, appScope)
-    internal val navigationTestOverlay = com.wemade.teslamacro.service.NavigationTestOverlay(appContext, settingsStore, appScope)
     internal val destinations = com.wemade.teslamacro.data.nav.DestinationCoordinator(appContext, settingsStore, navigator) { poller.confirmDestinationPresence() }
 
     /** HUD 속도. 차량 폴링보다 빠르고 차를 안 깨운다 */

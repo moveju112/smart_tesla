@@ -26,6 +26,18 @@ internal fun TeslaDestinationChooser(request: TeslaDestinationSelection, sharing
     Surface(shape = RoundedCornerShape(Radius.card), color = T.Carbon,
         border = BorderStroke(Stroke.thin, T.Hairline)) {
         Column(Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()).padding(Space.md)) {
+            request.preview?.let { preview ->
+                // 테스트 모드는 선택 대신 테슬라로 보냈을 주소와 실제 전달값(좌표)만 보여준다.
+                Text("테스트 · 테슬라로 보낼 목적지", style = MaterialTheme.typography.titleLarge, color = T.Ink)
+                Spacer(Modifier.height(Space.sm))
+                Text(preview.address, style = MaterialTheme.typography.bodyLarge, color = T.Ink)
+                if (preview.shareText != preview.address) {
+                    Text(preview.shareText, style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
+                }
+                TextButton(onClick = { scope.launch { sharing.dismiss(request.id) } },
+                    modifier = Modifier.heightIn(min = Space.xxl)) { Text("닫기") }
+                return@Column
+            }
             Text(if (request.testMode) "테스트 목적지 확인" else "테슬라 목적지 선택", style = MaterialTheme.typography.titleLarge, color = T.Ink)
             Spacer(Modifier.height(Space.sm))
             DraftField(query, { query = it }, label = "전체 주소 또는 장소", enabled = !request.searching,

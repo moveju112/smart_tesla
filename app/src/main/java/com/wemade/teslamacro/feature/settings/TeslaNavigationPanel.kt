@@ -28,8 +28,8 @@ internal fun TeslaNavigationPanel(settings: AppSettings, controls: NavigationCon
         "원본 좌표는 바로 공유하고, 조회 후보가 하나면 자동 공유해요. 두 개 이상이면 내비 화면 위에서 전체 주소를 선택해요. " +
         "후보가 없으면 선택창에서 주소를 보완하고, 좌표가 없으면 전체 주소로 공유해요. " +
         "현재 위치는 후보 순서에만 쓰며 가까운 곳을 자동 선택하지 않아요. 공식 앱 전달 후 차량 수신 여부는 차량에서 확인해 주세요. " +
-        "임시 테스트 모드는 기본으로 켜져 있어요. 실제 테슬라 앱 공유를 차단하고 길안내 알림을 보조창에 그대로 표시해요. " +
-        "안내 알림이 갱신되면 보조창도 갱신하고 안내가 종료되면 닫아요. 필요한 권한은 설정 → 기기 → 권한 점검에서 허용해 주세요.")
+        "임시 테스트 모드는 기본으로 켜져 있어요. 실제 테슬라 앱 공유를 차단하고 테슬라로 보냈을 목적지를 보조창에 표시해요. " +
+        "후보가 여러 개면 선택 후 표시하고, 안내가 종료되거나 닫으면 사라져요. 필요한 권한은 설정 → 기기 → 권한 점검에서 허용해 주세요.")
     TCard {
         Column {
             DraftToggle(settings.teslaNavigationShareEnabled, rememberPermissionToggle(PermissionFeature.TESLA_SHARE, controls.onTeslaNavigationShareEnabled), label = "자동 목적지 공유")

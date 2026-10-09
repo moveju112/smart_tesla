@@ -108,7 +108,8 @@ internal class TeslaNavigationShare(
                 if (id != revision || !enabled() || !fresh()) return@withLock
                 val exact = automaticTeslaCandidate(candidates)
                 val testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode
-                if (exact != null && !testMode) {
+                if (exact != null && testMode) showPreview(id, query, exact)
+                else if (exact != null) {
                     mutableSelection.value = null
                     share(exact.shareText, id)
                 }
@@ -160,8 +161,16 @@ internal class TeslaNavigationShare(
         val current = mutableSelection.value ?: return@withLock
         if (current.id != id || current.searching || candidate !in current.candidates || !enabled()) return@withLock
         if (!fresh()) { invalidate("확인 시간 만료"); feedback("길안내를 다시 시작해 주세요"); return@withLock }
+        if (current.testMode) { showPreview(id, current.query, candidate); return@withLock }
         mutableSelection.value = null
-        share(candidate.shareText, id, current.testMode)
+        share(candidate.shareText, id)
+    }
+
+    // 테스트 모드 결과 표시 (보냈을 목적지 -> 보조창)
+    /** 실제 공유 대신 테슬라로 보냈을 주소·좌표를 같은 보조창에 남겨 안내 종료·닫기 전까지 확인하게 한다. */
+    private fun showPreview(id: Long, query: String, candidate: TeslaDestinationCandidate) {
+        DiagLog.add("테슬라 내비 테스트 — 보낼 목적지 표시 · 실제 공유 차단")
+        mutableSelection.value = TeslaDestinationSelection(id, query, testMode = true, preview = candidate)
     }
 
     /** 선택 취소는 자동 재전송 없이 해당 안내의 대기를 끝낸다. */
@@ -173,10 +182,10 @@ internal class TeslaNavigationShare(
     }
 
     /** 전달 직전에 설정·잠금을 재검사하고 접수와 차량 수신을 구분한다. */
-    private suspend fun share(destination: String, id: Long, testRequest: Boolean = false) {
+    private suspend fun share(destination: String, id: Long) {
         try {
             val settings = settingsStore.settings.first()
-            if (testRequest || settings.teslaNavigationTestMode) {
+            if (settings.teslaNavigationTestMode) {
                 DiagLog.add("테슬라 내비 테스트 — 목적지 확인 완료 · 실제 공유 차단")
                 feedback("테스트 목적지 확인 완료 · 차량에 보내지 않았어요")
                 return

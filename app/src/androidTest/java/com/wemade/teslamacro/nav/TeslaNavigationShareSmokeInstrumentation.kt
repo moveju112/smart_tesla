@@ -34,7 +34,7 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                 app.ready.first { it }
                 if (testModeSmoke) {
                     verifyTestMode(app)
-                    result.putString("result", "PASS address filtering, test share blocked, notification overlay update/end, permission recovery, lock, test OFF, standard notification")
+                    result.putString("result", "PASS test destination preview, choice preview, guidance end, dispatch blocked")
                     return@runBlocking
                 }
                 app.container.teslaNavigationShare.setTestMode(false)
@@ -185,7 +185,6 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
     /** 실제 Android 창과 공유 실행 횟수로 임시 모드의 안내·차단·종료 경계를 확인한다. */
     private suspend fun verifyTestMode(app: TeslaMacroApplication) {
         val store = app.container.settingsStore
-        val overlay = app.container.navigationTestOverlay
         val realBridge = NavigationBridgeProvider.bridge
         var dispatches = 0
         NavigationBridgeProvider.bridge = object : Binder() {
@@ -208,94 +207,37 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                 lookup = { _, _ -> listOf(correct, correct.copy(address = "인천 서구 청마로34번길 60")) })
             sharing.screen("com.nhn.android.nmap", "청마로 34번길 6")
             sharing.notification("com.nhn.android.nmap", "route", "네이버 지도", "내비게이션 - 안내 중")
-            val selected = withTimeout(4_000) { sharing.selection.first { it != null }!! }
-            check(selected.query == "청마로34번길 6" && selected.testMode && selected.candidates == listOf(correct))
-            sharing.confirm(selected.id, correct)
-            check(sharing.selection.value == null && dispatches == 0 && count() == 0)
+            val automatic = withTimeout(4_000) { sharing.selection.first { it != null }!! }
+            check(automatic.query == "청마로34번길 6" && automatic.testMode && automatic.preview == correct && dispatches == 0 && count() == 0)
+            val overlay = com.wemade.teslamacro.service.TeslaDestinationOverlay(targetContext, sharing, store, app.container.appScope)
+            overlay.refresh()
+            withTimeout(10_000) { while (!dialogTexts().let { it.contains("테슬라로 보낼 목적지") && it.contains(correct.address) && it.contains("37.5,126.6") }) delay(100) }
+            sharing.notification("com.nhn.android.nmap", "route", "네이버 지도", "내비게이션 - 안내 종료")
+            sharing.removed("com.nhn.android.nmap", "route")
+            check(sharing.selection.value == null)
+            withTimeout(10_000) { while (dialogTexts().contains("테슬라로 보낼 목적지")) delay(100) }
+            val both = TeslaNavigationShare(targetContext, store, app.container.navigator, app.container.appScope,
+                lookup = { _, _ -> listOf(correct, correct.copy(address = "인천 남동구 청마로34번길 6")) })
+            both.screen("com.nhn.android.nmap", "청마로 34번길 6")
+            both.notification("com.nhn.android.nmap", "choice", "네이버 지도", "내비게이션 - 안내 중")
+            val selected = withTimeout(4_000) { both.selection.first { it != null }!! }
+            check(selected.preview == null && selected.testMode && selected.candidates.size == 2)
+            both.confirm(selected.id, correct)
+            val chosen = withTimeout(4_000) { both.selection.first { it?.preview != null }!! }
+            check(chosen.preview == correct && dispatches == 0 && count() == 0)
+            both.clear()
             sharing.notification("com.skt.tmap.ku", "coordinates", "경로주행", "현재 위치 > 37.5,126.6")
-            val coordinate = withTimeout(4_000) { sharing.selection.first { it != null }!! }
-            sharing.confirm(coordinate.id, coordinate.candidates.single())
-            check(dispatches == 0 && count() == 0)
-            sendStatus(0, Bundle().apply { putString("phase", "PASS road spacing/filter and test selection/coordinate dispatch blocked") })
-
-            overlay.notification(testNotification("안내 전", false))
-            check(!testOverlayText(overlay).contains("안내 전"))
-            overlay.notification(testNotification("↱ 1 km\n↱ 357 m"))
-            withTimeout(5_000) { while (!testOverlayText(overlay).contains("357 m")) delay(100) }
-            overlay.notification(testNotification("↱ 800 m\n↱ 250 m"))
-            withTimeout(5_000) { while (!testOverlayText(overlay).contains("250 m")) delay(100) }
-            check(!testOverlayText(overlay).contains("357 m"))
-            overlay.removed("unrelated")
-            check(testOverlayText(overlay).contains("250 m"))
-            sendStatus(0, Bundle().apply { putString("phase", "PASS original notification view updates and unrelated removal ignored") })
-
-            shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW deny")
-            overlay.refresh()
-            withTimeout(3_000) { while (testOverlayText(overlay).contains("250 m")) delay(100) }
-            shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW allow")
-            overlay.refresh()
-            withTimeout(3_000) { while (!testOverlayText(overlay).contains("250 m")) delay(100) }
-            shell("input keyevent KEYCODE_SLEEP")
-            withTimeout(3_000) { while (shell("dumpsys window").contains("Navigation test overlay")) delay(100) }
-            shell("input keyevent KEYCODE_WAKEUP")
-            shell("wm dismiss-keyguard")
-            overlay.refresh()
-            withTimeout(3_000) { while (!testOverlayText(overlay).contains("250 m")) delay(100) }
-            sharing.setTestMode(false)
-            withTimeout(3_000) { while (testOverlayText(overlay).contains("250 m")) delay(100) }
-            check(dispatches == 0 && count() == 0)
-            sharing.setTestMode(true)
-            withTimeout(3_000) { while (!testOverlayText(overlay).contains("250 m")) delay(100) }
-            overlay.notification(testNotification("안내 종료", false))
-            withTimeout(3_000) { while (testOverlayText(overlay).contains("250 m")) delay(100) }
-            overlay.notification(testNotification("일반 알림", custom = false))
-            withTimeout(3_000) { while (!testOverlayText(overlay).contains("내비게이션 - 안내 중")) delay(100) }
-            overlay.removed(testNotification("unused").key)
-            withTimeout(3_000) { while (shell("dumpsys window").contains("Navigation test overlay")) delay(100) }
-            sendStatus(0, Bundle().apply { putString("phase", "PASS permission recovery, lock, test OFF, guidance end/removal and standard notification") })
+            val coordinate = withTimeout(4_000) { sharing.selection.first { it?.preview?.shareText == "37.5,126.6" }!! }
+            check(coordinate.testMode && dispatches == 0 && count() == 0)
+            sharing.dismiss(coordinate.id)
+            check(sharing.selection.value == null)
+            sendStatus(0, Bundle().apply { putString("phase", "PASS test preview after choice, automatic coordinate preview, dispatch blocked") })
         } finally {
-            overlay.clear()
             app.container.teslaNavigationShare.clear()
             store.setTeslaNavigationShareEnabled(false)
             store.setTeslaNavigationTestMode(true)
             NavigationBridgeProvider.bridge = realBridge
         }
-    }
-
-    /** 터치 불가 창은 접근성 창 목록에서 빠지므로 실제 부착된 원본 뷰의 텍스트를 확인한다. */
-    private suspend fun testOverlayText(overlay: com.wemade.teslamacro.service.NavigationTestOverlay): String = withContext(Dispatchers.Main) {
-        val field = overlay.javaClass.getDeclaredField("view").apply { isAccessible = true }
-        val root = field.get(overlay) as? android.view.View ?: return@withContext ""
-        if (!root.isAttachedToWindow) return@withContext ""
-        val texts = StringBuilder()
-        val nodes = java.util.ArrayDeque<android.view.View>()
-        nodes.add(root)
-        var visited = 0
-        while (nodes.isNotEmpty() && visited++ < 100) {
-            val node = nodes.removeFirst()
-            if (node is android.widget.TextView) texts.append(node.text).append('\n')
-            if (node is android.view.ViewGroup) for (index in 0 until node.childCount) nodes.add(node.getChildAt(index))
-        }
-        texts.toString()
-    }
-
-    /** 내비 알림 원본 뷰를 가상화하되 실제 화면 표시 통로는 제품 코드를 사용한다. */
-    private fun testNotification(content: String, guiding: Boolean = true, custom: Boolean = true): android.service.notification.StatusBarNotification {
-        val channel = "navigation_test_smoke"
-        targetContext.getSystemService(android.app.NotificationManager::class.java).createNotificationChannel(
-            android.app.NotificationChannel(channel, channel, android.app.NotificationManager.IMPORTANCE_LOW))
-        val notification = android.app.Notification.Builder(targetContext, channel)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("네이버 지도")
-            .setContentText(if (guiding) "내비게이션 - 안내 중" else "안심주행")
-            .apply {
-                if (custom) setCustomContentView(android.widget.RemoteViews("android", android.R.layout.simple_list_item_1).apply {
-                    setTextViewText(android.R.id.text1, content)
-                })
-            }.build()
-        return android.service.notification.StatusBarNotification("com.nhn.android.nmap", "com.nhn.android.nmap", 42,
-            "route", android.os.Process.myUid(), android.os.Process.myPid(), 0, notification, android.os.Process.myUserHandle(),
-            System.currentTimeMillis())
     }
 
     /** 다른 앱이 앞에 있는 상태에서 실제 오버레이 권한·선택·공유·종료를 확인한다. */

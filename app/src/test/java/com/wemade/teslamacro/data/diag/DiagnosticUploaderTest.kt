@@ -8,9 +8,9 @@ import org.junit.Test
 class DiagnosticUploaderTest {
     /** 실제 로그 형식의 MAC과 차량 검색 이름을 가린다. */
     @Test fun `MAC과 차량 검색 이름을 가린다`() {
-        val masked = maskDiagnosticLine("연결 시작 (검색 이름 S0123456789abcdefC|S0123456789abcdefD) 0C:4B:EE:4F:BD:E2")
+        val masked = maskDiagnosticLine("연결 시작 (검색 이름 S0123456789abcdefC|S0123456789abcdefD) 0A:1B:2C:3D:4E:5F")
         assertFalse(masked.contains("0123456789abcdef"))
-        assertFalse(masked.contains("0C:4B"))
+        assertFalse(masked.contains("0A:1B"))
         assertTrue(masked.contains("S****|S****"))
         assertEquals("목적지 위메이드타워", maskDiagnosticLine("목적지 위메이드타워"))
     }

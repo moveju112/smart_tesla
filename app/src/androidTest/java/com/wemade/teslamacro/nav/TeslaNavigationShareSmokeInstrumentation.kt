@@ -231,6 +231,12 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
             check(coordinate.testMode && dispatches == 0 && count() == 0)
             sharing.dismiss(coordinate.id)
             check(sharing.selection.value == null)
+            sharing.notification("com.nhn.android.nmap", "unread", "네이버 지도", "내비게이션 - 안내 중")
+            check(sharing.selection.value == null)
+            val unread = withTimeout(8_000) { sharing.selection.first { it != null }!! }
+            check(unread.query.isEmpty() && unread.error != null && unread.testMode && dispatches == 0 && count() == 0)
+            sharing.removed("com.nhn.android.nmap", "unread")
+            check(sharing.selection.value == null)
             sendStatus(0, Bundle().apply { putString("phase", "PASS test preview after choice, automatic coordinate preview, dispatch blocked") })
         } finally {
             app.container.teslaNavigationShare.clear()

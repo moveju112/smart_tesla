@@ -35,11 +35,42 @@ internal class TeslaNavigationShare(
     private var source: Pair<String, String>? = null
     private var startedAt = 0L
     private var resolution: Job? = null
+    private var ignored: String? = null
 
     /** 안내 알림에 포함된 목적지와 같은 앱의 최신 화면 후보만 결합한다. */
     suspend fun notification(packageName: String, key: String, title: String, text: String) = lock.withLock {
         if (!enabled()) return@withLock
-        tracker.notification(packageName, key, title, text, SystemClock.elapsedRealtime())?.let { resolve(it, packageName, tracker.activeKey(packageName).orEmpty()) }
+        val guiding = isTeslaNavigationGuidance(packageName, title, text)
+        val known = tracker.activeKey(packageName) == key
+        val destination = tracker.notification(packageName, key, title, text, SystemClock.elapsedRealtime())
+        if (destination != null) {
+            DiagLog.add("테슬라 내비 연동 — 안내 알림 감지 · 목적지 확인")
+            resolve(destination, packageName, tracker.activeKey(packageName).orEmpty())
+        } else if (guiding && !known) {
+            DiagLog.add("테슬라 내비 연동 — 안내 알림 감지 · 화면 목적지 대기")
+            awaitScreen(packageName, key)
+        } else if (!guiding && ignored != text) {
+            ignored = text
+            DiagLog.add("테슬라 내비 연동 — 안내 아님 알림 무시 · ${title.take(20)} / ${text.take(30)}")
+        }
+    }
+
+    // 화면 목적지 대기 (안내 시작 -> 5초 내 화면 판독 없음 -> 주소 입력창)
+    /** 화면에서 목적지를 못 읽어도 조용히 끝내지 않고 주소 입력창을 띄워 사용자가 보완하게 한다. */
+    private fun awaitScreen(packageName: String, key: String) {
+        invalidate("새 길안내 수신")
+        source = packageName to key
+        startedAt = SystemClock.elapsedRealtime()
+        val id = revision
+        resolution = scope.launch {
+            kotlinx.coroutines.delay(5_000)
+            lock.withLock {
+                if (id != revision || !enabled() || !fresh()) return@withLock
+                DiagLog.add("테슬라 내비 연동 — 화면 목적지 없음 · 주소 입력 대기")
+                mutableSelection.value = TeslaDestinationSelection(id, "", error = "목적지를 읽지 못했어요 · 주소를 입력해 주세요",
+                    testMode = settingsStore.settings.first().teslaNavigationTestMode)
+            }
+        }
     }
 
     /** 화면만 고르는 동작은 전송하지 않고 안내 시작이 확인됐을 때만 공유한다. */

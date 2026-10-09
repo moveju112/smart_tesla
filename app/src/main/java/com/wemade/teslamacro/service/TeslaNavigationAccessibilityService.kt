@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 class TeslaNavigationAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastReadAt = -1_000L
+    private var lastSummary: String? = null
 
     /** 화면 후보를 보관하되 실제 안내 알림과 결합하기 전에는 차량에 보내지 않는다. */
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -44,9 +45,18 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                 val visited = intArrayOf(0)
                 try { nodes.forEach { collectTexts(it, entries, visited, 0) } }
                 finally { nodes.forEach { it.recycle() } }
-                teslaDestinationFromScreen(packageName, entries)?.let { destination ->
-                    app.container.teslaNavigationShare.screen(packageName, destination)
+                val destination = teslaDestinationFromScreen(packageName, entries)
+                // 판독 결과가 바뀔 때만 기록해 실기기 로그로 화면 영역·파서 실패를 구분한다.
+                val summary = when {
+                    destination != null -> "화면 목적지 읽음 · $destination"
+                    nodes.isEmpty() -> "화면 목적지 영역 없음"
+                    else -> "화면 목적지 판독 실패 · " + entries.take(8).joinToString(" | ") { "${it.top}:${it.text.take(20)}" }
                 }
+                if (summary != lastSummary) {
+                    lastSummary = summary
+                    com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $summary")
+                }
+                destination?.let { app.container.teslaNavigationShare.screen(packageName, it) }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) {
                 com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 목적지 화면을 읽지 못함")

@@ -9,6 +9,7 @@
 - 앱에 이미 등록된 VIN을 사용한다. 연결 확인은 해당 차량의 접근 가능 여부만 확인하며 BLE 페어링의 VIN/MAC을 변경하지 않는다.
 - 토큰 저장 후 Fleet API를 켜면 다음 음성/바로가기 요청부터 추가 확인 없이 전송한다. 토큰 삭제는 Fleet를 끄지만 이미 접수된 명령을 취소하지 않는다.
 - 앱 발행 바로가기는 명령에 묶인 서명을 자동 포함한다. 외부 자동화는 설정 → 자동화 → 외부 앱 연동에서 키를 복사해 Intent의 `automation_key`에 한 번 추가하면 무인 실행을 유지한다. 인증 없는 기존 요청은 사용자 확인을 거쳐 실행하며, 연동 해제는 앱 바로가기에 영향을 주지 않는다.
+- 0.9.187부터 기본 동적 바로가기 ID는 `quick-v2-*`를 사용해 과거 정적 고정 바로가기와 충돌하지 않는다. 이전 정적 바로가기를 홈에 고정했다면 해당 아이콘만 삭제하고 새 바로가기를 추가한다. 앱 데이터 삭제나 매크로 재설정은 필요 없다.
 - 결과 조회는 동시 대기 수에 맞춰 간격을 늘리고 서버의 `Retry-After`를 존중한다. 조회 실패로 새 명령 POST를 보내지 않는다.
 - 같은 작업공간에서 다른 안전운전 작업이 설정·서비스·컨테이너·빌드 파일을 수정 중이다. 해당 변경은 건드리거나 릴리스에 섞지 않는다.
 
@@ -58,6 +59,8 @@
 - JVM AES-GCM 왕복·무작위 IV·변조·다른 키 거부 테스트.
 - 기존 `CommandDeadline`과 `VehicleCommand` 재사용. `OpenMeteoClient.httpGet`은 인증/POST/취소/리다이렉트 제어가 없어 그대로 재사용하지 않았다.
 - 테스트: `./gradlew :app:testDebugUnitTest --tests '*Fleet*Test' --tests '*QuickActionRequestsTest'`.
+- 고정 바로가기 업데이트: 빈 Android 14 에뮬레이터에 0.9.185를 설치하고 Bluetooth·위치·알림 권한을 부여한다. `-PhistorySmokeEmulator=true -PsmokeRunner=com.wemade.teslamacro.service.QuickActionLegacyPinInstrumentation`으로 `:app:assembleDebugAndroidTest`를 빌드·설치하고 실행하면 실제 런처 확인창으로 프렁크를 고정하고 보존용 데이터를 저장한다. 앱 데이터 삭제 없이 0.9.187 릴리스 APK 설치 후 같은 실행기에 `-e verifyUpdated true`를 전달하면 고정 ID의 immutable 상태, 새 기본·매크로 ID와 데이터 보존을 검사한다.
+- 매크로 갱신·인증 경계: 디버그 APK와 `QuickActionSmokeInstrumentation` 실행기를 빌드·설치하고 `-e upgradePhase verifyUpgrade`로 실행한다. 위 고정 상태 준비 데이터를 사용해 매크로 추가·수정, 확인창, 실제 발행한 서명된 바로가기의 서비스 접수를 확인한다. 실차 설정이 있으면 실행을 거부한다.
 - `FleetTokenStoreTest`: 암호문 파일 재생성·교체·삭제·입력 검증·변조 실패. 테스트 키를 사용하며 실제 Android Keystore 검증을 대체하지 않는다.
 - `FleetQuickActionFlowTest`: 큐 클라이언트와 실제 요청 추적기를 연결해 전송 전 취소·접수 후 관찰 중단·ID 보존·중단 후 효과음 없음·전송 중 취소 차단을 검증한다.
 - 0.9.61 격리 소스 전체 검증: app debug/release 각각 430개, BLE debug/release 각각 30개, 실패 0. 신규 Fleet 테스트 17개 포함.

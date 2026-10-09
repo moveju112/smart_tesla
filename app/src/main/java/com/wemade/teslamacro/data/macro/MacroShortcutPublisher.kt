@@ -74,7 +74,8 @@ class MacroShortcutPublisher(context: Context, private val access: QuickActionAc
         val intent = Intent(Intent.ACTION_VIEW, data, appContext, QuickActionActivity::class.java)
             .putExtra(QuickActionActivity.EXTRA_ACTION, action)
             .putExtra(QuickActionActivity.EXTRA_SHORTCUT_TOKEN, access.shortcutToken(action, null))
-        return ShortcutInfo.Builder(appContext, action)
+        // 홈에 고정된 구버전 정적 ID는 immutable이므로 새 동적 ID와 분리한다.
+        return ShortcutInfo.Builder(appContext, "$QUICK_SHORTCUT_PREFIX$action")
             .setShortLabel(appContext.getString(label))
             .setIcon(Icon.createWithResource(appContext, R.drawable.ic_launcher_foreground))
             .setIntent(intent)
@@ -84,6 +85,7 @@ class MacroShortcutPublisher(context: Context, private val access: QuickActionAc
     }
 
     private companion object {
+        const val QUICK_SHORTCUT_PREFIX = "quick-v2-"
         const val SHORTCUT_PREFIX = "macro-"
         const val SHORT_LABEL_LIMIT = 20
     }

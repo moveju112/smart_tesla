@@ -29,10 +29,10 @@ internal fun TeslaNavigationPanel(settings: AppSettings, controls: NavigationCon
     HelpTitle("테슬라 내비 연동", "티맵·카카오내비·네이버지도의 길안내가 시작되면 목적지를 공식 테슬라 앱에 공유해요. " +
         "테슬라 앱 설치·로그인과 알림 접근이 필요하고, 네이버·카카오의 화면 목적지를 읽으려면 접근성도 허용해야 해요. " +
         "ADB 우선은 아래 무선 연결 준비가 완료됐을 때 사용하고, 준비되지 않았으면 일반 방식으로 실행해요. " +
-        "일반 방식은 다른 앱 위에 표시 권한이 필요해요. 휴대폰 잠금은 해제해야 해요. " +
-        "원본 좌표 또는 정확히 일치하는 전체 주소는 좌표로 공유하고, 상호·지역이 빠진 주소는 앱에서 전체 주소를 확인해요. " +
-        "좌표를 조회하지 못하면 전체 주소를 확인해 주소로 공유할 수 있어요. " +
-        "현재 위치는 후보 정렬에만 쓰며 가까운 곳을 자동 선택하지 않아요. 공식 앱 전달 후 차량 수신 여부는 차량에서 확인해 주세요.")
+        "일반 실행과 목적지 선택창은 다른 앱 위에 표시 권한이 필요해요. 휴대폰 잠금은 해제해야 해요. " +
+        "원본 좌표는 바로 공유하고, 조회 후보가 하나면 자동 공유해요. 두 개 이상이면 내비 화면 위에서 전체 주소를 선택해요. " +
+        "후보가 없으면 선택창에서 주소를 보완하고, 좌표가 없으면 전체 주소로 공유해요. " +
+        "현재 위치는 후보 순서에만 쓰며 가까운 곳을 자동 선택하지 않아요. 공식 앱 전달 후 차량 수신 여부는 차량에서 확인해 주세요.")
     TCard {
         Column {
             DraftToggle(settings.teslaNavigationShareEnabled, controls.onTeslaNavigationShareEnabled, label = "자동 목적지 공유")
@@ -47,9 +47,8 @@ internal fun TeslaNavigationPanel(settings: AppSettings, controls: NavigationCon
                         Toast.makeText(context, "기기 설정에서 '내비 목적지 읽기'를 허용해 주세요", Toast.LENGTH_LONG).show()
                     }
                 })
-                if (!controls.overlayPermitted) {
-                    SettingRow("일반 실행 권한", "다른 앱 위에 표시", onClick = controls.onRequestOverlayPermission)
-                }
+                SettingRow("목적지 선택창 권한", if (controls.overlayPermitted) "허용됨" else "다른 앱 위에 표시",
+                    onClick = controls.onRequestOverlayPermission)
                 if (!installed) Text("테슬라 앱을 설치하고 로그인해 주세요", style = MaterialTheme.typography.bodySmall, color = T.Danger)
             }
         }

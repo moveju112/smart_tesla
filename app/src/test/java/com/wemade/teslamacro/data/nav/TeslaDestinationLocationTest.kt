@@ -26,29 +26,28 @@ class TeslaDestinationLocationTest {
             .forEach { assertNull(it, teslaDestinationPoint(it)) }
     }
 
-    /** 시·도와 시·군·구까지 있어야 자동 일치 검사를 시작한다. */
-    @Test fun `북지길 13 같은 일부 주소는 자동 확정하지 않는다`() {
+    /** 좌표 조회 실패 때 전체 주소만 주소 문자열 공유 후보로 사용할 수 있다. */
+    @Test fun `전체 주소와 지역이 빠진 일부 주소를 구분한다`() {
         listOf("북지길 13", "서울 북지길 13", "종로구 북지길 13", "테스트카페", "서울특별시 종로구 북지길")
             .forEach { assertFalse(it, qualifiedTeslaRoadAddress(it)) }
         listOf("서울특별시 종로구 북지길 13", "서울 종로구 북지길 13", "경기도 성남시 테스트로 13-1",
             "세종특별자치시 테스트길 13").forEach { assertTrue(it, qualifiedTeslaRoadAddress(it)) }
     }
 
-    /** 지역이 빠지면 한 후보라도 확인받고 완전한 주소의 유일한 일치만 허용한다. */
-    @Test fun `단일 결과나 가까운 결과는 일부 주소 자동 공유 근거가 아니다`() {
+    /** 사용자 요청대로 단일 후보는 자동 선택하고 두 후보 이상은 선택을 기다린다. */
+    @Test fun `단일 결과는 자동 선택하고 복수 결과와 빈 조회는 자동 선택하지 않는다`() {
         val correct = TeslaDestinationCandidate("서울 종로구 북지길 13", GeoPoint(37.56, 126.97))
-        assertNull(automaticTeslaCandidate("북지길 13", listOf(correct)))
-        assertNull(automaticTeslaCandidate("테스트카페", listOf(correct)))
-        assertEquals(correct, automaticTeslaCandidate("서울특별시 종로구 북지길 13", listOf(correct)))
-        assertNull(automaticTeslaCandidate(correct.address, listOf(correct, correct.copy(point = GeoPoint(37.57, 126.98)))))
-        assertNull(automaticTeslaCandidate(correct.address, listOf(correct.copy(point = null))))
+        assertEquals(correct, automaticTeslaCandidate(listOf(correct)))
+        assertNull(automaticTeslaCandidate(emptyList()))
+        assertNull(automaticTeslaCandidate(listOf(correct, correct.copy(point = GeoPoint(37.57, 126.98)))))
+        assertEquals(correct.copy(point = null), automaticTeslaCandidate(listOf(correct.copy(point = null))))
     }
 
     /** 건물번호와 행정구역의 다른 결과를 정확 일치로 처리하지 않는다. */
     @Test fun `13과 130 및 다른 구를 구분한다`() {
         val wrongNumber = TeslaDestinationCandidate("서울 종로구 북지길 130", GeoPoint(37.56, 126.97))
         val wrongDistrict = wrongNumber.copy(address = "서울 중구 북지길 13")
-        assertNull(automaticTeslaCandidate("서울 종로구 북지길 13", listOf(wrongNumber, wrongDistrict)))
+        assertNull(automaticTeslaCandidate(listOf(wrongNumber, wrongDistrict)))
         assertEquals("경기 성남시 테스트로 13", canonicalTeslaAddress("대한민국 경기도 성남시 테스트로 13"))
     }
 
@@ -59,7 +58,7 @@ class TeslaDestinationLocationTest {
         val invalid = near.copy(address = "Invalid", point = GeoPoint(Double.NaN, 126.97))
         assertEquals(listOf(near, far), rankedTeslaCandidates(listOf(far, near, near, invalid), near.point))
         assertEquals(listOf(far, near), rankedTeslaCandidates(listOf(far, near), null))
-        assertNull(automaticTeslaCandidate("북지길 13", rankedTeslaCandidates(listOf(near, far), near.point)))
+        assertNull(automaticTeslaCandidate(rankedTeslaCandidates(listOf(near, far), near.point)))
         assertEquals("37.56,126.97", near.shareText)
         assertEquals(near.address, near.copy(point = null).shareText)
     }

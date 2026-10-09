@@ -53,7 +53,7 @@ internal fun validTeslaDestinationPoint(point: GeoPoint): Boolean =
     point.latitude.isFinite() && point.longitude.isFinite() && point.latitude in -90.0..90.0 &&
         point.longitude in -180.0..180.0 && !(point.latitude == 0.0 && point.longitude == 0.0)
 
-/** 시·도와 시·군·구가 없는 도로명은 검색 결과 수와 무관하게 지역 선택이 필요하다. */
+/** 좌표 조회 실패 때 시·도와 시·군·구를 포함한 전체 도로명주소만 공유 후보로 쓴다. */
 internal fun qualifiedTeslaRoadAddress(value: String): Boolean {
     val text = canonicalTeslaAddress(value)
     return Regex("^(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)\\s+").containsMatchIn(text) &&
@@ -84,9 +84,5 @@ internal fun rankedTeslaCandidates(candidates: List<TeslaDestinationCandidate>, 
                 ((candidate.point.longitude - near.longitude) * cos(Math.toRadians(near.latitude))).pow(2)
         }.take(10)
 
-/** 완전한 도로명주소와 유일한 정확 일치만 자동 전송하며 일부 주소·상호명은 선택받는다. */
-internal fun automaticTeslaCandidate(query: String, candidates: List<TeslaDestinationCandidate>): TeslaDestinationCandidate? {
-    if (!qualifiedTeslaRoadAddress(query)) return null
-    val matching = candidates.filter { canonicalTeslaAddress(it.address) == canonicalTeslaAddress(query) }
-    return matching.singleOrNull()?.takeIf { it.point != null }
-}
+/** 조회 후보가 하나일 때만 자동 선택하고 복수 후보는 가까워도 선택받는다. */
+internal fun automaticTeslaCandidate(candidates: List<TeslaDestinationCandidate>): TeslaDestinationCandidate? = candidates.singleOrNull()

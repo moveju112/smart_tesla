@@ -83,11 +83,11 @@ internal class TeslaNavigationShare(
         source = packageName to key
         startedAt = SystemClock.elapsedRealtime()
         val id = revision
-        resolution = scope.launch { findCandidates(id, query, automatic = true) }
+        resolution = scope.launch { findCandidates(id, query) }
     }
 
-    /** 원본 좌표는 바로 공유하고 상호·일부 주소는 후보가 하나여도 사용자가 확인한다. */
-    private suspend fun findCandidates(id: Long, query: String, automatic: Boolean) {
+    /** 원본 좌표·단일 후보는 공유하고 복수 후보와 조회 실패는 오버레이 선택으로 넘긴다. */
+    private suspend fun findCandidates(id: Long, query: String) {
         try {
             val sourcePoint = teslaDestinationPoint(query)
             val near = if (sourcePoint == null) currentPoint() else null
@@ -97,13 +97,15 @@ internal class TeslaNavigationShare(
                 }
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
-                val exact = if (automatic) sourcePoint?.let { candidates.single() } ?: automaticTeslaCandidate(query, candidates) else null
-                if (exact != null) share(exact.shareText, id)
+                val exact = automaticTeslaCandidate(candidates)
+                if (exact != null) {
+                    mutableSelection.value = null
+                    share(exact.shareText, id)
+                }
                 else {
                     DiagLog.add("테슬라 내비 연동 — 목적지 주소 확인 필요 · 후보=${candidates.size}")
                     mutableSelection.value = TeslaDestinationSelection(id, query, candidates,
                         error = if (candidates.isEmpty()) "시·군·구를 포함한 주소로 다시 검색해 주세요" else null)
-                    if (automatic) feedback("Smart Tesla에서 목적지 주소를 확인해 주세요")
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -111,7 +113,7 @@ internal class TeslaNavigationShare(
             lock.withLock {
                 if (id == revision && enabled() && fresh()) {
                     mutableSelection.value = TeslaDestinationSelection(id, query, error = "주소를 조회하지 못했어요 · 전체 주소로 다시 검색해 주세요")
-                    feedback("Smart Tesla에서 목적지 주소를 확인해 주세요")
+                    DiagLog.add("테슬라 내비 연동 — 주소 조회 실패 · 목적지 확인 대기")
                 }
             }
         }
@@ -120,7 +122,7 @@ internal class TeslaNavigationShare(
     /** 오래 방치한 선택은 현재 주행의 목적지로 재사용하지 않는다. */
     private fun fresh(): Boolean = SystemClock.elapsedRealtime() - startedAt in 0..300_000
 
-    /** 선택창에서 보완한 주소만 다시 조회하고 자동 확정하지 않는다. */
+    /** 보완한 주소를 다시 조회하며 단일 후보면 같은 공유 경로로 자동 전달한다. */
     suspend fun search(id: Long, query: String) = lock.withLock {
         if (mutableSelection.value?.id != id || !enabled()) return@withLock
         if (!fresh()) { invalidate("확인 시간 만료"); feedback("길안내를 다시 시작해 주세요"); return@withLock }
@@ -132,7 +134,12 @@ internal class TeslaNavigationShare(
         resolution?.cancel()
         val nextId = ++revision
         mutableSelection.value = TeslaDestinationSelection(nextId, normalized, searching = true)
-        resolution = scope.launch { findCandidates(nextId, normalized, automatic = false) }
+        resolution = scope.launch { findCandidates(nextId, normalized) }
+    }
+
+    /** 선택창이 닫혀도 공유가 취소되지 않도록 앱 수명의 작업으로 넘긴다. */
+    fun select(id: Long, candidate: TeslaDestinationCandidate) {
+        scope.launch { confirm(id, candidate) }
     }
 
     /** 현재 후보만 한 번 소비한 뒤 동일한 ADB·일반 실행 통로로 공유한다. */

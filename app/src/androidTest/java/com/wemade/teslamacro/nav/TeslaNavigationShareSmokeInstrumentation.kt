@@ -31,8 +31,8 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                 val app = targetContext.applicationContext as TeslaMacroApplication
                 app.ready.first { it }
                 if (dialogSmoke) {
-                    verifyDialogLifecycle(app)
-                    result.putString("result", "PASS background pending, foreground dialog, repeated resume, cancellation and ended guidance")
+                    verifyOverlay(app)
+                    result.putString("result", "PASS automatic single candidate, overlay over navigation, permission denial/recovery, selection delivery, OFF and guidance removal")
                     return@runBlocking
                 }
                 withTimeout(15_000) { while (NavigationBridgeProvider.bridge?.pingBinder() != true) delay(100) }
@@ -113,7 +113,7 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                     val resolving = TeslaNavigationShare(targetContext, store, navigator, app.container.appScope,
                         currentPoint = { north.point }, lookup = { query, _ ->
                             when (query) {
-                                "북지길 13" -> listOf(south, north)
+                                "북지길 13", "북지길 15", "북지길 16" -> listOf(south, north)
                                 "Slow" -> withContext(NonCancellable) { entered.complete(Unit); release.await(); listOf(south) }
                                 else -> listOf(north)
                             }
@@ -129,11 +129,15 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                     check(count() == 6)
 
                     resolving.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > 북지길 14")
+                    waitForCount(7)
+                    check(resolving.selection.value == null)
+                    resolving.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > 북지길 14")
+                    check(count() == 7)
+                    resolving.notification("com.skt.tmap.ku", "off", "경로주행", "현재 위치 > 북지길 16")
                     val single = withTimeout(3_000) { resolving.selection.first { it != null }!! }
-                    check(single.candidates.size == 1 && count() == 6)
                     store.setTeslaNavigationShareEnabled(false)
                     resolving.confirm(single.id, north)
-                    check(resolving.selection.value == null && count() == 6)
+                    check(resolving.selection.value == null && count() == 7)
                     store.setTeslaNavigationShareEnabled(true)
                     resolving.notification("com.skt.tmap.ku", "slow", "경로주행", "현재 위치 > Slow")
                     withTimeout(3_000) { entered.await() }
@@ -142,23 +146,21 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
                     val latest = withTimeout(3_000) { resolving.selection.first { it != null }!! }
                     release.complete(Unit)
                     resolving.confirm(single.id, north)
-                    check(resolving.selection.value?.id == latest.id && count() == 6)
+                    check(resolving.selection.value?.id == latest.id && count() == 7)
                     resolving.search(latest.id, north.address)
-                    val refined = withTimeout(3_000) { resolving.selection.first { it != null && !it.searching }!! }
-                    check(count() == 6 && refined.candidates == listOf(north))
-                    resolving.confirm(refined.id, north)
-                    waitForCount(7)
-                    resolving.notification("com.skt.tmap.ku", "exact", "경로주행", "현재 위치 > 서울특별시 종로구 북지길 13")
                     waitForCount(8)
+                    check(resolving.selection.value == null)
+                    resolving.notification("com.skt.tmap.ku", "exact", "경로주행", "현재 위치 > 서울특별시 종로구 북지길 13")
+                    waitForCount(9)
                     check(resolving.selection.value == null)
                     resolving.notification("com.skt.tmap.ku", "remove", "경로주행", "현재 위치 > 북지길 16")
                     val removed = withTimeout(3_000) { resolving.selection.first { it != null }!! }
                     resolving.removed("com.skt.tmap.ku", "remove")
                     resolving.confirm(removed.id, north)
-                    check(count() == 8 && resolving.selection.value == null)
+                    check(count() == 9 && resolving.selection.value == null)
                     resolving.clear()
-                    sendStatus(0, Bundle().apply { putString("phase", "PASS partial road, single-result confirmation, coordinate receipt, OFF, stale lookup, refined address, exact automatic, removed selection") })
-                    result.putString("result", "PASS: ADB/normal/failure paths, coordinate sharing, region selection, single result, OFF, stale response, duplicate protection; receipts=8")
+                    sendStatus(0, Bundle().apply { putString("phase", "PASS partial road choice, single-result automatic, coordinate receipt, OFF, stale lookup, refined automatic, removed selection") })
+                    result.putString("result", "PASS: ADB/normal/failure paths, coordinate sharing, region selection, single automatic, OFF, stale response, duplicate protection; receipts=9")
                 } finally {
                     NavigationBridgeProvider.bridge = real
                     if (sourceSmoke) app.container.settingsStore.setTeslaNavigationLaunchMode(TeslaNavigationLaunchMode.ADB_FIRST)
@@ -172,42 +174,115 @@ class TeslaNavigationShareSmokeInstrumentation : Instrumentation() {
         finish(status, result)
     }
 
-    /** 실제 앱을 두 번 왕복해 백그라운드 대기가 복귀 때마다 선택창으로 이어지는지 확인한다. */
-    private suspend fun verifyDialogLifecycle(app: TeslaMacroApplication) {
-        val sharing = app.container.teslaNavigationShare
+    /** 다른 앱이 앞에 있는 상태에서 실제 오버레이 권한·선택·공유·종료를 확인한다. */
+    private suspend fun verifyOverlay(app: TeslaMacroApplication) {
         val store = app.container.settingsStore
+        val north = TeslaDestinationCandidate("서울 종로구 북지길 13", com.wemade.teslamacro.domain.macro.GeoPoint(37.56, 126.97))
+        val south = TeslaDestinationCandidate("부산 중구 북지길 13", com.wemade.teslamacro.domain.macro.GeoPoint(35.1, 129.0))
+        val sharing = TeslaNavigationShare(targetContext, store, app.container.navigator, app.container.appScope,
+            lookup = { query, _ -> if (query == "single") listOf(north) else if (query == "empty") emptyList() else listOf(north, south) })
+        val overlay = com.wemade.teslamacro.service.TeslaDestinationOverlay(targetContext, sharing, store, app.container.appScope)
         try {
             shell("input keyevent KEYCODE_WAKEUP")
             shell("wm dismiss-keyguard")
-            sharing.clear()
+            shell("logcat -c")
+            store.setTeslaNavigationLaunchMode(TeslaNavigationLaunchMode.STANDARD)
             store.setTeslaNavigationShareEnabled(true)
-            shell("am start -n com.wemade.teslamacro/.MainActivity")
-            withTimeout(10_000) { while (!focusedApp().contains("com.wemade.teslamacro")) delay(100) }
-            shell("input keyevent KEYCODE_HOME")
-            withTimeout(5_000) { while (focusedApp().contains("com.wemade.teslamacro")) delay(100) }
-            sendStatus(0, Bundle().apply { putString("phase", "PASS app background before destination") })
+            shell("am start -n com.nhn.android.nmap/.Fixture")
+            withTimeout(10_000) { while (!focusedApp().contains("com.nhn.android.nmap")) delay(100) }
+            shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW deny")
             sharing.notification("com.skt.tmap.ku", "dialog", "경로주행", "현재 위치 > 북지길 13")
             val pending = withTimeout(25_000) { sharing.selection.first { it != null }!! }
-            check(!dialogTexts().contains("테슬라 목적지 확인"))
-            sendStatus(0, Bundle().apply { putString("phase", "PASS background pending without dialog") })
-            repeat(2) {
-                shell("am start -n com.wemade.teslamacro/.MainActivity")
-                withTimeout(10_000) { while (!dialogTexts().contains("테슬라 목적지 확인")) delay(100) }
-                check(sharing.selection.value?.id == pending.id && dialogTexts().contains("북지길 13"))
-                shell("input keyevent KEYCODE_HOME")
-                withTimeout(5_000) { while (dialogTexts().contains("테슬라 목적지 확인")) delay(100) }
-                check(sharing.selection.value?.id == pending.id)
+            check(!dialogTexts().contains("테슬라 목적지 선택") && count() == 0)
+            shell("appops set com.wemade.teslamacro SYSTEM_ALERT_WINDOW allow")
+            overlay.refresh()
+            waitForOverlay(true)
+            try {
+                withTimeout(5_000) { while (!dialogTexts().contains(north.address) || !dialogTexts().contains(south.address)) delay(100) }
+            } catch (error: TimeoutCancellationException) {
+                error("candidate texts missing: " + dialogTexts())
             }
-            sharing.dismiss(pending.id)
+            check(shell("dumpsys window").contains("ty=APPLICATION_OVERLAY"))
+            check(shell("dumpsys activity activities").lineSequence().any { it.contains("ResumedActivity") && it.contains("com.nhn.android.nmap") })
+            check(sharing.selection.value?.id == pending.id && count() == 0)
+            clickCandidate(south.address)
+            waitForCount(1)
+            waitForOverlay(false)
+            check(receipts().contains("q=35.1%2C129.0"))
+            sharing.confirm(pending.id, north)
+            check(count() == 1)
+            sendStatus(0, Bundle().apply { putString("phase", "PASS overlay permission recovery, foreign app foreground, candidate tap, one coordinate delivery") })
+
+            sharing.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > single")
+            waitForCount(2)
             check(sharing.selection.value == null)
+            check(!dialogTexts().contains("테슬라 목적지 선택"))
+            sharing.notification("com.skt.tmap.ku", "single", "경로주행", "현재 위치 > single")
+            check(count() == 2)
+
+            sharing.notification("com.skt.tmap.ku", "lock", "경로주행", "현재 위치 > 북지길 13")
+            waitForOverlay(true)
+            shell("input keyevent KEYCODE_SLEEP")
+            waitForOverlay(false)
+            check(sharing.selection.value != null && count() == 2)
+            shell("input keyevent KEYCODE_WAKEUP")
+            shell("wm dismiss-keyguard")
+            overlay.refresh()
+            waitForOverlay(true)
+            sharing.clear()
+            waitForOverlay(false)
+            sendStatus(0, Bundle().apply { putString("phase", "PASS single automatic without picker, duplicate prevention, screen-off hides overlay and retains pending") })
+
             sharing.notification("com.skt.tmap.ku", "ended", "경로주행", "현재 위치 > 북지길 14")
-            withTimeout(25_000) { sharing.selection.first { it != null } }
+            waitForOverlay(true)
             sharing.removed("com.skt.tmap.ku", "ended", 8)
-            check(sharing.selection.value == null)
+            waitForOverlay(false)
+            sharing.notification("com.skt.tmap.ku", "empty", "경로주행", "현재 위치 > empty")
+            waitForOverlay(true)
+            check(dialogTexts().contains("시·군·구를 포함한 주소로 다시 검색해 주세요") && count() == 2)
+            store.setTeslaNavigationShareEnabled(false)
+            sharing.clear()
+            waitForOverlay(false)
+            check(count() == 2)
         } finally {
             store.setTeslaNavigationShareEnabled(false)
             sharing.clear()
         }
+    }
+
+    /** 창 텍스트가 바뀔 때까지 기다려 고정 지연 없이 표시·제거를 관측한다. */
+    private suspend fun waitForOverlay(visible: Boolean) = withTimeout(10_000) {
+        while (dialogTexts().contains("테슬라 목적지 선택") != visible) delay(100)
+    }
+
+    /** 실제 접근성 버튼을 눌러 오버레이 UI에서 기존 확인 경로까지 연결한다. */
+    private fun clickCandidate(address: String) {
+        var clicked = false
+        uiAutomation.windows.forEach { window ->
+            val nodes = java.util.ArrayDeque<android.view.accessibility.AccessibilityNodeInfo>()
+            window.root?.let(nodes::add)
+            var visited = 0
+            while (nodes.isNotEmpty() && visited++ < 300 && !clicked) {
+                val node = nodes.removeFirst()
+                if (node.text?.toString() == address) {
+                    var parent = node.parent
+                    clicked = node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                    var ancestors = 0
+                    while (!clicked && parent != null && ancestors++ < 4) {
+                        clicked = parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                        val next = if (clicked) null else parent.parent
+                        parent.recycle()
+                        parent = next
+                    }
+                    parent?.recycle()
+                }
+                if (!clicked) for (index in 0 until node.childCount.coerceAtMost(50)) node.getChild(index)?.let(nodes::add)
+                node.recycle()
+            }
+            nodes.forEach { it.recycle() }
+            window.recycle()
+        }
+        check(clicked) { "candidate button not found" }
     }
 
     /** 계측 셸은 파이프를 실행하지 않으므로 창 덤프에서 포커스 행만 직접 읽는다. */

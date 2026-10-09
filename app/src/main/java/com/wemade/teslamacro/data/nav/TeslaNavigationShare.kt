@@ -37,6 +37,7 @@ internal class TeslaNavigationShare(
     private var resolution: Job? = null
     private var ignored: String? = null
     private var repeatedAt = -30_001L
+    private val routeDistances = ArrayDeque<Pair<Long, Int>>()
 
     /** 안내 알림에 포함된 목적지와 같은 앱의 최신 화면 후보만 결합한다. */
     suspend fun notification(packageName: String, key: String, title: String, text: String) = lock.withLock {
@@ -101,6 +102,20 @@ internal class TeslaNavigationShare(
         }
     }
 
+    // 경로 거리 기록 (네이버 화면 거리 -> 최근 60초 최댓값을 후보 거리 상한으로 사용)
+    /** 이전 안내의 짧은 남은 거리가 새 경로 후보를 지우지 않도록 최근 값 중 가장 긴 거리를 쓴다. */
+    fun routeDistance(meters: Int) = synchronized(routeDistances) {
+        if (meters !in 1..1_000_000) return@synchronized
+        routeDistances.addLast(SystemClock.elapsedRealtime() to meters)
+        while (routeDistances.size > 50) routeDistances.removeFirst()
+    }
+
+    /** 최근 60초 안에 본 경로 거리가 없으면 거리 조건을 쓰지 않는다. */
+    private fun routeBound(): Int? = synchronized(routeDistances) {
+        val now = SystemClock.elapsedRealtime()
+        routeDistances.filter { now - it.first in 0..60_000 }.maxOfOrNull { it.second }
+    }
+
     /** 진단 기록을 안내 중으로 한정하기 위해 해당 내비의 안내 알림이 살아 있는지 알려준다. */
     suspend fun guiding(packageName: String): Boolean = lock.withLock { tracker.activeKey(packageName) != null }
 
@@ -150,10 +165,15 @@ internal class TeslaNavigationShare(
         try {
             val sourcePoint = teslaDestinationPoint(query)
             val near = if (sourcePoint == null) currentPoint() else null
-            val candidates = if (sourcePoint != null) listOf(TeslaDestinationCandidate(query, sourcePoint))
-                else rankedTeslaCandidates(matchingTeslaAddressCandidates(query, lookup(query, near)), near).ifEmpty {
-                    if (qualifiedTeslaRoadAddress(query)) listOf(TeslaDestinationCandidate(query)) else emptyList()
-                }
+            val found = if (sourcePoint != null) listOf(TeslaDestinationCandidate(query, sourcePoint))
+                else rankedTeslaCandidates(matchingTeslaAddressCandidates(query, lookup(query, near)), near)
+            val route = routeBound()
+            val candidates = withinTeslaRouteDistance(found, near, route).ifEmpty {
+                if (sourcePoint == null && qualifiedTeslaRoadAddress(query)) listOf(TeslaDestinationCandidate(query)) else emptyList()
+            }
+            if (found.size != candidates.size || route != null) {
+                DiagLog.add("테슬라 내비 연동 — 경로 거리 확인 · 경로=${route ?: -1}m · 후보 ${found.size}→${candidates.size}")
+            }
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
                 val exact = automaticTeslaCandidate(candidates)

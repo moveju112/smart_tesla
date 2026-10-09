@@ -105,5 +105,23 @@ internal fun rankedTeslaCandidates(candidates: List<TeslaDestinationCandidate>, 
                 ((candidate.point.longitude - near.longitude) * cos(Math.toRadians(near.latitude))).pow(2)
         }.take(10)
 
+/** 네이버 경로 거리 글자(415m, 1.1 km)를 미터로 바꾸고 다른 글자는 거리로 보지 않는다. */
+internal fun naverDistanceMeters(text: String): Int? {
+    val match = Regex("^\\s*(\\d+(?:\\.\\d+)?)\\s*(km|m)\\s*$", RegexOption.IGNORE_CASE).matchEntire(text) ?: return null
+    val value = match.groupValues[1].toDoubleOrNull() ?: return null
+    return (if (match.groupValues[2].equals("km", ignoreCase = true)) value * 1_000 else value).toInt()
+}
+
+/** 현재 위치에서 직선거리가 네이버 경로 거리보다 먼 후보는 다른 지역의 같은 이름으로 보고 뺀다. */
+internal fun withinTeslaRouteDistance(candidates: List<TeslaDestinationCandidate>, near: GeoPoint?, routeMeters: Int?): List<TeslaDestinationCandidate> {
+    if (near == null || routeMeters == null || !validTeslaDestinationPoint(near)) return candidates
+    // 직선거리는 경로 거리를 넘을 수 없으므로 측위 오차만 여유로 둔다.
+    val limit = routeMeters * 1.2 + 500
+    return candidates.filter { candidate ->
+        candidate.point == null || com.wemade.teslamacro.domain.macro.ConditionEvaluator.distanceMeters(
+            near.latitude, near.longitude, candidate.point.latitude, candidate.point.longitude) <= limit
+    }
+}
+
 /** 조회 후보가 하나일 때만 자동 선택하고 복수 후보는 가까워도 선택받는다. */
 internal fun automaticTeslaCandidate(candidates: List<TeslaDestinationCandidate>): TeslaDestinationCandidate? = candidates.singleOrNull()

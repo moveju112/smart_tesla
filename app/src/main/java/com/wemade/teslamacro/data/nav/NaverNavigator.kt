@@ -585,7 +585,13 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
         val normalized = normalizeTeslaRoadSpacing(query)
         val global = teslaGeocodeAddresses(normalized, null)
         val nearby = if (near != null && !qualifiedTeslaRoadAddress(normalized)) teslaGeocodeAddresses(normalized, near) else emptyList()
-        return rankedTeslaCandidates(matchingTeslaAddressCandidates(normalized, (global + nearby).mapNotNull { address ->
+        // 가게·단지 이름만으로 못 찾으면 현재 위치의 시·군·구를 붙여 기기 내장 검색을 한 번 더 한다.
+        val regional = if (global.isEmpty() && nearby.isEmpty() && near != null && !qualifiedTeslaRoadAddress(normalized)) {
+            addressOf(near)?.let(::canonicalTeslaAddress)?.split(' ')?.take(2)?.joinToString(" ")
+                ?.takeIf { it.isNotBlank() && !normalized.startsWith(it) }
+                ?.let { teslaGeocodeAddresses("$it $normalized", null) }.orEmpty()
+        } else emptyList()
+        return rankedTeslaCandidates(matchingTeslaAddressCandidates(normalized, (global + nearby + regional).mapNotNull { address ->
             val text = address.getAddressLine(0)?.let(::canonicalTeslaAddress) ?: return@mapNotNull null
             if (!address.hasLatitude() || !address.hasLongitude()) return@mapNotNull null
             TeslaDestinationCandidate(text, GeoPoint(address.latitude, address.longitude))

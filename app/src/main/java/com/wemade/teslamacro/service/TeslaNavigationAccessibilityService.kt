@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.NavigationScreenText
+import com.wemade.teslamacro.data.nav.naverDistanceMeters
 import com.wemade.teslamacro.data.nav.naverGuidanceRouteDestination
 import com.wemade.teslamacro.data.nav.teslaDestinationFromScreen
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +57,14 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
             val root = rootInActiveWindow ?: return@launch
             try {
                 if (root.packageName?.toString() != packageName) return@launch
+                if (packageName == "com.nhn.android.nmap") {
+                    // 경로 미리보기 카드·안내 남은 거리를 후보 거리 상한으로 넘긴다.
+                    listOf("v_route_card_distance", "distance").flatMap { id ->
+                        root.findAccessibilityNodeInfosByViewId("$packageName:id/$id").mapNotNull { node ->
+                            try { node.text?.toString()?.let(::naverDistanceMeters) } finally { node.recycle() }
+                        }
+                    }.maxOrNull()?.let { app.container.teslaNavigationShare.routeDistance(it) }
+                }
                 val viewId = if (packageName == "com.nhn.android.nmap") "route_search_bar" else "route_result_trip"
                 val nodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/$viewId")
                 val entries = mutableListOf<NavigationScreenText>()

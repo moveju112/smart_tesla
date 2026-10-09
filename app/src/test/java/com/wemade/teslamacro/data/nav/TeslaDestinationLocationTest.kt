@@ -85,4 +85,24 @@ class TeslaDestinationLocationTest {
         assertEquals("37.56,126.97", near.shareText)
         assertEquals(near.address, near.copy(point = null).shareText)
     }
+
+    /** 네이버 경로 거리 글자만 미터로 읽는다. */
+    @Test fun `네이버 경로 거리 글자를 미터로 바꾼다`() {
+        assertEquals(415, naverDistanceMeters("415m"))
+        assertEquals(311, naverDistanceMeters("311 m"))
+        assertEquals(1_100, naverDistanceMeters("1.1 km"))
+        assertNull(naverDistanceMeters("통행료 0원"))
+        assertNull(naverDistanceMeters("128"))
+    }
+
+    /** 당하동에서 수백 m 경로인데 하남의 같은 이름 단지가 단일 후보로 자동 선택되던 문제를 막는다. */
+    @Test fun `경로 거리보다 먼 같은 이름 후보는 뺀다`() {
+        val here = GeoPoint(37.595, 126.668)
+        val hanam = TeslaDestinationCandidate("경기 하남시 보미골드리즌빌", GeoPoint(37.54, 127.21))
+        val nearby = TeslaDestinationCandidate("인천 검단구 보미골드리즌빌", GeoPoint(37.597, 126.670))
+        assertEquals(emptyList<TeslaDestinationCandidate>(), withinTeslaRouteDistance(listOf(hanam), here, 600))
+        assertEquals(listOf(nearby), withinTeslaRouteDistance(listOf(hanam, nearby), here, 600))
+        assertEquals(listOf(hanam), withinTeslaRouteDistance(listOf(hanam), here, null))
+        assertEquals(listOf(hanam), withinTeslaRouteDistance(listOf(hanam), null, 600))
+    }
 }

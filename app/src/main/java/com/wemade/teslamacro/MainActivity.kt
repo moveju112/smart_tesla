@@ -548,6 +548,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                                     onDismissMessage = settingsViewModel::clearBackupMessage,
                                 ),
                                 onFleetApiEnabledChange = settingsViewModel::setFleetApiEnabled,
+                                externalQuickActions = (context.applicationContext as TeslaMacroApplication).container.quickActionAccess,
                                 fleetCredentials = com.wemade.teslamacro.feature.settings.FleetCredentialControls(
                                     fleetCredentials, settingsViewModel::saveFleetToken,
                                     settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,

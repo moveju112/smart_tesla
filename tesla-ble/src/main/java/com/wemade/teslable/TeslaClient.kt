@@ -310,7 +310,7 @@ class TeslaClient(
                     val parsed = runCatching {
                         UniversalMessage.RoutableMessage.parseFrom(bytes)
                     }.getOrNull() ?: return@first false
-                    matchesRequest(parsed, uuid)
+                    matchesRequest(parsed, uuid, routingAddress)
                 }
                 .let { UniversalMessage.RoutableMessage.parseFrom(it) }
         }
@@ -328,23 +328,6 @@ class TeslaClient(
         response
     }
 
-    private fun matchesRequest(
-        message: UniversalMessage.RoutableMessage,
-        uuid: ByteArray,
-    ): Boolean {
-        // request_uuid가 있으면 그게 1순위 판별
-        val responseUuid = message.requestUuid.toByteArray()
-        if (responseUuid.isNotEmpty()) return responseUuid.contentEquals(uuid)
-
-        // 라우팅 주소가 우리 것이면 확정
-        if (message.toDestination.routingAddress.toByteArray().contentEquals(routingAddress)) return true
-
-        // 둘 다 없어도 받아들인다. 요청은 requestLock으로 직렬화돼 한 번에 하나뿐이라,
-        // 지금 도착한 응답은 방금 보낸 요청의 것이다.
-        // VCSEC은 request_uuid도 routing도 안 채우는 경우가 있어 이게 없으면 응답을 통째로 놓친다
-        return true
-    }
-
     private companion object {
         /** 깨는 중 실패에 한해 몇 번까지 바로 다시 묻는지 */
         const val HANDSHAKE_WAKE_RETRIES = 2
@@ -356,6 +339,22 @@ class TeslaClient(
         /** 타임아웃 후 지각 응답을 흘려보내는 격리 시간 */
         const val LATE_RESPONSE_QUARANTINE_MS = 1_500L
     }
+}
+
+/** UUID를 우선하고, UUID가 없으면 존재하는 라우팅 주소의 불일치를 거부한다. */
+internal fun matchesRequest(
+    message: UniversalMessage.RoutableMessage,
+    uuid: ByteArray,
+    routingAddress: ByteArray,
+): Boolean {
+    val responseUuid = message.requestUuid.toByteArray()
+    if (responseUuid.isNotEmpty()) return responseUuid.contentEquals(uuid)
+
+    val responseAddress = message.toDestination.routingAddress.toByteArray()
+    if (responseAddress.isNotEmpty()) return responseAddress.contentEquals(routingAddress)
+
+    // 두 식별자가 모두 없는 VCSEC 응답만 직렬 요청의 호환 분기로 수락한다.
+    return true
 }
 
 /** 세션 동기화가 깨졌다는 신호. 재핸드셰이크로 회복한다 */

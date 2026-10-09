@@ -2,6 +2,8 @@ package com.wemade.teslamacro.data.fleet
 
 import com.wemade.teslable.CommandDeadline
 import java.io.IOException
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 import kotlin.coroutines.resume
@@ -58,7 +60,8 @@ class FleetHttpsTransport : FleetHttpTransport {
                         }
                         output.toByteArray()
                     } ?: ByteArray(0)
-                    if (continuation.isActive) continuation.resume(FleetHttpResponse(code, bytes.toString(Charsets.UTF_8)))
+                    if (continuation.isActive) continuation.resume(FleetHttpResponse(code, bytes.toString(Charsets.UTF_8),
+                        fleetRetryAfterMillis(connection.getHeaderField("Retry-After"))))
                 } catch (_: Exception) {
                     // 예외의 URL/헤더/응답 원문에 VIN·토큰이 섞일 수 있으므로 전달하지 않는다.
                     if (continuation.isActive) continuation.resumeWithException(IOException("Fleet 통신 결과를 확인하지 못했어요"))
@@ -67,4 +70,16 @@ class FleetHttpsTransport : FleetHttpTransport {
                 }
             }
         }
+}
+
+/** 초 단위와 HTTP 날짜형 Retry-After를 재조회 대기시간으로 변환한다. */
+internal fun fleetRetryAfterMillis(value: String?, nowMillis: Long = System.currentTimeMillis()): Long? {
+    val header = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    header.toLongOrNull()?.let { seconds ->
+        return seconds.takeIf { it >= 0 }?.coerceAtMost(Long.MAX_VALUE / 1_000L)?.times(1_000L)
+    }
+    return runCatching {
+        (ZonedDateTime.parse(header, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - nowMillis)
+            .coerceAtLeast(0L)
+    }.getOrNull()
 }

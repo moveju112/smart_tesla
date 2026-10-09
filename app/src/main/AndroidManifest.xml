@@ -103,10 +103,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- 런처 길게 누르기 · 어시스턴트가 읽는 바로가기 목록 -->
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- 위젯의 명시적 PendingIntent로만 입력창을 열며 외부 앱의 호출은 막는다. -->
@@ -166,6 +162,12 @@
                 <data android:scheme="teslamacro" android:host="run" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".service.QuickActionConfirmationActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.TeslaMacro.QuickSend" />
 
         <provider android:name=".data.nav.NavigationBridgeProvider"
             android:authorities="${applicationId}.navigation" android:exported="true" />

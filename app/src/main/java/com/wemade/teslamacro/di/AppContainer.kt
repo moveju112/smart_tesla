@@ -34,6 +34,7 @@ class AppContainer(private val context: Context) {
 
     /** ViewModel에서 파일 저장·인텐트 발사가 필요할 때 쓰는 앱 컨텍스트 */
     val appContext: Context = context.applicationContext
+    val quickActionAccess = com.wemade.teslamacro.service.QuickActionAccessStore(appContext)
 
     init {
         // 진단 로그를 파일에도 남긴다. 이 앱이 사는 곳은 차내 태블릿이라
@@ -112,7 +113,7 @@ class AppContainer(private val context: Context) {
     /** 설정 화면의 15분 단위 충전 전류 그래프가 읽는 기록 */
     val chargeHistory = com.wemade.teslamacro.data.charge.ChargeHistoryStore(context)
     val vehicleHistory = com.wemade.teslamacro.data.history.VehicleHistoryStore(context)
-    private val macroShortcutPublisher = MacroShortcutPublisher(context)
+    private val macroShortcutPublisher = MacroShortcutPublisher(context, quickActionAccess)
 
     /** 예보. 계정도 키도 없는 Open-Meteo를 쓴다 */
     val weatherClient = com.wemade.teslamacro.data.weather.OpenMeteoClient()

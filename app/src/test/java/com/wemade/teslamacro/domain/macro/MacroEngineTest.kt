@@ -19,6 +19,54 @@ import org.junit.Test
  */
 class MacroEngineTest {
 
+    /** 같은 판정 구간의 예약은 선언 순서와 무관하게 조건을 충족한 하나를 실행한다. */
+    @Test
+    fun `multiple scheduled triggers use each scheduled time`() {
+        val triggers = listOf(Trigger.AtTime(8 * 60), Trigger.AtTime(8 * 60 + 5))
+        for (ordered in listOf(triggers, triggers.reversed())) {
+            val scheduled = rule(ordered, listOf(Condition.TimeWindow(8 * 60 + 5, 8 * 60 + 30)))
+            val fired = evaluate(listOf(scheduled),
+                reading(minutesOfDay = 7 * 60 + 59, epochMillis = defaultNow - 420_000L),
+                reading(minutesOfDay = 8 * 60 + 6))
+            assertEquals(1, fired.size)
+        }
+    }
+
+    /** 여러 예약이 모두 조건을 충족해도 매크로 명령은 한 번만 실행한다. */
+    @Test
+    fun `multiple eligible scheduled triggers produce one macro`() {
+        val triggers = listOf(Trigger.AtTime(8 * 60), Trigger.AtTime(8 * 60 + 5))
+        val scheduled = rule(triggers, listOf(Condition.TimeWindow(8 * 60, 8 * 60 + 30)))
+        assertEquals(1, evaluate(listOf(scheduled),
+            reading(minutesOfDay = 7 * 60 + 59, epochMillis = defaultNow - 420_000L),
+            reading(minutesOfDay = 8 * 60 + 6)).size)
+        assertTrue(evaluate(listOf(scheduled.copy(conditions = listOf(Condition.TimeWindow(9 * 60, 10 * 60)))),
+            reading(minutesOfDay = 7 * 60 + 59, epochMillis = defaultNow - 420_000L),
+            reading(minutesOfDay = 8 * 60 + 6)).isEmpty())
+    }
+
+    /** 자정을 넘긴 여러 예약은 각각의 예약 요일과 시간대를 함께 평가한다. */
+    @Test
+    fun `multiple midnight schedules preserve their individual day`() {
+        val triggers = listOf(Trigger.AtTime(23 * 60 + 59), Trigger.AtTime(1))
+        for (ordered in listOf(triggers, triggers.reversed())) {
+            val scheduled = rule(ordered, listOf(Condition.OnDays(setOf(1)), Condition.TimeWindow(0, 5)))
+            assertEquals(1, evaluate(listOf(scheduled),
+                reading(minutesOfDay = 23 * 60 + 58, dayOfWeek = 7, epochMillis = defaultNow - 240_000L),
+                reading(minutesOfDay = 2, dayOfWeek = 1)).size)
+        }
+    }
+
+    /** 다른 종류의 트리거가 함께 발동해도 유효한 시각 예약을 가리지 않는다. */
+    @Test
+    fun `scheduled trigger remains eligible beside a current time trigger`() {
+        val scheduled = rule(listOf(Trigger.AtTime(8 * 60 + 5), Trigger.Every(1)),
+            listOf(Condition.TimeWindow(8 * 60 + 5, 8 * 60 + 5)))
+        assertEquals(1, evaluate(listOf(scheduled),
+            reading(minutesOfDay = 8 * 60 + 4, epochMillis = defaultNow - 120_000L),
+            reading(minutesOfDay = 8 * 60 + 6)).size)
+    }
+
     private val engine = MacroEngine()
     private val defaultNow = 1_000_000L
 

@@ -6,6 +6,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -14,6 +15,76 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FleetQueuedClientTest {
+
+    /** 동시 결과 대기가 조회 예산을 나누고 종료·취소 후에는 단일 조회 간격으로 복귀한다. */
+    @Test
+    fun `concurrent result waits share the polling budget`() = runTest {
+        val pollTimes = mutableListOf<Long>()
+        val transport = FleetHttpTransport { _, _, _, _, _ ->
+            pollTimes += testScheduler.currentTime
+            response("queued", 200)
+        }
+        val client = FleetQueuedClient(transport, { "dummy-token" })
+        val pending = FleetReceipt("command-id", "request-key", vin, "door_lock", FleetQueueStatus.Queued)
+        val first = launch { client.awaitResult(pending) }
+        val second = launch { client.awaitResult(pending) }
+        runCurrent()
+        advanceTimeBy(10_001)
+        assertTrue(pollTimes.size <= 10)
+        first.cancel()
+        second.cancel()
+        runCurrent()
+        pollTimes.clear()
+        val single = launch { client.awaitResult(pending) }
+        runCurrent()
+        advanceTimeBy(1_001)
+        assertEquals(1, pollTimes.size)
+        single.cancel()
+    }
+
+    /** 429가 지정한 대기시간 전에 조회하지 않고 명령 POST를 다시 보내지 않는다. */
+    @Test
+    fun `rate limit retry after delays only result lookup`() = runTest {
+        val times = mutableListOf<Long>()
+        val responses = ArrayDeque(listOf(response("queued"), FleetHttpResponse(429, "", 8_000L), response("succeeded", 200)))
+        val methods = mutableListOf<String>()
+        val transport = FleetHttpTransport { method, _, _, _, _ ->
+            methods += method
+            times += testScheduler.currentTime
+            responses.removeFirst()
+        }
+        val client = FleetQueuedClient(transport, { "dummy-token" })
+        val result = withContext(CommandDeadline(60_000) { testScheduler.currentTime }) {
+            client.execute(vin, VehicleCommand.Lock, {})
+        }
+        assertEquals(FleetQueueStatus.Succeeded, result.status)
+        assertEquals(listOf("POST", "GET", "GET"), methods)
+        assertEquals(listOf(0L, 1_000L, 9_000L), times)
+    }
+
+    /** Retry-After가 결과 대기 한도를 넘겨도 재접수·조기 조회 없이 미확인으로 끝난다. */
+    @Test
+    fun `retry after beyond wait deadline does not resend`() = runTest {
+        val transport = FakeTransport().apply {
+            responses.addAll(listOf(response("queued"), FleetHttpResponse(429, "", 120_000L)))
+        }
+        val client = FleetQueuedClient(transport, { "dummy-token" })
+        val result = withContext(CommandDeadline(180_000) { testScheduler.currentTime }) {
+            client.execute(vin, VehicleCommand.Lock, {})
+        }
+        assertEquals("result_wait_timeout", result.result)
+        assertEquals(listOf("POST", "GET"), transport.calls.map { it.method })
+    }
+
+    /** HTTP의 초·날짜 형식을 지원하고 잘못된 값은 재조회 시간을 오염시키지 않는다. */
+    @Test
+    fun `retry after parses delta seconds and http dates`() {
+        assertEquals(8_000L, fleetRetryAfterMillis("8", 0))
+        assertEquals(8_000L, fleetRetryAfterMillis("Thu, 1 Jan 1970 00:00:08 GMT", 0))
+        assertEquals(0L, fleetRetryAfterMillis("Thu, 1 Jan 1970 00:00:08 GMT", 10_000))
+        assertNull(fleetRetryAfterMillis("-1", 0))
+        assertNull(fleetRetryAfterMillis("invalid", 0))
+    }
     private val vin = "5YJS0000000000000"
     private data class Call(val method: String, val path: String, val body: String?, val key: String?)
     private class FakeTransport : FleetHttpTransport {

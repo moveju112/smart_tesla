@@ -12,23 +12,30 @@ import com.wemade.teslamacro.R
 import com.wemade.teslamacro.domain.macro.MacroRule
 import com.wemade.teslamacro.domain.macro.Trigger
 import com.wemade.teslamacro.service.QuickActionActivity
+import com.wemade.teslamacro.service.QuickActionAccessStore
 import com.wemade.teslable.DiagLog
 
 /** 저장된 매크로를 런처·빅스비 루틴이 읽는 동적 바로가기로 발행한다. */
-class MacroShortcutPublisher(context: Context) {
+class MacroShortcutPublisher(context: Context, private val access: QuickActionAccessStore) {
 
     private val appContext = context.applicationContext
 
-    /** 정적 바로가기와 시스템 상한을 침범하지 않는 범위에서 매크로 바로가기를 갱신한다. */
+    /** 기본 동작과 매크로를 시스템 상한 안에서 서명된 바로가기로 갱신한다. */
     fun publish(rules: List<MacroRule>) {
         runCatching {
             val manager = appContext.getSystemService(ShortcutManager::class.java)
-            val available = (manager.maxShortcutCountPerActivity - manager.manifestShortcuts.size)
+            val builtIns = listOf(
+                actionShortcut("open_frunk", R.string.shortcut_frunk_short, 0),
+                actionShortcut("open_trunk", R.string.shortcut_trunk_short, 1),
+                actionShortcut("vent_windows", R.string.shortcut_vent_short, 2),
+            ).take(manager.maxShortcutCountPerActivity)
+            val available = (manager.maxShortcutCountPerActivity - builtIns.size)
                 .coerceAtLeast(0)
             val selected = selectMacroShortcuts(rules, available)
             val shortcuts = selected.mapIndexed { rank, rule -> shortcut(rule, rank) }
 
-            check(manager.setDynamicShortcuts(shortcuts)) { "시스템이 바로가기 갱신을 거부함" }
+            // 정적 XML에는 실행 시점 인증을 넣을 수 없어 같은 동작을 서명된 동적 바로가기로 발행한다.
+            check(manager.setDynamicShortcuts(builtIns + shortcuts)) { "시스템이 바로가기 갱신을 거부함" }
             DiagLog.add(
                 "빅스비 바로가기 갱신 — " +
                     if (selected.isEmpty()) "노출 가능 슬롯 없음"
@@ -49,10 +56,26 @@ class MacroShortcutPublisher(context: Context) {
             .build()
         val intent = Intent(Intent.ACTION_VIEW, data, appContext, QuickActionActivity::class.java)
             .putExtra(QuickActionActivity.EXTRA_MACRO_ID, rule.id)
+            .putExtra(QuickActionActivity.EXTRA_SHORTCUT_TOKEN, access.shortcutToken(null, rule.id))
 
         return ShortcutInfo.Builder(appContext, "$SHORTCUT_PREFIX${rule.id}")
             .setShortLabel(rule.name.trim().take(SHORT_LABEL_LIMIT))
             .setLongLabel("${rule.name} 매크로 실행")
+            .setIcon(Icon.createWithResource(appContext, R.drawable.ic_launcher_foreground))
+            .setIntent(intent)
+            .setActivity(ComponentName(appContext, MainActivity::class.java))
+            .setRank(rank + 3)
+            .build()
+    }
+
+    /** 기본 차량 동작도 외부 앱이 명령을 바꿀 수 없는 서명된 바로가기로 발행한다. */
+    private fun actionShortcut(action: String, label: Int, rank: Int): ShortcutInfo {
+        val data = Uri.Builder().scheme("teslamacro").authority("run").appendQueryParameter("action", action).build()
+        val intent = Intent(Intent.ACTION_VIEW, data, appContext, QuickActionActivity::class.java)
+            .putExtra(QuickActionActivity.EXTRA_ACTION, action)
+            .putExtra(QuickActionActivity.EXTRA_SHORTCUT_TOKEN, access.shortcutToken(action, null))
+        return ShortcutInfo.Builder(appContext, action)
+            .setShortLabel(appContext.getString(label))
             .setIcon(Icon.createWithResource(appContext, R.drawable.ic_launcher_foreground))
             .setIntent(intent)
             .setActivity(ComponentName(appContext, MainActivity::class.java))

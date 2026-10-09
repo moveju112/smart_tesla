@@ -5,6 +5,7 @@ import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslable.CommandDeadline
 import com.wemade.teslable.ensureCommandActive
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -19,6 +20,7 @@ data class FleetVehicle(val vin: String, val displayName: String, val state: Str
 data class FleetReceipt(
     val id: String?, val requestKey: String, val vin: String, val name: String,
     val status: FleetQueueStatus, val result: String? = null,
+    internal val retryAfterMillis: Long? = null,
 ) {
     val pending: Boolean get() = status == FleetQueueStatus.Queued || status == FleetQueueStatus.Running
 }
@@ -64,6 +66,8 @@ class FleetQueuedClient(
     private val tokenProvider: suspend () -> String,
     private val onConfirmed: (VehicleCommand) -> Unit = {},
 ) {
+    private val awaitingResults = AtomicInteger()
+
     /** 토큰/차량 정보는 로그나 오류 메시지에 포함하지 않는다. */
     suspend fun vehicles(): List<FleetVehicle> {
         return try {
@@ -114,17 +118,25 @@ class FleetQueuedClient(
         var latest = initial
         onUpdate(latest)
         if (!latest.pending) return latest
-        return withTimeoutOrNull(60_000L) {
-            while (latest.pending) {
-                delay(1_000L)
-                val next = refresh(latest)
-                // 한 번의 조회 실패(망 흔들림·5xx)는 결과가 아니다 — 같은 ID를 기한까지 GET만 다시 한다
-                if (next.result == "result_unavailable" && latest.id != null) continue
-                latest = next
-                onUpdate(latest)
-            }
-            latest
-        } ?: latest.copy(status = FleetQueueStatus.Unknown, result = "result_wait_timeout").also(onUpdate)
+        awaitingResults.incrementAndGet()
+        return try {
+            var retryAfterMillis = 0L
+            withTimeoutOrNull(60_000L) {
+                while (latest.pending) {
+                    // 동시에 추적하는 명령끼리 조회 예산을 나누고 서버의 재조회 시각을 지킨다.
+                    delay(maxOf(awaitingResults.get().coerceAtLeast(1) * 1_000L, retryAfterMillis))
+                    val next = refresh(latest)
+                    retryAfterMillis = next.retryAfterMillis ?: 0L
+                    // 조회 실패는 결과가 아니다 — 같은 ID를 기한까지 GET만 다시 한다.
+                    if (next.result == "result_unavailable" && latest.id != null) continue
+                    latest = next
+                    onUpdate(latest)
+                }
+                latest
+            } ?: latest.copy(status = FleetQueueStatus.Unknown, result = "result_wait_timeout").also(onUpdate)
+        } finally {
+            awaitingResults.decrementAndGet()
+        }
     }
 
     /** 이미 받은 ID로 결과를 다시 확인할 수 있으나 명령 재접수는 하지 않는다. */
@@ -135,7 +147,8 @@ class FleetQueuedClient(
         return try {
             val response = transport.request("GET", "/v1/commands/$id", tokenProvider(), null, null)
             if (response.code == 200) parseReceipt(response.body, receipt)
-            else receipt.copy(status = FleetQueueStatus.Unknown, result = "result_unavailable")
+            else receipt.copy(status = FleetQueueStatus.Unknown, result = "result_unavailable",
+                retryAfterMillis = if (response.code == 429) response.retryAfterMillis ?: 5_000L else null)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { receipt.copy(status = FleetQueueStatus.Unknown, result = "result_unavailable") }
     }
@@ -173,11 +186,11 @@ class FleetQueuedClient(
         val result = json["result"]?.jsonPrimitive?.contentOrNull?.takeIf { it in setOf(
             "tesla_acknowledged_not_state_verified", "tesla_rejected_command", "vehicle_access_denied",
             "tesla_transport_or_response_error", "server_restarted", "deadline_exceeded") }
-        return expected.copy(id = id, status = status, result = result)
+        return expected.copy(id = id, status = status, result = result, retryAfterMillis = null)
     }
 }
 
-data class FleetHttpResponse(val code: Int, val body: String)
+data class FleetHttpResponse(val code: Int, val body: String, val retryAfterMillis: Long? = null)
 
 /** 토큰을 데이터 클래스/로그에 보관하지 않고 실제 HTTPS와 오프라인 시험을 분리한다. */
 fun interface FleetHttpTransport {

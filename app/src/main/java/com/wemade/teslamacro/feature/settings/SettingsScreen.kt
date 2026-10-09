@@ -93,6 +93,7 @@ fun SettingsScreen(
     smartThings: SmartThingsControls? = null,
     onFleetApiEnabledChange: ((Boolean) -> Unit)? = null,
     fleetCredentials: FleetCredentialControls? = null,
+    externalQuickActions: com.wemade.teslamacro.service.QuickActionAccessStore? = null,
     /**
      * 처음 펼칠 칸. 안 주면 상황이 정한다(미등록이면 차량, 아니면 자동화).
      * 기능에서 부족한 준비 항목으로 바로 이동할 때도 사용한다.
@@ -178,7 +179,10 @@ fun SettingsScreen(
                             }
                             if (onFleetApiEnabledChange != null && focusedFeature == null) {
                                 SectionHeader("명령 전송", topPadding = if (smartThings != null) Space.lg else Space.sm)
-                                TCard { FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials) }
+                                TCard {
+                                    FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
+                                    externalQuickActions?.let { ExternalQuickActionPanel(it) }
+                                }
                             }
                         }
 

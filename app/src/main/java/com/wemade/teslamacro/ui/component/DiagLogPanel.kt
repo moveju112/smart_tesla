@@ -50,7 +50,7 @@ fun DiagLogPanel(
     val context = LocalContext.current
     // 설정 덤프와 보관 기록을 요약·주제별 나눔 없이 원문 그대로 보낸다. Binder 한도 때문에 본문은 최근 32,000자로 자른다.
     val shareLog: () -> Unit = {
-        val text = listOf(shareExtra(), DiagLog.dumpAll())
+        val text = listOf(shareExtra(), DiagLog.dumpAll(), com.wemade.teslamacro.data.nav.DestinationDiagnostics.current.snapshot())
             .filter { it.isNotBlank() }
             .joinToString("\n\n")
         runCatching {
@@ -92,7 +92,7 @@ fun DiagLogPanel(
                 fillWidth = false,
                 small = true,
                 enabled = lines.isNotEmpty(),
-                onClick = { clipboard.setText(AnnotatedString(DiagLog.dumpAll())) },
+                onClick = { clipboard.setText(AnnotatedString(DiagLog.dumpAll() + "\n\n" + com.wemade.teslamacro.data.nav.DestinationDiagnostics.current.snapshot())) },
             )
             TButton(
                 text = "지우기",

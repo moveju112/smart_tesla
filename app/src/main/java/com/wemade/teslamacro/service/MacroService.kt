@@ -375,19 +375,22 @@ class MacroService : LifecycleService() {
                     )
                 }
                 app.container.navigator.logSafeDriveState("탑승 자동 실행", navigatorApp, automaticLaunchMode)
-                val start: suspend () -> Result<Unit> = {
+                val start: suspend (() -> Unit) -> Result<Unit> = { ensureCurrentBoarding ->
                     if (settings.vehicleAudioAddress.isNotBlank() && app.container.wirelessNavigation.ownsBoardingSafeDrive()) {
                         com.wemade.teslable.DiagLog.add("탑승 안심운전 — 실험 실행 확인, 기존 방식 건너뜀")
                         Result.success(Unit)
                     } else if (!app.container.destinations.prepareBoarding()) {
+                        ensureCurrentBoarding()
                         Result.failure(com.wemade.teslamacro.data.nav.SafeDrivePreflightException("착석 재확인이 필요해요"))
                     } else {
+                        ensureCurrentBoarding()
                         app.container.navigator.startSafeDrive(app = navigatorApp, launchMode = automaticLaunchMode) {
+                            ensureCurrentBoarding()
                             val current = app.container.settingsStore.settings.first()
-                            if (!current.autoStartNavigatorSafeDrive || current.navigatorApp != settings.navigatorApp ||
-                                !app.container.destinations.prepareBoarding()) {
-                                throw com.wemade.teslamacro.data.nav.SafeDrivePreflightException("탑승 실행 조건이 바뀌었어요")
-                            }
+                            val canLaunch = current.autoStartNavigatorSafeDrive && current.navigatorApp == settings.navigatorApp &&
+                                app.container.destinations.prepareBoarding()
+                            ensureCurrentBoarding()
+                            if (!canLaunch) throw com.wemade.teslamacro.data.nav.SafeDrivePreflightException("탑승 실행 조건이 바뀌었어요")
                         }.onFailure { com.wemade.teslable.DiagLog.add("안심운전 자동 실행 실패 — ${it.javaClass.simpleName}") }
                     }
                 }

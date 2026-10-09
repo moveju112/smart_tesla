@@ -353,6 +353,21 @@ class MacroRunnerTest {
         assertTrue(runner.log.value.last().message.contains("1단계"))
     }
 
+    /** 목적지 전송 우선으로 지도 걸음을 양보해도 뒤의 차량 명령은 실행한다. */
+    @Test fun `수신 목적지가 우선이면 매크로 지도만 건너뛴다`() = runTest {
+        val priority = com.wemade.teslamacro.data.nav.DestinationNavigationPriority { 1_000L }
+        priority.pending("received", 10_000L)
+        var maps = 0
+        val runner = MacroRunner(gateway, this, MutableStateFlow(readingWith(30.0)), navigator = { _, _ ->
+            runCatching { priority.ensureMacroAllowed(priority.checkpoint(), false); maps++; Unit }
+        }, diagnosticLogger = {})
+        runner.launch(rule(ActionStep.Navigate("목적지", "테스트 주소"), ActionStep.Run(VehicleCommand.ClimateOn)), 0L)
+        advanceUntilIdle()
+        assertEquals(0, maps)
+        assertEquals(listOf(VehicleCommand.ClimateOn), sent)
+        assertTrue(runner.log.value.any { it.message.contains("목적지 전송을 우선") })
+    }
+
     /** 의존 코드 예외도 실행 상태를 정리하며 서비스 전체로 전파하지 않는다. */
     @Test
     fun `안내 예외는 오류 종료로 기록한다`() = runTest {

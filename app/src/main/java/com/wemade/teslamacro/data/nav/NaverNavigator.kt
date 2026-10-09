@@ -162,30 +162,35 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
         name: String,
         address: String,
         app: NavigatorApp = NavigatorApp.Default,
+        beforeLaunch: suspend () -> Unit = {},
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            if (address.isBlank()) error("주소가 비어 있어요")
+        if (!safeDriveLaunchMutex.tryLock()) return@withContext Result.failure(IllegalStateException("다른 내비 실행을 처리 중이에요"))
+        try {
+            runCatching {
+                beforeLaunch()
+                if (address.isBlank()) error("주소가 비어 있어요")
 
-            // 좌표는 캐시를 먼저 본다. 지오코딩은 인터넷을 타서 실측 400~500ms가 걸리고,
-            // 지하주차장처럼 망이 없으면 아예 실패한다 — 탑승 순간에 둘 다 치명적이다.
-            // 캐시 키가 주소 문자열이라 주소를 고치면 자동으로 다시 푼다
-            //   (이사·오타 수정이 먹어야 한다는 원래 의도 유지)
-            val point = cachedPoint(address)
-                ?: geocode(address)?.also { cachePoint(address, it) }
-                ?: error("주소를 좌표로 못 바꿨어요: $address")
-            val label = name.ifBlank { address }
+                // 좌표는 캐시를 먼저 본다. 지오코딩은 인터넷을 타서 실측 400~500ms가 걸리고,
+                // 지하주차장처럼 망이 없으면 아예 실패한다 — 탑승 순간에 둘 다 치명적이다.
+                // 캐시 키가 주소 문자열이라 주소를 고치면 자동으로 다시 푼다
+                //   (이사·오타 수정이 먹어야 한다는 원래 의도 유지)
+                val point = cachedPoint(address)
+                    ?: geocode(address)?.also { cachePoint(address, it) }
+                    ?: error("주소를 좌표로 못 바꿨어요: $address")
+                val label = name.ifBlank { address }
 
-            val installed = installedPackage(app)
-                ?: error("${app.label} 앱이 설치되어 있지 않아요")
-            launchAny(app, installed, point.latitude, point.longitude, label)
-            // startActivity는 화면이 안 떠도 예외를 안 던진다 — 실제로 증명한 것은 요청까지다
-            com.wemade.teslable.DiagLog.add("${app.label} 안내 실행 요청 → $label")
-        }.recoverCatching { throwable ->
-            // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
-            // 잘못 기록되고, 취소가 상위로 전파되지 않는다
-            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
-            throw throwable
-        }.map { }
+                val installed = installedPackage(app)
+                    ?: error("${app.label} 앱이 설치되어 있지 않아요")
+                launchAny(app, installed, point.latitude, point.longitude, label, beforeLaunch)
+                // startActivity는 화면이 안 떠도 예외를 안 던진다 — 실제로 증명한 것은 요청까지다
+                com.wemade.teslable.DiagLog.add("${app.label} 안내 실행 요청 → $label")
+            }.recoverCatching { throwable ->
+                // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
+                // 잘못 기록되고, 취소가 상위로 전파되지 않는다
+                if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+                throw throwable
+            }.map { }
+        } finally { safeDriveLaunchMutex.unlock() }
     }
 
     // 1. 권한·설치 확인 → 2. 앱별 안심운전 인텐트 생성 → 3. 화면 전환
@@ -215,9 +220,9 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 wirelessNavigation?.prepareDestination()
                 val intents = safeDriveIntents(app, packageName, uri)
                 val launch: suspend (Activity?) -> Unit = { activity ->
-                    beforeLaunch()
-                    dispatched = true
                     if (launchMode == SafeDriveLaunchMode.ALL) {
+                        beforeLaunch()
+                        dispatched = true
                         launchSafeDriveForDiagnostics(app.label, intents, activity)
                     } else {
                         launchFirst(
@@ -225,6 +230,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                             intents,
                             backgroundLaunchMethods(Build.VERSION.SDK_INT, launchMode).single(),
                             activity,
+                            beforeLaunch = { beforeLaunch(); dispatched = true },
                         )
                     }
                 }
@@ -279,6 +285,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
         latitude: Double,
         longitude: Double,
         label: String,
+        beforeLaunch: suspend () -> Unit,
     ) {
         val candidates = app.uris(latitude, longitude, label, context.packageName).map { uri ->
             Intent(Intent.ACTION_VIEW, uri)
@@ -289,6 +296,7 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
             app.label,
             candidates,
             backgroundLaunchMethods(Build.VERSION.SDK_INT, SafeDriveLaunchMode.DEFAULT).single(),
+            beforeLaunch = beforeLaunch,
             allowShell = true,
         )
     }

@@ -123,6 +123,101 @@ class DestinationNavigationTransitionTest {
         assertTrue(request.canExecute(observed.resultFor(1L, 10_000L), false, 10_000L))
     }
 
+    /** A 인증 중 하차·B 탑승 뒤 인증해도 A는 전달하지 않고 수신 루프에서 B만 이어간다. */
+    @Test fun expiredBoardingAuthenticationCannotLaunchOldRequest() = runTest {
+        val boarding = DestinationBoardingState()
+        val gate = SafeDriveUnlockGate { testScheduler.currentTime }
+        lateinit var token: String
+        var oldLaunches = 0
+        var newLaunches = 0
+        boarding.queue(0L) { ensureCurrent ->
+            gate.run(showPrompt = { token = it }, closePrompt = {}, launch = {
+                ensureCurrent()
+                oldLaunches++
+            })
+            Result.success(Unit)
+        }
+        val old = boarding.fallback!!
+        val running = async { old.execute(8_000L) }
+        runCurrent()
+        boarding.reset()
+        boarding.queue(1_000L) { ensureCurrent -> ensureCurrent(); newLaunches++; Result.success(Unit) }
+        val current = boarding.fallback!!
+        assertTrue(gate.complete(token, true))
+        assertTrue(running.await())
+        boarding.consume(old)
+        assertSame(current, boarding.fallback)
+        assertEquals(0, oldLaunches)
+        assertTrue(current.execute(9_000L))
+        boarding.consume(current)
+        assertEquals(1, newLaunches)
+        assertNull(boarding.fallback)
+    }
+
+    /** 착석 재확인 응답이 새 탑승에서 참이어도 이전 요청 세션 검사로 전달을 막는다. */
+    @Test fun newPresenceDoesNotReviveOldBoardingExecution() = runTest {
+        val boarding = DestinationBoardingState()
+        val confirmation = CompletableDeferred<Unit>()
+        var launches = 0
+        boarding.queue(0L) { ensureCurrent ->
+            confirmation.await()
+            ensureCurrent()
+            launches++
+            Result.success(Unit)
+        }
+        val old = boarding.fallback!!
+        val running = async { old.execute(8_000L) }
+        runCurrent()
+        boarding.reset()
+        boarding.queue(1_000L) { Result.success(Unit) }
+        val current = boarding.fallback!!
+        confirmation.complete(Unit)
+        assertTrue(running.await())
+        boarding.consume(old)
+        assertEquals(0, launches)
+        assertSame(current, boarding.fallback)
+    }
+
+    /** 같은 탑승의 알려진 전달 전 실패만 재시도하고 하차 뒤 옛 재시도는 진입부터 종료한다. */
+    @Test fun boardingGuardPreservesPreflightRetryButRejectsStaleRetry() = runTest {
+        val boarding = DestinationBoardingState()
+        var calls = 0
+        boarding.queue(0L) { ensureCurrent ->
+            ensureCurrent()
+            calls++
+            Result.failure(SafeDrivePreflightException("권한 필요"))
+        }
+        val request = boarding.fallback!!
+        assertFalse(request.execute(8_000L))
+        boarding.reset()
+        boarding.queue(10_000L) { Result.success(Unit) }
+        val current = boarding.fallback!!
+        assertTrue(request.execute(13_000L))
+        assertEquals(1, calls)
+        boarding.consume(request)
+        assertSame(current, boarding.fallback)
+    }
+
+    /** 하차 없는 정상 인증은 지도 전달을 한 번 허용한다. */
+    @Test fun currentBoardingAuthenticationLaunchesOnce() = runTest {
+        val boarding = DestinationBoardingState()
+        val gate = SafeDriveUnlockGate { testScheduler.currentTime }
+        lateinit var token: String
+        var launches = 0
+        boarding.queue(0L) { ensureCurrent ->
+            gate.run(showPrompt = { token = it }, closePrompt = {}, launch = { ensureCurrent(); launches++ })
+            Result.success(Unit)
+        }
+        val request = boarding.fallback!!
+        val running = async { request.execute(8_000L) }
+        runCurrent()
+        gate.complete(token, true)
+        assertTrue(running.await())
+        boarding.consume(request)
+        assertEquals(1, launches)
+        assertNull(boarding.fallback)
+    }
+
     /** 반복되는 전달 전 실패도 탑승 세션당 두 번에서 끝낸다. */
     @Test fun boardingRetryIsBounded() = runTest {
         val request = BoardingNavigationRequest(0L) { Result.failure(SafeDrivePreflightException("실행 중")) }

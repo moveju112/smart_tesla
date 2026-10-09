@@ -37,15 +37,43 @@ internal class DestinationCoordinator(
     @Volatile private var present: Boolean? = null
     @Volatile private var presenceAt = -1L
     @Volatile private var settings = AppSettings()
+    private val diagnostics = DestinationDiagnostics.current.apply { attach(java.io.File(context.noBackupFilesDir, "destination-diagnostics.txt")) }
+    private val priority = DestinationNavigationPriority(SystemClock::elapsedRealtime)
     private val boarding = DestinationBoardingState()
     private val networkRecovered = java.util.concurrent.atomic.AtomicBoolean(false)
     private val networkValidated = java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var presenceRetryAt = 0L
-    private val receiver = DestinationReceiver(client::call, journal::read, journal::save, journal::clear,
+    private val receiver = DestinationReceiver(::callDestination, journal::read, journal::save, journal::clear,
         SystemClock::elapsedRealtime, navigator::navigateDestination) {
             if (message.value != it) DiagLog.add("목적지 수신 — $it")
             message.value = it
         }
+
+    /** 수신·매크로 사전 조회가 같은 우선권 기록을 사용하며 원문 목적지는 보관하지 않는다. */
+    private suspend fun callDestination(operation: String, fields: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit): DestinationReply {
+        val started = SystemClock.elapsedRealtime()
+        val generation = priority.checkpoint()
+        val reply = if (operation == "inbox") diagnostics.inbox { client.call(operation, fields) } else client.call(operation, fields)
+        val request = reply.request
+        if (operation == "inbox") {
+            if (request == null) priority.empty(generation)
+            else if (request.status == "pending" && !request.legacyTestRequest) {
+                destinationDeadline(reply.serverNow, request.expiresAt, started)?.let { priority.pending(request.id, it) }
+            }
+        } else if (operation == "complete" && request != null &&
+            request.status in setOf("delivered", "failed", "expired", "cancelled", "replaced")) priority.complete(request.id)
+        return reply
+    }
+
+    /** 매크로 지도 준비 전에 수신함을 확인하고 지오코딩·화면 대기 뒤에도 같은 우선권을 검사한다. */
+    suspend fun macroNavigationGuard(): () -> Unit {
+        val token = priority.checkpoint()
+        settings = settingsStore.settings.first()
+        if (settings.destinationReceiveEnabled && online()) callDestination("inbox") {}
+        val guard = { priority.ensureMacroAllowed(token, receiver.receiptState() != null, settings.destinationReceiveEnabled) }
+        guard()
+        return guard
+    }
 
     /** 신선한 차량 응답만 수신 허가로 쓰고 하차 때 남은 자동 실행을 중단한다. */
     fun observePresence(value: Boolean, observedAt: Long) {
@@ -83,7 +111,7 @@ internal class DestinationCoordinator(
     }
 
     /** 기존 안심운전은 목적지가 없다는 응답 뒤 같은 수신 루프에서 한 번만 실행한다. */
-    fun afterBoardingWhenEmpty(action: suspend () -> Result<Unit>) {
+    fun afterBoardingWhenEmpty(action: suspend (() -> Unit) -> Result<Unit>) {
         boarding.queue(SystemClock.elapsedRealtime(), action)
         nudge()
     }
@@ -99,7 +127,13 @@ internal class DestinationCoordinator(
         if (presenceReady()) return true
         if (SystemClock.elapsedRealtime() < presenceRetryAt) return false
         presenceRetryAt = SystemClock.elapsedRealtime() + 30_000L
-        val observation = confirmPresence() ?: return false
+        diagnostics.presenceStarted()
+        val observation = try { confirmPresence() } catch (error: Exception) {
+            diagnostics.presenceFinished(null, null)
+            throw error
+        }
+        diagnostics.presenceFinished(observation?.present, observation?.observedAt)
+        if (observation == null) return false
         observePresence(observation.present, observation.observedAt)
         if (presenceReady()) presenceRetryAt = 0L
         return presenceReady()
@@ -157,9 +191,11 @@ internal class DestinationCoordinator(
                 }
                 if (enabled && connected && SystemClock.elapsedRealtime() >= maxOf(retryAt, nextInboxAt)) {
                     try {
-                        boarding.receive(receiver, prepare = {
+                        val outcome = boarding.receive(receiver, prepare = {
                             settings.destinationReceiveEnabled && online() && prepareBoarding()
-                        }, ready = { ready() && online() }, elapsed = SystemClock::elapsedRealtime)
+                        }, ready = { ready() && online() }, elapsed = SystemClock::elapsedRealtime,
+                            onDispatch = { diagnostics.deliveryChecked(settings.destinationReceiveEnabled, online(), present, presenceAt) })
+                        diagnostics.deliveryFinished(outcome)
                         nextInboxAt = SystemClock.elapsedRealtime() + 5_000L
                         failures = 0
                         retryAt = 0L
@@ -222,8 +258,26 @@ internal class DestinationBoardingState {
     }
 
     /** 안심운전 대기 등록은 현재 탑승에 속하며 새 탑승 세션을 만들지 않는다. */
-    @Synchronized fun queue(now: Long, action: suspend () -> Result<Unit>) {
-        if (!destinationSeen) fallback = BoardingNavigationRequest(now, action)
+    @Synchronized fun queue(now: Long, action: suspend (() -> Unit) -> Result<Unit>) {
+        if (destinationSeen) return
+        val ownerSession = session
+        lateinit var request: BoardingNavigationRequest
+        val ensureCurrent = {
+            synchronized(this) {
+                if (session != ownerSession || fallback !== request || destinationSeen) {
+                    throw BoardingRequestExpiredException()
+                }
+            }
+        }
+        request = BoardingNavigationRequest(now) {
+            try {
+                ensureCurrent()
+                action(ensureCurrent)
+            } catch (error: BoardingRequestExpiredException) {
+                Result.failure(error)
+            }
+        }
+        fallback = request
     }
 
     /** 늦은 실행 완료는 그동안 교체된 다른 탑승 요청을 삭제하지 않는다. */
@@ -237,13 +291,16 @@ internal class DestinationBoardingState {
     }
 
     /** 조회 시작과 지도 전달 직전 탑승을 구분해 완료 응답의 소유자를 정한다. */
-    suspend fun receive(receiver: DestinationReceiver, prepare: suspend () -> Boolean, ready: () -> Boolean, elapsed: () -> Long) {
+    suspend fun receive(receiver: DestinationReceiver, prepare: suspend () -> Boolean, ready: () -> Boolean, elapsed: () -> Long,
+        onDispatch: () -> Unit = {},
+    ): DestinationReceiveResult {
         val querySession = session
         var dispatchSession: Long? = null
         val result = receiver.receive(prepare = prepare, onDispatch = {
             synchronized(this) {
                 check(ready()) { "탑승 실행 조건이 바뀌었어요" }
                 dispatchSession = session
+                onDispatch()
             }
         }, ready = ready)
         synchronized(this) {
@@ -260,6 +317,7 @@ internal class DestinationBoardingState {
                 }
             }
         }
+        return result
     }
 
     /** 같은 탑승의 유효한 조회 결과만 오프라인 실행 판단에 제공한다. */
@@ -272,6 +330,9 @@ internal data class DestinationInboxObservation(val session: Long, val result: D
     fun resultFor(currentSession: Long, now: Long): DestinationReceiveResult? =
         result.takeIf { session == currentSession && now < expiresAt }
 }
+
+/** 하차한 탑승 요청은 조건 회복 재시도 대상이 아니며 수신 루프 취소로 전파하지 않는다. */
+internal class BoardingRequestExpiredException : IllegalStateException("이전 탑승의 안심운전 요청을 종료했어요")
 
 /** 탑승 요청은 전달 전 실패만 두 번까지 재시도하고 인계·인증 취소 이후에는 소비한다. */
 internal class BoardingNavigationRequest(val startedAt: Long, private val action: suspend () -> Result<Unit>) {

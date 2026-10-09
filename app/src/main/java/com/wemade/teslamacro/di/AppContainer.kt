@@ -172,7 +172,10 @@ class AppContainer(private val context: Context) {
                 val chosen = com.wemade.teslamacro.data.nav.NavigatorApp.of(
                     settingsStore.settings.first().navigatorApp
                 )
-                navigator.navigate(name, address, chosen)
+                runCatching {
+                    val guard = destinations.macroNavigationGuard()
+                    navigator.navigate(name, address, chosen, beforeLaunch = guard).getOrThrow()
+                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
             },
             stealthChargingSetter = { enabled ->
                 setStealthCharging(enabled)

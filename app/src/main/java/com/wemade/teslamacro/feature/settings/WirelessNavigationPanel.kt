@@ -25,6 +25,8 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
         "저장된 인증이 있으면 코드 입력 없이 연결을 먼저 시도해요. 자동 탐색이 안 되면 아래 수동 입력을 사용해 주세요.\n\n" +
         "명령을 보내기 전에 꺼진 무선 디버깅을 다시 켜고, 자동 실행을 켠 상태로 차량에 연결되어 있으면 계속 켜 둬요. 연결 해제 30초 뒤 지도 종료를 마치면 꺼요. USB 디버깅도 켜 두고 무선 디버깅에 사용할 Wi-Fi에 연결해 주세요. 케이블 연결은 필요 없어요. 자동 실행을 켜면 재부팅 후 Wi-Fi 연결 때 준비 복구를 시도해요. " +
         "처음 Wi-Fi 허용 창에서 ‘이 네트워크에서 항상 허용’을 선택하면 다음 준비 때 확인을 줄일 수 있어요. 프로세스가 종료되면 Wi-Fi에서 다시 준비해 주세요.\n\n" +
+        "‘하차 시 USB 디버깅 끄기 · 탑승 시 켜기’를 켜면 연결 해제 30초 뒤 지도 종료를 마치고 USB 디버깅을 끄고, 다음 차량 연결 때 다시 켜요. 디버깅이 켜져 있으면 막히는 은행 앱을 쓸 때 사용해요. " +
+        "다른 앱이 차량 연결에 맞춰 디버깅을 껐다 켜도 차량 연결 중 다시 켜지면 준비를 자동 복구해요. 휴대폰을 재부팅한 뒤에는 Wi-Fi에서 한 번 준비해야 해요.\n\n" +
         "실행 전 선택한 내비의 초기 설정·위치·음량 설정을 마쳐 주세요. 선택한 내비가 이미 실행 중이면 실험을 시작하지 않아요. 최근 앱 목록에만 남은 내비는 실행 중으로 보지 않아요. " +
         "화면이 켜진 상태와 잠긴 상태에서 각각 테스트해 음성을 확인해 주세요.\n\n" +
         "자동 실행은 ‘설정 → 차량 → 탑승 감지 블루투스’에서 직접 선택한 기기 연결을 사용해요. 연결 해제 30초 뒤 실험을 종료해요. " +
@@ -49,6 +51,8 @@ internal fun WirelessNavigationPanel(settings: AppSettings, controls: Navigation
             if (state.enabled && settings.vehicleAudioAddress.isBlank()) {
                 Text("설정 → 차량 → 탑승 감지 블루투스에서 기기를 선택해 주세요", style = MaterialTheme.typography.bodySmall, color = T.InkMuted)
             }
+            SettingToggleRow("하차 시 USB 디버깅 끄기 · 탑승 시 켜기", checked = state.toggleUsbDebugging,
+                onCheckedChange = controls.onWirelessToggleUsbDebugging)
             SettingsDetails("연결 관리", if (state.prepared) "연결됨" else "준비 필요") {
                 TButton("연결 준비 / 복구", ButtonTone.Secondary, enabled = !state.busy && !state.running,
                     onClick = controls.onWirelessPrepare)

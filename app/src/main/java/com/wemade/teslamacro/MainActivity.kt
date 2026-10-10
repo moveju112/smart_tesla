@@ -443,6 +443,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                         onRequestNotificationAccess = { openNotificationListenerSettings(context) },
                         wirelessState = wirelessNavigationState,
                         onWirelessEnabled = settingsViewModel.wirelessNavigation::setEnabled,
+                        onWirelessToggleUsbDebugging = settingsViewModel.wirelessNavigation::setToggleUsbDebugging,
                         onWirelessPort = settingsViewModel.wirelessNavigation::setPort,
                         onWirelessPair = { port, code -> settingsViewModel.wirelessNavigation.pair(port, code); Unit },
                         onWirelessPrepare = { settingsViewModel.wirelessNavigation.prepare(); Unit },

@@ -788,6 +788,7 @@ data class NavigationControls(
     val onRequestNotificationAccess: () -> Unit = {},
     val wirelessState: com.wemade.teslamacro.data.nav.WirelessNavigationState = com.wemade.teslamacro.data.nav.WirelessNavigationState(),
     val onWirelessEnabled: (Boolean) -> Unit = {},
+    val onWirelessToggleUsbDebugging: (Boolean) -> Unit = {},
     val onWirelessPort: (String) -> Unit = {},
     val onWirelessPair: (String, String) -> Unit = { _, _ -> },
     val onWirelessPrepare: () -> Unit = {},

@@ -2,7 +2,10 @@ package com.wemade.teslamacro.data.nav
 
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import com.wemade.teslable.DiagLog
 import com.wemade.teslamacro.BuildConfig
@@ -52,6 +55,8 @@ internal class NavigationSessionOutput {
 /** 실험 설정은 일반 백업과 분리해 다른 기기에서 자동 실행되지 않게 한다. */
 data class WirelessNavigationState(
     val enabled: Boolean = false,
+    /** 하차 때 USB 디버깅을 끄고 탑승 때 다시 켠다. 디버깅을 막는 은행 앱용 */
+    val toggleUsbDebugging: Boolean = false,
     val port: String = "",
     val busy: Boolean = false,
     val running: Boolean = false,
@@ -107,7 +112,8 @@ class WirelessNavigation(private val context: Context) {
     private val preferences = context.getSharedPreferences("wireless_navigation", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutableState = MutableStateFlow(WirelessNavigationState(
-        enabled = preferences.getBoolean("enabled", false), port = preferences.getString("port", "").orEmpty(),
+        enabled = preferences.getBoolean("enabled", false),
+        toggleUsbDebugging = preferences.getBoolean(TOGGLE_USB_DEBUGGING, false), port = preferences.getString("port", "").orEmpty(),
         app = safeDriveApp(preferences.getString("app", null))))
     val state = mutableState.asStateFlow()
     private val identity by lazy { LocalAdbIdentity(File(context.noBackupFilesDir, "local-adb.p12")).load() }
@@ -120,6 +126,8 @@ class WirelessNavigation(private val context: Context) {
     @Volatile private var sessionStopConfirmed = true
     @Volatile private var keepWirelessDebugging = false
     @Volatile private var navigationSessionActive = false
+    /** 하차 유예가 끝나 세션·목적지 정리 뒤 USB 디버깅을 꺼야 하는지 */
+    @Volatile private var usbDebuggingCloseDue = false
     private val destinationCommands = AtomicInteger()
     /** 실행 중인 가상 화면 세션의 앱. 같은 앱 목적지만 세션 종료와 충돌한다 */
     @Volatile private var sessionApp: NavigatorApp? = null
@@ -130,8 +138,16 @@ class WirelessNavigation(private val context: Context) {
             object : ConnectivityManager.NetworkCallback() {
                 /** 재부팅 뒤 Wi-Fi가 생기면 사용자가 켠 자동 실행만 다시 준비한다. */
                 override fun onAvailable(network: Network) {
-                    scope.launch { if (state.value.enabled && preferences.getBoolean("configured", false)) prepare() }
+                    scope.launch {
+                        // 하차로 앱이 끈 디버깅이면 집 Wi-Fi에서 켜 달라는 안내를 띄우지 않는다
+                        if (state.value.toggleUsbDebugging && !adbEnabled()) return@launch
+                        if (state.value.enabled && preferences.getBoolean("configured", false)) prepare()
+                    }
                 }
+            })
+        context.contentResolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ADB_ENABLED), false,
+            object : ContentObserver(Handler(Looper.getMainLooper())) {
+                override fun onChange(selfChange: Boolean) { usbDebuggingChanged() }
             })
     }
 
@@ -159,7 +175,8 @@ class WirelessNavigation(private val context: Context) {
         mutableState.value = state.value.copy(prepared = false)
         try {
             // 두 디버깅 방식이 모두 꺼지면 Android가 부모 데몬과 준비 프로세스를 종료한다.
-            check(Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) { USB_DEBUGGING_REQUIRED }
+            awaitUsbDebugging()
+            check(adbEnabled()) { USB_DEBUGGING_REQUIRED }
             NavigationBridgeProvider.request()
             val server = runCatching { NavigationChannel().connect().use {
                 it.status() to it.serverVersionCode()
@@ -175,7 +192,7 @@ class WirelessNavigation(private val context: Context) {
             mutableState.value = state.value.copy(prepared = false)
             manager().use { connection ->
                 val tcpPort = localTcpPort()
-                var port = tcpPort?.takeIf { connectLocal(connection, it) }
+                var port = tcpPort?.takeIf { connectLocalAfterRestart(connection, it) }
                 if (port != null) DiagLog.add("안심주행 · 저장된 인증으로 로컬 TCP 재접속 완료")
                 if (port == null) {
                     val networks = context.getSystemService(ConnectivityManager::class.java)
@@ -237,6 +254,62 @@ class WirelessNavigation(private val context: Context) {
         }
     }
 
+    /** 디버깅 재시작 직후 adbd가 TCP 포트를 다시 열 때까지 짧게 재시도한다. */
+    private suspend fun connectLocalAfterRestart(connection: AbsAdbConnectionManager, port: Int): Boolean {
+        repeat(5) { attempt ->
+            if (connectLocal(connection, port)) return true
+            if (attempt < 4) delay(1_000)
+        }
+        return false
+    }
+
+    private fun adbEnabled() = Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+
+    // USB 디버깅 대기 (탑승 중 꺼짐 -> 설정이면 직접 켜고, 아니면 다른 앱이 켜기를 잠시 기다림)
+    // Tesor처럼 차량 연결에 맞춰 디버깅을 켜는 앱이 조금 늦게 켜도 준비 실패로 끝내지 않는다
+    private suspend fun awaitUsbDebugging() {
+        if (adbEnabled() || !connected) return
+        if (state.value.toggleUsbDebugging) enableUsbDebugging()
+        withTimeoutOrNull(10_000) { while (!adbEnabled()) delay(250) }
+    }
+
+    // USB 디버깅 켜기 (탑승 -> 하차 때 끈 디버깅 복구)
+    private fun enableUsbDebugging() {
+        if (adbEnabled()) return
+        if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) {
+            DiagLog.add("안심주행 · USB 디버깅 켜기 권한 없음")
+            return
+        }
+        runCatching { check(Settings.Global.putInt(context.contentResolver, Settings.Global.ADB_ENABLED, 1)) }
+            .onSuccess { DiagLog.add("안심주행 · 탑승으로 USB 디버깅 켬") }
+            .onFailure { DiagLog.add("안심주행 · USB 디버깅 켜기 실패 ${it.javaClass.simpleName}") }
+    }
+
+    // 하차 정리 (유예 종료·세션 종료·목적지 명령 종료 -> USB 디버깅 끄기)
+    // 끄면 adbd와 준비 프로세스가 함께 종료되므로 실행 중인 세션이나 명령이 있으면 끝날 때까지 미룬다
+    private fun closeUsbDebugging() {
+        if (!usbDebuggingCloseDue || connected || navigationSessionActive || destinationCommands.get() > 0) return
+        usbDebuggingCloseDue = false
+        if (!state.value.toggleUsbDebugging || !adbEnabled()) return
+        if (context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) {
+            DiagLog.add("안심주행 · USB 디버깅 끄기 권한 없음")
+            return
+        }
+        runCatching { check(Settings.Global.putInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0)) }
+            .onSuccess { DiagLog.add("안심주행 · 하차로 USB 디버깅 끔") }
+            .onFailure { DiagLog.add("안심주행 · USB 디버깅 끄기 실패 ${it.javaClass.simpleName}") }
+    }
+
+    // USB 디버깅 변경 대응 (다른 앱이 켬 -> 탑승 중이면 안심주행 다시 준비)
+    // 꺼지면 준비 프로세스가 종료되므로 준비 상태만 내리고, 켜지면 같은 탑승 세션에서 실행을 이어 간다
+    private fun usbDebuggingChanged() {
+        if (!adbEnabled()) {
+            mutableState.value = state.value.copy(prepared = false)
+            return
+        }
+        if (state.value.enabled && connected && !state.value.running && operation?.isCompleted != false) start(delayed = false)
+    }
+
     /** 공개 시스템 속성의 실제 수신 포트만 사용해 재부팅 뒤 오래된 TLS 포트를 피한다. */
     private suspend fun localTcpPort(): Int? = runInterruptible {
         val process = ProcessBuilder("/system/bin/getprop").start()
@@ -281,6 +354,7 @@ class WirelessNavigation(private val context: Context) {
     /** 탑승·재연결 유예·실행 중에는 유지하고 하차 후 명령 정리까지 끝나면 닫는다. */
     @Synchronized
     internal fun closeWirelessDebugging() {
+        closeUsbDebugging()
         if (keepWirelessDebugging || navigationSessionActive || destinationCommands.get() > 0) return
         // 앱이 켜지 않은 디버깅은 끄지 않는다 — Shizuku·PC 무선 adb 연결을 매 Wi-Fi 접속마다 끊어 버린다
         if (!preferences.getBoolean(OWNS_WIRELESS_DEBUGGING, false)) return
@@ -373,6 +447,17 @@ class WirelessNavigation(private val context: Context) {
         mutableState.value = mutableState.value.copy(enabled = enabled)
         keepWirelessDebugging = enabled && connected
         if (!enabled) stop() else if (connected) start(delayed = false) else prepare()
+    }
+
+    // 하차 시 USB 디버깅 끄기 설정 (권한 확인 -> 저장)
+    // 연결 설정 중일 수 있어 켜는 즉시 끄지 않고 다음 하차부터 적용한다
+    fun setToggleUsbDebugging(enabled: Boolean) {
+        if (enabled && context.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) {
+            report("연결 준비를 마친 뒤 켜 주세요")
+            return
+        }
+        preferences.edit().putBoolean(TOGGLE_USB_DEBUGGING, enabled).apply()
+        mutableState.value = state.value.copy(toggleUsbDebugging = enabled)
     }
 
     /** 차량 오디오 연결과 현재 버전의 실제 실행을 확인한 때만 탑승 안심운전을 실험에 맡긴다. */
@@ -478,13 +563,16 @@ class WirelessNavigation(private val context: Context) {
         disconnect?.cancel()
         if (!value) restartRequest.cancel()
         if (value) {
+            usbDebuggingCloseDue = false
+            if (state.value.toggleUsbDebugging) enableUsbDebugging()
             keepWirelessDebugging = state.value.enabled
             if (state.value.enabled) start(delayed = false)
-        } else if (state.value.enabled) {
+        } else if (state.value.enabled || state.value.toggleUsbDebugging) {
             disconnect = scope.launch {
                 delay(30_000)
                 destinationOwnsRide = false
                 keepWirelessDebugging = false
+                usbDebuggingCloseDue = true
                 stop()
             }
         }
@@ -536,7 +624,9 @@ class WirelessNavigation(private val context: Context) {
                 }
             } catch (error: Exception) {
                 if (error is CancellationException && error !is TimeoutCancellationException) throw error
-                report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY, LOCAL_CONNECTION_REQUIRED)) error.message!! else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 ${app.label} 상태를 확인해 주세요")
+                // 다른 앱이 하차에 맞춰 디버깅을 끄면 연결이 끊기는 게 정상이라 Wi-Fi 재준비 안내를 띄우지 않는다
+                if (!adbEnabled() && error.message != USB_DEBUGGING_REQUIRED) report("USB 디버깅이 꺼져 안심주행을 종료했어요", notify = false)
+                else report(if (error.message in setOf(USB_DEBUGGING_REQUIRED, WIRELESS_DEBUGGING_REQUIRED, SERVER_UPDATE_BUSY, LOCAL_CONNECTION_REQUIRED)) error.message!! else "실행 실패 · Wi-Fi에서 준비를 다시 하거나 ${app.label} 상태를 확인해 주세요")
                 DiagLog.add("안심주행 · 실행 예외 ${error.javaClass.simpleName}")
             } finally {
                 if (wake.isHeld) wake.release()
@@ -667,6 +757,7 @@ class WirelessNavigation(private val context: Context) {
         private const val SERVER_UPDATE_BUSY = "이전 안심주행 실험을 종료한 뒤 준비를 다시 해 주세요"
         /** 앱이 무선 디버깅을 켰는지. 사용자가 켜 둔 디버깅은 앱이 닫지 않는다 */
         private const val OWNS_WIRELESS_DEBUGGING = "owns_adb_wifi"
+        private const val TOGGLE_USB_DEBUGGING = "toggle_usb_debugging"
         private const val USB_DEBUGGING_REQUIRED = "USB 디버깅을 켜고 연결 준비를 다시 눌러 주세요"
         private const val WIRELESS_DEBUGGING_REQUIRED = "Wi-Fi 연결과 무선 디버깅 권한을 확인한 뒤 연결 설정을 눌러 주세요"
         /** 저장값이 없거나 안심운전을 지원하지 않는 앱이면 기존 동작인 네이버로 둔다. */

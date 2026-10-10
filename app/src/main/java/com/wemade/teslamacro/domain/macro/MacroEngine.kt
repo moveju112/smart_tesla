@@ -253,8 +253,12 @@ class MacroEngine {
         return TimeContext(current.time.epochMillis - back * 60_000L, scheduled, day)
     }
 
-    private fun holds(condition: Condition, current: Reading): Boolean =
-        ConditionEvaluator.holds(condition, current)
+    // 탑승 조건 판정 (주행 후 하차 문 열림 -> 착석 센서가 꺼질 때까지 탑승 중으로 보지 않음)
+    // 착석 값은 하차 뒤에도 잠시 참으로 남아, 운전석 문을 닫거나 동승자가 내릴 때 탑승 통풍이 다시 켜졌다
+    private fun holds(condition: Condition, current: Reading): Boolean {
+        if (exitDoorObserved && condition == Condition.SignalIs(Signal.USER_PRESENT, value = true)) return false
+        return ConditionEvaluator.holds(condition, current)
+    }
 
     /**
      * (직전, 현재] 사이에 [matches]가 참인 분(minute)이 있었는지.

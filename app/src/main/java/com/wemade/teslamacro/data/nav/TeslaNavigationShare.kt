@@ -77,6 +77,9 @@ internal class TeslaNavigationShare(
                 mutableSelection.value = TeslaDestinationSelection(id, "", error = "목적지를 읽지 못했어요 · 주소를 입력해 주세요",
                     testMode = settingsStore.settings.first().teslaNavigationTestMode)
             }
+            // 확인 시간이 지나면 입력해도 공유하지 않으므로, 운전 중 방치된 입력창을 화면에 남기지 않는다
+            kotlinx.coroutines.delay(301_000 - (SystemClock.elapsedRealtime() - startedAt).coerceIn(0, 300_000))
+            lock.withLock { if (mutableSelection.value?.id == id && !fresh()) invalidate("확인 시간 만료") }
         }
     }
 

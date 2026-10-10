@@ -114,6 +114,25 @@ class SeatComfortPresetsTest {
         assertEquals(2, engine.evaluate(rules, emptyCar, reading(), emptyMap()).size)
     }
 
+    /** 하차 끄기 뒤 착석 값이 남아 있어도 문을 닫거나 동승자가 내릴 때 통풍을 다시 켜지 않는다. */
+    @Test
+    fun `exit off is not undone while seat sensor still reports present`() {
+        val engine = MacroEngine()
+        val drive = reading(shift = ShiftState.DRIVE)
+        val park = reading()
+        engine.evaluate(rules, null, drive, emptyMap())
+        engine.evaluate(rules, drive, park, emptyMap())
+        val exit = reading(driver = true)
+        assertEquals(listOf("preset-seat-exit-off"), engine.evaluate(rules, park, exit, emptyMap()).map { it.id })
+        val closed = reading()
+        assertTrue(engine.evaluate(rules, exit, closed, emptyMap()).isEmpty())
+        val passengerOut = reading(passenger = true)
+        assertTrue(engine.evaluate(rules, closed, passengerOut, emptyMap()).isEmpty())
+        val emptyCar = reading(present = false)
+        assertTrue(engine.evaluate(rules, passengerOut, emptyCar, emptyMap()).isEmpty())
+        assertEquals(2, engine.evaluate(rules, emptyCar, reading(), emptyMap()).size)
+    }
+
     /** 새 필드는 저장·편집 왕복을 견디며 P 판정과 두 좌석의 상태를 폴링한다. */
     @Test
     fun `presets survive serialization and editing`() {

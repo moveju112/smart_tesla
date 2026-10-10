@@ -719,7 +719,9 @@ class WirelessNavigation(private val context: Context) {
             }
         }.getOrDefault(false)
         sessionStopConfirmed = acknowledged
-        report(if (acknowledged) "실험 종료 완료" else "종료 확인 실패 · ${app.label} 상태를 확인해 주세요")
+        // 하차에 맞춰 디버깅이 꺼지면 종료 응답을 못 받는 게 정상이라 매 하차마다 실패 안내를 띄우지 않는다
+        report(if (acknowledged) "실험 종료 완료" else "종료 확인 실패 · ${app.label} 상태를 확인해 주세요",
+            notify = acknowledged || adbEnabled())
     }
 
     /** 취소해도 정리 블록에서 지도 종료 응답을 확인한 뒤 통신 연결을 닫는다. */

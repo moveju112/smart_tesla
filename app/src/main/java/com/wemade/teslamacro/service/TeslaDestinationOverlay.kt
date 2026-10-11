@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -85,6 +86,12 @@ internal class TeslaDestinationOverlay(
         val power = context.getSystemService(PowerManager::class.java)
         if (pending == null || !screenOn || !power.isInteractive || keyguard.isKeyguardLocked || keyguard.isDeviceLocked) {
             hide()
+            return
+        }
+        // 화면이 꺼진 동안 기기 수면으로 만료 타이머가 늦어져도 만료된 입력창은 잠금 해제 뒤 다시 띄우지 않는다
+        if (pending.preview == null && SystemClock.elapsedRealtime() >= pending.expiresAt) {
+            hide()
+            scope.launch { sharing.expireStale() }
             return
         }
         if (!Settings.canDrawOverlays(context)) {

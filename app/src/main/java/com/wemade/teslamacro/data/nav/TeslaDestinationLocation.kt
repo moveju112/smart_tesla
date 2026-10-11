@@ -19,6 +19,8 @@ internal data class TeslaDestinationSelection(
     val testMode: Boolean = false,
     // 테스트 모드에서 실제로 보냈을 목적지; 값이 있으면 선택 대신 결과만 보여준다.
     val preview: TeslaDestinationCandidate? = null,
+    // 최초 안내 기준 만료 시각(elapsedRealtime); 재검색해도 유지하고 화면 재표시 전에 검사한다.
+    val expiresAt: Long = Long.MAX_VALUE,
 )
 
 /** 목적지 자체의 좌표만 읽고 지도 중심·출발 좌표·짧은 링크를 좌표로 추측하지 않는다. */

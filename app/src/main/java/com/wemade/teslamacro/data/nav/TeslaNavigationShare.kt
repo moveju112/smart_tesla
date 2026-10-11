@@ -36,6 +36,7 @@ internal class TeslaNavigationShare(
     private var source: Pair<String, String>? = null
     private var startedAt = 0L
     private var resolution: Job? = null
+    private var expiry: Job? = null
     private var ignored: String? = null
     private var repeatedAt = -30_001L
     private val routeDistances = ArrayDeque<Pair<Long, Int>>()
@@ -75,13 +76,30 @@ internal class TeslaNavigationShare(
                 if (id != revision || !enabled() || !fresh()) return@withLock
                 DiagLog.add("테슬라 내비 연동 — 화면 목적지 없음 · 주소 입력 대기")
                 mutableSelection.value = TeslaDestinationSelection(id, "", error = "목적지를 읽지 못했어요 · 주소를 입력해 주세요",
-                    testMode = settingsStore.settings.first().teslaNavigationTestMode)
+                    testMode = settingsStore.settings.first().teslaNavigationTestMode, expiresAt = expiresAt())
+                scheduleExpiry()
             }
-            // 확인 시간이 지나면 입력해도 공유하지 않으므로, 운전 중 방치된 입력창을 화면에 남기지 않는다
-            kotlinx.coroutines.delay(301_000 - (SystemClock.elapsedRealtime() - startedAt).coerceIn(0, 300_000))
-            lock.withLock { if (mutableSelection.value?.id == id && !fresh()) invalidate("확인 시간 만료") }
         }
     }
+
+    // 입력창 만료 예약 (최초 안내 시각 + 5분 -> 입력창 닫기)
+    /** 재검색이 조회 작업을 취소해도 만료는 유지되도록 조회와 분리된 작업으로 예약한다. */
+    private fun scheduleExpiry() {
+        expiry?.cancel()
+        expiry = scope.launch {
+            kotlinx.coroutines.delay(301_000 - (SystemClock.elapsedRealtime() - startedAt).coerceIn(0, 300_000))
+            expireStale()
+        }
+    }
+
+    /** 확인 시간이 지나면 입력해도 공유하지 않으므로, 방치된 입력창을 남기거나 잠금 해제 후 다시 띄우지 않는다. */
+    suspend fun expireStale() = lock.withLock {
+        val current = mutableSelection.value ?: return@withLock
+        // 테스트 결과 보조창은 안내 종료·닫기 전까지 확인용으로 남긴다.
+        if (current.preview == null && !fresh()) invalidate("확인 시간 만료")
+    }
+
+    private fun expiresAt() = startedAt + 300_000
 
     /** 화면만 고르는 동작은 전송하지 않고 안내 시작이 확인됐을 때만 공유한다. */
     suspend fun screen(packageName: String, destination: String) = lock.withLock {
@@ -141,6 +159,8 @@ internal class TeslaNavigationShare(
         revision++
         resolution?.cancel()
         resolution = null
+        expiry?.cancel()
+        expiry = null
         source = null
         mutableSelection.value = null
     }
@@ -192,7 +212,8 @@ internal class TeslaNavigationShare(
             lock.withLock {
                 if (id == revision && enabled() && fresh()) {
                     mutableSelection.value = TeslaDestinationSelection(id, query, error = "주소를 조회하지 못했어요 · 전체 주소로 다시 검색해 주세요",
-                        testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode)
+                        testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode, expiresAt = expiresAt())
+                    scheduleExpiry()
                     DiagLog.add("테슬라 내비 연동 — 주소 조회 실패 · 목적지 확인 대기")
                 }
             }
@@ -214,7 +235,7 @@ internal class TeslaNavigationShare(
         resolution?.cancel()
         val nextId = ++revision
         val testRequest = mutableSelection.value?.testMode == true || settingsStore.settings.first().teslaNavigationTestMode
-        mutableSelection.value = TeslaDestinationSelection(nextId, normalized, searching = true, testMode = testRequest)
+        mutableSelection.value = TeslaDestinationSelection(nextId, normalized, searching = true, testMode = testRequest, expiresAt = expiresAt())
         resolution = scope.launch { findCandidates(nextId, normalized, testRequest) }
     }
 

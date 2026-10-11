@@ -112,11 +112,6 @@ internal class TeslaNavigationShare(
         }
     }
 
-    /** 안심주행 중 누른 도착지 주소를 이어질 길안내 후보로 보관한다. */
-    suspend fun clickedDestination(packageName: String, text: String) = lock.withLock {
-        if (safeDrive && packageName == NAVER) tracker.remember(packageName, text, SystemClock.elapsedRealtime())
-    }
-
     // 입력창 만료 예약 (최초 안내 시각 + 5분 -> 입력창 닫기)
     /** 재검색이 조회 작업을 취소해도 만료는 유지되도록 조회와 분리된 작업으로 예약한다. */
     private fun scheduleExpiry() {

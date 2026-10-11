@@ -48,12 +48,6 @@ internal class TeslaNavigationDestination {
         return reserve(active, normalize(text) ?: return null)
     }
 
-    /** 안심주행 중 누른 도착지 주소는 바로 보내지 않고 이어질 길안내의 후보로만 보관한다. */
-    fun remember(packageName: String, text: String, now: Long) {
-        if (guidance[packageName] == null) return
-        candidates[packageName] = Candidate(normalize(text) ?: return, now)
-    }
-
     /** 안심주행에서 길안내로 바뀐 시점을 새 안내 시작으로 보고 최근 1분 화면 후보를 결합한다. */
     fun restart(packageName: String, now: Long): String? {
         val active = guidance[packageName] ?: return null
@@ -115,14 +109,14 @@ internal fun isTeslaNavigationGuidance(packageName: String, title: String, text:
 
 internal enum class NaverGuidanceMode { ROUTE, SAFE_DRIVE }
 
-// 네이버 안내 화면 판정 (도착 시각·남은 시간 -> 길안내, 안내종료만 -> 안심주행)
-/** 두 모드의 알림 문구가 같아 화면으로 구분하며, 안심주행도 카메라 거리를 보여 거리만으로는 판단하지 않는다. */
+// 네이버 안내 화면 판정 (미리보기 제외 -> 도착 시각 -> 길안내, 안내종료만 -> 안심주행)
+/** 두 모드의 알림 문구가 같아 화면으로 구분한다. 안심주행도 카메라 거리를, 경로 미리보기도 소요 시간을 보여 도착 시각만 근거로 쓴다. */
 internal fun naverGuidanceMode(entries: List<NavigationScreenText>): NaverGuidanceMode? {
     val texts = entries.map { it.text.trim() }
+    if ("안내시작" in texts) return null
     val arrival = Regex("^(오전|오후)?\\s*\\d{1,2}:\\d{2}\\s*([AaPp]\\.?[Mm]\\.?)?$")
-    val remaining = Regex("^(\\d+\\s*(시간|h|hr)\\s*)?\\d+\\s*(분|min)$|^\\d+\\s*시간$")
     return when {
-        texts.any { arrival.matches(it) || remaining.matches(it) } -> NaverGuidanceMode.ROUTE
+        texts.any(arrival::matches) -> NaverGuidanceMode.ROUTE
         "안내종료" in texts -> NaverGuidanceMode.SAFE_DRIVE
         else -> null
     }

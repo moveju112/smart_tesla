@@ -13,7 +13,7 @@ enum class TeslaNavigationLaunchMode(val label: String) {
 /** 화면에서 읽은 목적지는 같은 내비의 새 안내 알림과 결합할 때만 전송한다. */
 internal class TeslaNavigationDestination {
     private data class Candidate(val text: String, val observedAt: Long)
-    private data class Guidance(val key: String, val startedAt: Long, var sent: String? = null)
+    private data class Guidance(val key: String, var startedAt: Long, var sent: String? = null)
     private val candidates = mutableMapOf<String, Candidate>()
     private val guidance = mutableMapOf<String, Guidance>()
 
@@ -46,6 +46,19 @@ internal class TeslaNavigationDestination {
     fun reroute(packageName: String, text: String): String? {
         val active = guidance[packageName] ?: return null
         return reserve(active, normalize(text) ?: return null)
+    }
+
+    /** 안심주행 중 누른 도착지 주소는 바로 보내지 않고 이어질 길안내의 후보로만 보관한다. */
+    fun remember(packageName: String, text: String, now: Long) {
+        if (guidance[packageName] == null) return
+        candidates[packageName] = Candidate(normalize(text) ?: return, now)
+    }
+
+    /** 안심주행에서 길안내로 바뀐 시점을 새 안내 시작으로 보고 최근 1분 화면 후보를 결합한다. */
+    fun restart(packageName: String, now: Long): String? {
+        val active = guidance[packageName] ?: return null
+        active.startedAt = now
+        return candidates[packageName]?.takeIf { now - it.observedAt in 0..60_000 }?.text?.let { reserve(active, it) }
     }
 
     /** 해당 안내 알림이 사라지면 새 안내에서 과거 목적지를 재사용하지 않는다. */
@@ -98,6 +111,21 @@ internal fun isTeslaNavigationGuidance(packageName: String, title: String, text:
     "com.locnall.KimGiSa" -> title in listOf("길안내 주행 중", "보험을 켜고 길안내 주행 중")
     "com.nhn.android.nmap" -> text == "내비게이션 - 안내 중"
     else -> false
+}
+
+internal enum class NaverGuidanceMode { ROUTE, SAFE_DRIVE }
+
+// 네이버 안내 화면 판정 (도착 시각·남은 시간 -> 길안내, 안내종료만 -> 안심주행)
+/** 두 모드의 알림 문구가 같아 화면으로 구분하며, 안심주행도 카메라 거리를 보여 거리만으로는 판단하지 않는다. */
+internal fun naverGuidanceMode(entries: List<NavigationScreenText>): NaverGuidanceMode? {
+    val texts = entries.map { it.text.trim() }
+    val arrival = Regex("^(오전|오후)?\\s*\\d{1,2}:\\d{2}\\s*([AaPp]\\.?[Mm]\\.?)?$")
+    val remaining = Regex("^(\\d+\\s*(시간|h|hr)\\s*)?\\d+\\s*(분|min)$|^\\d+\\s*시간$")
+    return when {
+        texts.any { arrival.matches(it) || remaining.matches(it) } -> NaverGuidanceMode.ROUTE
+        "안내종료" in texts -> NaverGuidanceMode.SAFE_DRIVE
+        else -> null
+    }
 }
 
 /** 네이버 안내 중 경로 미리보기(안내시작 버튼)의 상단 출발·도착 칸만 골라 새 도착지를 읽는다. */

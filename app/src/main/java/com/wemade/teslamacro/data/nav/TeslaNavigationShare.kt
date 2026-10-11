@@ -40,6 +40,8 @@ internal class TeslaNavigationShare(
     private var ignored: String? = null
     private var repeatedAt = -30_001L
     private val routeDistances = ArrayDeque<Pair<Long, Int>>()
+    private var naverMode: Pair<Long, NaverGuidanceMode>? = null
+    private var safeDrive = false
 
     /** 안내 알림에 포함된 목적지와 같은 앱의 최신 화면 후보만 결합한다. */
     suspend fun notification(packageName: String, key: String, title: String, text: String) = lock.withLock {
@@ -74,12 +76,45 @@ internal class TeslaNavigationShare(
             kotlinx.coroutines.delay(5_000)
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
+                // 이번 안내 시작 뒤 본 네이버 화면이 안심주행이면 목적지가 없는 게 정상이라 입력창을 띄우지 않는다.
+                if (packageName == NAVER && naverMode?.takeIf { it.first >= startedAt }?.second == NaverGuidanceMode.SAFE_DRIVE) {
+                    safeDrive = true
+                    DiagLog.add("테슬라 내비 연동 — 안심주행 판정 · 목적지 입력 생략")
+                    return@withLock
+                }
                 DiagLog.add("테슬라 내비 연동 — 화면 목적지 없음 · 주소 입력 대기")
-                mutableSelection.value = TeslaDestinationSelection(id, "", error = "목적지를 읽지 못했어요 · 주소를 입력해 주세요",
-                    testMode = settingsStore.settings.first().teslaNavigationTestMode, expiresAt = expiresAt())
-                scheduleExpiry()
+                askAddress(id)
             }
         }
+    }
+
+    /** 목적지를 끝내 읽지 못한 길안내만 사용자가 주소로 보완하게 한다. */
+    private suspend fun askAddress(id: Long) {
+        mutableSelection.value = TeslaDestinationSelection(id, "", error = "목적지를 읽지 못했어요 · 주소를 입력해 주세요",
+            testMode = settingsStore.settings.first().teslaNavigationTestMode, expiresAt = expiresAt())
+        scheduleExpiry()
+    }
+
+    // 네이버 화면 모드 기록 (안심주행 대기 중 길안내 화면 -> 새 안내로 목적지 결합·입력)
+    /** 안심주행 중 도착지를 정하면 같은 알림이 이어지므로 화면에 도착 시각이 나타난 순간을 새 안내 시작으로 본다. */
+    suspend fun naverScreen(mode: NaverGuidanceMode) = lock.withLock {
+        val now = SystemClock.elapsedRealtime()
+        naverMode = now to mode
+        if (mode != NaverGuidanceMode.ROUTE || !safeDrive || !enabled()) return@withLock
+        val key = source?.second ?: return@withLock
+        safeDrive = false
+        val destination = tracker.restart(NAVER, now)
+        DiagLog.add("테슬라 내비 연동 — 안심주행 중 길안내 시작 감지 · 후보=${destination ?: "없음"}")
+        if (destination != null) resolve(destination, NAVER, key)
+        else {
+            startedAt = now
+            askAddress(revision)
+        }
+    }
+
+    /** 안심주행 중 누른 도착지 주소를 이어질 길안내 후보로 보관한다. */
+    suspend fun clickedDestination(packageName: String, text: String) = lock.withLock {
+        if (safeDrive && packageName == NAVER) tracker.remember(packageName, text, SystemClock.elapsedRealtime())
     }
 
     // 입력창 만료 예약 (최초 안내 시각 + 5분 -> 입력창 닫기)
@@ -162,6 +197,7 @@ internal class TeslaNavigationShare(
         expiry?.cancel()
         expiry = null
         source = null
+        safeDrive = false
         mutableSelection.value = null
     }
 
@@ -298,3 +334,5 @@ internal class TeslaNavigationShare(
         }
     }
 }
+
+private const val NAVER = "com.nhn.android.nmap"

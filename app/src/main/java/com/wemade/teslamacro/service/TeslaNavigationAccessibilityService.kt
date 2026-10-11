@@ -11,6 +11,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.wemade.teslamacro.TeslaMacroApplication
 import com.wemade.teslamacro.data.nav.NavigationScreenText
 import com.wemade.teslamacro.data.nav.naverDistanceMeters
+import com.wemade.teslamacro.data.nav.naverGuidanceMode
 import com.wemade.teslamacro.data.nav.naverGuidanceRouteDestination
 import com.wemade.teslamacro.data.nav.teslaDestinationFromScreen
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +43,14 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
             if (clicked.trim() in setOf("닫기", "나중에 출발")) pendingRoute = null
             // 목적지 변경 버튼은 화면이 바뀌기 전에 장소 카드를 칸 ID와 함께 남겨 새 목적지 위치를 찾는다.
             val card = if (clicked.trim() in setOf("도착지로", "안내시작", "출발지로", "경유지로")) dumpScreen() else emptyList()
+            // 안심주행 중 장소 카드의 도착지로 버튼은 주소와 함께 눌려 이어질 길안내의 목적지 후보가 된다.
+            val chosen = Regex("^(.+?)\\s*도착지로$").matchEntire(event.text.joinToString(" ").trim())?.groupValues?.get(1)
             if (clicked.isNotBlank()) serviceScope.launch {
+                chosen?.let {
+                    val app = application as TeslaMacroApplication
+                    app.ready.first { ready -> ready }
+                    app.container.teslaNavigationShare.clickedDestination(packageName, it)
+                }
                 logWhileGuiding(packageName, "안내 중 누름 · $clicked")
                 card.forEachIndexed { index, part -> logWhileGuiding(packageName, "안내 중 카드 ${index + 1}/${card.size} · $part") }
             }
@@ -89,6 +97,7 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                 destination?.let { app.container.teslaNavigationShare.screen(packageName, it) }
                 if (nodes.isEmpty() && packageName == "com.nhn.android.nmap" && app.container.teslaNavigationShare.guiding(packageName)) {
                     val screen = screenTexts(root)
+                    naverGuidanceMode(screen)?.let { app.container.teslaNavigationShare.naverScreen(it) }
                     if (windowChanged) logWhileGuiding(packageName, "안내 중 화면 · " + screen.map { it.text.trim().take(20) }
                         .filter { it.isNotEmpty() }.distinct().take(14).joinToString(" | "))
                     // 안내 중 목적지 변경 (경로 미리보기 판독 -> 미리보기·확인창이 사라지고 안내 재개 -> 공유)

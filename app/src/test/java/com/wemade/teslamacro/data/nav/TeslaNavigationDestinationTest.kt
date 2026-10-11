@@ -152,6 +152,29 @@ class TeslaNavigationDestinationTest {
             NavigationScreenText("262 m", 100, 0), NavigationScreenText("안동포사거리", 160, 0), NavigationScreenText("검색", 900, 0))))
     }
 
+    /** 실기기 안심주행·길안내 화면 기록으로 두 모드를 구분하며 카메라 거리는 길안내 근거로 쓰지 않는다. */
+    @Test fun `네이버 안심주행과 길안내 화면을 구분한다`() {
+        fun screen(vararg texts: String) = texts.map { NavigationScreenText(it, 0, 0) }
+        assertEquals(NaverGuidanceMode.SAFE_DRIVE, naverGuidanceMode(screen("지도", "247", "130m", "0", "283m", "도청로", "안내종료", "음성 검색", "검색")))
+        assertEquals(NaverGuidanceMode.ROUTE, naverGuidanceMode(screen("지도", "16 m", "청마로34번길", "경기 수원시 영통구 도청로 10", "9:13 PM", "56 분", "66 km", "안내종료")))
+        assertEquals(NaverGuidanceMode.ROUTE, naverGuidanceMode(screen("오후 9:13", "안내종료")))
+        assertEquals(NaverGuidanceMode.ROUTE, naverGuidanceMode(screen("1시간 5분", "안내종료")))
+        assertNull(naverGuidanceMode(screen("262 m", "안동포사거리", "검색")))
+    }
+
+    /** 안심주행 중 누른 도착지는 길안내로 바뀐 뒤 1분 안에만 한 번 결합한다. */
+    @Test fun `안심주행 중 정한 도착지는 길안내 전환 때 결합한다`() {
+        val tracker = TeslaNavigationDestination()
+        tracker.remember(naver, "서울역", 0)
+        assertNull(tracker.restart(naver, 1))
+        assertNull(tracker.notification(naver, "safe", "네이버 지도", "내비게이션 - 안내 중", 10))
+        tracker.remember(naver, "서울역", 20_000)
+        assertEquals("서울역", tracker.restart(naver, 30_000))
+        assertNull(tracker.restart(naver, 30_001))
+        tracker.remember(naver, "부산역", 40_000)
+        assertNull(tracker.restart(naver, 100_001))
+    }
+
     /** 공유와 보조창이 동일하게 실제 길안내 알림만 인정한다. */
     @Test fun `보조창은 검색과 안심주행 알림에는 표시하지 않는다`() {
         assertTrue(isTeslaNavigationGuidance(naver, "네이버 지도", "내비게이션 - 안내 중"))

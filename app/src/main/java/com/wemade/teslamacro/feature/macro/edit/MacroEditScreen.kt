@@ -2,7 +2,8 @@ package com.wemade.teslamacro.feature.macro.edit
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Arrangement
-import com.wemade.teslamacro.ui.component.Hairline
+import androidx.compose.foundation.background
+import com.wemade.teslamacro.ui.component.TCard
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -111,6 +112,7 @@ fun MacroEditScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(if (detail == null) T.Void else T.Carbon)
                 .verticalScroll(scroll),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -127,26 +129,27 @@ fun MacroEditScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        EditorSectionTitle("실행 시점")
-                        StepTriggers(draft, onChange, -1, {
-                            triggerIndex = it
-                            detail = DetailSection.TRIGGER
-                        }) { picker = OpenPicker.TRIGGER }
-                        Hairline()
-                        EditorSectionTitle("실행 조건")
-                        StepConditions(draft, onChange, -1, {
-                            conditionIndex = it
-                            detail = DetailSection.CONDITION
-                        }) { picker = OpenPicker.CONDITION }
-                        Hairline()
-                        EditorSectionTitle("실행 순서")
-                        StepActions(draft, onChange, -1, {
-                            actionIndex = it
-                            detail = DetailSection.ACTION
-                        }) { picker = OpenPicker.ACTION }
-                        Hairline()
-                        EditorSectionTitle("자동 실행과 재발동")
-                        FinishOptions(draft, onChange, onDelete)
+                        TCard(title = "실행 시점") {
+                            StepTriggers(draft, onChange, -1, {
+                                triggerIndex = it
+                                detail = DetailSection.TRIGGER
+                            }) { picker = OpenPicker.TRIGGER }
+                        }
+                        TCard(title = "실행 조건") {
+                            StepConditions(draft, onChange, -1, {
+                                conditionIndex = it
+                                detail = DetailSection.CONDITION
+                            }) { picker = OpenPicker.CONDITION }
+                        }
+                        TCard(title = "실행 순서") {
+                            StepActions(draft, onChange, -1, {
+                                actionIndex = it
+                                detail = DetailSection.ACTION
+                            }) { picker = OpenPicker.ACTION }
+                        }
+                        TCard(title = "자동 실행과 재발동") {
+                            FinishOptions(draft, onChange, onDelete)
+                        }
                     }
                     DetailSection.TRIGGER -> draft.triggers.getOrNull(triggerIndex)?.let { trigger ->
                         TriggerCard(
@@ -389,12 +392,6 @@ private fun FinishOptions(
             TButton("매크로 삭제", ButtonTone.Danger, fillWidth = false, onClick = onDelete)
         }
     }
-}
-
-/** 실행 시점·조건·순서를 구분하는 편집 구역 제목. */
-@Composable
-private fun EditorSectionTitle(title: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium, color = T.Ink)
 }
 
 /** 시점 후보를 같은 목록 행으로 묶어 모든 선택지를 한 번에 스크롤한다. */

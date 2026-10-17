@@ -32,7 +32,7 @@ import com.wemade.teslamacro.ui.theme.T
  * 실차 문제는 개발자가 현장에 없을 때 터진다.
  * 복사(클립보드)와 공유(공유 시트 — 메일·메신저 직행) 두 길을 둔다.
  *
- * @param title 카드 안 제목. 화면이 SectionHeader를 카드 밖에 둘 때는 null로 끈다
+ * @param title 카드 안 제목. 상위 구역에 제목이 이미 있을 때는 null로 끈다
  * @param showLines 로그 줄을 화면에 늘어놓을지. 개발자용이라 평소엔 끈다 —
  *   등록 화면처럼 사용자가 진행 과정을 봐야 하는 곳에서만 켠다
  * @param shareExtra 공유 본문 앞에 붙일 추가 정보(설정 덤프 등). 호출부가 채운다
@@ -63,15 +63,7 @@ fun DiagLogPanel(
     // 화면을 연 시점에도 12시간 보관 기준을 바로 적용한다.
     LaunchedEffect(Unit) { DiagLog.pruneExpired() }
 
-    TCard(modifier = modifier, outlined = true) {
-        if (title != null) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = T.Ink,
-            )
-            Spacer(Modifier.height(Space.sm))
-        }
+    TCard(modifier = modifier, outlined = true, title = title) {
         // 버튼 3개는 제목과 별도 줄 — 좁은 화면에서 제목+버튼이 한 줄에 못 들어가 넘치던 문제.
         // FlowRow라 그래도 좁으면 버튼끼리도 줄바꿈된다
         FlowRow(

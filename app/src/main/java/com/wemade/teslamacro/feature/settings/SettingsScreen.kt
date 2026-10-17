@@ -49,7 +49,6 @@ import com.wemade.teslamacro.ui.component.DiagLogPanel
 import com.wemade.teslamacro.ui.component.DraftField
 import com.wemade.teslamacro.ui.component.Hairline
 import com.wemade.teslamacro.ui.component.HelpTitle
-import com.wemade.teslamacro.ui.component.SectionHeader
 import com.wemade.teslamacro.ui.component.TButton
 import com.wemade.teslamacro.ui.component.TCard
 import com.wemade.teslamacro.ui.component.SettingRow
@@ -155,8 +154,7 @@ fun SettingsScreen(
                     when (group) {
                         SettingsGroup.DRIVING -> {
                             onSendDestination?.takeIf { focusedFeature == null }?.let { action ->
-                                SectionHeader("목적지 전송", topPadding = Space.sm)
-                                TCard {
+                                TCard(title = "목적지 전송", modifier = Modifier.padding(top = Space.sm)) {
                                     SettingRow(
                                         label = "연결·수신·유효시간",
                                         onClick = action,
@@ -166,7 +164,7 @@ fun SettingsScreen(
                             if (navigation == null) {
                                 EmptyGroupNote("길안내를 넘길 내비 앱이 이 기기에 없어요.")
                             } else if (FeatureAvailability.NAVIGATOR_SAFE_DRIVE) {
-                                SectionHeader("자동 길안내", topPadding = Space.sm)
+                                Spacer(Modifier.height(Space.sm))
                                 NavigatorPanel(settings, navigation)
                             }
                             if (navigation != null && focusedFeature == null) {
@@ -177,12 +175,13 @@ fun SettingsScreen(
 
                         SettingsGroup.AUTOMATION -> {
                             if (smartThings != null && focusedFeature != FeatureSettings.STEALTH_CHARGE) {
-                                SectionHeader("스마트싱스", topPadding = Space.sm)
-                                TCard { SmartThingsPanel(settings, smartThings, settingsOnly = true) }
+                                TCard(title = "스마트싱스", modifier = Modifier.padding(top = Space.sm)) {
+                                    SmartThingsPanel(settings, smartThings, settingsOnly = true)
+                                }
                             }
                             if (onFleetApiEnabledChange != null && focusedFeature == null) {
-                                SectionHeader("명령 전송", topPadding = if (smartThings != null) Space.lg else Space.sm)
-                                TCard {
+                                TCard(title = "명령 전송", modifier = Modifier.padding(
+                                    top = if (smartThings != null) Space.lg else Space.sm)) {
                                     FleetApiPanel(settings.fleetApiEnabled, onFleetApiEnabledChange, fleetCredentials)
                                     externalQuickActions?.let { ExternalQuickActionPanel(it) }
                                 }
@@ -191,8 +190,7 @@ fun SettingsScreen(
 
                         SettingsGroup.VEHICLE -> {
                             // 차량 등록·기기 모드와 무관하게 공통 탑승 감지 기기를 고를 수 있어야 한다.
-                            SectionHeader("사용 방식", topPadding = Space.sm)
-                            TCard {
+                            TCard(title = "사용 방식", modifier = Modifier.padding(top = Space.sm)) {
                                 PhoneKeyProtectionPanel(
                                     settings = settings,
                                     navigation = navigation,
@@ -201,8 +199,7 @@ fun SettingsScreen(
                                 )
                             }
                             if (simulator != null) {
-                                SectionHeader("시뮬레이터")
-                                TCard {
+                                TCard(title = "시뮬레이터", modifier = Modifier.padding(top = Space.lg)) {
                                     SettingsDetails("탑승 · 온도 시뮬레이터") {
                                         SimulatorPanel(
                                             insideTemp = simulator.insideTemp,
@@ -219,8 +216,7 @@ fun SettingsScreen(
 
                         SettingsGroup.DEVICE -> {
                             PermissionCheckPanel(battery, navigation, onRequestInstallPermission, openPermissionCheck)
-                            SectionHeader("화면", topPadding = Space.sm)
-                            TCard {
+                            TCard(title = "화면", modifier = Modifier.padding(top = Space.sm)) {
                                 SettingsDetails("화면 모드", settings.themeMode.label) {
                                     ChoiceRow(
                                         options = ThemeMode.entries.map { it.name to it.label },
@@ -229,7 +225,7 @@ fun SettingsScreen(
                                     )
                                 }
                             }
-                            SectionHeader("업데이트")
+                            Spacer(Modifier.height(Space.lg))
                             UpdatePanel(
                                 update = update,
                                 onCheck = onCheckUpdate,
@@ -244,7 +240,7 @@ fun SettingsScreen(
                         SettingsGroup.DRIVING -> {
                             if (navigation != null) {
                                 if (FeatureAvailability.HUD_OVERLAY) {
-                                    SectionHeader("실시간 속도", topPadding = Space.lg)
+                                    Spacer(Modifier.height(Space.lg))
                                     SpeedPanel(settings, navigation)
                                 }
                             }
@@ -253,9 +249,8 @@ fun SettingsScreen(
                         SettingsGroup.AUTOMATION -> {
                             if (focusedFeature != FeatureSettings.SMARTTHINGS) {
                                 // 자주 만지지 않는 1회 충전 예약이라 음성 명령·전송 경로 아래 맨 끝에 둔다.
-                                SectionHeader("충전",
-                                    topPadding = if (smartThings != null || onFleetApiEnabledChange != null) Space.lg else Space.sm)
-                                TCard {
+                                TCard(title = "충전", modifier = Modifier.padding(
+                                    top = if (smartThings != null || onFleetApiEnabledChange != null) Space.lg else Space.sm)) {
                                     StealthChargePanel(
                                         settings = settings,
                                         settingsOnly = true,
@@ -294,9 +289,8 @@ fun SettingsScreen(
                             // 실차 문제를 원격으로 전달받는 통로. 공유 버튼은 항상 남긴다.
                             // 줄 목록은 끈다 — 사용자가 읽을 내용이 아니고 여기가 화면을 제일 많이 먹었다.
                             // 공유엔 설정 덤프를 함께 실어 보낸다 — 로그만으론 토글 상태를 알 수 없다
-                            SectionHeader("진단 로그", topPadding = if (compact || backup != null) Space.lg else Space.sm)
+                            Spacer(Modifier.height(if (compact || backup != null) Space.lg else Space.sm))
                             DiagLogPanel(
-                                title = null,
                                 showLines = false,
                                 shareExtra = { settingsDump(settings) },
                             )
@@ -537,7 +531,7 @@ enum class SettingsGroup(val label: String) {
 /** 칸이 상황 때문에 비었을 때. 빈 화면을 그대로 두면 고장으로 보인다 */
 @Composable
 private fun EmptyGroupNote(text: String) {
-    // 제목 없는 SectionHeader는 빈 줄만 남긴다 — 여백만 띄우고 바로 판을 세운다
+    // 별도 제목이 없는 패널은 여백만 띄우고 바로 판을 세운다.
     Spacer(Modifier.height(Space.lg))
     TCard {
         Text(text = text, style = MaterialTheme.typography.bodySmall, color = T.InkFaint)
@@ -569,7 +563,7 @@ private fun UpdatePanel(
     onInstall: () -> Unit,
 ) {
     val install = rememberPermissionGuard(PermissionFeature.UPDATE)
-    TCard {
+    TCard(title = "업데이트") {
         SettingActionRow("현재 버전 ${com.wemade.teslamacro.BuildConfig.VERSION_NAME}") {
             TButton(if (update is UpdateState.Checking) "확인 중…" else "확인",
                 ButtonTone.Secondary, fillWidth = false, small = true,
@@ -837,7 +831,7 @@ private fun NavigatorPanel(settings: AppSettings, controls: NavigationControls) 
         showTrustedDevicePrompt = enabled
     }
     Column {
-        TCard {
+        TCard(title = "자동 길안내") {
             SettingToggleRow(
                 label = "탑승 시 네이버 지도 안심운전 실행",
                 checked = settings.autoStartNavigatorSafeDrive,
@@ -934,7 +928,7 @@ internal fun VehicleAudioPicker(settings: AppSettings, controls: NavigationContr
 /** 주행 중 속도를 어디에 띄울지 */
 @Composable
 private fun SpeedPanel(settings: AppSettings, controls: NavigationControls) {
-    TCard {
+    TCard(title = "실시간 속도") {
         SettingToggleRow(
             label = "다른 앱 위에 실시간 속도 표시",
             checked = settings.hudOverlay,

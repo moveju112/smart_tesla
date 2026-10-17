@@ -298,6 +298,7 @@ class PhoneScreenshotTest {
     fun `P17 화면 모드 설정`() {
         for (dark in listOf(false, true)) {
             paparazzi.snapshot("P17-theme-settings-${if (dark) "dark" else "light"}") {
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalInspectionMode provides true) {
                 AppFrame(Destination.Settings, dark = dark) {
                     SettingsScreen(
                         chargeHistory = sampleChargeHistory(),
@@ -306,6 +307,7 @@ class PhoneScreenshotTest {
                         onUnpair = {}, onStartPairing = {},
                         initialGroup = com.wemade.teslamacro.feature.settings.SettingsGroup.DEVICE,
                     )
+                }
                 }
             }
         }

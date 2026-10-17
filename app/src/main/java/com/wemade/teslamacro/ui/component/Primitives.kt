@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wemade.teslamacro.ui.theme.Radius
@@ -132,46 +134,43 @@ fun TCard(
     outlined: Boolean = false,
     /** 구역 전체를 탭 대상으로 만든다 (목록 항목 탭 = 상세/편집 패턴) */
     onClick: (() -> Unit)? = null,
+    /** 제목과 내용을 한 카드로 묶어 요약 행을 구역 제목으로 오인하지 않게 한다. */
+    title: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(Radius.card)
+    val shape = RoundedCornerShape(if (title != null) Radius.tile else Radius.card)
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .background(T.Carbon)
-            .then(if (outlined) Modifier.border(Stroke.thin, T.Electric, shape) else Modifier)
+            .then(when {
+                title != null -> Modifier.border(Stroke.thin, T.Hairline, shape)
+                outlined -> Modifier.border(Stroke.thin, T.Electric, shape)
+                else -> Modifier
+            })
             .then(if (onClick != null) Modifier.defaultMinSize(minHeight = Space.xxl)
                 .clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = Space.md, vertical = Space.sm),
-        content = content,
-    )
-}
-
-/** 구역 제목은 크기와 여백으로 계층을 구분한다. */
-@Composable
-fun SectionHeader(
-    title: String,
-    modifier: Modifier = Modifier,
-    trailing: @Composable (() -> Unit)? = null,
-    /** 단 맨 위에 오는 헤더는 위 여백을 없애 옆 단과 시작선을 맞춘다 */
-    topPadding: androidx.compose.ui.unit.Dp = Space.lg,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = topPadding, bottom = Space.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .then(if (title == null) Modifier.padding(horizontal = Space.md, vertical = Space.sm) else Modifier),
     ) {
-        // 제목은 선택 상태가 아닌 일반 본문색으로 읽힌다.
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = T.Ink,
-            modifier = Modifier.weight(1f),
-        )
-        trailing?.invoke()
+        if (title == null) {
+            content()
+        } else {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = T.Electric,
+                modifier = Modifier.fillMaxWidth()
+                    .background(T.ElectricFaint)
+                    .padding(horizontal = Space.md, vertical = Space.sm + Space.xs)
+                    .semantics { heading() },
+            )
+            Hairline()
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.sm),
+                content = content,
+            )
+        }
     }
 }
 

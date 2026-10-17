@@ -15,12 +15,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Modifier
 import com.wemade.teslamacro.ui.theme.Space
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -74,8 +76,13 @@ internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: Navigat
     val owner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var refresh by remember { mutableIntStateOf(0) }
-    val granted = key(refresh) { rememberOnResume { grantedPermissionChecks(context) } }
-    val prerequisites = rememberOnResume { NavigationSetup.read(context) }
+    // 미리보기에는 OS 서비스가 없으므로 미허용 상태로 표시하고 실제 기기 조회는 유지한다.
+    val inspecting = LocalInspectionMode.current
+    val granted = key(refresh, inspecting) {
+        if (inspecting) emptySet<PermissionCheck>() else rememberOnResume { grantedPermissionChecks(context) }
+    }
+    val prerequisites = if (inspecting) NavigationSetup.State(false, false, false, false, false)
+        else rememberOnResume { NavigationSetup.read(context) }
     var preparingAdb by remember { mutableStateOf(false) }
     var pairingPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
@@ -118,8 +125,7 @@ internal fun PermissionCheckPanel(battery: BatteryControls?, navigation: Navigat
             PermissionCheck.INSTALL -> onRequestInstallPermission()
         }
     }
-    SectionHeader("권한")
-    TCard {
+    TCard(title = "권한", modifier = Modifier.padding(top = Space.lg)) {
         SettingsDetails("권한 점검", "${items.count { it in granted }}/${items.size} 허용됨", initiallyExpanded = initiallyExpanded) {
             HelpTitle("권한 허용", "일반 권한은 묶어서 요청하고, 특수 권한은 각 항목에서 직접 허용해요. " +
                 "부족한 권한 준비를 누르면 다음 미허용 항목을 열어요. " +

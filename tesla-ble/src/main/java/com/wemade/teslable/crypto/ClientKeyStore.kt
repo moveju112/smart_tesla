@@ -4,7 +4,9 @@ import android.content.Context
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.AtomicFile
 import java.io.File
+import java.io.FileNotFoundException
 import java.math.BigInteger
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -24,11 +26,16 @@ import java.security.spec.ECGenParameterSpec
  */
 class ClientKeyStore(private val context: Context) {
 
-    private val softwareKeyFile = File(context.filesDir, "client_key.bin")
+    private val softwareKeyFile = AtomicFile(File(context.filesDir, "client_key.bin"))
 
     /** 키가 없으면 만들고, 있으면 불러온다 */
-    fun loadOrCreate(): ClientKey =
-        if (supportsHardwareAgreement) loadOrCreateHardware() else loadOrCreateSoftware()
+    fun loadOrCreate(): ClientKey {
+        // 이미 새 OS에서 재등록한 하드웨어 키가 있으면 과거 파일로 되돌리지 않는다.
+        if (hasHardwareKey()) return loadOrCreateHardware()
+        // OS 업데이트만으로 차량에 등록된 공개키를 바꾸면 기존 카드키 인증이 끊긴다.
+        val scalar = readSoftwareScalar()
+        return if (scalar != null || !supportsHardwareAgreement) loadOrCreateSoftware(scalar) else loadOrCreateHardware()
+    }
 
     /** 키를 폐기한다. 차량 쪽 키 목록은 별도로 지워야 한다 */
     fun delete() {
@@ -37,13 +44,13 @@ class ClientKeyStore(private val context: Context) {
     }
 
     val exists: Boolean
-        get() = if (supportsHardwareAgreement) {
-            runCatching { androidKeyStore().containsAlias(ALIAS) }.getOrDefault(false)
-        } else {
-            softwareKeyFile.exists()
-        }
+        get() = hasHardwareKey() || readSoftwareScalar() != null
 
     // ---- 하드웨어 경로 (API 31+) ----
+
+    /** 이미 사용하는 하드웨어 키가 있으면 소프트웨어 잔여 파일보다 우선한다. */
+    private fun hasHardwareKey(): Boolean = supportsHardwareAgreement &&
+        runCatching { androidKeyStore().containsAlias(ALIAS) }.getOrDefault(false)
 
     private fun loadOrCreateHardware(): ClientKey {
         val keyStore = androidKeyStore()
@@ -69,11 +76,23 @@ class ClientKeyStore(private val context: Context) {
 
     // ---- 소프트웨어 경로 (API 26~30) ----
 
-    private fun loadOrCreateSoftware(): ClientKey {
-        val scalar = if (softwareKeyFile.exists()) {
-            BigInteger(1, softwareKeyFile.readBytes())
-        } else {
-            generateSoftwareScalar().also { softwareKeyFile.writeBytes(it.toByteArray()) }
+    /** 중단된 쓰기의 백업도 복원하며 손상된 기존 키를 새 키로 조용히 대체하지 않는다. */
+    private fun readSoftwareScalar(): BigInteger? {
+        val input = try { softwareKeyFile.openRead() } catch (_: FileNotFoundException) { return null }
+        return input.use { BigInteger(1, it.readBytes()) }
+    }
+
+    /** 키 전체를 원자 저장한 뒤에만 차량 등록에 사용할 키를 반환한다. */
+    private fun loadOrCreateSoftware(existing: BigInteger?): ClientKey {
+        val scalar = existing ?: generateSoftwareScalar().also {
+            val output = softwareKeyFile.startWrite()
+            try {
+                output.write(it.toByteArray())
+                softwareKeyFile.finishWrite(output)
+            } catch (error: Exception) {
+                softwareKeyFile.failWrite(output)
+                throw error
+            }
         }
         val privateKey = SessionCrypto.privateKeyFromScalar(scalar)
         return ClientKey(

@@ -459,7 +459,9 @@ private fun AppRoot(factory: ViewModelFactory) {
                         vehicleAudioStatus = vehicleAudioStatus,
                         pairedAudioDevices = pairedAudioDevices,
                         onSelectVehicleAudioDevice = settingsViewModel::selectVehicleAudioDevice,
-                        installed = remember { settingsViewModel.installedNavigators() },
+                        installed = com.wemade.teslamacro.ui.component.rememberOnResume {
+                            settingsViewModel.installedNavigators()
+                        },
                         // 설정 화면에서 돌아올 때 다시 읽어야 한다 — 사용자가
                         // 시스템 설정에서 허용하고 돌아오는 게 정상 경로다
                         overlayPermitted = overlayPermitted,

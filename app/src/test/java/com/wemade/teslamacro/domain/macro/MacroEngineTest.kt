@@ -19,6 +19,16 @@ import org.junit.Test
  */
 class MacroEngineTest {
 
+    /** 시계 역행을 자정 통과로 해석해 지나간 예약·주기 명령을 발동하지 않는다. */
+    @Test fun backwardClockDoesNotReplaySchedules() {
+        for (trigger in listOf(Trigger.AtTime(11 * 60 + 50), Trigger.Every(5))) {
+            assertTrue(evaluate(listOf(rule(listOf(trigger))),
+                reading(minutesOfDay = 12 * 60, epochMillis = defaultNow),
+                reading(minutesOfDay = 11 * 60 + 59, epochMillis = defaultNow - 60_000L)
+            ).isEmpty())
+        }
+    }
+
     /** 같은 판정 구간의 예약은 선언 순서와 무관하게 조건을 충족한 하나를 실행한다. */
     @Test
     fun `multiple scheduled triggers use each scheduled time`() {

@@ -51,6 +51,8 @@ data class MacroDraft(
             // 시작이 끝보다 큰 구간은 어떤 값도 들어가지 못한다
             checkedConditions.any { it is Condition.InRange && it.gte != null && it.lte != null && it.gte > it.lte } ->
                 "\"사이\" 조건의 시작 값을 끝 값 이하로 맞춰 주세요"
+            checkedConditions.any { it is Condition.ForecastInRange && it.gte != null && it.lte != null && it.gte > it.lte } ->
+                "예보 조건의 시작 값을 끝 값 이하로 맞춰 주세요"
             // "항상 감시"는 조건의 문턱이 곧 사건이다 — 조건이 없으면 문턱도 없다
             triggers.any { it is Trigger.Always } && conditions.isEmpty() ->
                 "\"조건이 되면\" 발동은 조건을 하나 이상 추가해야 해요"
@@ -98,7 +100,7 @@ data class MacroDraft(
     /** 실행 순서 바꾸기. 범위를 벗어나면 아무 일도 하지 않는다 */
     fun moveAction(index: Int, offset: Int): MacroDraft {
         val target = index + offset
-        if (target !in actions.indices) return this
+        if (index !in actions.indices || target !in actions.indices) return this
         return copy(
             actions = actions.toMutableList().apply { add(target, removeAt(index)) }
         )

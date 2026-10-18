@@ -16,6 +16,25 @@ import com.wemade.teslamacro.data.backup.toBackup
 class VehicleAudioSelectionTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
+    /** 재연결은 관측을 유지하고 차량 교체는 이전 탑승·주차 기록을 폐기한다. */
+    @Test fun presenceAndParkingBelongToCurrentVehicle() = runTest {
+        val preferences = PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            File(temporaryFolder.root, "presence.preferences_pb")
+        }
+        val store = SettingsStore(Application(), preferences)
+        store.setVin("VIN-A")
+        store.savePresence(true)
+        store.saveParkStart(70)
+        val presence = store.lastPresence()
+        val parking = store.parkStart()
+        store.setVin("VIN-A")
+        assertEquals(presence, store.lastPresence())
+        assertEquals(parking, store.parkStart())
+        store.setConnectedVehicle("VIN-B", "22:33:44:55:66:77")
+        org.junit.Assert.assertNull(store.lastPresence())
+        org.junit.Assert.assertNull(store.parkStart())
+    }
+
     // 1. 같은 차량에서는 선택을 유지하고 VIN 교체·등록 해제 때 이전 오디오 주소를 지운다.
     @Test fun selectedAudioBelongsOnlyToCurrentVin() = runTest {
         val preferences = PreferenceDataStoreFactory.create(scope = backgroundScope) {

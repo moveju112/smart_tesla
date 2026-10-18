@@ -85,6 +85,19 @@ class DestinationNavigationTransitionTest {
         assertEquals(2, attempts)
     }
 
+    /** 실행 예외도 수신 루프를 종료하지 않으며 불명확한 전달은 재시도하지 않는다. */
+    @Test fun boardingExecutionExceptionsAreContained() = runTest {
+        val unknown = BoardingNavigationRequest(0L) { throw java.io.IOException("unknown delivery") }
+        assertTrue(unknown.execute(8_000L))
+        val preflight = BoardingNavigationRequest(0L) { throw SafeDrivePreflightException("권한 필요") }
+        assertFalse(preflight.execute(8_000L))
+        assertEquals(13_000L, preflight.retryAt)
+        val cancelled = kotlinx.coroutines.CancellationException("stopped")
+        val request = BoardingNavigationRequest(0L) { throw cancelled }
+        val result = runCatching { request.execute(8_000L) }
+        assertSame(cancelled, result.exceptionOrNull())
+    }
+
     /** 인증 취소·불명확한 실패는 자동으로 두 번째 화면 실행을 만들지 않는다. */
     @Test fun boardingDoesNotRetryCancelledOrUnknownDelivery() = runTest {
         for (error in listOf(DestinationUnlockDeclinedException(), DestinationLaunchException("불명확", uncertain = true))) {

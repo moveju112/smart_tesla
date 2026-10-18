@@ -163,7 +163,7 @@ class StatePoller(
             _parkStart.value = settingsStore.parkStart()
         }
         settingsStore.lastPresence()?.let { (present, savedAt) ->
-            if (now() - savedAt < PRESENCE_TRUST_MILLIS) {
+            if (trustedPresence(present, savedAt, now(), PRESENCE_TRUST_MILLIS) != null) {
                 presenceBeforeRestart = present
                 presenceObservedAt = savedAt
                 lastSavedPresence = present
@@ -1196,7 +1196,7 @@ internal fun trustedPresence(
     nowMillis: Long,
     trustMillis: Long,
 ): Boolean? = presence?.takeIf {
-    observedAtMillis != null && nowMillis - observedAtMillis < trustMillis
+    observedAtMillis != null && nowMillis - observedAtMillis in 0 until trustMillis
 }
 
 /** 깊은 유휴 주기. 평상시 주기보다 길게 쉬어 차량 수면을 보호한다. */

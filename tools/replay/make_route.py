@@ -32,6 +32,9 @@ def route(server, points):
 
 # 2. 선형을 일정 속도로 따라가며 1초마다 위치를 찍고, 정해진 난수로 GPS 흔들림을 넣는다.
 def sample(line, speed_kph, seed=7):
+    # 0·음수는 반복문을 끝내지 못하고 비유한 값은 유효한 주행 표본을 만들 수 없다.
+    if not math.isfinite(speed_kph) or speed_kph <= 0:
+        raise ValueError("속도는 0보다 큰 유한한 값이어야 합니다")
     random_source = random.Random(seed)
     speed = speed_kph / 3.6
     samples, carried = [], 0.0

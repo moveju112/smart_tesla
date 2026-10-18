@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 매크로 상시 감시를 위한 포그라운드 서비스 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -33,7 +34,9 @@
     <!-- 로컬 무선 디버깅 페어링을 연결 서비스로 유지한다. -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- 사용자가 준비한 ADB 셸에서만 부여하며 실행 전에도 실제 권한을 확인한다. 일반 설치의 자동 부여를 기대하지 않는다. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <!-- 원클릭 업데이트: 앱이 스스로를 갈아끼운다. 최초 1회 "이 출처 허용"만 필요 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

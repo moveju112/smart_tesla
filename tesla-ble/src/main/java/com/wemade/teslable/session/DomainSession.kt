@@ -104,7 +104,8 @@ class DomainSession(
 
         // 3. 상태 갱신. epoch이 그대로면 카운터를 되돌리지 않는다
         sharedKey = derived
-        counter = if (sameEpoch) maxOf(counter, info.counter) else info.counter
+        // protobuf의 uint32를 JVM Int 부호로 비교하면 상위 비트 경계에서 카운터가 되돌아간다.
+        counter = if (sameEpoch) maxOf(counter.toUInt(), info.counter.toUInt()).toInt() else info.counter
         epoch = newEpoch
         clockOffsetSeconds = clockTime - nowSeconds()
         lastAuthenticatedClock = clockTime

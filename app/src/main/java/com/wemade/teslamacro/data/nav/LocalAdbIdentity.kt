@@ -2,6 +2,7 @@ package com.wemade.teslamacro.data.nav
 
 import android.util.AtomicFile
 import java.io.File
+import java.io.FileNotFoundException
 import java.math.BigInteger
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -21,7 +22,9 @@ internal class LocalAdbIdentity(private val file: File) {
         val store = KeyStore.getInstance("PKCS12")
         val password = CharArray(0)
         val atomic = AtomicFile(file)
-        if (file.exists()) atomic.openRead().use { store.load(it, password) }
+        // 원본이 없어도 AtomicFile이 중단된 쓰기의 백업을 먼저 복구하게 한다.
+        val input = try { atomic.openRead() } catch (_: FileNotFoundException) { null }
+        if (input != null) input.use { store.load(it, password) }
         else {
             store.load(null, password)
             val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()

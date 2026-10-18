@@ -18,10 +18,11 @@ internal class TeslaNavigationDestination {
     private val guidance = mutableMapOf<String, Guidance>()
 
     /** 길찾기 미리보기는 보관만 하고 이미 시작된 안내의 짧은 대기 구간에서만 결합한다. */
-    fun screen(packageName: String, text: String, now: Long): String? {
+    fun screen(packageName: String, text: String, now: Long, reserveForGuidance: Boolean = true): String? {
         if (!supports(packageName)) return null
         val normalized = normalize(text) ?: return null
         candidates[packageName] = Candidate(normalized, now)
+        if (!reserveForGuidance) return null
         val active = guidance[packageName] ?: return null
         if (now - active.startedAt !in 0..5_000 || active.sent != null) return null
         return reserve(active, normalized)
@@ -53,6 +54,12 @@ internal class TeslaNavigationDestination {
         val active = guidance[packageName] ?: return null
         active.startedAt = now
         return candidates[packageName]?.takeIf { now - it.observedAt in 0..60_000 }?.text?.let { reserve(active, it) }
+    }
+
+    /** 안심주행 진입 전 후보와 미전송 예약을 버리되 살아 있는 안내 알림은 유지한다. */
+    fun safeDrive(packageName: String) {
+        candidates.remove(packageName)
+        guidance[packageName]?.sent = null
     }
 
     /** 해당 안내 알림이 사라지면 새 안내에서 과거 목적지를 재사용하지 않는다. */

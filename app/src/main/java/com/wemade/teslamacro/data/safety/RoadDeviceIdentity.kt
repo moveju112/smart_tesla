@@ -36,7 +36,6 @@ internal class RoadDeviceIdentity internal constructor(
     /** 인증서는 비밀이 아니지만 재설치 때 다른 개인키와 섞이지 않게 백업하지 않는다. */
     @Synchronized
     fun readCertificate(): String? = runCatching {
-        if (!certificateFile.baseFile.exists()) return null
         certificateFile.readFully().toString(Charsets.US_ASCII).takeIf { it.length in 1..1024 && it.startsWith("dc1.") }
     }.getOrNull()
 

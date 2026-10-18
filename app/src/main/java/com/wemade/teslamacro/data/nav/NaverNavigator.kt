@@ -98,6 +98,15 @@ internal fun backgroundLaunchMethods(
 /** 주소 → 좌표 캐시 저장소 이름 */
 private const val GEOCODE_CACHE = "geocode_cache"
 
+/** 지도 정리 실패나 취소와 관계없이 실행 잠금을 반환해 다음 요청이 막히지 않게 한다. */
+internal inline fun finishNavigationLaunch(lock: Mutex, cleanup: () -> Unit) {
+    try {
+        cleanup()
+    } finally {
+        lock.unlock()
+    }
+}
+
 /** 진단 실행 사이에 네이버 지도가 전면으로 올 시간을 남긴다. */
 private const val DIAGNOSTIC_ATTEMPT_GAP_MILLIS = 2_000L
 
@@ -154,8 +163,9 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 }
             } finally {
                 // 준비 호출 전 실패는 전환 소유권을 만들지 않으므로 실제 준비 여부를 아래에서 가른다.
-                if (wirelessNavigation != null && destinationPrepared) wirelessNavigation.destinationFinished(dispatched)
-                safeDriveLaunchMutex.unlock()
+                finishNavigationLaunch(safeDriveLaunchMutex) {
+                    if (wirelessNavigation != null && destinationPrepared) wirelessNavigation.destinationFinished(dispatched)
+                }
             }
         }
 
@@ -186,11 +196,10 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 launchAny(app, installed, point.latitude, point.longitude, label, beforeLaunch)
                 // startActivity는 화면이 안 떠도 예외를 안 던진다 — 실제로 증명한 것은 요청까지다
                 com.wemade.teslable.DiagLog.add("${app.label} 안내 실행 요청 → $label")
-            }.recoverCatching { throwable ->
+            }.onFailure { throwable ->
                 // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
                 // 잘못 기록되고, 취소가 상위로 전파되지 않는다
                 if (throwable is kotlinx.coroutines.CancellationException) throw throwable
-                throw throwable
             }.map { }
         } finally { safeDriveLaunchMutex.unlock() }
     }
@@ -252,13 +261,13 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                     launch(null)
                 }
                 com.wemade.teslable.DiagLog.add("${app.label} 안심운전 실행 요청")
-            }.recoverCatching { throwable ->
+            }.onFailure { throwable ->
                 if (throwable is kotlinx.coroutines.CancellationException) throw throwable
-                throw throwable
             }.map { }
         } finally {
-            if (prepared) wirelessNavigation?.destinationFinished(dispatched)
-            safeDriveLaunchMutex.unlock()
+            finishNavigationLaunch(safeDriveLaunchMutex) {
+                if (prepared) wirelessNavigation?.destinationFinished(dispatched)
+            }
         }
     }
 

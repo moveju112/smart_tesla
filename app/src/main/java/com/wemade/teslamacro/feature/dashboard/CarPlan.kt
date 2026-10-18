@@ -344,10 +344,10 @@ private fun DrawScope.drawCarPlan(
     )
     val solidTire = Stroke(width = boldPx, cap = StrokeCap.Square)
     listOf(Wheels.front to true, Wheels.rear to false).forEach { (axle, isFront) ->
-        // y가 작은 쪽이 좌측이다 (0=좌, 1=우)
-        listOf(Wheels.top(axle) to true, Wheels.bottom(axle) to false).forEach { (n, isLeft) ->
+        // 노즈가 왼쪽인 평면도에서는 화면 위쪽이 차량 우측이다.
+        listOf(Wheels.top(axle) to true, Wheels.bottom(axle) to false).forEach { (n, isScreenTop) ->
             val tire = plan.box(n[0], n[1], n[2], n[3])
-            val position = tirePositionOf(isFront, isLeft)
+            val position = tirePositionOf(isFront, isScreenTop)
             // 공기압이 빠진 바퀴는 덮인 부품이 아니라 "지금 봐야 할 것"이다.
             // 파선을 굵은 실선 적색으로 바꿔 그 자리만 튀게 한다
             if (position in tones.lowTires) {
@@ -563,13 +563,13 @@ private fun DrawScope.drawSeat(
  * 캐빈 안에 아무것도 기입할 수 없다.
  */
 /** 축·좌우를 타이어 자리로 옮긴다 */
-private fun tirePositionOf(
+internal fun tirePositionOf(
     isFront: Boolean,
-    isLeft: Boolean,
+    isScreenTop: Boolean,
 ): com.wemade.teslamacro.domain.model.TirePosition = when {
-    isFront && isLeft -> com.wemade.teslamacro.domain.model.TirePosition.FRONT_LEFT
+    isFront && !isScreenTop -> com.wemade.teslamacro.domain.model.TirePosition.FRONT_LEFT
     isFront -> com.wemade.teslamacro.domain.model.TirePosition.FRONT_RIGHT
-    isLeft -> com.wemade.teslamacro.domain.model.TirePosition.REAR_LEFT
+    !isScreenTop -> com.wemade.teslamacro.domain.model.TirePosition.REAR_LEFT
     else -> com.wemade.teslamacro.domain.model.TirePosition.REAR_RIGHT
 }
 

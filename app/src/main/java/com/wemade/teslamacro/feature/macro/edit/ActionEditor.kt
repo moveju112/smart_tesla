@@ -308,6 +308,8 @@ private fun levelOf(command: VehicleCommand): Level = when (command) {
 private fun numberOf(command: VehicleCommand): Double? = when (command) {
     is VehicleCommand.SetTemperature -> command.celsius
     is VehicleCommand.SetChargeLimit -> command.percent.toDouble()
+    is VehicleCommand.SetChargingAmps -> command.amps.toDouble()
+    is VehicleCommand.SetVolume -> command.level
     else -> null
 }
 

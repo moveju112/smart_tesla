@@ -57,6 +57,8 @@ fun describe(condition: Condition): String = when (condition) {
     is Condition.ForecastInRange -> {
         val unit = condition.metric.unit
         when {
+            condition.gte != null && condition.lte != null ->
+                "${condition.metric.label} ${fmt(condition.gte)}~${fmt(condition.lte)}$unit"
             condition.gte != null -> "${condition.metric.label} ${fmt(condition.gte)}$unit 이상"
             condition.lte != null -> "${condition.metric.label} ${fmt(condition.lte)}$unit 이하"
             else -> condition.metric.label

@@ -269,6 +269,11 @@ class SettingsStore(
             prefs.remove(KeyVehicleAddress)
             prefs.remove(KeyVehicleAudioAddress)
             prefs.remove(KeyVehicleName)
+            // 이전 차량의 탑승·주차 관측을 새 차량의 재시작 판정에 사용하지 않는다.
+            prefs.remove(KeyLastPresence)
+            prefs.remove(KeyLastPresenceAt)
+            prefs.remove(KeyParkedAt)
+            prefs.remove(KeyParkedBattery)
             // 차량이 바뀌면 새 차량의 위치 기록 동의를 다시 받는다.
             prefs.remove(KeyHistoryEnabled)
             // 이전 차량의 예약·원복 전류를 새 차량에 실행하지 않는다.

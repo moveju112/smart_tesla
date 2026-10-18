@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import java.io.File
+import java.io.FileNotFoundException
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -30,14 +31,15 @@ class FleetTokenStore internal constructor(private val file: AtomicFile, private
     /** 재설치·Keystore 손실·변조는 빈 토큰으로 전송하지 않고 재입력을 요구한다. */
     @Synchronized
     fun read(): String {
-        if (!file.baseFile.exists()) error("Fleet API 토큰을 먼저 등록해 주세요")
         return try { FleetTokenCipher.decrypt(file.readFully(), keyProvider()) }
+        catch (_: FileNotFoundException) { error("Fleet API 토큰을 먼저 등록해 주세요") }
         catch (_: Exception) { error("저장된 Fleet API 토큰을 읽지 못했어요 · 다시 등록해 주세요") }
     }
 
     /** UI에는 토큰 대신 저장 여부만 노출한다. */
     @Synchronized
-    fun hasToken(): Boolean = file.baseFile.exists()
+    fun hasToken(): Boolean = try { file.openRead().use { true } }
+        catch (_: FileNotFoundException) { false }
 
     /** 로그아웃/토큰 제거 시 암호문을 삭제한다. */
     @Synchronized

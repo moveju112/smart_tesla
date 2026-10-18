@@ -54,7 +54,7 @@ internal class DiagnosticUploader(
         for (batch in diagnosticBatches(pending)) {
             val body = buildJsonObject {
                 put("appVersion", BuildConfig.VERSION_NAME)
-                putJsonArray("lines") { batch.forEach { add(JsonPrimitive(maskDiagnosticLine(it))) } }
+                putJsonArray("lines") { batch.forEach { add(JsonPrimitive(maskDiagnosticLine(it.take(1_000)))) } }
             }.toString().toByteArray()
             if (api.authenticatedPost("/v1/diagnostics", body).code != 200) return@withLock
             preferences.edit().putString(KEY_CURSOR, batch.last()).apply()
@@ -67,7 +67,7 @@ internal class DiagnosticUploader(
     }
 }
 
-/** 서버 본문 상한(8KB) 아래로 줄을 묶고 한 줄은 서버 허용 길이로 자른다. */
+/** 전송할 길이로 크기를 계산하되 전송 위치를 정확히 찾도록 원본 줄을 유지한다. */
 internal fun diagnosticBatches(lines: List<String>, maxBytes: Int = 6_000, maxLines: Int = 200): List<List<String>> {
     val batches = mutableListOf<List<String>>()
     var current = mutableListOf<String>()
@@ -80,7 +80,7 @@ internal fun diagnosticBatches(lines: List<String>, maxBytes: Int = 6_000, maxLi
             current = mutableListOf()
             size = 0
         }
-        current += text
+        current += line
         size += bytes
     }
     if (current.isNotEmpty()) batches += current

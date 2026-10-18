@@ -57,9 +57,16 @@ class HistoryViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 해제 경계는 기록 저장소에도 전달해 다음 연결과 합치지 않는다. */
     fun setEnabled(enabled: Boolean) { viewModelScope.launch {
-        container.settingsStore.setHistoryEnabled(enabled)
-        if (!enabled) container.vehicleHistory.finish(settings.first().vin)
-        container.poller.nudge()
+        com.wemade.teslamacro.ui.applySettingChange({
+            container.settingsStore.setHistoryEnabled(enabled)
+            if (!enabled) container.vehicleHistory.finish(settings.first().vin)
+            container.poller.nudge()
+        }) { error ->
+            com.wemade.teslable.DiagLog.add("기록 설정 변경 실패 — ${error.javaClass.simpleName}")
+            android.widget.Toast.makeText(container.appContext,
+                "기록 설정을 변경하지 못했어요 · 저장 공간을 확인해 주세요",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
     } }
 
     /** 선택 변경은 collectLatest가 이전 경로 조회를 취소한다. */

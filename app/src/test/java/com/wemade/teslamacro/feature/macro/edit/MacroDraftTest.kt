@@ -6,6 +6,7 @@ import com.wemade.teslamacro.domain.command.CommandTemplate
 import com.wemade.teslamacro.domain.command.VehicleCommand
 import com.wemade.teslamacro.domain.macro.ActionStep
 import com.wemade.teslamacro.domain.macro.Condition
+import com.wemade.teslamacro.domain.macro.ForecastMetric
 import com.wemade.teslamacro.domain.macro.Trigger
 import com.wemade.teslamacro.domain.model.Level
 import com.wemade.teslamacro.domain.model.SeatPosition
@@ -158,6 +159,8 @@ class MacroDraftTest {
         val draft = MacroDraft.blank().addAction(ActionStep.Run(VehicleCommand.ClimateOn))
         assertEquals(draft.actions, draft.moveAction(0, -1).actions)
         assertEquals(draft.actions, draft.moveAction(0, 1).actions)
+        assertEquals(draft.actions, draft.moveAction(-1, 1).actions)
+        assertEquals(draft.actions, draft.moveAction(1, -1).actions)
     }
 
     @Test
@@ -224,5 +227,25 @@ class MacroDraftTest {
             .addAction(ActionStep.WaitUntil(Condition.InRange(Signal.INSIDE_TEMP, gte = 20.0)))
             .toRule()
         assertTrue(Signal.INSIDE_TEMP.sourceCategory in rule.requiredCategories)
+    }
+
+    /** 가져온 예보 구간도 추가 조건과 조건 대기 모두 실행 가능한 경계만 저장한다. */
+    @Test fun forecastBoundsMustNotBeReversed() {
+        val condition = Condition.ForecastInRange(ForecastMetric.MIN_TEMP, gte = 10.0, lte = 5.0)
+        assertNotNull(validDraft().addCondition(condition).blockReason)
+        assertNotNull(validDraft().addAction(ActionStep.WaitUntil(condition)).blockReason)
+        assertNull(validDraft().addCondition(condition.copy(lte = 10.0)).blockReason)
+        assertNull(validDraft().addCondition(condition.copy(lte = null)).blockReason)
+    }
+
+    /** 숫자 명령을 추가하거나 다시 열 때 기존 값의 편집기를 모두 복원한다. */
+    @Test fun numericCommandsKeepTheirEditors() {
+        CommandCatalog.all.filterIsInstance<CommandTemplate.Number>().forEach { template ->
+            for (value in listOf(template.min, template.max)) {
+                assertEquals(template.label, template,
+                    templateFor(template.build(value), CommandCatalog.all))
+            }
+            assertEquals(template, templateFor(CommandCatalog.defaultCommand(template), CommandCatalog.all))
+        }
     }
 }

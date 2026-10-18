@@ -272,6 +272,8 @@ class MacroEngine {
     ): Boolean {
         val cur = current.time.minutesOfDay
         val prev = previous?.time?.minutesOfDay ?: return matches(cur)
+        // 시계 보정으로 되돌아간 구간에는 실제로 지나간 예약 시각이 없다.
+        if (current.time.epochMillis < previous.time.epochMillis) return false
         val gap = ((cur - prev) + MINUTES_PER_DAY) % MINUTES_PER_DAY
         val window = minOf(gap, LATE_FIRE_LIMIT_MINUTES)
         return (0 until window).any { back ->

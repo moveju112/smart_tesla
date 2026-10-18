@@ -10,6 +10,13 @@ class PresenceTrustTest {
     private val now = 1_000_000L
     private val trust = 300_000L
 
+    /** 시계가 뒤로 조정되면 미래의 탑승 기록으로 새 탑승을 억제하지 않는다. */
+    @Test fun futureObservationIsNotTrusted() {
+        assertNull(trustedPresence(true, now + 1, now, trust))
+        assertNull(trustedPresence(false, now + trust, now, trust))
+        assertEquals(true, trustedPresence(true, now, now, trust))
+    }
+
     @Test
     fun `유효시간 안의 탑승 기록은 그대로 쓴다`() {
         assertEquals(true, trustedPresence(true, now - trust + 1, now, trust))

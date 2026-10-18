@@ -7,6 +7,8 @@ import android.os.Build
 import com.wemade.teslable.DiagLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -110,7 +112,8 @@ object AppUpdater {
 
     /** 확인할 때가 됐는가. SharedPreferences 없이 검증할 수 있게 떼어 둔다 */
     internal fun isCheckDue(lastCheckMillis: Long, nowMillis: Long): Boolean =
-        nowMillis - lastCheckMillis >= CHECK_INTERVAL_MS
+        lastCheckMillis <= 0 || nowMillis < lastCheckMillis ||
+            nowMillis - lastCheckMillis >= CHECK_INTERVAL_MS
 
     /** 최신 릴리스를 조회해 지금 버전과 견준다 */
     suspend fun check(currentVersion: String): Boolean = checkRelease {
@@ -215,38 +218,49 @@ object AppUpdater {
     }
 
     /** APK를 캐시로 내려받는다. 실패하면 받다 만 파일을 지우고 null */
-    private suspend fun download(context: Context, version: String, apkUrl: String): File? =
+    internal suspend fun download(
+        context: Context,
+        version: String,
+        apkUrl: String,
+        openConnection: (String) -> HttpURLConnection = { URL(it).openConnection() as HttpURLConnection },
+    ): File? =
         withContext(Dispatchers.IO) {
             val file = File(context.cacheDir, "update.apk")
             runCatching {
                 state.value = UpdateState.Downloading(version, 0)
-                val connection = URL(apkUrl).openConnection() as HttpURLConnection
+                val connection = openConnection(apkUrl)
                 connection.connectTimeout = 10_000
                 connection.readTimeout = 30_000
                 connection.instanceFollowRedirects = true
-                val total = connection.contentLengthLong
-
-                var read = 0L
-                connection.inputStream.use { input ->
-                    file.outputStream().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) {
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            output.write(buffer, 0, n)
-                            read += n
-                            // 길이를 모르면(리다이렉트로 -1) 진행률은 0에 머문다
-                            if (total > 0) {
-                                state.value =
-                                    UpdateState.Downloading(version, (read * 100 / total).toInt())
+                try {
+                    currentCoroutineContext().ensureActive()
+                    val total = connection.contentLengthLong
+                    var read = 0L
+                    connection.inputStream.use { input ->
+                        file.outputStream().use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                output.write(buffer, 0, n)
+                                read += n
+                                // 길이를 모르면(리다이렉트로 -1) 진행률은 0에 머문다
+                                if (total > 0) {
+                                    state.value =
+                                        UpdateState.Downloading(version, (read * 100 / total).toInt())
+                                }
                             }
                         }
                     }
+                    file
+                } finally {
+                    connection.disconnect()
                 }
-                file
             }.getOrElse {
                 // 받다 만 파일을 남기면 다음에 그 반쪽을 설치하려 든다
                 file.delete()
+                if (it is CancellationException) throw it
                 null
             }?.takeIf { it.length() > 0 }
         }

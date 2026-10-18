@@ -11,6 +11,7 @@ import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -21,6 +22,24 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+
+/** 완료 여부를 모르는 쓰기는 링크를 재사용하지 않아 지각 콜백이 다음 요청을 완료시키지 못하게 한다. */
+internal suspend fun awaitBleWriteResult(
+    result: CompletableDeferred<Unit>,
+    timeoutMillis: Long,
+    invalidate: () -> Unit,
+) {
+    try {
+        withTimeout(timeoutMillis) { result.await() }
+    } catch (timeout: TimeoutCancellationException) {
+        invalidate()
+        ensureCommandActive()
+        throw IllegalStateException("쓰기 완료 미수신 ${timeoutMillis}ms — 링크 사망 처리", timeout)
+    } catch (cancelled: CancellationException) {
+        invalidate()
+        throw cancelled
+    }
+}
 
 /**
  * GATT status 코드에 사람이 읽을 해설을 붙인다 — 실차 로그 진단용.
@@ -147,12 +166,9 @@ class TeslaBleLink(private val context: Context) {
             writeResult = deferred
             writeChunkWithRetry(activeGatt, characteristic, chunk)
             try {
-                withTimeout(timeoutMillis) { deferred.await() }
-            } catch (t: TimeoutCancellationException) {
-                ensureCommandActive()
-                // 완료 콜백이 영영 안 오는 건 스택이 죽은 것 — 살아있는 척을 끝낸다
-                markDead(activeGatt)
-                throw IllegalStateException("쓰기 완료 미수신 ${timeoutMillis}ms — 링크 사망 처리", t)
+                awaitBleWriteResult(deferred, timeoutMillis) { markDead(activeGatt) }
+            } finally {
+                if (writeResult === deferred) writeResult = null
             }
         }
     }
@@ -344,10 +360,13 @@ class TeslaBleLink(private val context: Context) {
 
     private fun handleIncoming(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid != TeslaBleSpec.RX_CHARACTERISTIC_UUID) return
-        reassembler.push(value)?.let {
+        var message = reassembler.push(value)
+        while (message != null) {
             // 프레임별 "응답 수신" 로그는 지웠다 — 차량 상태 방송(41B 등)이 초당 여러 줄
             // 쌓여 버퍼를 밀어낸다. 응답 유무 진단은 "명령 응답 없음"(타임아웃)이 담당한다
-            _incoming.tryEmit(it)
+            _incoming.tryEmit(message)
+            // 한 알림에 이어 붙은 응답도 다음 BLE 알림을 기다리지 않고 전달한다.
+            message = reassembler.push(ByteArray(0))
         }
     }
 

@@ -23,6 +23,15 @@ class RoadDeviceIdentityTest {
 
     private val matched = """{"ok":true}"""
 
+    /** 원본 없이 백업만 남은 인증서도 재등록하지 않고 복구한다. */
+    @Test fun certificateSurvivesInterruptedAtomicWrite() {
+        val file = File(temporary.root, "recover.txt")
+        val identity = RoadDeviceIdentity(AtomicFile(file)) { error("인증서 복구에는 개인키가 필요 없음") }
+        identity.saveCertificate("dc1.recovered.signature")
+        assertTrue(file.renameTo(File(temporary.root, "recover.txt.bak")))
+        assertEquals("dc1.recovered.signature", identity.readCertificate())
+    }
+
     /** 같은 설치의 개인키로 서명하며 서버로 보낼 공개키·서명만 파일 밖으로 꺼낸다. */
     @Test fun certificateAndProofSurviveRecreation() {
         val key = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()

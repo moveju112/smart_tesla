@@ -22,7 +22,9 @@ class DiagnosticUploaderTest {
         assertTrue(batches.size > 1)
         assertEquals(lines, batches.flatten())
         assertTrue(batches.all { batch -> batch.sumOf { it.toByteArray().size + 3 } <= 6_000 })
-        assertEquals(1_000, diagnosticBatches(listOf("x".repeat(1_500))).single().single().length)
+        // 전송 시에만 자르고 커서는 원문을 보존해야 같은 시각의 다음 로그를 놓치지 않는다.
+        val longLine = "x".repeat(1_500)
+        assertEquals(longLine, diagnosticBatches(listOf(longLine)).single().single())
         assertEquals(3, diagnosticBatches(List(450) { "a" }).size)
     }
 }

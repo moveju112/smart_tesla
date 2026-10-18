@@ -53,6 +53,8 @@ public final class NaverDisplaySession {
     public static Context shellContext() { return shell; }
 
     /** 통신 소켓 수명과 지도 수명만 묶어 ADB 연결 종료의 영향을 받지 않게 한다. */
+    // 셸 UID 전용 경로는 공개 SDK의 @IntDef에 없는 시스템 가상 화면 플래그도 사용한다.
+    @android.annotation.SuppressLint("WrongConstant")
     public static void run(int user, NavigatorApp app, InputStream input, PrintStream output) {
         AtomicLong heartbeat = new AtomicLong(System.nanoTime());
         AtomicBoolean stopping = new AtomicBoolean();

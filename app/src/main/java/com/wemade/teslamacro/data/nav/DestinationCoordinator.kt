@@ -130,7 +130,9 @@ internal class DestinationCoordinator(
         diagnostics.presenceStarted()
         val observation = try { confirmPresence() } catch (error: Exception) {
             diagnostics.presenceFinished(null, null)
-            throw error
+            if (error is CancellationException) throw error
+            DiagLog.add("탑승 재확인 실패 — ${error.javaClass.simpleName}")
+            return false
         }
         diagnostics.presenceFinished(observation?.present, observation?.observedAt)
         if (observation == null) return false
@@ -349,7 +351,11 @@ internal class BoardingNavigationRequest(val startedAt: Long, private val action
     /** 권한·설치·실행 중 충돌처럼 전달 전임이 명확한 실패에만 복구 기회를 남긴다. */
     suspend fun execute(now: Long): Boolean {
         attempts++
-        val result = action()
+        val result = try { action() } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            DiagLog.add("탑승 안심운전 실행 실패 — ${error.javaClass.simpleName}")
+            Result.failure(error)
+        }
         if (result.isSuccess || result.exceptionOrNull() !is SafeDrivePreflightException || attempts >= 2) return true
         retryAt = now + 5_000L
         DiagLog.add("탑승 안심운전 — 전달 전 조건 회복 대기")

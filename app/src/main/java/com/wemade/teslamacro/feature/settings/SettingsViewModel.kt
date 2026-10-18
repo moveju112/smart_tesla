@@ -24,11 +24,21 @@ import kotlinx.coroutines.launch
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
-    /** 시뮬레이터일 때만 값이 있다 */
-    private val simulator: SimulatedVehicleGateway? =
-        container.gateway as? SimulatedVehicleGateway
+    /** 저장 실패로 화면을 종료하지 않고 실제 저장값을 유지하며 재시도 필요를 알린다. */
+    private fun changeSetting(change: suspend () -> Unit) = viewModelScope.launch {
+        com.wemade.teslamacro.ui.applySettingChange(change) { error ->
+            com.wemade.teslable.DiagLog.add("설정 변경 실패 — ${error.javaClass.simpleName}")
+            android.widget.Toast.makeText(container.appContext,
+                "설정을 변경하지 못했어요 · 저장 공간을 확인하고 다시 시도해 주세요",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
-    val simulatedState: StateFlow<VehicleSnapshot>? = simulator?.current
+    /** 시뮬레이터일 때만 값이 있다 */
+    private val simulator: SimulatedVehicleGateway?
+        get() = container.gateway.current as? SimulatedVehicleGateway
+
+    val simulatedState: StateFlow<VehicleSnapshot>? get() = simulator?.current
 
     fun setSimulatedInsideTemp(celsius: Double) = simulator?.setInsideTemp(celsius)
     fun setSimulatedOutsideTemp(celsius: Double) = simulator?.setOutsideTemp(celsius)
@@ -46,7 +56,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         if (address.isNotBlank() && pairedAudioDevices.value.none {
                 it.address.equals(address, ignoreCase = true)
             }) return
-        viewModelScope.launch { container.settingsStore.setVehicleAudioAddress(address) }
+        changeSetting { container.settingsStore.setVehicleAudioAddress(address) }
     }
 
     /** 15분 단위 충전 전류 그래프의 원본 */
@@ -65,13 +75,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 선택 즉시 테마를 바꾸고 다음 실행에도 유지한다. */
     fun setThemeMode(mode: com.wemade.teslamacro.data.settings.ThemeMode) {
-        viewModelScope.launch { container.settingsStore.setThemeMode(mode) }
+        changeSetting { container.settingsStore.setThemeMode(mode) }
     }
 
     /** 스마트싱스 알림 명령 전체의 사용 여부를 저장한다. */
     /** 다음 음성 요청부터 사용할 유효시간을 저장한다. */
     fun setSmartThingsValiditySeconds(seconds: Int) {
-        viewModelScope.launch { container.settingsStore.setSmartThingsValiditySeconds(seconds) }
+        changeSetting { container.settingsStore.setSmartThingsValiditySeconds(seconds) }
     }
 
     private val mutableFleetCredentials = MutableStateFlow(FleetCredentialState(busy = true))
@@ -101,7 +111,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = "사용자 API 토큰을 먼저 저장해 주세요")
             return
         }
-        viewModelScope.launch { container.settingsStore.setFleetApiEnabled(enabled) }
+        changeSetting { container.settingsStore.setFleetApiEnabled(enabled) }
     }
 
     /** 입력 토큰은 상태/로그/백업에 넣지 않고 IO에서 즉시 암호화한다. */
@@ -155,7 +165,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** OFF 저장을 먼저 끝내 늦은 이벤트가 실행을 시작하지 못하게 한다. */
     fun setTeslaNavigationShareEnabled(enabled: Boolean) {
-        viewModelScope.launch {
+        changeSetting {
             container.settingsStore.setTeslaNavigationShareEnabled(enabled)
             if (!enabled) container.teslaNavigationShare.clear()
         }
@@ -164,65 +174,65 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** 모드를 바꿀 때 이전 안내 예약을 지워 테스트 후보가 실제 공유로 이어지지 않게 한다. */
     /** 진단 로그 서버 전송 토글 (설정 저장 -> 켜면 즉시 1회 전송) */
     fun setDiagnosticUpload(enabled: Boolean) {
-        viewModelScope.launch {
+        changeSetting {
             container.settingsStore.setDiagnosticUploadEnabled(enabled)
             if (enabled) container.diagnosticUploader.trigger()
         }
     }
 
     fun setTeslaNavigationTestMode(enabled: Boolean) {
-        viewModelScope.launch {
+        changeSetting {
             container.teslaNavigationShare.setTestMode(enabled)
         }
     }
 
     /** 공식 앱 공유에 사용할 로컬 실행 경로만 바꾸며 Fleet 설정은 건드리지 않는다. */
     fun setTeslaNavigationLaunchMode(value: String) {
-        viewModelScope.launch { container.settingsStore.setTeslaNavigationLaunchMode(com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.of(value)) }
+        changeSetting { container.settingsStore.setTeslaNavigationLaunchMode(com.wemade.teslamacro.data.nav.TeslaNavigationLaunchMode.of(value)) }
     }
 
     fun setSmartThingsEnabled(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setSmartThingsEnabled(enabled) }
+        changeSetting { container.settingsStore.setSmartThingsEnabled(enabled) }
     }
 
     /** 스마트싱스 루틴이 보낼 문구를 빠른 차량 동작별로 저장한다. */
     fun setSmartThingsCommandText(action: String, text: String) {
-        viewModelScope.launch { container.settingsStore.setSmartThingsCommandText(action, text) }
+        changeSetting { container.settingsStore.setSmartThingsCommandText(action, text) }
     }
 
     /** 다음 충전 1회의 스텔스 전류 조절 사용 여부를 저장한다. */
     fun setStealthCharging(enabled: Boolean) {
-        viewModelScope.launch { container.setStealthCharging(enabled) }
+        changeSetting { container.setStealthCharging(enabled) }
     }
 
     /** 스텔스 충전이 사용할 전류 상한을 저장한다. */
     fun setStealthMaxAmps(amps: Int) {
-        viewModelScope.launch { container.settingsStore.setStealthMaxAmps(amps) }
+        changeSetting { container.settingsStore.setStealthMaxAmps(amps) }
     }
 
     /** 스텔스 충전이 내려갈 수 있는 전류 하한을 저장한다. null이면 자동 하한으로 돌아간다. */
     fun setStealthMinAmps(amps: Int?) {
-        viewModelScope.launch { container.settingsStore.setStealthMinAmps(amps) }
+        changeSetting { container.settingsStore.setStealthMinAmps(amps) }
     }
 
     /** 스텔스 충전의 시간대 제한 사용 여부를 저장한다. */
     fun setStealthScheduleEnabled(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setStealthScheduleEnabled(enabled) }
+        changeSetting { container.settingsStore.setStealthScheduleEnabled(enabled) }
     }
 
     /** 스텔스 충전 시작 시각을 저장한다. */
     fun setStealthStartMinutes(minutes: Int) {
-        viewModelScope.launch { container.settingsStore.setStealthStartMinutes(minutes) }
+        changeSetting { container.settingsStore.setStealthStartMinutes(minutes) }
     }
 
     /** 스텔스 충전 종료 시각을 저장한다. */
     fun setStealthEndMinutes(minutes: Int) {
-        viewModelScope.launch { container.settingsStore.setStealthEndMinutes(minutes) }
+        changeSetting { container.settingsStore.setStealthEndMinutes(minutes) }
     }
 
     /** 휴대폰 키 보호 설정을 저장하고 현재 연결 정책을 즉시 다시 적용한다. */
     fun setProtectPhoneKey(enabled: Boolean) {
-        viewModelScope.launch {
+        changeSetting {
             container.settingsStore.setProtectPhoneKey(enabled)
             if (enabled) container.poller.enforceConnectionGuard() else container.poller.nudge()
         }
@@ -230,7 +240,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 이 설치본의 사용 모드를 저장하고 바뀐 연결 정책을 즉시 적용한다. */
     fun setDeviceMode(mode: DeviceMode) {
-        viewModelScope.launch {
+        changeSetting {
             container.settingsStore.setDeviceMode(mode)
             com.wemade.teslable.DiagLog.add("기기 사용 모드 변경 — ${mode.label}")
             if (mode == DeviceMode.PORTABLE) {
@@ -290,7 +300,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setNavigatorApp(name: String) {
-        viewModelScope.launch {
+        changeSetting {
             container.settingsStore.setNavigatorApp(name)
             // 구글 지도로 바꾸면 숨은 켜짐값이 남아 다음 탑승 때 실패하지 않게 함께 끈다
             if (!com.wemade.teslamacro.data.nav.NavigatorApp.of(name).supportsSafeDrive) {
@@ -300,11 +310,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setAutoStartNavigatorSafeDrive(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setAutoStartNavigatorSafeDrive(enabled) }
+        changeSetting { container.settingsStore.setAutoStartNavigatorSafeDrive(enabled) }
     }
 
     fun setNavigatorSafeDriveLaunchMode(mode: String) {
-        viewModelScope.launch { container.settingsStore.setNavigatorSafeDriveLaunchMode(mode) }
+        changeSetting { container.settingsStore.setNavigatorSafeDriveLaunchMode(mode) }
     }
 
     /** 화면을 잠가도 예약이 유지되도록 실행은 서비스에 맡긴다. */
@@ -319,7 +329,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setHudOverlay(enabled: Boolean) {
-        viewModelScope.launch { container.settingsStore.setHudOverlay(enabled) }
+        changeSetting { container.settingsStore.setHudOverlay(enabled) }
     }
 
     /** 이 기기에 실제로 깔린 내비 앱. 안 깔린 걸 고르면 매크로가 실행 순간에 실패한다 */
@@ -394,7 +404,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 앱에서만 등록을 지운다. 차량 키 목록은 차량 화면에서 직접 지워야 한다 */
     fun unpair() {
-        viewModelScope.launch {
+        changeSetting {
             container.gateway.disconnect()
             container.settingsStore.setVin("")
             container.settingsStore.setEnrolled(false)

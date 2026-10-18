@@ -259,7 +259,7 @@ private fun DetectedVehicleNotice(name: String) {
 @Composable
 private fun OpenTeslaAppButton() {
     val context = LocalContext.current
-    val installed = remember { TeslaAppLauncher.isInstalled(context) }
+    val installed = com.wemade.teslamacro.ui.component.rememberOnResume { TeslaAppLauncher.isInstalled(context) }
     var notice by remember { mutableStateOf<String?>(null) }
 
     Column {
@@ -280,12 +280,12 @@ private fun OpenTeslaAppButton() {
  * VIN을 어떻게 다루는지 밝힌다.
  *
  * 차대번호는 민감한 식별정보다. 입력을 망설이지 않도록 필요한 약속만 한 줄로 밝힌다.
- * 인터넷 기능과 별개로 VIN은 로컬 차량 연결에만 사용한다.
+ * 로컬 차량 연결과 Fleet 명령 전송의 데이터 사용을 구분한다.
  */
 @Composable
 private fun VinPrivacyNotice() {
     Text(
-        text = "VIN은 차량 연결에만 쓰고 외부로 보내지 않아요.",
+        text = "VIN은 차량 식별에 사용해요. Fleet API로 명령을 보내면 연동 서버에 전달돼요.",
         style = MaterialTheme.typography.bodySmall,
         color = T.InkMuted,
     )

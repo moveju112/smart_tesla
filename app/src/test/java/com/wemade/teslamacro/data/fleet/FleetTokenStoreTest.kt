@@ -13,6 +13,21 @@ class FleetTokenStoreTest {
     @get:Rule val paparazzi = Paparazzi()
     @get:Rule val temporary = TemporaryFolder()
 
+    /** 중단된 원자 쓰기의 백업만 남아도 저장 여부와 실제 토큰을 복원한다. */
+    @Test
+    fun `backup only credential remains available and readable`() {
+        val file = File(temporary.root, "token.enc")
+        val backup = File(temporary.root, "token.enc.bak")
+        val key = KeyGenerator.getInstance("AES").generateKey()
+        val store = FleetTokenStore(AtomicFile(file)) { key }
+        store.save("dummy-recovered-token")
+        assertTrue(file.renameTo(backup))
+        assertTrue(store.hasToken())
+        assertEquals("dummy-recovered-token", store.read())
+        assertTrue(file.renameTo(backup))
+        assertEquals("dummy-recovered-token", store.read())
+    }
+
     /** 실제 Keystore 접근 없이 동일 파일/키로 재생성해 암호문 저장·복원·교체·삭제를 검증한다. */
     @Test
     fun `credential persists encrypted and can be replaced and deleted`() {

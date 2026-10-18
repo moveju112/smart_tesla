@@ -42,6 +42,7 @@ internal class TeslaNavigationShare(
     private val routeDistances = ArrayDeque<Pair<Long, Int>>()
     private var naverMode: Pair<Long, NaverGuidanceMode>? = null
     private var safeDrive = false
+    private var pendingNaverDestination: String? = null
 
     /** 안내 알림에 포함된 목적지와 같은 앱의 최신 화면 후보만 결합한다. */
     suspend fun notification(packageName: String, key: String, title: String, text: String) = lock.withLock {
@@ -78,6 +79,8 @@ internal class TeslaNavigationShare(
                 if (id != revision || !enabled() || !fresh()) return@withLock
                 // 이번 안내 시작 뒤 본 네이버 화면이 안심주행이면 목적지가 없는 게 정상이라 입력창을 띄우지 않는다.
                 if (packageName == NAVER && naverMode?.takeIf { it.first >= startedAt }?.second == NaverGuidanceMode.SAFE_DRIVE) {
+                    tracker.safeDrive(NAVER)
+                    pendingNaverDestination = null
                     safeDrive = true
                     DiagLog.add("테슬라 내비 연동 — 안심주행 판정 · 목적지 입력 생략")
                     return@withLock
@@ -100,12 +103,31 @@ internal class TeslaNavigationShare(
     suspend fun naverScreen(mode: NaverGuidanceMode) = lock.withLock {
         val now = SystemClock.elapsedRealtime()
         naverMode = now to mode
+        if (source?.first != NAVER || !enabled()) return@withLock
+        if (mode == NaverGuidanceMode.SAFE_DRIVE) {
+            if (!safeDrive) tracker.safeDrive(NAVER)
+            // 늦게 판독된 안심주행도 주소 입력과 이전 목적지 조회를 취소한다.
+            // 취소에 늦게 응답하는 조회도 결과를 반영하지 못하도록 요청 번호를 폐기한다.
+            revision++
+            resolution?.cancel()
+            resolution = null
+            expiry?.cancel()
+            expiry = null
+            mutableSelection.value = null
+            pendingNaverDestination = null
+            safeDrive = true
+            return@withLock
+        }
+        pendingNaverDestination?.let {
+            resolve(it, NAVER, source!!.second, confirmedNaverRoute = true)
+            return@withLock
+        }
         if (mode != NaverGuidanceMode.ROUTE || !safeDrive || !enabled()) return@withLock
         val key = source?.second ?: return@withLock
         safeDrive = false
         val destination = tracker.restart(NAVER, now)
         DiagLog.add("테슬라 내비 연동 — 안심주행 중 길안내 시작 감지 · 후보=${destination ?: "없음"}")
-        if (destination != null) resolve(destination, NAVER, key)
+        if (destination != null) resolve(destination, NAVER, key, confirmedNaverRoute = true)
         else {
             startedAt = now
             askAddress(revision)
@@ -134,7 +156,9 @@ internal class TeslaNavigationShare(
     /** 화면만 고르는 동작은 전송하지 않고 안내 시작이 확인됐을 때만 공유한다. */
     suspend fun screen(packageName: String, destination: String) = lock.withLock {
         if (!enabled()) return@withLock
-        tracker.screen(packageName, destination, SystemClock.elapsedRealtime())?.let { resolve(it, packageName, tracker.activeKey(packageName).orEmpty()) }
+        tracker.screen(packageName, destination, SystemClock.elapsedRealtime(),
+            reserveForGuidance = packageName != NAVER || !safeDrive
+        )?.let { resolve(it, packageName, tracker.activeKey(packageName).orEmpty()) }
     }
 
     /** 안내 종료는 조회와 선택도 무효화해 과거 안내를 뒤늦게 전송하지 않는다. */
@@ -193,6 +217,7 @@ internal class TeslaNavigationShare(
         expiry = null
         source = null
         safeDrive = false
+        pendingNaverDestination = null
         mutableSelection.value = null
     }
 
@@ -206,7 +231,13 @@ internal class TeslaNavigationShare(
     }
 
     /** 조회는 알림 잠금 밖에서 실행하고 새 안내·OFF가 이전 결과를 폐기할 수 있게 한다. */
-    private suspend fun resolve(query: String, packageName: String, key: String) {
+    private suspend fun resolve(query: String, packageName: String, key: String, confirmedNaverRoute: Boolean = false) {
+        // 네이버 알림은 안심주행과 같으므로 캐시만으로 차량 공유를 시작하지 않는다.
+        if (packageName == NAVER && !confirmedNaverRoute) {
+            awaitScreen(packageName, key)
+            pendingNaverDestination = query
+            return
+        }
         invalidate("새 길안내 수신")
         source = packageName to key
         startedAt = SystemClock.elapsedRealtime()

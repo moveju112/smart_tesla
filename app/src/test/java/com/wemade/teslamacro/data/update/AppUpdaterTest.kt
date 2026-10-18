@@ -105,6 +105,9 @@ class AppUpdaterTest {
         assertTrue(AppUpdater.isCheckDue(lastCheckMillis = 1_000, nowMillis = 1_000 + day))
         // 한 번도 확인한 적 없으면(0) 바로 확인한다
         assertTrue(AppUpdater.isCheckDue(lastCheckMillis = 0, nowMillis = day))
+        assertTrue(AppUpdater.isCheckDue(lastCheckMillis = 0, nowMillis = 1_000))
+        // 시계가 보정돼 마지막 확인이 미래가 되어도 자동 확인을 장기간 막지 않는다.
+        assertTrue(AppUpdater.isCheckDue(lastCheckMillis = day * 30, nowMillis = day))
     }
 
     @Test

@@ -68,5 +68,9 @@ private fun httpGet(url: String): String {
     val connection = URL(url).openConnection() as HttpURLConnection
     connection.connectTimeout = 5_000
     connection.readTimeout = 5_000
-    return connection.inputStream.bufferedReader().use { it.readText() }
+    return try {
+        connection.inputStream.bufferedReader().use { it.readText() }
+    } finally {
+        connection.disconnect()
+    }
 }

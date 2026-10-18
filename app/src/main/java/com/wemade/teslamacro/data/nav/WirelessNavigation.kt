@@ -704,14 +704,16 @@ class WirelessNavigation(private val context: Context) {
                 runInterruptible { active.output.apply { write("STOP\n".toByteArray()); flush() } }
                 val input = active.input
                 val bytes = ByteArray(1024)
-                var response = ""
+                val messages = NavigationSessionOutput()
                 while (true) {
                     if (input.available() > 0) {
                         val count = input.read(bytes)
                         if (count < 0) break
-                        response = (response + String(bytes, 0, count)).takeLast(4096)
-                        if ("NAVER_STOP_FAILED" in response) return@withTimeout false
-                        if ("NAVER_CLOSED" in response) return@withTimeout true
+                        // 진단 문구 속 문자열이나 미완성 줄을 종료 확인으로 오인하지 않는다.
+                        for (message in messages.feed(bytes, count)) {
+                            if (message == "NAVER_STOP_FAILED") return@withTimeout false
+                            if (message == "NAVER_CLOSED") return@withTimeout true
+                        }
                     }
                     delay(100)
                 }

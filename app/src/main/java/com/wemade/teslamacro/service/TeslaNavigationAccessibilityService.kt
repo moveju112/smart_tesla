@@ -29,6 +29,7 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
     private var lastSummaryAt = 0L
     private var lastGuidingLog: String? = null
     private var pendingRoute: String? = null
+    private var routeStartConfirmed = false
 
     /** 화면 후보를 보관하되 실제 안내 알림과 결합하기 전에는 차량에 보내지 않는다. */
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -40,7 +41,11 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
             val clicked = event.text.joinToString(" ").ifBlank { event.contentDescription?.toString().orEmpty() }.take(30)
             // 미리보기·확인창을 닫거나 나중에 출발하면 기존 안내가 이어지므로 바꾼 목적지를 버린다.
-            if (clicked.trim() in setOf("닫기", "나중에 출발")) pendingRoute = null
+            if (clicked.trim() in setOf("닫기", "나중에 출발")) {
+                pendingRoute = null
+                routeStartConfirmed = false
+            }
+            if (clicked.trim() == "안내시작" && pendingRoute != null) routeStartConfirmed = true
             // 목적지 변경 버튼은 화면이 바뀌기 전에 장소 카드를 칸 ID와 함께 남겨 새 목적지 위치를 찾는다.
             val card = if (clicked.trim() in setOf("도착지로", "안내시작", "출발지로", "경유지로")) dumpScreen() else emptyList()
             if (clicked.isNotBlank()) serviceScope.launch {
@@ -95,11 +100,17 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                     // 안내 중 목적지 변경 (경로 미리보기 판독 -> 미리보기·확인창이 사라지고 안내 재개 -> 공유)
                     val preview = naverGuidanceRouteDestination(screen)
                     if (preview != null) {
-                        if (preview != pendingRoute) com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 중 경로 미리보기 · $preview")
+                        if (preview != pendingRoute) {
+                            routeStartConfirmed = false
+                            com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 중 경로 미리보기 · $preview")
+                        }
                         pendingRoute = preview
                     } else if (screen.none { it.text.trim() == "안내시작" }) {
-                        pendingRoute?.let { app.container.teslaNavigationShare.reroute(packageName, it) }
+                        if (routeStartConfirmed && naverGuidanceMode(screen) == com.wemade.teslamacro.data.nav.NaverGuidanceMode.ROUTE) {
+                            pendingRoute?.let { app.container.teslaNavigationShare.reroute(packageName, it) }
+                        }
                         pendingRoute = null
+                        routeStartConfirmed = false
                     }
                     // 미리보기 목적지 변경을 먼저 처리해 안심주행 전환 판정이 빈 입력창을 띄우지 않게 한다.
                     naverGuidanceMode(screen)?.let { app.container.teslaNavigationShare.naverScreen(it) }

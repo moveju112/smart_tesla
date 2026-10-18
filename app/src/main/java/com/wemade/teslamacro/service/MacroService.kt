@@ -848,6 +848,8 @@ class MacroService : LifecycleService() {
         runCatching { unregisterReceiver(powerReceiver) }
         (application as TeslaMacroApplication).container.let {
             it.wirelessNavigation.serviceStopped()
+            // 초기화를 기다리다 종료된 서비스는 아직 생성되지 않은 차량 객체에 접근하지 않는다.
+            if (!(application as TeslaMacroApplication).ready.value) return@let
             it.poller.stop()
             it.stealthCharge.stop()
             // 폴러가 멈추면 연결 보호 판정도 멈춘다 — 인증된 GATT를 남겨 두면 휴대폰 키 간섭 방지가 무력해진다

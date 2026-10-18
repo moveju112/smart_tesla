@@ -8,6 +8,18 @@ class TeslaNavigationDestinationTest {
     private val kakao = "com.locnall.KimGiSa"
     private val naver = "com.nhn.android.nmap"
 
+    /** 안심주행 이전 캐시는 폐기하고 같은 목적지를 새로 고르면 실제 안내 때 한 번 예약한다. */
+    @Test fun safeDriveReleasesUnsentReservation() {
+        val tracker = TeslaNavigationDestination()
+        tracker.screen(naver, "서울역", 0)
+        assertEquals("서울역", tracker.notification(naver, "route", "네이버 지도", "내비게이션 - 안내 중", 1))
+        tracker.safeDrive(naver)
+        assertNull(tracker.restart(naver, 2))
+        assertNull(tracker.screen(naver, "서울역", 3, reserveForGuidance = false))
+        assertEquals("서울역", tracker.restart(naver, 4))
+        assertNull(tracker.restart(naver, 5))
+    }
+
     /** 안내 중인 티맵 목적지만 읽고 같은 알림의 반복 업데이트는 무시한다. */
     @Test fun `티맵 안내와 목적지 변경은 각각 한 번 전송한다`() {
         val tracker = TeslaNavigationDestination()

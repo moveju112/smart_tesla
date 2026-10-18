@@ -20,7 +20,8 @@ for line in open(source):
         process.stdin.write("3 " + " ".join(parts) + "\n")
         result = json.loads(process.stdout.readline())
         matchings, tracepoints = result.get("matchings") or [], result.get("tracepoints") or []
-        if (result.get("code") == "Ok" and len(matchings) == 1 and all(tracepoints) and
+        # 세 입력점의 매칭이 모두 있어야 마지막 점을 카메라 위치로 신뢰할 수 있다.
+        if (result.get("code") == "Ok" and len(matchings) == 1 and len(tracepoints) == 3 and all(tracepoints) and
                 0.8 <= (matchings[0].get("confidence") or 0) <= 1):
             name = tracepoints[-1].get("name")
             if name:

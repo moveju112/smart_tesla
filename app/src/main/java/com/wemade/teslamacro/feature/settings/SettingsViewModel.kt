@@ -12,6 +12,7 @@ import com.wemade.teslamacro.data.update.AppUpdater
 import com.wemade.teslamacro.data.update.UpdateState
 import com.wemade.teslamacro.di.AppContainer
 import com.wemade.teslamacro.domain.model.VehicleSnapshot
+import com.wemade.teslamacro.data.fleet.statusMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,6 +87,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val mutableFleetCredentials = MutableStateFlow(FleetCredentialState(busy = true))
     val fleetCredentials: StateFlow<FleetCredentialState> = mutableFleetCredentials.asStateFlow()
+    val fleetHistory = container.fleetHistory.entries
 
     /** 표시한 토큰 처리 결과만 비워 같은 작업을 다시 실행해도 새 알림을 받을 수 있게 한다. */
     fun clearFleetCredentialMessage() {
@@ -97,8 +99,10 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             val stored = runCatching {
                 withContext(Dispatchers.IO) { container.fleetTokenStore.hasToken() }
             }
+            val history = runCatching { withContext(Dispatchers.IO) { container.fleetHistory.load() } }
             mutableFleetCredentials.value = stored.fold(
-                onSuccess = { FleetCredentialState(stored = it) },
+                onSuccess = { FleetCredentialState(stored = it,
+                    message = if (history.isFailure) "Fleet 결과 기록을 읽지 못했어요" else null) },
                 onFailure = { FleetCredentialState(message = "토큰 저장 상태를 확인하지 못했어요 · 다시 시도해 주세요") },
             )
         }
@@ -134,6 +138,46 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         val vehicle = container.fleetCommands.vehicles().firstOrNull { it.vin == vin }
         if (vehicle == null) "이 토큰에서 앱에 등록된 차량을 찾지 못했어요 · Tesla 계정 연결을 확인해 주세요"
         else "연결 확인 완료 · 현재 등록 차량에 접근할 수 있어요 (깨우기·명령 전송 없음)"
+    }
+
+    /** Tesla 인증은 외부 브라우저에서 처리하고 돌아온 뒤 사용자가 차량 접근을 확인한다. */
+    fun connectFleetAccount() = fleetCredentialOperation {
+        val url = container.fleetCommands.startOAuth()
+        container.appContext.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        "Tesla 동의 후 앱으로 돌아와 연결 확인을 눌러 주세요"
+    }
+
+    /** 기록의 기존 ID만 GET하며 자동 재전송·완료 효과음·깨우기를 발생시키지 않는다. */
+    fun refreshFleetResult(requestKey: String) = fleetCredentialOperation {
+        val entry = container.fleetHistory.entries.value.firstOrNull { it.receipt.requestKey == requestKey }
+            ?: return@fleetCredentialOperation "조회할 기록이 없어요"
+        if (!entry.canRefresh) return@fleetCredentialOperation entry.receipt.statusMessage()
+        if (System.currentTimeMillis() < entry.refreshAfter) {
+            return@fleetCredentialOperation "서버 재조회 대기 중 · 잠시 후 다시 확인해 주세요"
+        }
+        val updated = container.fleetCommands.refresh(entry.receipt)
+        withContext(Dispatchers.IO) { container.fleetHistory.record(updated) }
+        updated.statusMessage()
+    }
+
+    /** 명시적인 버튼 입력만 기존 빠른 명령 서비스로 보내며 Fleet가 꺼졌으면 실행하지 않는다. */
+    fun runFleetQuickAction(action: String) {
+        if (mutableFleetCredentials.value.busy) return
+        viewModelScope.launch {
+            val current = container.settingsStore.settings.first()
+            if (!current.fleetApiEnabled || !mutableFleetCredentials.value.stored) {
+                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = "토큰 저장 후 Fleet API를 켜 주세요")
+                return@launch
+            }
+            runCatching {
+                val command = checkNotNull(com.wemade.teslamacro.service.QuickActionActivity.ACTIONS[action])
+                com.wemade.teslamacro.data.fleet.fleetCommandBody(command, 5)
+                com.wemade.teslamacro.service.MacroService.runQuickAction(container.appContext, action, null)
+            }.onFailure {
+                mutableFleetCredentials.value = mutableFleetCredentials.value.copy(message = "명령을 시작하지 못했어요 · 앱 권한을 확인해 주세요")
+            }
+        }
     }
 
     /** 저장/삭제/조회 경합을 막고 화면에는 비밀값 없는 처리 결과만 남긴다. */

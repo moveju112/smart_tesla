@@ -55,8 +55,8 @@ internal fun planChargeBars(
 /**
  * 그래프 아래에 붙는 한 줄 요약.
  *
- * 전류만 보면 같은 10A도 220V냐 110V냐에 따라 들어간 전력이 두 배 차이 난다.
- * 그래서 전류와 전력을 함께 적고, 실제로 들어간 양(kWh)도 같이 낸다.
+ * 단상·삼상에 관계없이 차량 보고 전력을 적산하며 전압·전류로 총전력을 추정하지 않는다.
+ * 충전량은 관측 구간의 적산값이며 차량 보고 kW의 정수 정밀도를 따른다.
  */
 internal fun chargeSummary(buckets: List<ChargeBucket>): String? {
     val charging = buckets.filter { it.coveredMillis > 0 && it.ampsMillis > 0 }
@@ -178,7 +178,7 @@ internal fun ChargeChart(
     }
 }
 
-/** 눈금 꼭대기 글자. 전압을 읽은 차는 kW까지 함께 적는다. */
+/** 눈금 꼭대기 글자. 차량 보고 전력을 읽은 구간은 kW도 함께 적는다. */
 internal fun topLabel(buckets: List<ChargeBucket>, topAmps: Double): String {
     val peakKilowatts = buckets.maxOfOrNull { it.averageKilowatts } ?: 0.0
     val amps = "최대 ${topAmps.roundToInt()}A"

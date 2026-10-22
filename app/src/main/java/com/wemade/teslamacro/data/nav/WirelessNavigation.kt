@@ -84,6 +84,11 @@ internal suspend fun stopNavigationForDestination(operation: Job?, hasSession: B
     if (!finished || !stopped()) throw DestinationLaunchException("안심주행 종료를 확인하지 못했어요 · 지도 상태를 확인해 주세요")
 }
 
+/** 종료 미확인 세션의 재연결만 기다리고, 일반 실행 가능한 상태에는 복구 대기를 추가하지 않는다. */
+internal suspend fun awaitDestinationBridge(hasPairing: Boolean, sessionStopConfirmed: Boolean) {
+    if (hasPairing && !sessionStopConfirmed) NavigationBridgeProvider.request()
+}
+
 /** 종료 정리 중 들어온 새 요청만 보관하며 정상 종료·실패를 자동 재시도로 바꾸지 않는다. */
 internal class NavigationRestartRequest(private val scope: CoroutineScope) {
     private var pending: Any? = null
@@ -479,7 +484,8 @@ class WirelessNavigation(private val context: Context) {
         destinationCommands.incrementAndGet()
         restartRequest.cancel()
         stopNavigationForDestination(operation, navigationSessionActive) { sessionStopConfirmed }
-        if (hasPairing) NavigationBridgeProvider.request()
+        // 정리가 이미 확인됐으면 없는 셸을 3초 기다리지 않고 현재 사용 가능한 통로를 고른다.
+        awaitDestinationBridge(hasPairing, sessionStopConfirmed)
         val status = withContext(Dispatchers.IO) {
             runCatching { NavigationChannel().connect().use { it.status() } }.getOrNull()
         }

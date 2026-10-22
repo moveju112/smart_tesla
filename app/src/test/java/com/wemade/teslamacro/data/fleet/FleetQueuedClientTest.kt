@@ -16,6 +16,20 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FleetQueuedClientTest {
 
+    /** 서버 주차 거절 원인은 사용자 안내까지 보존하고 다시 명령을 보내지 않는다. */
+    @Test fun parkRejectionPreservesReasonWithoutResubmission() = runTest {
+        for (reason in listOf("vehicle_not_parked", "park_state_unavailable")) {
+            val transport = FakeTransport().apply { responses.add(response("failed", result = reason)) }
+            val client = FleetQueuedClient(transport, { "dummy-token" })
+            val result = withContext(CommandDeadline(testScheduler.currentTime + 60_000) { testScheduler.currentTime }) {
+                client.execute(vin, VehicleCommand.Lock, {})
+            }
+            assertEquals(FleetQueueStatus.Failed, result.status)
+            assertEquals(reason, result.result)
+            assertEquals(listOf("POST"), transport.calls.map { it.method })
+        }
+    }
+
     /** 동시 결과 대기가 조회 예산을 나누고 종료·취소 후에는 단일 조회 간격으로 복귀한다. */
     @Test
     fun `concurrent result waits share the polling budget`() = runTest {

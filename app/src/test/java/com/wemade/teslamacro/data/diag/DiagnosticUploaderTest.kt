@@ -6,6 +6,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticUploaderTest {
+    /** 구버전 원문 로그가 남아 있어도 알려진 내비 진단 형식의 내용을 전송하지 않는다. */
+    @Test fun legacyNavigationContentIsRemovedBeforeUpload() {
+        for (prefix in listOf(
+            "테슬라 내비 연동 — 목적지 자동 선택",
+            "테슬라 내비 연동 — 화면 목적지 읽음",
+            "테슬라 내비 연동 — 화면 목적지 판독 실패",
+            "테슬라 내비 연동 — 안내 중 경로 미리보기",
+            "테슬라 내비 연동 — 안내 중 목적지 변경 감지",
+            "테슬라 내비 연동 — 안내 중 카드",
+            "테슬라 내비 연동 — 안내 알림 보조 문구",
+            "네이버 지도 안내 실행 요청 →",
+            "주소를 좌표로 못 바꿨어요:",
+        )) {
+            val masked = maskDiagnosticLine("12:00:00 $prefix · 1.123456,2.654321 · 비공개 목적지")
+            assertFalse(masked.contains("1.123456"))
+            assertFalse(masked.contains("2.654321"))
+            assertFalse(masked.contains("비공개 목적지"))
+            assertTrue(masked.contains("내용 가림"))
+        }
+        assertEquals("기기 API · 요청 HTTP 503", maskDiagnosticLine("기기 API · 요청 HTTP 503"))
+    }
+
     /** 실제 로그 형식의 MAC과 차량 검색 이름을 가린다. */
     @Test fun `MAC과 차량 검색 이름을 가린다`() {
         val masked = maskDiagnosticLine("연결 시작 (검색 이름 S0123456789abcdefC|S0123456789abcdefD) 0A:1B:2C:3D:4E:5F")

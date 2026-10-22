@@ -14,13 +14,16 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 /** 현재 서버의 접수 결과. 성공은 Tesla 응답일 뿐 실제 개폐 완료를 뜻하지 않는다. */
+@kotlinx.serialization.Serializable
 enum class FleetQueueStatus { Queued, Running, Succeeded, Failed, Unknown, Expired }
 
 data class FleetVehicle(val vin: String, val displayName: String, val state: String)
+@kotlinx.serialization.Serializable
 data class FleetReceipt(
     val id: String?, val requestKey: String, val vin: String, val name: String,
     val status: FleetQueueStatus, val result: String? = null,
     internal val retryAfterMillis: Long? = null,
+    internal val accountFingerprint: String? = null,
 ) {
     val pending: Boolean get() = status == FleetQueueStatus.Queued || status == FleetQueueStatus.Running
 }
@@ -68,6 +71,19 @@ class FleetQueuedClient(
 ) {
     private val awaitingResults = AtomicInteger()
 
+    /** 인증 URL은 브라우저로만 전달하고 Tesla 계정 비밀번호·토큰을 앱에서 받지 않는다. */
+    suspend fun startOAuth(): String {
+        return try {
+            val response = transport.request("POST", "/v1/oauth/start", tokenProvider(), "{}", null)
+            check(response.code == 200)
+            val url = Json.parseToJsonElement(response.body).jsonObject
+                .getValue("authorizationUrl").jsonPrimitive.content
+            check(isTeslaAuthorizationUrl(url))
+            url
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { error("Tesla 연결을 시작하지 못했어요 · 토큰과 서버 연결을 확인해 주세요") }
+    }
+
     /** 토큰/차량 정보는 로그나 오류 메시지에 포함하지 않는다. */
     suspend fun vehicles(): List<FleetVehicle> {
         return try {
@@ -97,7 +113,8 @@ class FleetQueuedClient(
         ensureCommandActive()
         val body = fleetCommandBody(command, (deadline.remainingMillis() / 1000).coerceAtMost(300).toInt())
         val receipt = FleetReceipt(null, UUID.randomUUID().toString(), vin,
-            body.getValue("type").jsonPrimitive.content, FleetQueueStatus.Unknown)
+            body.getValue("type").jsonPrimitive.content, FleetQueueStatus.Unknown,
+            accountFingerprint = fleetAccountFingerprint(token))
         return try {
             val response = transport.request("POST", "/v1/vehicles/$vin/commands", token, body.toString(), receipt.requestKey)
             when (response.code) {
@@ -114,7 +131,7 @@ class FleetQueuedClient(
     }
 
     /** GET만 반복하며 만료·중단·unknown에서 새 POST를 만들지 않는다. */
-    suspend fun awaitResult(initial: FleetReceipt, onUpdate: (FleetReceipt) -> Unit = {}): FleetReceipt {
+    suspend fun awaitResult(initial: FleetReceipt, onUpdate: suspend (FleetReceipt) -> Unit = {}): FleetReceipt {
         var latest = initial
         onUpdate(latest)
         if (!latest.pending) return latest
@@ -128,12 +145,15 @@ class FleetQueuedClient(
                     val next = refresh(latest)
                     retryAfterMillis = next.retryAfterMillis ?: 0L
                     // 조회 실패는 결과가 아니다 — 같은 ID를 기한까지 GET만 다시 한다.
-                    if (next.result == "result_unavailable" && latest.id != null) continue
+                    if (next.result == "result_unavailable" && latest.id != null) {
+                        onUpdate(next)
+                        continue
+                    }
                     latest = next
                     onUpdate(latest)
                 }
                 latest
-            } ?: latest.copy(status = FleetQueueStatus.Unknown, result = "result_wait_timeout").also(onUpdate)
+            } ?: latest.copy(status = FleetQueueStatus.Unknown, result = "result_wait_timeout").also { onUpdate(it) }
         } finally {
             awaitingResults.decrementAndGet()
         }
@@ -145,7 +165,11 @@ class FleetQueuedClient(
         require(Regex("[A-Za-z0-9_-]{1,128}").matches(id)) { "잘못된 Fleet 명령 ID예요" }
         coroutineContext.ensureActive()
         return try {
-            val response = transport.request("GET", "/v1/commands/$id", tokenProvider(), null, null)
+            val token = tokenProvider()
+            if (receipt.accountFingerprint != null && receipt.accountFingerprint != fleetAccountFingerprint(token)) {
+                return receipt.copy(status = FleetQueueStatus.Unknown, result = "credential_changed")
+            }
+            val response = transport.request("GET", "/v1/commands/$id", token, null, null)
             if (response.code == 200) parseReceipt(response.body, receipt)
             else receipt.copy(status = FleetQueueStatus.Unknown, result = "result_unavailable",
                 retryAfterMillis = if (response.code == 429) response.retryAfterMillis ?: 5_000L else null)
@@ -155,7 +179,7 @@ class FleetQueuedClient(
 
     /** 완료 효과음은 접수/queued가 아니라 최종 성공 응답에 한 번만 연결한다. */
     suspend fun execute(vin: String, command: VehicleCommand, beforeSubmit: () -> Unit,
-                        onUpdate: (FleetReceipt) -> Unit = {}): FleetReceipt {
+                        onUpdate: suspend (FleetReceipt) -> Unit = {}): FleetReceipt {
         val result = awaitResult(submit(vin, command, beforeSubmit), onUpdate)
         coroutineContext.ensureActive()
         // 외부 빠른 명령은 서비스의 최종 성공 분기가 두 번 울리므로 공유 단발음을 생략한다.
@@ -185,9 +209,62 @@ class FleetQueuedClient(
         // result는 서버 문자열을 그대로 UI/로그에 흘리지 않고 알려진 코드만 보존한다.
         val result = json["result"]?.jsonPrimitive?.contentOrNull?.takeIf { it in setOf(
             "tesla_acknowledged_not_state_verified", "tesla_rejected_command", "vehicle_access_denied",
-            "tesla_transport_or_response_error", "server_restarted", "deadline_exceeded") }
+            "tesla_transport_or_response_error", "server_restarted", "deadline_exceeded",
+            "vehicle_not_parked", "park_state_unavailable", "waiting_for_vehicle_online", "sending_command",
+            "vehicle_wake_failed", "vehicle_state_unknown", "worker_stopping", "user_disabled") }
         return expected.copy(id = id, status = status, result = result, retryAfterMillis = null)
     }
+}
+
+/** 서버 응답이 외부 로그인 페이지나 앱 딥링크로 바뀌어도 임의 주소를 열지 않는다. */
+internal fun isTeslaAuthorizationUrl(value: String): Boolean = runCatching {
+    val uri = java.net.URI(value)
+    value.length <= 8192 && uri.scheme == "https" && uri.host == "auth.tesla.com" &&
+        uri.port == -1 && uri.userInfo == null && uri.fragment == null &&
+        uri.path == "/oauth2/v3/authorize" && !uri.rawQuery.isNullOrBlank()
+}.getOrDefault(false)
+
+/** 토큰이 교체되면 이전 계정의 명령 ID를 새 계정으로 조회하지 않는다. 원문은 보존하지 않는다. */
+internal fun fleetAccountFingerprint(token: String): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+/** 서버 코드를 그대로 출력하지 않고 접수·전송·성공 응답과 미확인을 구분한다. */
+fun FleetReceipt.statusMessage(): String = when (status) {
+    FleetQueueStatus.Queued -> "서버 접수 · 실행 대기"
+    FleetQueueStatus.Running -> when (result) {
+        "waiting_for_vehicle_online" -> "차량 깨우는 중 · 서버 명령 취소 불가"
+        "sending_command" -> "차량에 명령 전송 중"
+        else -> "차량 결과 확인 중"
+    }
+    FleetQueueStatus.Succeeded -> "차량 성공 응답 · 물리 상태 확인 아님"
+    FleetQueueStatus.Expired -> "전송 전 유효시간 만료"
+    FleetQueueStatus.Failed -> when (result) {
+        "vehicle_not_parked" -> "P단이 아니어서 개폐하지 않았어요"
+        "park_state_unavailable" -> "기어 미확인 · 개폐하지 않았어요"
+        "vehicle_wake_failed" -> "차량 깨우기 실패"
+        "http_401", "http_403", "vehicle_access_denied", "user_disabled" -> "토큰 또는 차량 접근 권한을 확인해 주세요"
+        else -> "서버 또는 차량이 명령을 거부했어요"
+    }
+    FleetQueueStatus.Unknown -> when {
+        result == "credential_changed" -> "토큰이 변경됐어요 · 이전 토큰으로 조회해 주세요"
+        result == "result_unavailable" -> "결과 조회 실패 · 실행 여부 미확인"
+        id == null -> "접수 여부 미확인 · 재전송하지 않아요"
+        else -> "결과 미확인 · 재조회만 가능해요"
+    }
+}
+
+/** 기록 화면에는 차량 식별자나 서버 원문 대신 허용된 명령 이름만 보여 준다. */
+fun FleetReceipt.commandLabel(): String = when (name) {
+    "actuate_trunk" -> "트렁크 작동"
+    "door_lock" -> "문 잠금"
+    "auto_conditioning_start" -> "공조 켜기"
+    "auto_conditioning_stop" -> "공조 끄기"
+    "charge_start" -> "충전 시작"
+    "charge_stop" -> "충전 중지"
+    "set_temps" -> "온도 설정"
+    "set_charge_limit" -> "충전 한도 설정"
+    else -> "차량 명령"
 }
 
 data class FleetHttpResponse(val code: Int, val body: String, val retryAfterMillis: Long? = null)

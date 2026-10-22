@@ -58,13 +58,14 @@ class ChargeHistoryStore(context: Context) {
         if (readAt == lastReadAt) return
         lastReadAt = readAt
 
-        // 충전 중이 아니면 0A. 빈 칸으로 두면 "안 읽었다"와 "안 했다"가 구분되지 않는다
-        val charging = snapshot.isCharging == true
+        // 미확인은 충전 종료나 이전 전류의 지속으로 적산하지 않는다.
+        val charging = snapshot.isCharging ?: run { lastSampleAt = 0L; return }
         // 설정값(chargingAmps)이 아니라 실제로 흐르는 전류를 먼저 쓴다. 옛 펌웨어라 없으면 설정값
         val amps = if (charging) {
             snapshot.actualChargingAmps ?: snapshot.chargingAmps ?: return
         } else 0
-        val watts = if (charging) chargingWatts(amps, snapshot.chargerVoltage, snapshot.chargerPowerKw) else 0
+        // 상 수를 모르므로 V×A로 총전력을 추정하지 않고 차량이 보고한 kW만 사용한다.
+        val watts = if (charging) (snapshot.chargerPowerKw ?: 0) * 1_000 else 0
 
         if (lastSampleAt > 0) {
             _buckets.value = ChargeHistory.accumulate(
@@ -90,17 +91,6 @@ class ChargeHistoryStore(context: Context) {
     }
 
     private companion object {
-        /**
-         * 전압을 읽었으면 전류×전압, 아니면 차량이 보고한 kW를 쓴다.
-         *
-         * charger_power는 kW 정수라 저전류에서 0으로 내려앉는다. 전압이 있을 때 굳이 쓰지 않는다.
-         */
-        fun chargingWatts(amps: Int, voltage: Int?, powerKw: Int?): Int = when {
-            voltage != null && voltage > 0 -> amps * voltage
-            powerKw != null -> powerKw * 1_000
-            else -> 0
-        }
-
         const val PERSIST_INTERVAL_MILLIS = 60_000L
         val bucketListSerializer = ListSerializer(ChargeBucket.serializer())
     }

@@ -13,10 +13,12 @@ import androidx.core.content.ContextCompat
 import com.wemade.teslamacro.data.safety.DeviceApiClient
 import com.wemade.teslamacro.data.settings.AppSettings
 import com.wemade.teslamacro.data.settings.SettingsStore
+import com.wemade.teslamacro.domain.model.ShiftState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -34,8 +36,9 @@ internal class DestinationCoordinator(
     val message = MutableStateFlow("탑승 대기")
     private val journal = DestinationJournal(context)
     private val events = Channel<Unit>(Channel.CONFLATED)
-    @Volatile private var present: Boolean? = null
-    @Volatile private var presenceAt = -1L
+    private val polling = DestinationPollingWindow()
+    private val mutableFastPolling = MutableStateFlow(false)
+    val fastPolling = mutableFastPolling.asStateFlow()
     @Volatile private var settings = AppSettings()
     private val diagnostics = DestinationDiagnostics.current.apply { attach(java.io.File(context.noBackupFilesDir, "destination-diagnostics.txt")) }
     private val priority = DestinationNavigationPriority(SystemClock::elapsedRealtime)
@@ -78,17 +81,23 @@ internal class DestinationCoordinator(
     /** 신선한 차량 응답만 수신 허가로 쓰고 하차 때 남은 자동 실행을 중단한다. */
     fun observePresence(value: Boolean, observedAt: Long) {
         synchronized(boarding) {
-            present = value
-            presenceAt = observedAt
-            if (!value) { boarding.reset(); receiver.retryDeclined() }
+            polling.observePresence(value, observedAt)
+            if (!value) { mutableFastPolling.value = false; boarding.reset(); receiver.retryDeclined() }
         }
+        nudge()
+    }
+
+    /** 첫 D/R 확인 이후에는 정차해도 같은 탑승의 집중 수신을 다시 시작하지 않는다. */
+    fun observeDrive(shift: ShiftState) {
+        polling.observeDrive(shift)
+        if (shift == ShiftState.DRIVE || shift == ShiftState.REVERSE) mutableFastPolling.value = false
         nudge()
     }
 
     /** 전원 해제 때 오래된 착석값을 버리며 배터리 사용 자체를 영구 금지하지 않는다. */
     fun powerChanged(connected: Boolean) {
         synchronized(boarding) {
-            if (!connected) { present = null; presenceAt = -1; boarding.reset(); receiver.retryDeclined() }
+            if (!connected) { polling.reset(); mutableFastPolling.value = false; boarding.reset(); receiver.retryDeclined() }
         }
         presenceRetryAt = 0L
         nudge()
@@ -120,7 +129,7 @@ internal class DestinationCoordinator(
     private fun ready(): Boolean = settings.destinationReceiveEnabled && presenceReady()
 
     /** 자동 안심운전도 현재 탑승의 신선한 관측만 실행 근거로 사용한다. */
-    private fun presenceReady(): Boolean = destinationReady(true, present, presenceAt, SystemClock.elapsedRealtime())
+    private fun presenceReady(): Boolean = destinationReady(true, polling.present, polling.observedAt, SystemClock.elapsedRealtime())
 
     /** 요청이 있을 때만 짧게 차체를 재확인하며 미응답 재시도는 30초 간격으로 제한한다. */
     suspend fun prepareBoarding(): Boolean {
@@ -162,10 +171,17 @@ internal class DestinationCoordinator(
                     networkRecovered.set(true)
                     presenceRetryAt = 0L
                     nudge()
-                } else if (!validated && previouslyValidated) nudge()
+                } else if (!validated && previouslyValidated) {
+                    mutableFastPolling.value = false
+                    nudge()
+                }
             }
             /** 통신이 끊기면 다음 인계 전에 연결 조건을 다시 확인한다. */
-            override fun onLost(network: Network) { networkValidated.set(false); nudge() }
+            override fun onLost(network: Network) {
+                networkValidated.set(false)
+                mutableFastPolling.value = false
+                nudge()
+            }
         }
         val unlocked = object : BroadcastReceiver() {
             /** 잠금 해제와 화면 복귀 때 놓친 목적지·처리 결과를 다시 확인한다. */
@@ -176,12 +192,25 @@ internal class DestinationCoordinator(
         var failures = 0
         var retryAt = 0L
         var nextInboxAt = 0L
+        var lastInboxStartedAt = -1L
+        var lastFastPolling = false
         var lastGate: String? = null
         try {
             while (isActive) {
                 if (networkRecovered.getAndSet(false)) { failures = 0; retryAt = 0L; nextInboxAt = 0L }
                 val enabled = settings.destinationReceiveEnabled
                 val connected = online()
+                val fast = enabled && connected && polling.isFast(SystemClock.elapsedRealtime())
+                mutableFastPolling.value = fast
+                if (fast != lastFastPolling) {
+                    lastFastPolling = fast
+                    // 새 탑승은 기존 5초 대기를 즉시 해제하되 오류 재시도 기한은 그대로 지킨다.
+                    if (fast) nextInboxAt = 0L
+                    else if (lastInboxStartedAt >= 0) {
+                        nextInboxAt = maxOf(nextInboxAt, lastInboxStartedAt + DESTINATION_NORMAL_POLL_MILLIS)
+                    }
+                    DiagLog.add(if (fast) "목적지 수신 — 출발 전 집중 확인 시작" else "목적지 수신 — 일반 확인 주기 복귀")
+                }
                 val gate = when {
                     !enabled -> null
                     !connected -> "인터넷 연결 대기"
@@ -192,13 +221,16 @@ internal class DestinationCoordinator(
                     lastGate = gate
                 }
                 if (enabled && connected && SystemClock.elapsedRealtime() >= maxOf(retryAt, nextInboxAt)) {
+                    lastInboxStartedAt = SystemClock.elapsedRealtime()
                     try {
                         val outcome = boarding.receive(receiver, prepare = {
                             settings.destinationReceiveEnabled && online() && prepareBoarding()
                         }, ready = { ready() && online() }, elapsed = SystemClock::elapsedRealtime,
-                            onDispatch = { diagnostics.deliveryChecked(settings.destinationReceiveEnabled, online(), present, presenceAt) })
+                            onDispatch = { diagnostics.deliveryChecked(settings.destinationReceiveEnabled, online(), polling.present, polling.observedAt) })
                         diagnostics.deliveryFinished(outcome)
-                        nextInboxAt = SystemClock.elapsedRealtime() + 5_000L
+                        // HTTP 소요 시간을 주기에 또 더하지 않으며 수신 작업 자체는 계속 직렬 실행한다.
+                        nextInboxAt = lastInboxStartedAt +
+                            if (fast) DESTINATION_FAST_POLL_MILLIS else DESTINATION_NORMAL_POLL_MILLIS
                         failures = 0
                         retryAt = 0L
                     } catch (error: Exception) {
@@ -224,7 +256,8 @@ internal class DestinationCoordinator(
                     if (request.execute(now)) boarding.consume(request)
                 }
                 if ((enabled && connected) || boarding.fallback != null) {
-                    val delayMillis = if (boarding.fallback != null) 1_000L else maxOf(5_000L, retryAt - SystemClock.elapsedRealtime())
+                    val delayMillis = destinationPollWait(SystemClock.elapsedRealtime(), nextInboxAt, retryAt,
+                        boarding.fallback != null, enabled && connected)
                     withTimeoutOrNull(delayMillis) { events.receive() }
                 } else events.receive()
             }
@@ -232,13 +265,56 @@ internal class DestinationCoordinator(
             manager.unregisterNetworkCallback(callback)
             context.unregisterReceiver(unlocked)
             synchronized(boarding) {
-                present = null
-                presenceAt = -1
+                polling.reset()
+                mutableFastPolling.value = false
                 boarding.reset()
             }
         }
     }
 
+}
+
+internal const val DESTINATION_FAST_POLL_MILLIS = 1_000L
+internal const val DESTINATION_NORMAL_POLL_MILLIS = 5_000L
+
+/** 신선한 첫 착석부터 D/R 진입까지만 수신을 가속하고 하차·전원 해제 때 새 탑승을 허용한다. */
+internal class DestinationPollingWindow {
+    @Volatile var present: Boolean? = null
+        private set
+    @Volatile var observedAt = -1L
+        private set
+    private var drove = false
+
+    /** UNKNOWN이나 관측 만료로 주행 이력을 지우지 않아 같은 탑승을 다시 가속하지 않는다. */
+    @Synchronized fun observePresence(value: Boolean, time: Long) {
+        present = value
+        observedAt = time
+        if (!value) drove = false
+    }
+
+    /** 주행 확인은 이후 P단으로 돌아와도 유지한다. */
+    @Synchronized fun observeDrive(shift: ShiftState) {
+        if (shift == ShiftState.DRIVE || shift == ShiftState.REVERSE) drove = true
+    }
+
+    /** 기존 수신의 30초 착석 신선도 계약을 그대로 사용한다. */
+    @Synchronized fun isFast(now: Long): Boolean = !drove && destinationReady(true, present, observedAt, now)
+
+    /** 전원이 끊기거나 서비스가 끝나면 관측과 탑승 세션을 함께 비운다. */
+    @Synchronized fun reset() {
+        present = null
+        observedAt = -1L
+        drove = false
+    }
+}
+
+/** 중간 이벤트로 깨어나도 원래 조회 시각을 지키며 오류 백오프를 건너뛰지 않는다. */
+internal fun destinationPollWait(now: Long, nextInboxAt: Long, retryAt: Long, hasFallback: Boolean,
+                                 pollingEnabled: Boolean = true): Long {
+    // 수신을 못 하는 동안 과거 조회 기한이 1ms 반복 대기로 바뀌지 않게 한다.
+    if (!pollingEnabled) return 1_000L
+    val remaining = (maxOf(nextInboxAt, retryAt) - now).coerceAtLeast(1L)
+    return if (hasFallback) minOf(1_000L, remaining) else remaining
 }
 
 /** 탑승 상태 변경은 한 잠금 안에서 적용하고 서버 응답 대기 중에는 잠금을 잡지 않는다. */

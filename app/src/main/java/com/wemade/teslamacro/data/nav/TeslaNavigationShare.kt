@@ -39,10 +39,12 @@ internal class TeslaNavigationShare(
     private var expiry: Job? = null
     private var ignored: String? = null
     private var repeatedAt = -30_001L
-    private val routeDistances = ArrayDeque<Pair<Long, Int>>()
+    private data class RouteDistanceObservation(val destination: String, val observedAt: Long, val meters: Int)
+    @Volatile private var routeObservation: RouteDistanceObservation? = null
     private var naverMode: Pair<Long, NaverGuidanceMode>? = null
     private var safeDrive = false
     private var pendingNaverDestination: String? = null
+    private var pendingNaverRouteMeters: Int? = null
 
     /** 안내 알림에 포함된 목적지와 같은 앱의 최신 화면 후보만 결합한다. */
     suspend fun notification(packageName: String, key: String, title: String, text: String) = lock.withLock {
@@ -62,7 +64,7 @@ internal class TeslaNavigationShare(
             DiagLog.add("테슬라 내비 연동 — 같은 안내 알림 갱신 · 새 안내로 보지 않음")
         } else if (!guiding && ignored != text) {
             ignored = text
-            DiagLog.add("테슬라 내비 연동 — 안내 아님 알림 무시 · ${title.take(20)} / ${text.take(30)}")
+            DiagLog.add("테슬라 내비 연동 — 안내 아님 알림 무시")
         }
     }
 
@@ -115,18 +117,20 @@ internal class TeslaNavigationShare(
             expiry = null
             mutableSelection.value = null
             pendingNaverDestination = null
+            pendingNaverRouteMeters = null
+            routeObservation = null
             safeDrive = true
             return@withLock
         }
         pendingNaverDestination?.let {
-            resolve(it, NAVER, source!!.second, confirmedNaverRoute = true)
+            resolve(it, NAVER, source!!.second, confirmedNaverRoute = true, routeMeters = pendingNaverRouteMeters)
             return@withLock
         }
         if (mode != NaverGuidanceMode.ROUTE || !safeDrive || !enabled()) return@withLock
         val key = source?.second ?: return@withLock
         safeDrive = false
         val destination = tracker.restart(NAVER, now)
-        DiagLog.add("테슬라 내비 연동 — 안심주행 중 길안내 시작 감지 · 후보=${destination ?: "없음"}")
+        DiagLog.add("테슬라 내비 연동 — 안심주행 중 길안내 시작 감지 · 후보=${if (destination == null) "없음" else "있음"}")
         if (destination != null) resolve(destination, NAVER, key, confirmedNaverRoute = true)
         else {
             startedAt = now
@@ -173,24 +177,22 @@ internal class TeslaNavigationShare(
         if (!enabled()) return@withLock
         val key = tracker.activeKey(packageName) ?: return@withLock
         tracker.reroute(packageName, destination)?.let {
-            DiagLog.add("테슬라 내비 연동 — 안내 중 목적지 변경 감지 · $it")
+            DiagLog.add("테슬라 내비 연동 — 안내 중 목적지 변경 감지")
             resolve(it, packageName, key)
         }
     }
 
-    // 경로 거리 기록 (네이버 화면 거리 -> 최근 60초 최댓값을 후보 거리 상한으로 사용)
-    /** 이전 안내의 짧은 남은 거리가 새 경로 후보를 지우지 않도록 최근 값 중 가장 긴 거리를 쓴다. */
-    fun routeDistance(meters: Int) = synchronized(routeDistances) {
-        if (meters !in 1..1_000_000) return@synchronized
-        routeDistances.addLast(SystemClock.elapsedRealtime() to meters)
-        while (routeDistances.size > 50) routeDistances.removeFirst()
+    /** 같은 화면에서 읽은 목적지와 거리만 묶고 거리 미확인은 이전 값으로 대신하지 않는다. */
+    fun routeDistance(meters: Int?, destination: String) {
+        val normalized = TeslaNavigationDestination.normalize(destination)
+        routeObservation = if (meters != null && meters in 1..1_000_000 && normalized != null)
+            RouteDistanceObservation(normalized, SystemClock.elapsedRealtime(), meters) else null
     }
 
-    /** 최근 60초 안에 본 경로 거리가 없으면 거리 조건을 쓰지 않는다. */
-    private fun routeBound(): Int? = synchronized(routeDistances) {
-        val now = SystemClock.elapsedRealtime()
-        routeDistances.filter { now - it.first in 0..60_000 }.maxOfOrNull { it.second }
-    }
+    /** 최근 관측이어도 다른 목적지의 거리이면 후보 선택에 쓰지 않는다. */
+    private fun routeBound(destination: String): Int? = routeObservation?.takeIf {
+        it.destination == destination && SystemClock.elapsedRealtime() - it.observedAt in 0..60_000
+    }?.meters
 
     /** 진단 기록을 안내 중으로 한정하기 위해 해당 내비의 안내 알림이 살아 있는지 알려준다. */
     suspend fun guiding(packageName: String): Boolean = lock.withLock { tracker.activeKey(packageName) != null }
@@ -218,6 +220,8 @@ internal class TeslaNavigationShare(
         source = null
         safeDrive = false
         pendingNaverDestination = null
+        pendingNaverRouteMeters = null
+        routeObservation = null
         mutableSelection.value = null
     }
 
@@ -231,11 +235,14 @@ internal class TeslaNavigationShare(
     }
 
     /** 조회는 알림 잠금 밖에서 실행하고 새 안내·OFF가 이전 결과를 폐기할 수 있게 한다. */
-    private suspend fun resolve(query: String, packageName: String, key: String, confirmedNaverRoute: Boolean = false) {
+    private suspend fun resolve(query: String, packageName: String, key: String,
+                                confirmedNaverRoute: Boolean = false,
+                                routeMeters: Int? = if (packageName == NAVER) routeBound(query) else null) {
         // 네이버 알림은 안심주행과 같으므로 캐시만으로 차량 공유를 시작하지 않는다.
         if (packageName == NAVER && !confirmedNaverRoute) {
             awaitScreen(packageName, key)
             pendingNaverDestination = query
+            pendingNaverRouteMeters = routeMeters
             return
         }
         invalidate("새 길안내 수신")
@@ -243,23 +250,21 @@ internal class TeslaNavigationShare(
         startedAt = SystemClock.elapsedRealtime()
         val id = revision
         val testRequest = settingsStore.settings.first().teslaNavigationTestMode
-        resolution = scope.launch { findCandidates(id, query, testRequest) }
+        resolution = scope.launch { findCandidates(id, query, testRequest, routeMeters) }
     }
 
     // 목적지 자동 결정 (조회 -> 경로 거리로 먼 동명 제외 -> 가장 그럴듯한 후보 -> 없으면 지역+이름)
     /** 사용자 결정대로 선택창 없이 한 곳을 정해 공유하고, 테스트 모드는 같은 결과를 보조창에 보여준다. */
-    private suspend fun findCandidates(id: Long, query: String, testRequest: Boolean) {
+    private suspend fun findCandidates(id: Long, query: String, testRequest: Boolean, route: Int? = null) {
         try {
             val sourcePoint = teslaDestinationPoint(query)
             val near = if (sourcePoint == null) currentPoint() else null
             val found = if (sourcePoint != null) listOf(TeslaDestinationCandidate(query, sourcePoint))
                 else rankedTeslaCandidates(matchingTeslaAddressCandidates(query, lookup(query, near)), near)
-            val route = routeBound()
             val bounded = withinTeslaRouteDistance(found, near, route)
             val best = bestTeslaCandidate(bounded, near, route)
                 ?: fallbackTeslaCandidate(query, near?.let { runCatching { regionOf(it) }.getOrNull() })
-            DiagLog.add("테슬라 내비 연동 — 목적지 자동 선택 · 경로=${route ?: -1}m · 후보 ${found.size}→${bounded.size} · " +
-                "${best.address}${if (best.point == null) " (이름 검색)" else ""}")
+            DiagLog.add("테슬라 내비 연동 — 목적지 자동 선택 · 경로=${route ?: -1}m · 후보 ${found.size}→${bounded.size}")
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
                 val testMode = testRequest || settingsStore.settings.first().teslaNavigationTestMode

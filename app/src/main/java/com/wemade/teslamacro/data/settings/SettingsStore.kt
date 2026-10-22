@@ -402,21 +402,22 @@ class SettingsStore(
 
     /** 차량 상한보다 높은 값도 안전하게 저장 범위에서 제한하고 실제 실행 때 다시 차량값과 비교한다. */
     suspend fun setStealthMaxAmps(amps: Int) = edit {
-        val max = amps.coerceIn(5, 48)
-        it[KeyStealthMaxAmps] = max
-        // 상한을 내리면 하한이 상한을 넘을 수 있다. 범위가 뒤집히지 않게 같이 내린다
-        val min = it[KeyStealthMinAmps]
-        if (min != null && min > max) it[KeyStealthMinAmps] = max
+        setStealthCurrentRange(it, amps, it[KeyStealthMinAmps])
     }
 
     /** 하한은 저장 범위와 현재 상한 안에서만 받는다. null이면 자동 하한으로 되돌린다. */
     suspend fun setStealthMinAmps(amps: Int?) = edit {
-        if (amps == null) {
-            it.remove(KeyStealthMinAmps)
-        } else {
-            val max = (it[KeyStealthMaxAmps] ?: 48).coerceIn(5, 48)
-            it[KeyStealthMinAmps] = amps.coerceIn(5, 48).coerceAtMost(max)
-        }
+        setStealthCurrentRange(it, it[KeyStealthMaxAmps] ?: 48, amps)
+    }
+
+    /** 화면 변경과 백업 복원이 같은 상·하한 검증을 사용하도록 한 번에 저장한다. */
+    private fun setStealthCurrentRange(
+        prefs: androidx.datastore.preferences.core.MutablePreferences, maximum: Int, minimum: Int?,
+    ) {
+        val max = maximum.coerceIn(5, 48)
+        prefs[KeyStealthMaxAmps] = max
+        if (minimum == null) prefs.remove(KeyStealthMinAmps)
+        else prefs[KeyStealthMinAmps] = minimum.coerceIn(5, max)
     }
 
     /** 시간대 제한 사용 여부를 저장한다. */
@@ -493,9 +494,16 @@ class SettingsStore(
      * 차량 식별·등록 상태는 백업에 없으므로 여기서도 건드리지 않는다.
      */
     suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
+        backup.themeMode?.let { value -> it[KeyThemeMode] = ThemeMode.of(value).name }
+        backup.stealthPreferences?.let { preferences ->
+            setStealthCurrentRange(it, preferences.maxAmps, preferences.minAmps)
+            it[KeyStealthScheduleEnabled] = preferences.scheduleEnabled
+            it[KeyStealthStartMinutes] = preferences.startMinutes.coerceIn(0, 1439)
+            it[KeyStealthEndMinutes] = preferences.endMinutes.coerceIn(0, 1439)
+        }
         it[KeyProtectPhoneKey] = backup.protectPhoneKey
         // 사용 모드는 일부러 복원하지 않는다 — 다른 기기 백업이 이 설치본의 거치 방식을 바꾸면 안 된다.
-        // 1회 실행은 다른 기기에 복원하지 않는다. 시간대 취향만 이 설치본에 남는다.
+        // 1회 실행은 다른 기기에 복원하지 않고 시간대·전류 취향만 되돌린다.
         it[KeyStealthCharging] = false
         // 이 기기에서 이미 바꾼 전류는 수동 해제처럼 원복한 뒤 진행 상태를 지운다.
         if (!needsStealthRestore(it)) {

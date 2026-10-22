@@ -18,6 +18,24 @@ import org.junit.Test
 class DestinationNavigationTransitionTest {
     @get:Rule val paparazzi = Paparazzi()
 
+    /** 페어링 기록만 있고 실행 중인 실험이 없으면 없는 Binder를 3초 기다리지 않는다. */
+    @Test fun savedPairingWithoutRunningShellDoesNotDelayDestinationFallback() = runTest {
+        val previousBridge = NavigationBridgeProvider.bridge
+        NavigationBridgeProvider.bridge = null
+        try {
+            val started = testScheduler.currentTime
+            awaitDestinationBridge(hasPairing = true, sessionStopConfirmed = true)
+            assertEquals(started, testScheduler.currentTime)
+            awaitDestinationBridge(hasPairing = false, sessionStopConfirmed = false)
+            assertEquals(started, testScheduler.currentTime)
+            // 종료가 미확인인 경우에는 기존 실제 Binder 복구 대기를 생략하지 않는다.
+            awaitDestinationBridge(hasPairing = true, sessionStopConfirmed = false)
+            assertEquals(started + 3_000L, testScheduler.currentTime)
+        } finally {
+            NavigationBridgeProvider.bridge = previousBridge
+        }
+    }
+
     /** 기존 실험의 강제 종료 정리가 완료되기 전에는 새 목적지가 실행되지 않는다. */
     @Test fun destinationWaitsForConfirmedCleanup() = runTest {
         val cleanup = CompletableDeferred<Unit>()

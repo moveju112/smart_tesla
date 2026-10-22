@@ -4,6 +4,7 @@ import android.content.ContextWrapper
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import app.cash.paparazzi.Paparazzi
 import com.wemade.teslamacro.data.backup.BackupSettings
+import com.wemade.teslamacro.data.backup.toBackup
 import com.wemade.teslamacro.data.charge.StealthChargeAction
 import com.wemade.teslamacro.data.charge.stealthChargeAction
 import kotlinx.coroutines.flow.first
@@ -21,6 +22,55 @@ import java.io.File
 class StealthChargeSettingsTest {
     @get:Rule val paparazzi = Paparazzi()
     @get:Rule val temporaryFolder = TemporaryFolder()
+
+    /** 전류·시간대·테마는 JSON 백업 왕복 후 복원하고 실제 실행 예약은 켜지 않는다. */
+    @Test fun currentPreferencesSurviveBackupAndRestore() = runTest {
+        val store = SettingsStore(ContextWrapper(paparazzi.context),
+            PreferenceDataStoreFactory.create(scope = backgroundScope) {
+                File(temporaryFolder.root, "backup-preferences.preferences_pb")
+            })
+        val original = com.wemade.teslamacro.data.settings.AppSettings(
+            themeMode = com.wemade.teslamacro.data.settings.ThemeMode.DARK,
+            stealthCharging = true, stealthMaxAmps = 12, stealthMinAmps = 5,
+            stealthScheduleEnabled = true, stealthStartMinutes = 23 * 60 + 10, stealthEndMinutes = 6 * 60 + 20)
+        val file = com.wemade.teslamacro.data.backup.BackupFile(
+            settings = original.toBackup())
+        val json = com.wemade.teslamacro.data.backup.BackupFile.json
+        val restoredFile = json.decodeFromString(com.wemade.teslamacro.data.backup.BackupFile.serializer(),
+            json.encodeToString(com.wemade.teslamacro.data.backup.BackupFile.serializer(), file))
+        store.restore(restoredFile.settings)
+        val restored = store.settings.first()
+        assertEquals(12, restored.stealthMaxAmps)
+        assertEquals(5, restored.stealthMinAmps)
+        assertTrue(restored.stealthScheduleEnabled)
+        assertEquals(original.stealthStartMinutes, restored.stealthStartMinutes)
+        assertEquals(original.stealthEndMinutes, restored.stealthEndMinutes)
+        assertEquals(original.themeMode, restored.themeMode)
+        assertFalse(restored.stealthCharging)
+    }
+
+    /** 구백업의 누락은 현재 취향을 지키고 새 백업의 null 하한만 자동 하한으로 복원한다. */
+    @Test fun oldBackupPreservesNewPreferencesAndNewBackupCanRestoreAutomaticMinimum() = runTest {
+        val store = SettingsStore(ContextWrapper(paparazzi.context),
+            PreferenceDataStoreFactory.create(scope = backgroundScope) {
+                File(temporaryFolder.root, "legacy-preferences.preferences_pb")
+            })
+        store.setStealthMaxAmps(12)
+        store.setStealthMinAmps(6)
+        store.setStealthScheduleEnabled(true)
+        store.setThemeMode(com.wemade.teslamacro.data.settings.ThemeMode.DARK)
+        store.restore(BackupSettings())
+        assertEquals(12, store.settings.first().stealthMaxAmps)
+        assertEquals(6, store.settings.first().stealthMinAmps)
+        assertTrue(store.settings.first().stealthScheduleEnabled)
+        assertEquals(com.wemade.teslamacro.data.settings.ThemeMode.DARK, store.settings.first().themeMode)
+        store.restore(BackupSettings(stealthPreferences = com.wemade.teslamacro.data.backup.BackupStealthPreferences(
+            maxAmps = 10, minAmps = null, startMinutes = -1, endMinutes = 2_000)))
+        assertEquals(10, store.settings.first().stealthMaxAmps)
+        assertNull(store.settings.first().stealthMinAmps)
+        assertEquals(0, store.settings.first().stealthStartMinutes)
+        assertEquals(1439, store.settings.first().stealthEndMinutes)
+    }
 
     /** 저장값을 5~48A로 제한하고 새 Store에서도 그대로 복원한다. */
     @Test

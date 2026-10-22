@@ -31,7 +31,7 @@ fun QuickActionRequestPanel(
     onStopObserving: (Long) -> Unit = {},
 ) {
     requests.firstOrNull { !it.active }?.let { request ->
-        key(request.id) { ActionFeedback("${request.label} · ${request.status.message}", onDismiss = { onDismiss(request.id) }, useSnackbar = true) }
+        key(request.id) { ActionFeedback("${request.label} · ${request.message}", onDismiss = { onDismiss(request.id) }, useSnackbar = true) }
     }
     val activeRequests = requests.filter { it.active }
     if (activeRequests.isEmpty()) return
@@ -49,7 +49,7 @@ fun QuickActionRequestPanel(
                     verticalArrangement = Arrangement.spacedBy(Space.xs),
                 ) {
                     Text(request.label, style = MaterialTheme.typography.titleSmall, color = T.Ink)
-                    Text(request.status.message, style = MaterialTheme.typography.bodyMedium, color = T.Ink)
+                    Text(request.message, style = MaterialTheme.typography.bodyMedium, color = T.Ink)
                 }
                 if (request.canCancel) {
                     TButton(text = "취소", tone = ButtonTone.Ghost, small = true, fillWidth = false, onClick = { onCancel(request.id) })

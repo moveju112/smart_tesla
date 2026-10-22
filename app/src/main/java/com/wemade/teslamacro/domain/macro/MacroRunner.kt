@@ -72,6 +72,10 @@ class MacroRunner(
     private val _running = MutableStateFlow<Set<String>>(emptySet())
     val running: StateFlow<Set<String>> = _running.asStateFlow()
 
+    /** 저장된 자동 실행 여부와 별개로 실제 실행이 읽어야 할 조건을 폴러에 전달한다. */
+    private val _activeRules = MutableStateFlow<Map<String, MacroRule>>(emptyMap())
+    val activeRules: StateFlow<Map<String, MacroRule>> = _activeRules.asStateFlow()
+
     private val _progress = MutableStateFlow<Map<String, MacroProgress>>(emptyMap())
     val progress: StateFlow<Map<String, MacroProgress>> = _progress.asStateFlow()
 
@@ -100,6 +104,7 @@ class MacroRunner(
                 // 좌석 종료·설정 변경 뒤 이전 15분 타이머가 새 설정을 끄지 않게 한다.
                 rule.cancelRunningIds.filter { it != rule.id }.forEach { id ->
                     jobs.remove(id)?.cancel()
+                    _activeRules.update { it - id }
                     _running.update { it - id }
                     _progress.update { it - id }
                 }
@@ -116,6 +121,7 @@ class MacroRunner(
             lock.withLock {
                 jobs.values.forEach { it.cancel() }
                 jobs.clear()
+                _activeRules.value = emptyMap()
                 _running.value = emptySet()
                 _progress.value = emptyMap()
             }
@@ -127,6 +133,7 @@ class MacroRunner(
         scope.launch {
             lock.withLock {
                 jobs.remove(ruleId)?.cancel()
+                _activeRules.update { it - ruleId }
                 _running.update { it - ruleId }
                 _progress.update { it - ruleId }
             }
@@ -137,6 +144,7 @@ class MacroRunner(
     private suspend fun execute(rule: MacroRule, startedAt: Long, onAccepted: suspend () -> Unit,
                                 onCompleted: () -> Unit) {
         val myJob = kotlin.coroutines.coroutineContext[Job]
+        _activeRules.update { it + (rule.id to rule) }
         _running.update { it + rule.id }
         try {
             // 실행을 받았을 때만 쿨다운을 저장한다. 중복 요청은 만료 시간을 밀지 않는다.
@@ -187,6 +195,7 @@ class MacroRunner(
                 lock.withLock {
                     if (jobs[rule.id] === myJob) {
                         jobs.remove(rule.id)
+                        _activeRules.update { it - rule.id }
                         _running.update { it - rule.id }
                         _progress.update { it - rule.id }
                     }

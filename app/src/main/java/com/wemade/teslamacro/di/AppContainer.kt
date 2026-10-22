@@ -68,6 +68,7 @@ class AppContainer(private val context: Context) {
 
     val commandFeedback = com.wemade.teslamacro.data.gateway.CommandFeedback(context, appScope)
     val fleetTokenStore = com.wemade.teslamacro.data.fleet.FleetTokenStore(appContext)
+    val fleetHistory = com.wemade.teslamacro.data.fleet.FleetHistoryStore(appContext)
     val fleetCommands = com.wemade.teslamacro.data.fleet.FleetQueuedClient(
         com.wemade.teslamacro.data.fleet.FleetHttpsTransport(),
         tokenProvider = { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { fleetTokenStore.read() } },

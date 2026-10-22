@@ -2,6 +2,8 @@ package com.wemade.teslamacro.service
 
 import com.wemade.teslable.CommandExpiredException
 import com.wemade.teslable.DiagLog
+import com.wemade.teslamacro.data.fleet.FleetReceipt
+import com.wemade.teslamacro.data.fleet.statusMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -24,7 +26,10 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
         Failed("요청 중단 · 차량 전달 여부는 진단 로그에서 확인하세요"),
     }
 
-    data class Request(val id: Long, val label: String, val status: Status, val commandId: String? = null) {
+    data class Request(val id: Long, val label: String, val status: Status, val commandId: String? = null,
+                       val fleetMessage: String? = null) {
+        val message: String get() = if (status == Status.Observing || status == Status.Finished)
+            fleetMessage ?: status.message else status.message
         val canCancel: Boolean get() = status == Status.Waiting || status == Status.Waking
         val canStopObserving: Boolean get() = status == Status.Observing
         val active: Boolean get() = canCancel || status == Status.Sending || canStopObserving
@@ -35,6 +40,14 @@ class QuickActionRequests(private val diagnosticLogger: (String) -> Unit = DiagL
     private val jobs = mutableMapOf<Long, Job>()
     private val mutableRequests = MutableStateFlow<List<Request>>(emptyList())
     val requests = mutableRequests.asStateFlow()
+
+    /** 깨우기·전송 단계는 취소 가능한 로컬 Waking 상태로 바꾸지 않고 기존 관찰 상태에 표시한다. */
+    fun updateFleetProgress(receipt: FleetReceipt) = synchronized(lock) {
+        if (receipt.id == null) return@synchronized
+        mutableRequests.value = mutableRequests.value.map {
+            if (it.commandId == receipt.id) it.copy(fleetMessage = receipt.statusMessage()) else it
+        }
+    }
 
     /** 서비스 작업을 추적하되 화면 재생성이나 화면 이동으로 대기 명령이 사라지지 않게 한다. */
     suspend fun track(label: String, execute: suspend (beforeDispatch: () -> Unit) -> Unit) =

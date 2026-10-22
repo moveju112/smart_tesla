@@ -91,3 +91,22 @@ internal fun diagnosticBatches(lines: List<String>, maxBytes: Int = 6_000, maxLi
 internal fun maskDiagnosticLine(line: String): String = line
     .replace(Regex("(?i)\\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\\b"), "**:**:**:**:**:**")
     .replace(Regex("\\bS[0-9a-f]{16}[A-Z]?\\b"), "S****")
+    .let { masked ->
+        // 업데이트 전에 저장된 목적지·화면 원문도 기존 로그 형식별로 전송 전에 제거한다.
+        val marker = listOf(
+            "테슬라 내비 연동 — 목적지 자동 선택",
+            "테슬라 내비 연동 — 안심주행 중 길안내 시작 감지",
+            "테슬라 내비 연동 — 안내 중 목적지 변경 감지",
+            "테슬라 내비 연동 — 안내 중 경로 미리보기",
+            "테슬라 내비 연동 — 화면 목적지 읽음",
+            "테슬라 내비 연동 — 화면 목적지 판독 실패",
+            "테슬라 내비 연동 — 안내 아님 알림 무시",
+            "테슬라 내비 연동 — 안내 알림 보조 문구",
+            "테슬라 내비 연동 — 안내 중 누름",
+            "테슬라 내비 연동 — 안내 중 카드",
+            "테슬라 내비 연동 — 안내 중 화면",
+            "안내 실행 요청 →",
+            "주소를 좌표로 못 바꿨어요:",
+        ).firstOrNull { it in masked }
+        if (marker == null) masked else masked.substringBefore(marker) + marker + " · 내용 가림"
+    }

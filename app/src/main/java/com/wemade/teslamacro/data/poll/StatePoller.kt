@@ -102,7 +102,7 @@ class StatePoller(
     private var lastConnectionDecision: VehicleConnectionDecision? = null
 
     @Volatile
-    private var appVisibleUntil = 0L
+    private var appVisible = false
 
     /** 짧은 전원 출렁임과 실제 하차 후 재탑승을 가르는 전원 해제 시작 시각 */
     private val vehiclePowerDisconnectedAt = java.util.concurrent.atomic.AtomicLong(0L)
@@ -127,6 +127,9 @@ class StatePoller(
     /** 병합된 옛 스냅샷이 아닌 이번 VCSEC 응답의 탑승값만 주행 음성 게이트에 전달한다. */
     private val _freshPresence = MutableSharedFlow<VehiclePresenceObservation>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val freshPresence: Flow<VehiclePresenceObservation> = _freshPresence.asSharedFlow()
+    private val _freshDrive = MutableSharedFlow<ShiftState>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val freshDrive: Flow<ShiftState> = _freshDrive.asSharedFlow()
+    @Volatile private var destinationReceptionActive = false
 
     /**
      * 주차가 시작된 시각과 그때 배터리. 타고 있는 동안은 null.
@@ -400,7 +403,7 @@ class StatePoller(
                     StateCategory.BODY_CONTROLLER,
                     StateCategory.CLIMATE,
                     StateCategory.CHARGE,
-                )
+                ) + requiredCategories(settings)
                 // 빈 차라도 충전 중이면 CHARGE는 계속 본다 — 안 보면 isCharging이 참으로 동결돼
                 // 충전이 끝나도 스텔스가 밤새 자는 차에 명령을 쏘고, 깊은 유휴도 영영 못 든다.
                 // 충전 중엔 차가 어차피 깨어 있어 추가 비용이 없다
@@ -439,13 +442,28 @@ class StatePoller(
                 }
             }
             val fresh = result.getOrNull()
+            // 위치·예보·기록 저장을 기다리기 전에 현재 차량 응답을 목적지 수신기에 전달한다.
+            val observedPresence = fresh
+                ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
+                ?.isUserPresent
+            observedPresence?.let { _freshPresence.tryEmit(VehiclePresenceObservation(it, presenceStartedAt)) }
+            fresh?.takeIf { StateCategory.DRIVE in it.categoryReadAt }
+                ?.let { _freshDrive.tryEmit(it.shiftState) }
             val merged = fresh
                 ?.let { fresh -> merge(_snapshot.value, fresh) }
                 ?.let { withRideMinutes(it) }
                 ?: _snapshot.value
+            // 요청한 제어 상태를 못 읽었으면 이전 기어·충전값으로 자동 명령을 계속하지 않는다.
+            val observed = merged.copy(
+                shiftState = if (StateCategory.DRIVE in categories) fresh?.shiftState ?: ShiftState.UNKNOWN else merged.shiftState,
+                speedKph = if (StateCategory.DRIVE in categories) fresh?.speedKph else merged.speedKph,
+                isCharging = if (StateCategory.CHARGE in categories) fresh?.isCharging else merged.isCharging,
+                chargingAmps = if (StateCategory.CHARGE in categories) fresh?.chargingAmps else merged.chargingAmps,
+                maxChargingAmps = if (StateCategory.CHARGE in categories) fresh?.maxChargingAmps else merged.maxChargingAmps,
+            )
 
             // 3-0. 충전 전류를 15분 칸에 적산한다. 읽은 사이클에서만 센다
-            chargeHistory?.record(merged, now())
+            fresh?.let { chargeHistory?.record(it, now()) }
 
             // 주행 확인 응답만 연결 유지 근거로 보관하고 부분 응답으로 유효시간을 늘리지 않는다.
             if (fresh != null && (fresh.shiftState != ShiftState.UNKNOWN ||
@@ -527,7 +545,7 @@ class StatePoller(
                     else if (portableCheck == null && needsForecast()) {
                         cachedForecast(location ?: cachedLocation())
                     } else null
-                Reading(merged, TimeContext.of(now()), location, weather)
+                Reading(observed, TimeContext.of(now()), location, weather)
             }
             if (boardingCheck != null &&
                 (current == null || vehiclePowerWakeCheck.get() !== boardingCheck ||
@@ -540,7 +558,7 @@ class StatePoller(
             }
             if (current == null) continue
             // 취소된 조회의 착석값이 연결 유지 사유로 남지 않도록 검증 뒤에만 반영한다.
-            _snapshot.value = merged
+            _snapshot.value = observed
             latestReading.value = current
 
             // 현재 응답으로 덮기 전에 직전 확인값의 유효시간을 판정한다.
@@ -552,11 +570,6 @@ class StatePoller(
                 trustMillis = PRESENCE_TRUST_MILLIS,
             )
 
-            // 옛 병합값으로는 외부 앱을 열지 않는다. 이번 VCSEC 응답에서 탑승이 확인된 경우만 보낸다
-            val observedPresence = fresh
-                ?.takeIf { snapshot -> snapshot.categoryReadAt.keys.any(::ownsPresence) }
-                ?.isUserPresent
-            observedPresence?.let { _freshPresence.tryEmit(VehiclePresenceObservation(it, presenceStartedAt)) }
             // 문 매크로는 착석 여부와 무관하게 60초 동안 변화를 기다린다.
             // 자동 안심운전만 쓰는 경우에는 기존처럼 착석 확인 즉시 종료한다.
             if (fresh?.categoryReadAt?.keys?.any(::ownsPresence) == true &&
@@ -642,7 +655,13 @@ class StatePoller(
                 snapshot = merged,
                 activeSeconds = ACTIVE_POLL_SECONDS,
                 idleSeconds = NORMAL_POLL_SECONDS,
-            ).let { if (recordHistory) minOf(it, 5) else it }
+            ).let {
+                when {
+                    settings.destinationReceiveEnabled && destinationReceptionActive -> minOf(it, ACTIVE_POLL_SECONDS)
+                    recordHistory -> minOf(it, 5)
+                    else -> it
+                }
+            }
             // 읽기에 쓴 시간을 빼서 주기를 일정하게 유지한다. 밑바닥 1초는 폭주 방지.
             // 단 실패가 낀 사이클은 경과를 빼지 않는다 — 타임아웃(8초×N)이 주기를 넘으면
             // 하한 1초로 떨어져 "느린 차일수록 쉼 없이 재시도"가 된다
@@ -698,7 +717,7 @@ class StatePoller(
         }
         // 상시 켜진 차내 화면은 Activity가 계속 전면일 수 있다.
         // 차량 전원이 끊긴 뒤까지 그 상태를 연결 사유로 쓰지 않는다
-        if (!connected && endAppSession) appVisibleUntil = 0L
+        if (!connected && endAppSession) appVisible = false
         nudge()
     }
 
@@ -710,10 +729,17 @@ class StatePoller(
         }
     }
 
-    /** 앱을 연 직후에는 조회·수동 명령을 위해 짧게 연결을 허용한다. */
+    /** 화면이 실제로 보이는 동안 연결을 유지하고 화면 이탈·차량 전원 해제 때 놓는다. */
     fun setAppVisible(visible: Boolean) {
         if (visible) manualConnectionPause.set(false)
-        appVisibleUntil = if (visible) now() + APP_CONNECTION_WINDOW_MILLIS else 0L
+        appVisible = visible
+        nudge()
+    }
+
+    /** 출발 전 수신 중인 기존 연결에서만 기어를 빠르게 읽으며 새 연결 사유는 만들지 않는다. */
+    fun setDestinationReceptionActive(active: Boolean) {
+        if (destinationReceptionActive == active) return
+        destinationReceptionActive = active
         nudge()
     }
 
@@ -814,7 +840,7 @@ class StatePoller(
                     !it.expired(now())
             } == true,
             vehicleUserPresent = _snapshot.value.isUserPresent,
-            appVisible = now() < appVisibleUntil,
+            appVisible = appVisible,
             commandActive = commandConnections.get() > 0,
             destinationCheckActive = destinationChecks.get() > 0,
             macroRunning = runner.running.value.isNotEmpty(),
@@ -934,13 +960,11 @@ class StatePoller(
     }
 
     /** 예보 조건을 쓰는 켜진 매크로가 있는가 */
-    private fun needsForecast(): Boolean = ruleStore.rules.value.any { rule ->
-        rule.enabled && (
-            rule.conditions.any { it is Condition.ForecastInRange } ||
-                rule.actions.any {
-                    it is ActionStep.WaitUntil && it.condition is Condition.ForecastInRange
-                }
-            )
+    private fun needsForecast(): Boolean = rulesForPolling().any { rule ->
+        rule.conditions.any { it is Condition.ForecastInRange } ||
+            rule.actions.any {
+                it is ActionStep.WaitUntil && it.condition is Condition.ForecastInRange
+            }
     }
 
     /**
@@ -999,14 +1023,12 @@ class StatePoller(
         return " (거리 ${meters.toInt()}m / 반경 ${condition.radiusMeters}m)"
     }
 
-    /** 켜져 있는 매크로 중 위치 조건(조건 또는 조건 대기)을 쓰는 게 하나라도 있는지 */
-    private fun needsLocation(): Boolean = ruleStore.rules.value.any { rule ->
-        rule.enabled && (
-            rule.conditions.any { it is Condition.NearLocation } ||
-                rule.actions.any {
-                    it is ActionStep.WaitUntil && it.condition is Condition.NearLocation
-                }
-            )
+    /** 자동 감시 또는 실제 실행 중인 매크로의 위치 조건을 조회한다. */
+    private fun needsLocation(): Boolean = rulesForPolling().any { rule ->
+        rule.conditions.any { it is Condition.NearLocation } ||
+            rule.actions.any {
+                it is ActionStep.WaitUntil && it.condition is Condition.NearLocation
+            }
     }
 
     /**
@@ -1030,10 +1052,14 @@ class StatePoller(
     /** 느린 상태를 마지막으로 읽은 시각 */
     private val slowReadAt = mutableMapOf<StateCategory, Long>()
 
-    /** 켜진 매크로와 스텔스 충전이 실제로 필요로 하는 카테고리만 읽는다. */
+    /** 실행 당시 규칙도 포함해 비활성·편집·삭제 뒤 남은 조건 대기가 최신 값을 읽게 한다. */
+    private fun rulesForPolling(): List<MacroRule> =
+        ruleStore.rules.value.filter { it.enabled } + runner.activeRules.value.values
+
+    /** 자동 감시·실행 중 매크로와 스텔스 충전이 필요한 카테고리만 읽는다. */
     private fun requiredCategories(settings: AppSettings): Set<StateCategory> = buildSet {
-        addAll(ruleStore.rules.value
-            .filter { it.enabled }
+        if (settings.destinationReceiveEnabled && destinationReceptionActive) add(StateCategory.DRIVE)
+        addAll(rulesForPolling()
             .flatMap { it.requiredCategories }
         )
         if (settings.stealthCharging || settings.stealthChargeNeedsRestore) add(StateCategory.CHARGE)
@@ -1204,7 +1230,6 @@ internal const val DEEP_IDLE_SECONDS = 120
 internal const val NORMAL_POLL_SECONDS = 15
 internal const val ACTIVE_POLL_SECONDS = 2
 internal const val ACTIVE_WINDOW_MILLIS = 3 * 60 * 1000L
-internal const val APP_CONNECTION_WINDOW_MILLIS = 2 * 60 * 1000L
 
 /**
  * 다음 폴링까지 몇 초 쉴지 정한다 — 순수 함수라 단위 테스트로 검증한다.

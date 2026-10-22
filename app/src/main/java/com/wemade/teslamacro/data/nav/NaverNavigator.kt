@@ -188,14 +188,14 @@ class NaverNavigator(private val context: Context, private val wirelessNavigatio
                 //   (이사·오타 수정이 먹어야 한다는 원래 의도 유지)
                 val point = cachedPoint(address)
                     ?: geocode(address)?.also { cachePoint(address, it) }
-                    ?: error("주소를 좌표로 못 바꿨어요: $address")
+                    ?: error("주소를 좌표로 못 바꿨어요")
                 val label = name.ifBlank { address }
 
                 val installed = installedPackage(app)
                     ?: error("${app.label} 앱이 설치되어 있지 않아요")
                 launchAny(app, installed, point.latitude, point.longitude, label, beforeLaunch)
                 // startActivity는 화면이 안 떠도 예외를 안 던진다 — 실제로 증명한 것은 요청까지다
-                com.wemade.teslable.DiagLog.add("${app.label} 안내 실행 요청 → $label")
+                com.wemade.teslable.DiagLog.add("${app.label} 안내 실행 요청")
             }.onFailure { throwable ->
                 // 취소는 실패가 아니다. runCatching이 삼키면 매크로 중단이 "안내 실패"로
                 // 잘못 기록되고, 취소가 상위로 전파되지 않는다

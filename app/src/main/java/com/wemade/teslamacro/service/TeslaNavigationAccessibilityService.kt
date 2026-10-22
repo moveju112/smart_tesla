@@ -46,11 +46,8 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                 routeStartConfirmed = false
             }
             if (clicked.trim() == "안내시작" && pendingRoute != null) routeStartConfirmed = true
-            // 목적지 변경 버튼은 화면이 바뀌기 전에 장소 카드를 칸 ID와 함께 남겨 새 목적지 위치를 찾는다.
-            val card = if (clicked.trim() in setOf("도착지로", "안내시작", "출발지로", "경유지로")) dumpScreen() else emptyList()
             if (clicked.isNotBlank()) serviceScope.launch {
-                logWhileGuiding(packageName, "안내 중 누름 · $clicked")
-                card.forEachIndexed { index, part -> logWhileGuiding(packageName, "안내 중 카드 ${index + 1}/${card.size} · $part") }
+                logWhileGuiding(packageName, "안내 중 버튼 누름")
             }
         }
         if (!windowChanged && now - lastReadAt < 250) return
@@ -63,14 +60,14 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
             val root = rootInActiveWindow ?: return@launch
             try {
                 if (root.packageName?.toString() != packageName) return@launch
-                if (packageName == "com.nhn.android.nmap") {
-                    // 경로 미리보기 카드·안내 남은 거리를 후보 거리 상한으로 넘긴다.
-                    listOf("v_route_card_distance", "distance").flatMap { id ->
+                val routeMeters = if (packageName == "com.nhn.android.nmap") {
+                    // 새 경로 미리보기 거리를 우선하며 이전 안내의 남은 거리와 최댓값을 섞지 않는다.
+                    listOf("v_route_card_distance", "distance").firstNotNullOfOrNull { id ->
                         root.findAccessibilityNodeInfosByViewId("$packageName:id/$id").mapNotNull { node ->
                             try { node.text?.toString()?.let(::naverDistanceMeters) } finally { node.recycle() }
-                        }
-                    }.maxOrNull()?.let { app.container.teslaNavigationShare.routeDistance(it) }
-                }
+                        }.maxOrNull()
+                    }
+                } else null
                 val viewId = if (packageName == "com.nhn.android.nmap") "route_search_bar" else "route_result_trip"
                 val nodes = root.findAccessibilityNodeInfosByViewId("$packageName:id/$viewId")
                 val entries = mutableListOf<NavigationScreenText>()
@@ -80,11 +77,9 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                 val destination = teslaDestinationFromScreen(packageName, entries)
                 // 판독 결과가 바뀔 때만 기록해 실기기 로그로 화면 영역·파서 실패를 구분한다.
                 val summary = when {
-                    destination != null -> "화면 목적지 읽음 · $destination"
+                    destination != null -> "화면 목적지 읽음"
                     nodes.isEmpty() -> "화면 목적지 영역 없음"
-                    else -> "화면 목적지 판독 실패 · " + entries.take(14).joinToString(" | ") {
-                        "${it.top},${it.left}${if (it.isButton) "B" else ""}:${it.text.take(20)}"
-                    }
+                    else -> "화면 목적지 판독 실패 · 항목 ${entries.size}개"
                 }
                 // 같은 결과도 30초가 지나면 다시 기록해 재시도 때 화면을 다시 읽었는지 구분한다.
                 if (summary != lastSummary || now - lastSummaryAt > 30_000) {
@@ -92,18 +87,21 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                     lastSummaryAt = now
                     com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $summary")
                 }
-                destination?.let { app.container.teslaNavigationShare.screen(packageName, it) }
+                destination?.let {
+                    if (packageName == "com.nhn.android.nmap") app.container.teslaNavigationShare.routeDistance(routeMeters, it)
+                    app.container.teslaNavigationShare.screen(packageName, it)
+                }
                 if (nodes.isEmpty() && packageName == "com.nhn.android.nmap" && app.container.teslaNavigationShare.guiding(packageName)) {
                     val screen = screenTexts(root)
-                    if (windowChanged) logWhileGuiding(packageName, "안내 중 화면 · " + screen.map { it.text.trim().take(20) }
-                        .filter { it.isNotEmpty() }.distinct().take(14).joinToString(" | "))
+                    if (windowChanged) logWhileGuiding(packageName, "안내 중 화면 전환")
                     // 안내 중 목적지 변경 (경로 미리보기 판독 -> 미리보기·확인창이 사라지고 안내 재개 -> 공유)
                     val preview = naverGuidanceRouteDestination(screen)
                     if (preview != null) {
                         if (preview != pendingRoute) {
                             routeStartConfirmed = false
-                            com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 중 경로 미리보기 · $preview")
+                            com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 중 경로 미리보기")
                         }
+                        app.container.teslaNavigationShare.routeDistance(routeMeters, preview)
                         pendingRoute = preview
                     } else if (screen.none { it.text.trim() == "안내시작" }) {
                         if (routeStartConfirmed && naverGuidanceMode(screen) == com.wemade.teslamacro.data.nav.NaverGuidanceMode.ROUTE) {
@@ -132,31 +130,10 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
         com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — $message")
     }
 
-    // 장소 카드 덤프 (현재 창 -> 칸ID@높이:글자 -> 서버 줄 길이에 맞게 분할)
-    /** 진단 전용으로 글자가 있는 칸만 최대 40개 읽고 서버 한 줄 상한 아래로 나눈다. */
-    private fun dumpScreen(): List<String> {
-        val root = rootInActiveWindow ?: return emptyList()
-        val items = try { screenTexts(root, withIds = true).take(40).map { "${it.viewId ?: "-"}@${it.top}:${it.text.take(25)}" } }
-            finally { root.recycle() }
-        return items.fold(mutableListOf<String>()) { parts, item ->
-            if (parts.isEmpty() || parts.last().length + item.length > 800) parts += item else parts[parts.lastIndex] = parts.last() + " | " + item
-            parts
-        }
-    }
-
-    private class ScreenText(text: String, top: Int, left: Int, isButton: Boolean, val viewId: String?) {
-        val entry = NavigationScreenText(text, top, left, isButton)
-        val text get() = entry.text
-        val top get() = entry.top
-    }
-
     // 전체 창 글자 수집 (넓이 우선 -> 최대 400칸 -> 자식 즉시 반환)
-    /** 안내 중 경로 미리보기 상단 칸이 트리 뒤쪽에 있어 진단 덤프와 같은 넓이 우선 순회로 읽는다. */
-    private fun screenTexts(root: AccessibilityNodeInfo): List<NavigationScreenText> = screenTexts(root, false).map { it.entry }
-
-    /** 칸 ID는 진단 덤프에서만 읽어 판독 경로의 비용을 늘리지 않는다. */
-    private fun screenTexts(root: AccessibilityNodeInfo, withIds: Boolean): List<ScreenText> {
-        val items = mutableListOf<ScreenText>()
+    /** 경로 판독에 필요한 글자만 메모리에서 사용하고 원문 진단 덤프는 만들지 않는다. */
+    private fun screenTexts(root: AccessibilityNodeInfo): List<NavigationScreenText> {
+        val items = mutableListOf<NavigationScreenText>()
         val nodes = java.util.ArrayDeque<Pair<AccessibilityNodeInfo, Int>>().apply { add(root to 0) }
         var visited = 0
         while (nodes.isNotEmpty() && visited++ < 400) {
@@ -165,8 +142,7 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
             if (texts.isNotEmpty()) {
                 val bounds = Rect().also(node::getBoundsInScreen)
                 val button = node.className?.toString()?.endsWith("Button") == true
-                val id = if (withIds) node.viewIdResourceName?.substringAfter(":id/") else null
-                texts.forEach { items += ScreenText(it, bounds.top, bounds.left, button, id) }
+                texts.forEach { items += NavigationScreenText(it, bounds.top, bounds.left, button) }
             }
             if (depth < 24) for (index in 0 until node.childCount.coerceAtMost(60)) node.getChild(index)?.let { nodes.add(it to depth + 1) }
             if (node !== root) node.recycle()

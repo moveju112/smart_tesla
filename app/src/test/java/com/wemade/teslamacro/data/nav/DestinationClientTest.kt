@@ -142,6 +142,8 @@ class DestinationClientTest {
             fail("기기 키 생성 실패 뒤 HTTP 요청이 발생하면 안 됨")
             RoadHttpResponse()
         }
+        // 앞선 테스트가 제한 길이 버퍼를 채워도 새 로그 한 줄과 중복 억제를 독립적으로 검사한다.
+        DiagLog.clear()
         val before = DiagLog.lines.value.size
         assertEquals(0, api.authenticatedPost("/v1/destinations", byteArrayOf()).code)
         assertEquals(0, api.authenticatedPost("/v1/destinations", byteArrayOf()).code)

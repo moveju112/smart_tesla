@@ -12,6 +12,8 @@ import org.junit.rules.TemporaryFolder
 class FleetTokenStoreTest {
     @get:Rule val paparazzi = Paparazzi()
     @get:Rule val temporary = TemporaryFolder()
+    private val token = "a".repeat(43)
+    private val replacementToken = "b".repeat(43)
 
     /** 중단된 원자 쓰기의 백업만 남아도 저장 여부와 실제 토큰을 복원한다. */
     @Test
@@ -20,12 +22,12 @@ class FleetTokenStoreTest {
         val backup = File(temporary.root, "token.enc.bak")
         val key = KeyGenerator.getInstance("AES").generateKey()
         val store = FleetTokenStore(AtomicFile(file)) { key }
-        store.save("dummy-recovered-token")
+        store.save(token)
         assertTrue(file.renameTo(backup))
         assertTrue(store.hasToken())
-        assertEquals("dummy-recovered-token", store.read())
+        assertEquals(token, store.read())
         assertTrue(file.renameTo(backup))
-        assertEquals("dummy-recovered-token", store.read())
+        assertEquals(token, store.read())
     }
 
     /** 실제 Keystore 접근 없이 동일 파일/키로 재생성해 암호문 저장·복원·교체·삭제를 검증한다. */
@@ -35,13 +37,13 @@ class FleetTokenStoreTest {
         val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
         val store = FleetTokenStore(AtomicFile(file)) { key }
         assertFalse(store.hasToken())
-        store.save("dummy-first-token")
+        store.save(token)
         assertTrue(store.hasToken())
-        assertFalse(file.readBytes().toString(Charsets.UTF_8).contains("dummy-first-token"))
+        assertFalse(file.readBytes().toString(Charsets.UTF_8).contains(token))
         val restored = FleetTokenStore(AtomicFile(file)) { key }
-        assertEquals("dummy-first-token", restored.read())
-        restored.save(" dummy-second-token ")
-        assertEquals("dummy-second-token", store.read())
+        assertEquals(token, restored.read())
+        restored.save(" $replacementToken ")
+        assertEquals(replacementToken, store.read())
         restored.clear()
         assertFalse(store.hasToken())
         assertThrows(IllegalStateException::class.java) { store.read() }
@@ -53,11 +55,29 @@ class FleetTokenStoreTest {
         val file = File(temporary.root, "token.enc")
         val key = KeyGenerator.getInstance("AES").generateKey()
         val store = FleetTokenStore(AtomicFile(file)) { key }
-        store.save("dummy-valid-token")
+        store.save(token)
         assertThrows(IllegalArgumentException::class.java) { store.save("invalid\r\nheader") }
-        assertEquals("dummy-valid-token", store.read())
+        assertEquals(token, store.read())
         file.writeBytes(byteArrayOf(1, 2, 3))
         val error = assertThrows(IllegalStateException::class.java) { store.read() }
-        assertFalse(error.message.orEmpty().contains("dummy-valid-token"))
+        assertFalse(error.message.orEmpty().contains(token))
+    }
+
+    /** 서버 길이 경계와 ASCII 조건을 벗어난 교체는 저장 전 차단한다. */
+    @Test fun tokenValidationMatchesServerWithoutReplacingExistingCredential() {
+        val key = KeyGenerator.getInstance("AES").generateKey()
+        val store = FleetTokenStore(AtomicFile(File(temporary.root, "token.enc"))) { key }
+        for (length in listOf(32, 256)) {
+            val valid = "x".repeat(length)
+            assertTrue(isValidFleetToken(valid))
+            store.save(" $valid ")
+            assertEquals(valid, store.read())
+        }
+        for (invalid in listOf("", "x".repeat(31), "x".repeat(257), "x".repeat(8192),
+            "한".repeat(32), "x".repeat(31) + "\n", "x".repeat(16) + " " + "x".repeat(16))) {
+            assertFalse(isValidFleetToken(invalid))
+            assertThrows(IllegalArgumentException::class.java) { store.save(invalid) }
+            assertEquals("x".repeat(256), store.read())
+        }
     }
 }

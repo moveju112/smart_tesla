@@ -30,8 +30,8 @@ data class BackupFile(
     val folders: List<MacroFolder>? = null,
 ) {
     companion object {
-        /** 8 — 매크로의 폴더와 분류를 함께 백업해 기기 이전 후에도 목록을 유지한다. */
-        const val CURRENT_VERSION = 8
+        /** 9 — 화면 모드와 스텔스 전류·시간대 취향을 실행 상태와 분리해 보관한다. */
+        const val CURRENT_VERSION = 9
 
         /** 파일 이름. 날짜를 붙이는 건 저장 다이얼로그에서 사람이 한다 */
         const val DEFAULT_FILE_NAME = "smart-tesla-backup.json"
@@ -64,6 +64,19 @@ data class BackupSettings(
     val safeDriveVoice: Boolean = true,
     val safeDriveStartVoice: Boolean = false,
     val safeDriveToleranceKph: Int = 5,
+    /** 구백업의 누락은 이 기기의 기존 취향을 덮어쓰지 않는다. */
+    val themeMode: String? = null,
+    val stealthPreferences: BackupStealthPreferences? = null,
+)
+
+/** null인 최소 전류는 자동 하한이며, 바꾼 실제 전류와 1회 실행 상태는 담지 않는다. */
+@Serializable
+data class BackupStealthPreferences(
+    val maxAmps: Int = 48,
+    val minAmps: Int? = null,
+    val scheduleEnabled: Boolean = false,
+    val startMinutes: Int = 23 * 60,
+    val endMinutes: Int = 7 * 60,
 )
 
 /** 지금 설정에서 백업에 담을 부분만 뽑는다 */
@@ -81,4 +94,7 @@ fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     safeDriveVoice = safeDriveVoice,
     safeDriveStartVoice = safeDriveStartVoice,
     safeDriveToleranceKph = safeDriveToleranceKph,
+    themeMode = themeMode.name,
+    stealthPreferences = BackupStealthPreferences(
+        stealthMaxAmps, stealthMinAmps, stealthScheduleEnabled, stealthStartMinutes, stealthEndMinutes),
 )

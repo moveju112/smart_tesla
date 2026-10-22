@@ -18,11 +18,12 @@ class FleetHttpsTransport : FleetHttpTransport {
     /** 취소 시 소켓을 닫아 조회를 중단하지만 이미 제출된 서버 명령의 취소를 의미하지 않는다. */
     override suspend fun request(method: String, path: String, token: String, body: String?, key: String?): FleetHttpResponse =
         withContext(Dispatchers.IO) {
-            require(token.isNotBlank() && token.length <= 8192 && token.all { it.code in 33..126 }) { "Fleet API 토큰을 확인해 주세요" }
-            val validPath = if (method == "POST") Regex("/v1/vehicles/[A-HJ-NPR-Z0-9]{17}/commands").matches(path)
+            require(isValidFleetToken(token)) { "Fleet API 토큰을 확인해 주세요" }
+            val oauth = method == "POST" && path == "/v1/oauth/start"
+            val validPath = if (method == "POST") oauth || Regex("/v1/vehicles/[A-HJ-NPR-Z0-9]{17}/commands").matches(path)
                 else method == "GET" && (path == "/v1/vehicles" || Regex("/v1/commands/[A-Za-z0-9_-]{1,128}").matches(path))
             require(validPath) { "허용하지 않은 Fleet 요청 경로예요" }
-            require(method != "POST" || (body != null && key != null && Regex("[a-fA-F0-9-]{36}").matches(key)))
+            require(method != "POST" || (body != null && (oauth || key != null && Regex("[a-fA-F0-9-]{36}").matches(key))))
             val connection = URL(UnconfiguredFleetApi.BASE_URL + path).openConnection() as HttpsURLConnection
             suspendCancellableCoroutine { continuation ->
                 continuation.invokeOnCancellation { connection.disconnect() }
@@ -38,7 +39,7 @@ class FleetHttpsTransport : FleetHttpTransport {
                     if (method == "POST") {
                         connection.doOutput = true
                         connection.setRequestProperty("Content-Type", "application/json")
-                        connection.setRequestProperty("Idempotency-Key", key)
+                        if (key != null) connection.setRequestProperty("Idempotency-Key", key)
                         val bytes = checkNotNull(body).toByteArray(Charsets.UTF_8)
                         // 스트리밍 본문은 인증/리다이렉트 등을 이유로 자동 재전송하지 않는다.
                         connection.setFixedLengthStreamingMode(bytes.size)

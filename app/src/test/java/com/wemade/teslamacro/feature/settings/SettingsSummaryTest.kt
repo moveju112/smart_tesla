@@ -7,6 +7,15 @@ import org.junit.Test
 
 /** 상세를 접어도 설정값을 잃지 않고 사용자가 실행 범위를 확인할 수 있어야 한다. */
 class SettingsSummaryTest {
+    /** 실패는 기존 설정 상태에 표시하고 실제 원복 완료 뒤에만 평상시 요약으로 돌아온다. */
+    @Test fun failedRestoreIsNotDisplayedAsNormalOff() {
+        val normal = AppSettings(stealthCharging = false, stealthMaxAmps = 12)
+        val pending = normal.copy(stealthChargeRestorePending = true, stealthChargeOriginalAmps = 16)
+        assertEquals("원래 전류 복구 실패 · 차량 연결 후 충전 전류를 확인해 주세요", stealthSettingsSummary(pending))
+        assertEquals(stealthSettingsSummary(normal),
+            stealthSettingsSummary(pending.copy(stealthChargeRestorePending = false)))
+    }
+
     /** 기본 진입점부터 관련 기능 순서로 찾을 수 있게 한다. */
     @Test
     fun `settings navigation starts with automation`() {

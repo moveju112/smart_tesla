@@ -330,11 +330,18 @@ internal fun StealthChargePanel(
 ) {
     Column {
         ExpandableToggle(
-            title = if (executionOnly) "충전 1회" else "스텔스 충전",
+            title = (if (executionOnly) "충전 1회" else "스텔스 충전") +
+                if (settings.stealthChargeRestorePending) " · 복구 필요" else "",
             settingsOnly = settingsOnly, executionOnly = executionOnly,
             checked = settings.stealthCharging,
             onCheckedChange = rememberPermissionToggle(PermissionFeature.STEALTH_CHARGE, onEnabledChange),
             summary = stealthSettingsSummary(settings),
+            feedback = {
+                ActionFeedback(
+                    stealthSettingsSummary(settings).takeIf { settings.stealthChargeRestorePending },
+                    useSnackbar = true,
+                )
+            },
             notices = {
                 if (settings.stealthCharging && secondsUntilNextChange != null) {
                     Spacer(Modifier.height(Space.sm))
@@ -454,6 +461,9 @@ private fun ExpandableToggle(
 
 /** 실행 제목 도움말에서 실제 전류 범위와 자정을 넘는 시간대를 확인한다. */
 internal fun stealthSettingsSummary(settings: AppSettings): String {
+    if (settings.stealthChargeRestorePending) {
+        return "원래 전류 복구 실패 · 차량 연결 후 충전 전류를 확인해 주세요"
+    }
     val minimum = settings.stealthMinAmps ?: StealthChargePlan.autoMinAmps(5, settings.stealthMaxAmps)
     val schedule = when {
         !settings.stealthScheduleEnabled -> "시간 제한 없음"

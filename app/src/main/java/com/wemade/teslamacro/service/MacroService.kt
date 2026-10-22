@@ -326,8 +326,16 @@ class MacroService : LifecycleService() {
         val app = application as TeslaMacroApplication
         lifecycleScope.launch {
             app.ready.first { it }
-            app.container.poller.freshPresence.collect { observation ->
-                app.container.destinations.observePresence(observation.present, observation.observedAt)
+            launch {
+                app.container.poller.freshPresence.collect { observation ->
+                    app.container.destinations.observePresence(observation.present, observation.observedAt)
+                }
+            }
+            launch {
+                app.container.poller.freshDrive.collect(app.container.destinations::observeDrive)
+            }
+            launch {
+                app.container.destinations.fastPolling.collect(app.container.poller::setDestinationReceptionActive)
             }
         }
     }
@@ -638,7 +646,14 @@ class MacroService : LifecycleService() {
                 return
             }
             val result = app.container.fleetCommands.execute(settings.vin, command, beforeDispatch) { receipt ->
-                if (receipt.pending) receipt.id?.let(onSubmitted)
+                // 접수된 ID를 먼저 저장해 서비스 중단 이후에도 GET으로만 결과를 확인한다.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { app.container.fleetHistory.record(receipt) }.onFailure {
+                        com.wemade.teslable.DiagLog.add("Fleet 결과 기록 저장 실패 · 앱 재시작 후 조회 불가")
+                    }
+                }
+                receipt.id?.let(onSubmitted)
+                app.container.quickActionRequests.updateFleetProgress(receipt)
             }
             val fleetLabel = if (command == com.wemade.teslamacro.domain.command.VehicleCommand.OpenTrunk ||
                 command == com.wemade.teslamacro.domain.command.VehicleCommand.CloseTrunk) "뒤 트렁크 작동" else requestLabel
@@ -650,8 +665,12 @@ class MacroService : LifecycleService() {
                     onConfirmed()
                 }
                 com.wemade.teslamacro.data.fleet.FleetQueueStatus.Failed ->
-                    quickActionFailed(fleetLabel, if (result.result in listOf("http_401", "http_403", "vehicle_access_denied"))
-                        "토큰 또는 차량 접근 권한을 확인해 주세요" else "서버 또는 차량이 명령을 거부했어요 · 자동 재전송하지 않아요")
+                    quickActionFailed(fleetLabel, when (result.result) {
+                        "vehicle_not_parked" -> "P단에서만 열 수 있어요"
+                        "park_state_unavailable" -> "기어 상태를 확인하지 못해 열지 않았어요"
+                        "http_401", "http_403", "vehicle_access_denied" -> "토큰 또는 차량 접근 권한을 확인해 주세요"
+                        else -> "서버 또는 차량이 명령을 거부했어요 · 자동 재전송하지 않아요"
+                    })
                 com.wemade.teslamacro.data.fleet.FleetQueueStatus.Expired ->
                     quickActionFailed(fleetLabel, "서버에서 전송 전에 유효시간이 만료됐어요")
                 else -> quickActionFailed(fleetLabel, "결과 미확인 · 이미 실행됐을 수 있어 재전송하지 않아요")

@@ -16,6 +16,30 @@ import org.junit.Test
 class FleetQuickActionFlowTest {
     private val vin = "5YJS0000000000000"
 
+    /** 서버 깨우기 단계는 전송 전 취소 상태로 되돌리지 않고 관찰 중단만 허용한다. */
+    @Test fun serverWakeProgressDoesNotEnableCancellation() = runTest {
+        val tracker = QuickActionRequests { }
+        val gate = CompletableDeferred<Unit>()
+        val job = launch {
+            tracker.trackWithFleetProgress("문 잠금") { before, _, submitted ->
+                before()
+                submitted("dummy-id")
+                tracker.updateFleetProgress(FleetReceipt("dummy-id", "dummy-key", vin, "door_lock",
+                    FleetQueueStatus.Running, "waiting_for_vehicle_online"))
+                gate.await()
+            }
+        }
+        runCurrent()
+        val request = tracker.requests.value.single()
+        assertTrue(request.message.contains("깨우는 중"))
+        assertFalse(request.canCancel)
+        assertTrue(request.canStopObserving)
+        assertFalse(tracker.cancel(request.id))
+        assertTrue(tracker.stopObserving(request.id))
+        job.join()
+        assertEquals(QuickActionRequests.Status.ObservationStopped.message, tracker.requests.value.single().message)
+    }
+
     /** 외부 음성은 최종 성공에도 기존 Fleet 단발음을 생략하고 실패·접수에는 완료음을 내지 않는다. */
     @Test
     fun `external quick action defers fleet confirmation to service`() = runTest {

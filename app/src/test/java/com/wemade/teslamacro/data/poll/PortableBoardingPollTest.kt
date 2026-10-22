@@ -33,6 +33,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -929,6 +930,173 @@ class PortableBoardingPollTest {
 
         assertTrue(fixture.forecastReads >= 1)
         assertEquals(null, fixture.reading.value?.weather)
+        fixture.poller.stop()
+    }
+
+    /** 화면이 보이는 동안 2분 제한 없이 연결하고 실제 화면 이탈 때 해제한다. */
+    @Test fun foregroundConnectionLastsUntilPause() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.poller.setAppVisible(true)
+        fixture.start()
+        advanceTimeBy(250_000)
+        runCurrent()
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+        fixture.poller.setAppVisible(false)
+        runCurrent()
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 거치 화면이 계속 떠 있어도 전원 해제에 따른 연결 종료 정책은 유지한다. */
+    @Test fun vehiclePowerLossEndsVisibleConnectionSession() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.poller.setAppVisible(true)
+        fixture.start()
+        assertEquals(LinkState.Ready, fixture.gateway.linkState.value)
+        fixture.poller.setVehiclePowerConnected(false, endAppSession = true)
+        runCurrent()
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 집중 조회가 끝나도 활성 조건의 기어 조회를 계속한다. */
+    @Test fun occupiedVehicleKeepsPollingRequiredDriveState() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setProtectPhoneKey(false)
+        fixture.rules.upsert(MacroRule("drive-condition", "기어 조건", triggers = listOf(Trigger.Manual),
+            conditions = listOf(Condition.SignalIs(Signal.PARKED, true)),
+            actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn))))
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.start()
+        advanceTimeBy(240_000)
+        runCurrent()
+        fixture.gateway.reads.clear()
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertTrue(fixture.gateway.reads.isNotEmpty())
+        assertTrue(fixture.gateway.reads.all { StateCategory.DRIVE in it })
+        fixture.poller.stop()
+    }
+
+    /** 기어 UNKNOWN·부분 응답·통신 실패 모두 이전 P단 조건을 재사용하지 않는다. */
+    @Test fun missingDriveStateInvalidatesPreviousParkCondition() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setProtectPhoneKey(false)
+        fixture.rules.upsert(MacroRule("drive-condition", "기어 조건", triggers = listOf(Trigger.Manual),
+            conditions = listOf(Condition.SignalIs(Signal.PARKED, true)),
+            actions = listOf(ActionStep.Run(VehicleCommand.ClimateOn))))
+        fixture.start()
+        for (failure in 0..2) {
+            fixture.gateway.onRead = { fixture.snapshot(true).map { it.copy(
+                shiftState = com.wemade.teslamacro.domain.model.ShiftState.PARK,
+                categoryReadAt = it.categoryReadAt + (StateCategory.DRIVE to it.timestampMillis)) } }
+            fixture.poller.focusOn(StateCategory.DRIVE)
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertTrue(com.wemade.teslamacro.domain.macro.ConditionEvaluator.holds(
+                Condition.SignalIs(Signal.PARKED, true), fixture.reading.value!!))
+            fixture.gateway.onRead = {
+                when (failure) {
+                    0 -> fixture.snapshot(true).map { it.copy(
+                        categoryReadAt = it.categoryReadAt + (StateCategory.DRIVE to it.timestampMillis)) }
+                    1 -> fixture.snapshot(true)
+                    else -> Result.failure(IllegalStateException("가짜 조회 실패"))
+                }
+            }
+            fixture.poller.focusOn(StateCategory.DRIVE)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(null, Signal.PARKED.booleanOf(fixture.reading.value!!.snapshot))
+        }
+        fixture.poller.stop()
+    }
+
+    /** 자동 실행을 끈 규칙도 실행 중에는 위치·예보를 읽고 종료 뒤에는 조회를 멈춘다. */
+    @Test fun disabledManualMacroLoadsContextOnlyWhileRunning() = runTest {
+        val fixture = fixture(autoStart = false)
+        fixture.rules.delete("portable-poll-test")
+        val rule = MacroRule("manual-context", "수동 조건 대기", enabled = false,
+            triggers = listOf(Trigger.Manual),
+            actions = listOf(
+                ActionStep.WaitUntil(Condition.NearLocation(0.0, 0.0, 400), 120),
+                ActionStep.WaitUntil(Condition.ForecastInRange(ForecastMetric.MAX_TEMP, gte = 20.0), 120),
+                ActionStep.Run(VehicleCommand.ClimateOn)))
+        fixture.rules.upsert(rule)
+        fixture.poller.setAppVisible(true)
+        fixture.start()
+        fixture.poller.holdConnectionWhileMacroRuns(rule.id, backgroundScope)
+        fixture.runner.launch(rule, 0L)
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertTrue(fixture.locationReads > 0)
+        assertTrue(fixture.forecastReads > 0)
+        // 실행 중 편집·삭제는 현재 실행이 이미 가진 조건을 조회 대상에서 빼지 않는다.
+        fixture.rules.delete(rule.id)
+        val forecasts = fixture.forecastReads
+        // 빈 차의 120초 절전 주기를 기다리지 않고 실행 중 규칙의 새 조회를 요청한다.
+        fixture.poller.nudge()
+        advanceTimeBy(20_000)
+        runCurrent()
+        assertTrue(fixture.forecastReads > forecasts)
+        fixture.runner.cancelAll()
+        runCurrent()
+        val stoppedLocationReads = fixture.locationReads
+        val stoppedForecastReads = fixture.forecastReads
+        advanceTimeBy(30_000)
+        runCurrent()
+        assertEquals(stoppedLocationReads, fixture.locationReads)
+        assertEquals(stoppedForecastReads, fixture.forecastReads)
+        fixture.poller.stop()
+    }
+
+    /** 출발 전 수신은 기존 연결의 기어를 2초 주기로 읽고 종료 뒤 원래 조회로 돌아간다. */
+    @Test fun destinationReceptionReadsGearQuicklyWithoutKeepingAnIdlePortableConnection() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false)
+        fixture.settings.setProtectPhoneKey(false)
+        fixture.settings.setDestinationReceiveEnabled(true)
+        fixture.rules.delete("portable-poll-test")
+        val readTimes = mutableListOf<Long>()
+        val shifts = mutableListOf<com.wemade.teslamacro.domain.model.ShiftState>()
+        backgroundScope.launch { fixture.poller.freshDrive.collect { shifts += it } }
+        fixture.gateway.onRead = {
+            readTimes += testScheduler.currentTime
+            fixture.snapshot(true).map { snapshot ->
+                if (StateCategory.DRIVE in fixture.gateway.reads.last()) snapshot.copy(
+                    shiftState = com.wemade.teslamacro.domain.model.ShiftState.PARK,
+                    categoryReadAt = snapshot.categoryReadAt + (StateCategory.DRIVE to snapshot.timestampMillis))
+                else snapshot
+            }
+        }
+        fixture.poller.setDestinationReceptionActive(true)
+        fixture.start()
+        advanceTimeBy(6_001)
+        runCurrent()
+        assertTrue(readTimes.size >= 3)
+        assertTrue(readTimes.zipWithNext().all { (first, next) -> next - first <= 2_000 })
+        assertTrue(fixture.gateway.reads.all { StateCategory.DRIVE in it })
+        assertTrue(shifts.contains(com.wemade.teslamacro.domain.model.ShiftState.PARK))
+        fixture.poller.setDestinationReceptionActive(false)
+        runCurrent()
+        assertFalse(StateCategory.DRIVE in fixture.gateway.reads.last())
+        fixture.settings.setDeviceMode(DeviceMode.PORTABLE)
+        fixture.poller.setDestinationReceptionActive(true)
+        fixture.poller.enforceConnectionGuard()
+        assertEquals(LinkState.Idle, fixture.gateway.linkState.value)
+        fixture.poller.stop()
+    }
+
+    /** 느린 위치 조회는 매크로 판정을 기다리게 해도 신선한 착석 이벤트를 지연시키지 않는다. */
+    @Test fun destinationPresenceIsDeliveredBeforeSlowLocationLookup() = runTest {
+        val fixture = fixture(mode = DeviceMode.MOUNTED, autoStart = false, locationDelayMillis = 20_000)
+        fixture.settings.setProtectPhoneKey(false)
+        val observations = mutableListOf<VehiclePresenceObservation>()
+        backgroundScope.launch { fixture.poller.freshPresence.collect { observations += it } }
+        fixture.gateway.onRead = { fixture.snapshot(true) }
+        fixture.start()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertTrue(observations.any { it.present })
+        assertNull(fixture.reading.value)
         fixture.poller.stop()
     }
 

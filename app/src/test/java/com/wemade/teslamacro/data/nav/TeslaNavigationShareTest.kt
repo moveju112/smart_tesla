@@ -17,6 +17,65 @@ class TeslaNavigationShareTest {
     @get:Rule val temporary = TemporaryFolder()
     private val naver = "com.nhn.android.nmap"
 
+    /** 종료된 경로의 거리는 지우고 같은 목적지의 새 관측도 최댓값이 아닌 최신값을 쓴다. */
+    @Test fun distanceBelongsToTheCurrentDestinationAndRoute() = runTest {
+        val context = paparazzi.context
+        val store = SettingsStore(context, PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            temporary.newFolder().resolve("settings.preferences_pb")
+        })
+        val near = com.wemade.teslamacro.domain.macro.GeoPoint(1.0, 1.0)
+        val local = TeslaDestinationCandidate("가까운 후보", near.copy(latitude = 1.009))
+        val distant = TeslaDestinationCandidate("먼 후보", near.copy(latitude = 1.69))
+        val share = TeslaNavigationShare(context, store, NaverNavigator(context), backgroundScope,
+            currentPoint = { near }, lookup = { _, _ -> listOf(local, distant) })
+        // 새 경로의 긴 거리 자체는 버리지 않아 실제 먼 목적지도 선택할 수 있어야 한다.
+        share.routeDistance(100_000, "중앙공원")
+        startRoute(share, "중앙공원")
+        runCurrent()
+        assertEquals(distant, share.selection.value?.preview)
+        share.clear()
+        share.routeDistance(100_000, "중앙공원")
+        share.routeDistance(1_000, "중앙공원")
+        startRoute(share, "중앙공원")
+        runCurrent()
+        assertEquals(local, share.selection.value?.preview)
+        share.clear()
+        share.routeDistance(100_000, "다른 목적지")
+        startRoute(share, "중앙공원")
+        runCurrent()
+        assertEquals(local, share.selection.value?.preview)
+        share.clear()
+        share.routeDistance(100_000, "중앙공원")
+        share.routeDistance(null, "중앙공원")
+        startRoute(share, "중앙공원")
+        runCurrent()
+        assertEquals(local, share.selection.value?.preview)
+    }
+
+    /** 좌표 목적지는 미리보기에 유지하되 로컬 진단 기록에는 원문을 남기지 않는다. */
+    @Test fun coordinateDestinationDoesNotEnterDiagnosticLog() = runTest {
+        val context = paparazzi.context
+        val store = SettingsStore(context, PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            temporary.newFolder().resolve("settings.preferences_pb")
+        })
+        val share = TeslaNavigationShare(context, store, NaverNavigator(context), backgroundScope,
+            lookup = { _, _ -> error("좌표는 지오코딩하지 않는다") })
+        com.wemade.teslable.DiagLog.clear()
+        startRoute(share, "1.123456,2.654321")
+        runCurrent()
+        assertNotNull(share.selection.value?.preview)
+        val log = com.wemade.teslable.DiagLog.lines.value.joinToString("\n")
+        assertFalse(log.contains("1.123456"))
+        assertFalse(log.contains("2.654321"))
+    }
+
+    /** 실제 알림·화면 판독 순서로 공유 예약을 시작하되 테스트 모드가 실차 전송을 막는다. */
+    private suspend fun startRoute(share: TeslaNavigationShare, destination: String) {
+        share.screen(naver, destination)
+        share.notification(naver, "route", "네이버 지도", "내비게이션 - 안내 중")
+        share.naverScreen(NaverGuidanceMode.ROUTE)
+    }
+
     /** 최근 검색 캐시가 있어도 안심주행에서는 조회를 시작하지 않는다. */
     @Test fun safeDriveDoesNotResolveCachedDestination() = runTest {
         val context = paparazzi.context

@@ -245,6 +245,7 @@ private fun AppRoot(factory: ViewModelFactory) {
     val settingsViewModel: SettingsViewModel = viewModel(factory = factory)
     val settings by settingsViewModel.settings.collectAsState()
     val fleetCredentials by settingsViewModel.fleetCredentials.collectAsState()
+    val fleetHistory by settingsViewModel.fleetHistory.collectAsState()
     val stealthChargeRuntime by settingsViewModel.stealthChargeRuntime.collectAsState()
     val chargeHistory by settingsViewModel.chargeHistory.collectAsState()
 
@@ -571,6 +572,11 @@ private fun AppRoot(factory: ViewModelFactory) {
                                     fleetCredentials, settingsViewModel::saveFleetToken,
                                     settingsViewModel::deleteFleetToken, settingsViewModel::checkFleetConnection,
                                     settingsViewModel::clearFleetCredentialMessage,
+                                    onConnect = settingsViewModel::connectFleetAccount,
+                                    history = fleetHistory,
+                                    onRefresh = settingsViewModel::refreshFleetResult,
+                                    onRun = settingsViewModel::runFleetQuickAction,
+                                    commandsEnabled = settings.fleetApiEnabled,
                                 ),
                                 smartThings = smartThingsControls,
                                 navigation = navigationControls,

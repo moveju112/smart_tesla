@@ -90,6 +90,9 @@ class QuickActionActivity : Activity() {
             "climate_off" to VehicleCommand.ClimateOff,
             "vent_windows" to VehicleCommand.VentWindows,
             "close_windows" to VehicleCommand.CloseWindows,
-        )
+            "charge_start" to VehicleCommand.SetCharging(true),
+            "charge_stop" to VehicleCommand.SetCharging(false),
+        ) + (150..280 step 5).associate { "set_temperature_$it" to VehicleCommand.SetTemperature(it / 10.0) } +
+            (50..100).associate { "set_charge_limit_$it" to VehicleCommand.SetChargeLimit(it) }
     }
 }

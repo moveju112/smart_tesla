@@ -17,7 +17,9 @@ import com.wemade.teslamacro.data.nav.teslaDestinationFromScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -25,6 +27,7 @@ import kotlinx.coroutines.launch
 class TeslaNavigationAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lastReadAt = -1_000L
+    private var pendingRead: Job? = null
     private var lastSummary: String? = null
     private var lastSummaryAt = 0L
     private var lastGuidingLog: String? = null
@@ -35,7 +38,6 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
         if (packageName !in setOf("com.nhn.android.nmap", "com.locnall.KimGiSa")) return
-        val now = SystemClock.elapsedRealtime()
         val windowChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         // 안내 중 목적지 변경 화면 구조를 모르므로 누른 글자를 기록해 다음 판독 근거로 쓴다.
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
@@ -50,9 +52,12 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                 logWhileGuiding(packageName, "안내 중 버튼 누름")
             }
         }
-        if (!windowChanged && now - lastReadAt < 250) return
-        lastReadAt = now
-        serviceScope.launch {
+        // 자동 전환의 마지막 이벤트를 버리면 추가 터치 전까지 이전 화면만 남는다.
+        pendingRead?.cancel()
+        pendingRead = serviceScope.launch {
+            if (!windowChanged) delay((250 - (SystemClock.elapsedRealtime() - lastReadAt)).coerceAtLeast(0))
+            val now = SystemClock.elapsedRealtime()
+            lastReadAt = now
             val app = application as TeslaMacroApplication
             app.ready.first { it }
             val settings = app.container.settingsStore.settings.first()
@@ -91,12 +96,15 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                     if (packageName == "com.nhn.android.nmap") app.container.teslaNavigationShare.routeDistance(routeMeters, it)
                     app.container.teslaNavigationShare.screen(packageName, it)
                 }
-                if (nodes.isEmpty() && packageName == "com.nhn.android.nmap" && app.container.teslaNavigationShare.guiding(packageName)) {
+                // 자동 안심주행은 화면이 알림보다 먼저 바뀌므로 알림 활성 여부로 판독을 막지 않는다.
+                if (packageName == "com.nhn.android.nmap") {
                     val screen = screenTexts(root)
+                    val mode = naverGuidanceMode(screen)
+                    val guiding = app.container.teslaNavigationShare.guiding(packageName)
                     if (windowChanged) logWhileGuiding(packageName, "안내 중 화면 전환")
                     // 안내 중 목적지 변경 (경로 미리보기 판독 -> 미리보기·확인창이 사라지고 안내 재개 -> 공유)
                     val preview = naverGuidanceRouteDestination(screen)
-                    if (preview != null) {
+                    if (guiding && preview != null) {
                         if (preview != pendingRoute) {
                             routeStartConfirmed = false
                             com.wemade.teslable.DiagLog.add("테슬라 내비 연동 — 안내 중 경로 미리보기")
@@ -104,14 +112,14 @@ class TeslaNavigationAccessibilityService : AccessibilityService() {
                         app.container.teslaNavigationShare.routeDistance(routeMeters, preview)
                         pendingRoute = preview
                     } else if (screen.none { it.text.trim() == "안내시작" }) {
-                        if (routeStartConfirmed && naverGuidanceMode(screen) == com.wemade.teslamacro.data.nav.NaverGuidanceMode.ROUTE) {
+                        if (guiding && routeStartConfirmed && mode == com.wemade.teslamacro.data.nav.NaverGuidanceMode.ROUTE) {
                             pendingRoute?.let { app.container.teslaNavigationShare.reroute(packageName, it) }
                         }
                         pendingRoute = null
                         routeStartConfirmed = false
                     }
                     // 미리보기 목적지 변경을 먼저 처리해 안심주행 전환 판정이 빈 입력창을 띄우지 않게 한다.
-                    naverGuidanceMode(screen)?.let { app.container.teslaNavigationShare.naverScreen(it) }
+                    app.container.teslaNavigationShare.naverScreen(mode)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) {

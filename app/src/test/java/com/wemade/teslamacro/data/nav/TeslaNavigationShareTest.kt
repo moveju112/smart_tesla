@@ -107,6 +107,48 @@ class TeslaNavigationShareTest {
     }
 
     /** 주소 입력 대기 이후 판독된 안심주행도 기존 입력창을 닫는다. */
+    @Test fun automaticSafeDriveBeforeNotificationWaitsForRealRoute() = runTest {
+        val context = paparazzi.context
+        val store = SettingsStore(context, PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            temporary.newFolder().resolve("settings.preferences_pb")
+        })
+        store.setTeslaNavigationTestMode(true)
+        var lookups = 0
+        val share = TeslaNavigationShare(context, store, NaverNavigator(context), backgroundScope,
+            lookup = { _, _ -> lookups++; emptyList() })
+        share.naverScreen(NaverGuidanceMode.SAFE_DRIVE)
+        share.notification(naver, "route", "네이버 지도", "내비게이션 - 안내 중")
+        runCurrent()
+        advanceTimeBy(5_001)
+        runCurrent()
+        assertNull(share.selection.value)
+        assertEquals(0, lookups)
+        share.screen(naver, "서울역")
+        share.naverScreen(NaverGuidanceMode.ROUTE)
+        runCurrent()
+        assertEquals(1, lookups)
+        share.naverScreen(NaverGuidanceMode.ROUTE)
+        runCurrent()
+        assertEquals(1, lookups)
+    }
+
+    @Test fun unknownScreenInvalidatesSafeDriveBeforeNotification() = runTest {
+        val context = paparazzi.context
+        val store = SettingsStore(context, PreferenceDataStoreFactory.create(scope = backgroundScope) {
+            temporary.newFolder().resolve("settings.preferences_pb")
+        })
+        store.setTeslaNavigationTestMode(true)
+        val share = TeslaNavigationShare(context, store, NaverNavigator(context), backgroundScope)
+        share.naverScreen(NaverGuidanceMode.SAFE_DRIVE)
+        share.naverScreen(null)
+        share.notification(naver, "route", "네이버 지도", "내비게이션 - 안내 중")
+        runCurrent()
+        advanceTimeBy(5_001)
+        runCurrent()
+        assertNotNull(share.selection.value)
+    }
+
+    /** 주소 입력 대기 이후 판독된 안심주행도 기존 입력창을 닫는다. */
     @Test fun lateSafeDriveClosesAddressSelection() = runTest {
         val context = paparazzi.context
         val store = SettingsStore(context, PreferenceDataStoreFactory.create(scope = backgroundScope) {

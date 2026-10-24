@@ -79,8 +79,8 @@ internal class TeslaNavigationShare(
             kotlinx.coroutines.delay(5_000)
             lock.withLock {
                 if (id != revision || !enabled() || !fresh()) return@withLock
-                // 이번 안내 시작 뒤 본 네이버 화면이 안심주행이면 목적지가 없는 게 정상이라 입력창을 띄우지 않는다.
-                if (packageName == NAVER && naverMode?.takeIf { it.first >= startedAt }?.second == NaverGuidanceMode.SAFE_DRIVE) {
+                // 자동 전환은 화면이 알림보다 먼저 온다. 대기 시간 안의 직전 관측도 인정하되 오래된 모드는 재사용하지 않는다.
+                if (packageName == NAVER && naverMode?.takeIf { it.first >= startedAt - 5_000 }?.second == NaverGuidanceMode.SAFE_DRIVE) {
                     tracker.safeDrive(NAVER)
                     pendingNaverDestination = null
                     safeDrive = true
@@ -102,9 +102,13 @@ internal class TeslaNavigationShare(
 
     // 네이버 화면 모드 기록 (안심주행 대기 중 길안내 화면 -> 새 안내로 목적지 결합·입력)
     /** 안심주행 중 도착지를 정하면 같은 알림이 이어지므로 화면에 도착 시각이 나타난 순간을 새 안내 시작으로 본다. */
-    suspend fun naverScreen(mode: NaverGuidanceMode) = lock.withLock {
+    suspend fun naverScreen(mode: NaverGuidanceMode?) = lock.withLock {
         val now = SystemClock.elapsedRealtime()
-        naverMode = now to mode
+        if (naverMode?.second != mode) {
+            DiagLog.add("테슬라 내비 연동 — 네이버 화면 모드 ${mode?.name ?: "미확인"}")
+        }
+        naverMode = mode?.let { now to it }
+        if (mode == null) return@withLock
         if (source?.first != NAVER || !enabled()) return@withLock
         if (mode == NaverGuidanceMode.SAFE_DRIVE) {
             if (!safeDrive) tracker.safeDrive(NAVER)

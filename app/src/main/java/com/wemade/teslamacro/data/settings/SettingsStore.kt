@@ -69,6 +69,7 @@ data class AppSettings(
     val vin: String = "",
     val historyEnabled: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.AUTO,
+    val autoRotateEnabled: Boolean = true,
     /** 스마트싱스 알림을 차량 직접 명령으로 받을지 */
     val smartThingsEnabled: Boolean = false,
     val teslaNavigationShareEnabled: Boolean = false,
@@ -177,6 +178,7 @@ class SettingsStore(
         AppSettings(
             vin = prefs[KeyVin] ?: "",
             themeMode = ThemeMode.of(prefs[KeyThemeMode]),
+            autoRotateEnabled = prefs[KeyAutoRotateEnabled] ?: true,
             smartThingsEnabled = prefs[KeySmartThingsEnabled]
                 ?: prefs[KeySmartThingsFrunkEnabled]
                 ?: false,
@@ -239,6 +241,8 @@ class SettingsStore(
 
     /** 화면 모드를 저장해 앱을 다시 열어도 사용자의 선택을 유지한다. */
     suspend fun setThemeMode(mode: ThemeMode) = edit { it[KeyThemeMode] = mode.name }
+
+    suspend fun setAutoRotateEnabled(enabled: Boolean) = edit { it[KeyAutoRotateEnabled] = enabled }
 
     /** 색과 투명도를 한 번에 저장해 위젯 갱신 중 다른 설정이 섞이지 않게 한다. */
     suspend fun setDestinationWidgetAppearance(appearance: DestinationWidgetAppearance) = edit {
@@ -495,6 +499,7 @@ class SettingsStore(
      */
     suspend fun restore(backup: com.wemade.teslamacro.data.backup.BackupSettings) = edit {
         backup.themeMode?.let { value -> it[KeyThemeMode] = ThemeMode.of(value).name }
+        backup.autoRotateEnabled?.let { value -> it[KeyAutoRotateEnabled] = value }
         backup.stealthPreferences?.let { preferences ->
             setStealthCurrentRange(it, preferences.maxAmps, preferences.minAmps)
             it[KeyStealthScheduleEnabled] = preferences.scheduleEnabled
@@ -604,6 +609,7 @@ class SettingsStore(
     private companion object {
         val KeyFleetApiEnabled = booleanPreferencesKey("fleet_api_enabled")
         val KeyThemeMode = stringPreferencesKey("theme_mode")
+        val KeyAutoRotateEnabled = booleanPreferencesKey("auto_rotate_enabled")
         val KeyDestinationWidgetTheme = stringPreferencesKey("destination_widget_theme")
         val KeyDestinationWidgetTransparency = intPreferencesKey("destination_widget_transparency")
         val KeyDestinationWidgetText = stringPreferencesKey("destination_widget_text")

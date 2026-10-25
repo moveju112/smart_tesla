@@ -30,8 +30,8 @@ data class BackupFile(
     val folders: List<MacroFolder>? = null,
 ) {
     companion object {
-        /** 9 — 화면 모드와 스텔스 전류·시간대 취향을 실행 상태와 분리해 보관한다. */
-        const val CURRENT_VERSION = 9
+        /** 10 — 자동 회전 선택도 보관하며 구백업은 이 기기의 선택을 유지한다. */
+        const val CURRENT_VERSION = 10
 
         /** 파일 이름. 날짜를 붙이는 건 저장 다이얼로그에서 사람이 한다 */
         const val DEFAULT_FILE_NAME = "smart-tesla-backup.json"
@@ -66,6 +66,7 @@ data class BackupSettings(
     val safeDriveToleranceKph: Int = 5,
     /** 구백업의 누락은 이 기기의 기존 취향을 덮어쓰지 않는다. */
     val themeMode: String? = null,
+    val autoRotateEnabled: Boolean? = null,
     val stealthPreferences: BackupStealthPreferences? = null,
 )
 
@@ -95,6 +96,7 @@ fun AppSettings.toBackup(): BackupSettings = BackupSettings(
     safeDriveStartVoice = safeDriveStartVoice,
     safeDriveToleranceKph = safeDriveToleranceKph,
     themeMode = themeMode.name,
+    autoRotateEnabled = autoRotateEnabled,
     stealthPreferences = BackupStealthPreferences(
         stealthMaxAmps, stealthMinAmps, stealthScheduleEnabled, stealthStartMinutes, stealthEndMinutes),
 )

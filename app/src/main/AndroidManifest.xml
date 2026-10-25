@@ -95,11 +95,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TeslaMacro">
 
+        <!-- 저장값을 읽기 전에 센서 회전이 먼저 적용되지 않도록 현재 방향으로 시작한다. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="locked"
             android:theme="@style/Theme.TeslaMacro">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

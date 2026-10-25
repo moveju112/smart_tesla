@@ -65,6 +65,7 @@ import com.wemade.teslamacro.ui.theme.T
 fun SettingsScreen(
     settings: AppSettings,
     onThemeModeChange: (ThemeMode) -> Unit = {},
+    onAutoRotateEnabledChange: (Boolean) -> Unit = {},
     onStealthChargingChange: (Boolean) -> Unit = {},
     stealthSecondsUntilNextChange: Int? = null,
     onStealthMaxAmpsChange: (Int) -> Unit = {},
@@ -224,6 +225,13 @@ fun SettingsScreen(
                                         onSelect = { onThemeModeChange(ThemeMode.of(it)) },
                                     )
                                 }
+                                Hairline()
+                                SettingToggleRow(
+                                    label = "자동 회전",
+                                    checked = settings.autoRotateEnabled,
+                                    onCheckedChange = onAutoRotateEnabledChange,
+                                    description = "켜면 기기 방향에 따라 화면이 회전하고, 끄면 현재 방향으로 고정해요.",
+                                )
                             }
                             Spacer(Modifier.height(Space.lg))
                             UpdatePanel(

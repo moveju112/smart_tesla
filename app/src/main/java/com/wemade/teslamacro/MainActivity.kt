@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.graphics.toArgb
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -69,6 +70,13 @@ import com.wemade.teslamacro.ui.theme.T
 import com.wemade.teslamacro.ui.theme.TeslaMacroTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+internal fun screenOrientationFor(autoRotateEnabled: Boolean): Int = if (autoRotateEnabled) {
+    ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+} else {
+    // 가로로 거치한 태블릿도 세로로 돌리지 않고 현재 방향을 유지한다.
+    ActivityInfo.SCREEN_ORIENTATION_LOCKED
+}
 
 // Play 서비스의 전이 Fragment 1.0은 쓰지 않는다. 이 화면은 FragmentActivity가 아닌 ComponentActivity라 해당 요청 코드 버그가 없다.
 @android.annotation.SuppressLint("InvalidFragmentVersionForActivityResult")
@@ -160,8 +168,12 @@ class MainActivity : ComponentActivity() {
         val app = application as TeslaMacroApplication
 
         setContent {
-            val appearance by app.container.settingsStore.settings.collectAsState(initial = app.container.initialSettings)
-            TeslaMacroTheme(mode = appearance.themeMode) {
+            val appearance by app.container.settingsStore.settings.collectAsState(initial = null)
+            LaunchedEffect(appearance?.autoRotateEnabled) {
+                val enabled = appearance?.autoRotateEnabled ?: return@LaunchedEffect
+                requestedOrientation = screenOrientationFor(enabled)
+            }
+            TeslaMacroTheme(mode = appearance?.themeMode ?: app.container.initialSettings.themeMode) {
                 val activePalette = com.wemade.teslamacro.ui.theme.LocalPalette.current
                 androidx.compose.runtime.SideEffect {
                     window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(activePalette.void.toArgb()))
@@ -523,6 +535,7 @@ private fun AppRoot(factory: ViewModelFactory) {
                                     else -> null
                                 },
                                 onThemeModeChange = settingsViewModel::setThemeMode,
+                                onAutoRotateEnabledChange = settingsViewModel::setAutoRotateEnabled,
                                 onStealthChargingChange = settingsViewModel::setStealthCharging,
                                 stealthSecondsUntilNextChange = stealthChargeRuntime.secondsUntilNextChange,
                                 onStealthMaxAmpsChange = settingsViewModel::setStealthMaxAmps,
